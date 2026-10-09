@@ -159,6 +159,17 @@ describe('ReviewPage', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it('saves a finished document as a reference for its document type', async () => {
+    const data = reviewData();
+    const { api } = setup({
+      getReview: vi.fn(async () => ({ ...data, job: { ...data.job, status: 'succeeded' } })),
+    });
+    await userEvent.type(await screen.findByLabelText('Reference name'), 'acme-2023');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as reference' }));
+    expect(api.createReference).toHaveBeenCalledWith('tdemo', JOB_ID, 'acme-2023');
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved reference acme-2023');
+  });
+
   it('is read-only once the job has left review', async () => {
     const data = reviewData();
     setup({

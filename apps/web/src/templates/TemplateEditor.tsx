@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { VALUE_TYPES, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
+import { QualityPanel } from './QualityPanel.js';
 import {
   checkPathOptions,
   getIn,
@@ -13,7 +14,7 @@ import {
 } from './model.js';
 
 type Path = (string | number)[];
-type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml';
+type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
 
 const TABS: [Tab, string][] = [
   ['general', 'General'],
@@ -21,6 +22,7 @@ const TABS: [Tab, string][] = [
   ['outputs', 'Outputs'],
   ['pipeline', 'Pipeline'],
   ['yaml', 'YAML'],
+  ['quality', 'Quality'],
 ];
 
 /** Empty text means "not set": the key is dropped rather than stored as "". */
@@ -189,6 +191,8 @@ export function TemplateEditor({
           </button>
         ))}
       </div>
+
+      {tab === 'quality' && <QualityPanel api={api} templateId={templateId} version={version} />}
 
       <fieldset disabled={!editable} className="editor-body">
         {tab === 'general' && (

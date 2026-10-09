@@ -152,6 +152,84 @@ describe('TemplateEditor', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Memo');
   });
 
+  it('compares the version with another one', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 2 }), {
+      listTemplates: vi.fn(async () => [
+        {
+          id: 'letter',
+          name: 'Letter',
+          description: null,
+          published: 1,
+          draft: 2,
+          versions: [
+            { version: 1, status: 'published' as const, updatedAt: '' },
+            { version: 2, status: 'draft' as const, updatedAt: '' },
+          ],
+        },
+      ]),
+      diffVersions: vi.fn(async () => ({
+        from: 1,
+        to: 2,
+        changes: [
+          { kind: 'changed', path: 'pipeline[head].instructions', before: 'one', after: 'two' },
+        ],
+      })),
+    });
+    await userEvent.click(await tab(/Quality/));
+    await userEvent.selectOptions(await screen.findByLabelText('Compare with'), '1');
+    expect(api.diffVersions).toHaveBeenCalledWith('letter', 1, 2);
+    expect(await screen.findByText('pipeline[head].instructions')).toBeInTheDocument();
+  });
+
+  it('runs the regression suite and shows scores per reference', async () => {
+    const report = {
+      items: [
+        {
+          reference: { id: 'r1', name: 'acme' },
+          job: { id: 'j1', status: 'succeeded', error: null },
+          comparison: {
+            score: 0.5,
+            fields: [{ id: 'sender', expected: 'ACME', actual: 'Acme Corp', match: false }],
+            tables: [
+              {
+                id: 'lines',
+                expected: 2,
+                actual: 1,
+                matched: 1,
+                missing: [{ item: 'nuts' }],
+                extra: [],
+              },
+            ],
+          },
+        },
+      ],
+      summary: { references: 1, completed: 1, averageScore: 0.5 },
+    };
+    const { api } = setup(view({ ...validDefinition(), version: 2 }), {
+      listReferences: vi.fn(async () => [
+        {
+          id: 'r1',
+          templateId: 'letter',
+          name: 'acme',
+          documentId: 'd',
+          sourceJobId: 'j',
+          expected: { fields: {}, tables: {} },
+          createdAt: '',
+        },
+      ]),
+      getRegression: vi.fn(async () => report),
+      runRegression: vi.fn(async () => ({ jobs: [] })),
+    });
+    await userEvent.click(await tab(/Quality/));
+    await userEvent.click(await screen.findByRole('button', { name: 'Run regression on v2' }));
+    expect(api.runRegression).toHaveBeenCalledWith('letter', 2);
+    const row = await screen.findByRole('row', { name: /acme/ });
+    expect(row).toHaveTextContent('50%');
+    expect(row).toHaveTextContent('sender');
+    expect(row).toHaveTextContent('lines: 1 missing');
+    expect(screen.getByText(/Average score 50%/)).toBeInTheDocument();
+  });
+
   it('test-runs a draft on a sample document', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });

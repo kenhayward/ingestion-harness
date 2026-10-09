@@ -64,6 +64,27 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
     listTemplates: vi.fn(async () => []),
     getStepRuns: vi.fn(async () => []),
+    listReferences: vi.fn(async () => []),
+    createReference: vi.fn(async (templateId: string, jobId: string, name: string) => ({
+      id: 'ref-1',
+      templateId,
+      name,
+      documentId: 'doc',
+      sourceJobId: jobId,
+      expected: { fields: {}, tables: {} },
+      createdAt: '',
+    })),
+    deleteReference: vi.fn(async () => undefined),
+    runRegression: vi.fn(async () => ({ jobs: [] })),
+    getRegression: vi.fn(async () => ({
+      items: [],
+      summary: { references: 0, completed: 0, averageScore: null },
+    })),
+    diffVersions: vi.fn(async (_id: string, from: number, to: number) => ({
+      from,
+      to,
+      changes: [],
+    })),
     rerunStep: vi.fn(async () => job({ status: 'queued' })),
     createTemplate: vi.fn(async (id: string, name: string) =>
       templateView({ id, version: 1, name }),

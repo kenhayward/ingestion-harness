@@ -3,6 +3,7 @@ import type {
   JobDetail,
   JobSummary,
   ModelInfo,
+  Reference,
   RerunRequest,
   ReviewEdit,
   SpecSummary,
@@ -68,6 +69,37 @@ export interface TemplateRecordView {
   issues: { path: string; message: string }[];
 }
 
+export interface RegressionReport {
+  items: {
+    reference: { id: string; name: string };
+    job: { id: string; status: string; error: string | null } | null;
+    comparison: {
+      score: number;
+      fields: { id: string; expected: unknown; actual: unknown; match: boolean }[];
+      tables: {
+        id: string;
+        expected: number;
+        actual: number;
+        matched: number;
+        missing: Record<string, unknown>[];
+        extra: Record<string, unknown>[];
+      }[];
+    } | null;
+  }[];
+  summary: { references: number; completed: number; averageScore: number | null };
+}
+
+export interface VersionDiff {
+  from: number;
+  to: number;
+  changes: {
+    kind: 'added' | 'removed' | 'changed';
+    path: string;
+    before?: unknown;
+    after?: unknown;
+  }[];
+}
+
 export interface UploadRequest {
   file: File;
   specId: string;
@@ -91,6 +123,12 @@ export interface Api {
   pageUrl(jobId: string, page: number): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
+  listReferences(templateId: string): Promise<Reference[]>;
+  createReference(templateId: string, jobId: string, name: string): Promise<Reference>;
+  deleteReference(templateId: string, referenceId: string): Promise<void>;
+  runRegression(templateId: string, version: number): Promise<{ jobs: JobSummary[] }>;
+  getRegression(templateId: string, version: number): Promise<RegressionReport>;
+  diffVersions(templateId: string, from: number, to: number): Promise<VersionDiff>;
   listTemplates(): Promise<TemplateListItem[]>;
   createTemplate(id: string, name: string): Promise<TemplateRecordView>;
   getTemplate(id: string, version: number): Promise<TemplateRecordView>;
@@ -149,6 +187,27 @@ export function createHttpApi(base = '/api'): Api {
     getStepRuns: (jobId) => fetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
+    listReferences: (templateId) =>
+      fetch(`${base}/templates/${templateId}/references`).then(json<Reference[]>),
+    createReference: (templateId, jobId, name) =>
+      post<Reference>(`${base}/templates/${templateId}/references`, { jobId, name }),
+    deleteReference: async (templateId, referenceId) => {
+      const res = await fetch(`${base}/templates/${templateId}/references/${referenceId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) await json(res);
+    },
+    runRegression: (templateId, version) =>
+      post<{ jobs: JobSummary[] }>(
+        `${base}/templates/${templateId}/versions/${version}/regression`,
+        {},
+      ),
+    getRegression: (templateId, version) =>
+      fetch(`${base}/templates/${templateId}/versions/${version}/regression`).then(
+        json<RegressionReport>,
+      ),
+    diffVersions: (templateId, from, to) =>
+      fetch(`${base}/templates/${templateId}/diff?from=${from}&to=${to}`).then(json<VersionDiff>),
     listTemplates: () => fetch(`${base}/templates`).then(json<TemplateListItem[]>),
     createTemplate: (id, name) => post<TemplateRecordView>(`${base}/templates`, { id, name }),
     getTemplate: (id, version) =>

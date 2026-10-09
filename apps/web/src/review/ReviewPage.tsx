@@ -48,6 +48,8 @@ export function ReviewPage({
   const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [referenceName, setReferenceName] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
   const [stepRuns, setStepRuns] = useState<StepRun[]>([]);
   const [rerun, setRerun] = useState<{
     step: string;
@@ -447,6 +449,36 @@ export function ReviewPage({
             Reject
           </button>
         </footer>
+      ) : job.status === 'succeeded' ? (
+        <form
+          className="decision"
+          aria-label="Save as reference"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              try {
+                const ref = await api.createReference(job.specId, jobId, referenceName.trim());
+                setNotice(`Saved reference ${ref.name} for ${template.name}.`);
+                setReferenceName('');
+              } catch (err) {
+                setError((err as Error).message);
+              }
+            })();
+          }}
+        >
+          <p>
+            Finished. Save these (reviewed) values as a reference: template changes can then be
+            regression-tested against this document.
+          </p>
+          <label>
+            Reference name
+            <input value={referenceName} onChange={(e) => setReferenceName(e.target.value)} />
+          </label>
+          <button type="submit" disabled={!referenceName.trim()}>
+            Save as reference
+          </button>
+          {notice && <p role="status">{notice}</p>}
+        </form>
       ) : (
         <p className="decision">
           {job.status === 'rejected'
