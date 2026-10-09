@@ -185,3 +185,55 @@ def test_prompts_carry_page_markers_definitions_and_instructions(run) -> None:  
 
 def test_mark_pages_uses_original_page_numbers() -> None:
     assert mark_pages(["a", "b"], first_page=32) == ["[page 32]\na", "[page 33]\nb"]
+
+
+def test_page_previews_are_saved_for_the_review_screen(tmp_path: Path) -> None:
+    directory = tmp_path / "demo" / "v1"
+    directory.mkdir(parents=True)
+    (directory / "template.yaml").write_text(yaml.safe_dump(TEMPLATE), encoding="utf-8")
+    store = MemoryObjectStore()
+    store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
+    previews: list[int] = []
+    deps = PipelineDeps(
+        store=store,
+        specs=load_specs(tmp_path),
+        models=ModelRegistry(
+            {"local": FakeProvider("local", responses=list(RESPONSES))},
+            {"local": ProviderConfig(name="local", kind="openai-chat")},
+            {"default": "local/qwen"},
+        ),
+        extract_text=lambda _pdf: PAGES,
+        buckets=Buckets("inbox", "outputs", "runs"),
+        render_preview=lambda pdf, index: (
+            previews.append(index) or b"\xff\xd8jpeg" + bytes([index])
+        ),  # type: ignore[func-returns-value]
+    )
+    run_once(FakeQueue(jobs=[JOB]), deps, "w1")
+
+    assert previews == [0, 1, 2]
+    assert store.get("runs", "job-1/pages/page-1.jpg") == b"\xff\xd8jpeg\x00"
+    assert ("runs", "job-1/pages/page-3.jpg") in store.objects
+    doc = json.loads(store.get("outputs", "demo/v1/document/doc-1.json"))
+    assert doc["page_count"] == 3
+
+
+def test_render_preview_jpeg_from_a_real_pdf() -> None:
+    import pypdfium2 as pdfium
+    from PIL import Image
+
+    from ingest_worker.ocr import render_preview_jpeg
+
+    doc = pdfium.PdfDocument.new()
+    doc.new_page(612, 792)
+    buf = io.BytesIO()
+    doc.save(buf)
+    image = Image.open(io.BytesIO(render_preview_jpeg(buf.getvalue(), 0)))
+    assert image.format == "JPEG" and max(image.size) == 1400
+
+
+def test_preview_failures_do_not_fail_the_job(run) -> None:  # type: ignore[no-untyped-def]
+    """The default renderer can't read the fake '%PDF' bytes used here: the job still runs."""
+    _, store, queue = run
+    assert queue.awaiting and not queue.failed
+    assert any(msg == "page previews unavailable" for _, _, msg in queue.events)
+    assert not any(key.startswith("job-1/pages/") for _, key in store.objects)

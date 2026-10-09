@@ -23,6 +23,11 @@ def ocr_run_key(job_id: str, page_number: int) -> str:
     return f"{job_id}/ocr/page-{page_number}.md"
 
 
+def page_preview_key(job_id: str, page_number: int) -> str:
+    """JPEG preview of a 1-based page, shown on the review screen."""
+    return f"{job_id}/pages/page-{page_number}.jpg"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 

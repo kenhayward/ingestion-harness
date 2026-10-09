@@ -108,6 +108,24 @@ def render_page_png(pdf: bytes, index: int, longest_dim: int, rotation: int = 0)
         doc.close()
 
 
+def render_preview_jpeg(
+    pdf: bytes, index: int, longest_dim: int = 1400, quality: int = 80
+) -> bytes:
+    """Page preview for the review screen (JPEG keeps 60-page scans to a few MB)."""
+    import pypdfium2 as pdfium
+
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        page = doc[index]
+        width, height = page.get_size()
+        image = page.render(scale=longest_dim / max(width, height)).to_pil().convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+    finally:
+        doc.close()
+
+
 def ocr_page(
     provider: LLMProvider,
     model_id: str,

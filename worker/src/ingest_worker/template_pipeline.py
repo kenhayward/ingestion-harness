@@ -33,7 +33,7 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue
 from .review import apply_edits
 from .specs import LoadedTemplate
-from .storage import output_key
+from .storage import output_key, page_preview_key
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
@@ -46,6 +46,7 @@ def process_template_job(
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
     resolved = resolve_models(job, deps, list(compiled.values()))
     doc = prepare_document(job, deps, queue, template.document)
+    _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
     fields: dict[str, dict[str, Any]] = {}
     tables: dict[str, list[dict[str, Any]]] = {}
@@ -85,6 +86,7 @@ def process_template_job(
         "job_id": job.id,
         "template": {"id": template.id, "version": template.version, "name": template.name},
         "extracted_at": datetime.now(UTC).isoformat(),
+        "page_count": doc.total_pages,
         "models": models_used,
         "fields": fields,
         "tables": tables,
@@ -124,6 +126,18 @@ def publish_template_job(
     published = publish_outputs(deps, render_document(template, document))
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+def _save_previews(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, pdf: bytes, pages: int
+) -> None:
+    """JPEG previews for the review screen. A convenience: failures never fail the job."""
+    try:
+        for index in range(pages):
+            key = page_preview_key(job.id, index + 1)
+            deps.store.put(deps.buckets.runs, key, deps.render_preview(pdf, index), "image/jpeg")
+    except Exception as exc:
+        queue.event(job.id, "warn", "page previews unavailable", {"error": repr(exc)})
 
 
 def _normalise_step(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from .ocr import (
     pages_needing_ocr,
     parse_olmocr,
     render_page_png,
+    render_preview_jpeg,
 )
 from .outputs import RenderedOutput, render_outputs
 from .pdf import TextExtractor
@@ -69,6 +71,8 @@ class PipelineDeps:
     #: None disables OCR: image-only documents then go to needs_review.
     ocr: OcrSettings | None = None
     render_page: PageRenderer = field(default=render_page_png)
+    #: (pdf, 0-based page) -> JPEG preview for the review screen.
+    render_preview: Callable[[bytes, int], bytes] = field(default=render_preview_jpeg)
     #: Where approved outputs are delivered. None: outputs stay in the outputs bucket only.
     target: Target | None = None
 
