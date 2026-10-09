@@ -63,12 +63,34 @@ class FakeQueue:
     failed: list[tuple[str, str]] = field(default_factory=list)
     events: list[tuple[str, str, str]] = field(default_factory=list)
     models: list[ModelDescriptor] = field(default_factory=list)
+    awaiting: list[tuple[str, list[RenderedOutput], list[str]]] = field(default_factory=list)
+    published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
+    edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
 
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
         self.completed.append((job.id, outputs))
+
+    def await_review(
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        outputs_bucket: str,
+        reasons: list[str],
+    ) -> None:
+        self.awaiting.append((job.id, outputs, reasons))
+
+    def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        self.published.append((job.id, outputs, bucket))
+
+    def review_edits(self, job_id: str) -> list[dict[str, Any]]:
+        return self.edits.get(job_id, [])
+
+    def review_decision(self, job_id: str) -> dict[str, Any] | None:
+        return self.decisions.get(job_id)
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
         self.reviewed.append((job.id, reason))

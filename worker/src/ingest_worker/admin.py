@@ -51,7 +51,10 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         aws_secret_access_key=s.s3_secret_key,
         config=Config(s3={"addressing_style": "path"}),
     )
-    created = ensure_buckets(client, [s.bucket_inbox, s.bucket_outputs, s.bucket_runs])
+    buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs]
+    if s.target_endpoint == s.s3_endpoint:
+        buckets.append(s.target_bucket)  # an external target's bucket is managed elsewhere
+    created = ensure_buckets(client, buckets)
     log.info("buckets ready (created: %s)", ", ".join(created) or "none")
     return 0
 

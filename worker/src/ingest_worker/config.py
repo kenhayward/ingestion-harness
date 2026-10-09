@@ -25,6 +25,13 @@ class Settings:
     poll_interval_s: float
     discovery_interval_s: float
     stale_lock_s: float
+    #: Final target for published outputs (defaults: same S3 as the working buckets).
+    target_endpoint: str
+    target_region: str
+    target_access_key: str
+    target_secret_key: str
+    target_bucket: str
+    target_prefix: str
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -50,4 +57,10 @@ class Settings:
             poll_interval_s=float(env.get("POLL_INTERVAL_S", "2")),
             discovery_interval_s=float(env.get("DISCOVERY_INTERVAL_S", "3600")),
             stale_lock_s=float(env.get("STALE_LOCK_S", "900")),
+            target_endpoint=env.get("TARGET_S3_ENDPOINT") or env["S3_ENDPOINT"],
+            target_region=env.get("TARGET_S3_REGION") or env.get("S3_REGION", "us-east-1"),
+            target_access_key=env.get("TARGET_S3_ACCESS_KEY") or env["S3_ACCESS_KEY"],
+            target_secret_key=env.get("TARGET_S3_SECRET_KEY") or env["S3_SECRET_KEY"],
+            target_bucket=env.get("TARGET_S3_BUCKET", "ingest-published"),
+            target_prefix=env.get("TARGET_S3_PREFIX", ""),
         )

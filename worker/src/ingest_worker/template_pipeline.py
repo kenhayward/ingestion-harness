@@ -20,14 +20,18 @@ from typing import Any
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell
 from .pipeline import (
+    DocumentError,
     PipelineDeps,
+    ProcessResult,
     page_images,
     prepare_document,
+    publish_outputs,
     resolve_models,
     run_check_with_event,
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
+from .review import apply_edits
 from .specs import LoadedTemplate
 from .storage import output_key
 from .template import CheckStep, ExtractStep, Template, compile_step
@@ -37,7 +41,7 @@ ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
 
 def process_template_job(
     job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: LoadedTemplate
-) -> list[RenderedOutput]:
+) -> ProcessResult:
     template = loaded.template
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
     resolved = resolve_models(job, deps, list(compiled.values()))
@@ -76,11 +80,50 @@ def process_template_job(
     if reasons:
         queue.event(job.id, "warn", "review required", {"reasons": reasons})
 
-    outputs = _render(template, job, fields, tables, checks, issues, models_used, reasons)
+    document = {
+        "document_id": job.document_id,
+        "job_id": job.id,
+        "template": {"id": template.id, "version": template.version, "name": template.name},
+        "extracted_at": datetime.now(UTC).isoformat(),
+        "models": models_used,
+        "fields": fields,
+        "tables": tables,
+        "checks": checks,
+        "issues": issues,
+        "review_required": bool(reasons),
+        "review_reasons": reasons,
+    }
+    outputs = render_document(template, document)
     for o in outputs:
         content_type = "text/csv" if o.format == "csv" else "application/json"
         deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
-    return outputs
+    return ProcessResult(outputs, reasons)
+
+
+def publish_template_job(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: LoadedTemplate
+) -> list[RenderedOutput]:
+    """Apply the reviewer's edits to the draft (never modified) and deliver to the target."""
+    template = loaded.template
+    draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
+    draft = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
+    edits = queue.review_edits(job.id)
+    decision = queue.review_decision(job.id) or {}
+    try:
+        document = apply_edits(template, draft, edits)
+    except ValueError as exc:
+        raise DocumentError(f"cannot apply review edits: {exc}") from exc
+    document["review"] = {
+        "decision": "approved",
+        "reviewer": decision.get("reviewer"),
+        "note": decision.get("note"),
+        "reviewed_at": decision.get("reviewed_at"),
+        "edits": edits,
+    }
+    document["published_at"] = datetime.now(UTC).isoformat()
+    published = publish_outputs(deps, render_document(template, document))
+    queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
+    return published
 
 
 def _normalise_step(
@@ -168,17 +211,10 @@ def _csv(header: list[str], rows: list[list[Any]]) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
-def _render(
-    template: Template,
-    job: ClaimedJob,
-    fields: dict[str, dict[str, Any]],
-    tables: dict[str, list[dict[str, Any]]],
-    checks: dict[str, Any],
-    issues: list[dict[str, Any]],
-    models_used: dict[str, str],
-    reasons: list[str],
-) -> list[RenderedOutput]:
-    doc_id = job.document_id
+def render_document(template: Template, document: dict[str, Any]) -> list[RenderedOutput]:
+    """Render a (draft or reviewed) document into the template's outputs."""
+    doc_id = document["document_id"]
+    fields, tables = document["fields"], document["tables"]
 
     def key(output_id: str, fmt: str) -> str:
         return output_key(template.id, template.version, output_id, doc_id, fmt)  # type: ignore[arg-type]
@@ -186,39 +222,36 @@ def _render(
     out: list[RenderedOutput] = []
     if template.outputs.fields:
         ids = [f.id for f in template.outputs.fields]
-        body = _csv([DOCUMENT_ID_COLUMN, *ids], [[doc_id, *(fields[i]["value"] for i in ids)]])
-        out.append(RenderedOutput("fields", "csv", key("fields", "csv"), body, 1))
+        values = [(fields.get(i) or {}).get("value") for i in ids]
+        out.append(
+            RenderedOutput(
+                "fields",
+                "csv",
+                key("fields", "csv"),
+                _csv([DOCUMENT_ID_COLUMN, *ids], [[doc_id, *values]]),
+                1,
+            )
+        )
     for table in template.outputs.tables:
         cols = [c.id for c in table.columns]
         rows = tables.get(table.id, [])
-        body = _csv([DOCUMENT_ID_COLUMN, *cols], [[doc_id, *(r[c] for c in cols)] for r in rows])
+        body = _csv(
+            [DOCUMENT_ID_COLUMN, *cols], [[doc_id, *(r.get(c) for c in cols)] for r in rows]
+        )
         out.append(RenderedOutput(table.id, "csv", key(table.id, "csv"), body, len(rows)))
     check_cols = ["value", "status", "matched", "distance", "count"]
-    for check_id, result in checks.items():
+    for check_id, result in document["checks"].items():
         rows = result["rows"]
         body = _csv(
             [DOCUMENT_ID_COLUMN, *check_cols], [[doc_id, *(r[c] for c in check_cols)] for r in rows]
         )
         out.append(RenderedOutput(check_id, "csv", key(check_id, "csv"), body, len(rows)))
+    issues = document["issues"]
     body = _csv(
         [DOCUMENT_ID_COLUMN, *ISSUE_COLUMNS],
-        [[doc_id, *(i[c] for c in ISSUE_COLUMNS)] for i in issues],
+        [[doc_id, *(i.get(c) for c in ISSUE_COLUMNS)] for i in issues],
     )
     out.append(RenderedOutput("issues", "csv", key("issues", "csv"), body, len(issues)))
-
-    document = {
-        "document_id": doc_id,
-        "job_id": job.id,
-        "template": {"id": template.id, "version": template.version, "name": template.name},
-        "extracted_at": datetime.now(UTC).isoformat(),
-        "models": models_used,
-        "fields": fields,
-        "tables": tables,
-        "checks": checks,
-        "issues": issues,
-        "review_required": bool(reasons),
-        "review_reasons": reasons,
-    }
     body = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
     out.append(RenderedOutput("document", "json", key("document", "json"), body, None))
     return out

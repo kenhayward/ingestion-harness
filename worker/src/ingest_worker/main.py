@@ -8,23 +8,39 @@ import time
 from .config import Settings
 from .llm.registry import build_registry, load_llm_config
 from .ocr import OcrSettings
+from .outputs import RenderedOutput
 from .pdf import extract_pages
-from .pipeline import Buckets, DocumentError, PipelineDeps, process_job
-from .queue import JobQueue, PgJobQueue
-from .specs import load_specs
+from .pipeline import (
+    Buckets,
+    DocumentError,
+    PipelineDeps,
+    Target,
+    process_job,
+    publish_outputs,
+)
+from .queue import ClaimedJob, JobQueue, PgJobQueue
+from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
+from .template_pipeline import publish_template_job
 
 log = logging.getLogger("ingest_worker")
 
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
-    """Claim and process one job. Returns False when the queue is empty."""
+    """Claim and run one job (process or publish). Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
-    log.info("claimed job %s (attempt %d/%d)", job.id, job.attempts, job.max_attempts)
+    log.info("claimed %s job %s (attempt %d/%d)", job.task, job.id, job.attempts, job.max_attempts)
     try:
-        outputs = process_job(job, deps, queue)
+        if job.task == "publish":
+            published = publish_job(job, deps, queue)
+            if deps.target is not None:
+                queue.record_published(job, published, deps.target.bucket)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s published %d outputs", job.id, len(published))
+            return True
+        result = process_job(job, deps, queue)
     except DocumentError as exc:
         log.warning("job %s needs review: %s", job.id, exc)
         queue.event(job.id, "warn", "needs review", {"reason": str(exc)})
@@ -34,9 +50,23 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
         queue.event(job.id, "error", "failed", {"error": repr(exc)})
         queue.fail(job, f"{type(exc).__name__}: {exc}")
     else:
-        queue.complete(job, outputs, deps.buckets.outputs)
-        log.info("job %s succeeded with %d outputs", job.id, len(outputs))
+        if result.review_reasons:
+            queue.await_review(job, result.outputs, deps.buckets.outputs, result.review_reasons)
+            log.info("job %s awaiting review: %s", job.id, "; ".join(result.review_reasons))
+        else:
+            published = publish_outputs(deps, result.outputs)
+            if deps.target is not None:
+                queue.record_published(job, published, deps.target.bucket)
+            queue.complete(job, result.outputs, deps.buckets.outputs)
+            log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
     return True
+
+
+def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
+    loaded = deps.specs.get(job.spec_id, job.spec_version)
+    if not isinstance(loaded, LoadedTemplate):
+        raise DocumentError("only template documents go through review/publish")
+    return publish_template_job(job, deps, queue, loaded)
 
 
 def main() -> None:
@@ -67,6 +97,16 @@ def main() -> None:
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
         ocr=ocr,
+        target=Target(
+            store=S3ObjectStore(
+                settings.target_endpoint,
+                settings.target_region,
+                settings.target_access_key,
+                settings.target_secret_key,
+            ),
+            bucket=settings.target_bucket,
+            prefix=settings.target_prefix,
+        ),
     )
     log.info(
         "worker %s started: %d specs, providers=%s, ocr=%s",

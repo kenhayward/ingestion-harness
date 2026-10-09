@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -44,6 +44,22 @@ class Buckets:
 
 
 @dataclass
+class Target:
+    """Final destination for published outputs (any S3 endpoint/bucket; keys get `prefix`)."""
+
+    store: ObjectStore
+    bucket: str
+    prefix: str = ""
+
+
+@dataclass
+class ProcessResult:
+    outputs: list[RenderedOutput]
+    #: Non-empty when the document must be reviewed before publishing.
+    review_reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
 class PipelineDeps:
     store: ObjectStore
     specs: SpecRegistry
@@ -53,6 +69,8 @@ class PipelineDeps:
     #: None disables OCR: image-only documents then go to needs_review.
     ocr: OcrSettings | None = None
     render_page: PageRenderer = field(default=render_page_png)
+    #: Where approved outputs are delivered. None: outputs stay in the outputs bucket only.
+    target: Target | None = None
 
 
 @dataclass
@@ -125,7 +143,18 @@ def prepare_document(
     return Prepared(pdf, total_pages, sections)
 
 
-def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
+def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[RenderedOutput]:
+    """Write outputs to the final target (same layout, keys prefixed). Returns what was written."""
+    if deps.target is None:
+        return []
+    published = [replace(o, key=f"{deps.target.prefix}{o.key}") for o in outputs]
+    for o in published:
+        content_type = "text/csv" if o.format == "csv" else "application/json"
+        deps.target.store.put(deps.target.bucket, o.key, o.body, content_type)
+    return published
+
+
+def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ProcessResult:
     loaded = deps.specs.get(job.spec_id, job.spec_version)
     if isinstance(loaded, LoadedTemplate):
         from .template_pipeline import process_template_job
@@ -167,7 +196,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     for o in outputs:
         content_type = "text/csv" if o.format == "csv" else "application/json"
         deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
-    return outputs
+    return ProcessResult(outputs)
 
 
 def _ocr_pages(

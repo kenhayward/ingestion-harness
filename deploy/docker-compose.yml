@@ -12,6 +12,13 @@ x-s3-env: &s3-env
   S3_BUCKET_INBOX: ${S3_BUCKET_INBOX:-ingest-inbox}
   S3_BUCKET_OUTPUTS: ${S3_BUCKET_OUTPUTS:-ingest-outputs}
   S3_BUCKET_RUNS: ${S3_BUCKET_RUNS:-ingest-runs}
+  # Final target for approved outputs; empty endpoint/keys = same SeaweedFS as above.
+  TARGET_S3_ENDPOINT: ${TARGET_S3_ENDPOINT:-}
+  TARGET_S3_REGION: ${TARGET_S3_REGION:-}
+  TARGET_S3_ACCESS_KEY: ${TARGET_S3_ACCESS_KEY:-}
+  TARGET_S3_SECRET_KEY: ${TARGET_S3_SECRET_KEY:-}
+  TARGET_S3_BUCKET: ${TARGET_S3_BUCKET:-ingest-published}
+  TARGET_S3_PREFIX: ${TARGET_S3_PREFIX:-}
 
 x-db-env: &db-env
   DATABASE_URL: postgres://${POSTGRES_USER:-ingest}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-ingest}
