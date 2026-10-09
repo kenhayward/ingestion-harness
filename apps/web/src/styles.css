@@ -46,3 +46,9 @@ td {
   font-size: 0.75rem;
   opacity: 0.8;
 }
+.status-awaiting_review {
+  color: #0969da;
+}
+.status-rejected {
+  color: #57606a;
+}

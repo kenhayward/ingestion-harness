@@ -1,11 +1,19 @@
 import pg from 'pg';
-import type { JobDetail, JobStatus, JobSummary, ModelInfo, ProviderKind } from '@ih/shared';
+import type {
+  JobDetail,
+  JobStatus,
+  JobSummary,
+  ModelInfo,
+  ProviderKind,
+  ReviewEdit,
+} from '@ih/shared';
 import { modelRef } from '@ih/shared';
-import type { IngestionRepo, ListJobsQuery, NewDocument } from './types.js';
+import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types.js';
 
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.created_at, j.updated_at
+         j.model_override, j.attempts, j.error, j.task, j.review_reasons, j.reviewer,
+         j.review_note, j.reviewed_at, j.created_at, j.updated_at
     FROM jobs j JOIN documents d ON d.id = j.document_id`;
 
 interface JobRow {
@@ -18,6 +26,11 @@ interface JobRow {
   model_override: string | null;
   attempts: number;
   error: string | null;
+  task: 'process' | 'publish';
+  review_reasons: string[] | null;
+  reviewer: string | null;
+  review_note: string | null;
+  reviewed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -33,8 +46,41 @@ function toSummary(r: JobRow): JobSummary {
     modelOverride: r.model_override,
     attempts: r.attempts,
     error: r.error,
+    task: r.task,
+    reviewReasons: r.review_reasons,
+    reviewer: r.reviewer,
+    reviewNote: r.review_note,
+    reviewedAt: r.reviewed_at ? r.reviewed_at.toISOString() : null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
+  };
+}
+
+interface EditRow {
+  id: string;
+  at: Date;
+  field_id: string | null;
+  table_id: string | null;
+  row_number: number | null;
+  column_id: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  editor: string | null;
+  reason: string | null;
+}
+
+function toEdit(r: EditRow): ReviewEdit {
+  return {
+    id: Number(r.id),
+    at: r.at.toISOString(),
+    field: r.field_id,
+    table: r.table_id,
+    row: r.row_number,
+    column: r.column_id,
+    oldValue: r.old_value,
+    newValue: r.new_value,
+    editor: r.editor,
+    reason: r.reason,
   };
 }
 
@@ -100,18 +146,21 @@ export class PgRepo implements IngestionRepo {
     if (!rows[0]) return null;
     const outputs = await this.pool.query<{
       output_id: string;
+      stage: 'draft' | 'published';
       format: 'csv' | 'json';
       bucket: string;
       object_key: string;
       row_count: number | null;
     }>(
-      `SELECT output_id, format, bucket, object_key, row_count FROM job_outputs WHERE job_id = $1 ORDER BY output_id`,
+      `SELECT output_id, stage, format, bucket, object_key, row_count FROM job_outputs
+        WHERE job_id = $1 ORDER BY stage, output_id`,
       [id],
     );
     return {
       ...toSummary(rows[0]),
       outputs: outputs.rows.map((o) => ({
         outputId: o.output_id,
+        stage: o.stage,
         format: o.format,
         bucket: o.bucket,
         key: o.object_key,
@@ -122,12 +171,61 @@ export class PgRepo implements IngestionRepo {
 
   async retryJob(id: string): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
-      `UPDATE jobs SET status = 'queued', attempts = 0, error = NULL, run_after = now(),
+      `UPDATE jobs SET status = 'queued', task = 'process', attempts = 0, error = NULL, run_after = now(),
               locked_by = NULL, locked_at = NULL, updated_at = now()
         WHERE id = $1 AND status IN ('failed', 'needs_review')`,
       [id],
     );
     return rowCount ? await this.getJob(id) : null;
+  }
+
+  async listEdits(jobId: string): Promise<ReviewEdit[]> {
+    const { rows } = await this.pool.query<EditRow>(
+      `SELECT * FROM review_edits WHERE job_id = $1 ORDER BY id`,
+      [jobId],
+    );
+    return rows.map(toEdit);
+  }
+
+  async addEdit(jobId: string, e: NewEdit): Promise<ReviewEdit> {
+    const { rows } = await this.pool.query<EditRow>(
+      `INSERT INTO review_edits
+         (job_id, field_id, table_id, row_number, column_id, old_value, new_value, editor, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [
+        jobId,
+        e.field,
+        e.table,
+        e.row,
+        e.column,
+        JSON.stringify(e.oldValue ?? null),
+        JSON.stringify(e.newValue ?? null),
+        e.editor,
+        e.reason,
+      ],
+    );
+    return toEdit(rows[0]!);
+  }
+
+  async approve(jobId: string, reviewer: string | null, note: string | null) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE jobs SET status = 'queued', task = 'publish', attempts = 0, error = NULL,
+              run_after = now(), reviewer = $2, review_note = $3, reviewed_at = now(),
+              updated_at = now()
+        WHERE id = $1 AND status = 'awaiting_review'`,
+      [jobId, reviewer, note],
+    );
+    return rowCount ? await this.getJob(jobId) : null;
+  }
+
+  async reject(jobId: string, reviewer: string | null, reason: string) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE jobs SET status = 'rejected', reviewer = $2, review_note = $3, reviewed_at = now(),
+              updated_at = now()
+        WHERE id = $1 AND status = 'awaiting_review'`,
+      [jobId, reviewer, reason],
+    );
+    return rowCount ? await this.getJob(jobId) : null;
   }
 
   async listModels(): Promise<ModelInfo[]> {

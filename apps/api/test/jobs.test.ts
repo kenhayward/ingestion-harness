@@ -49,6 +49,7 @@ describe('jobs API', () => {
     repo.outputs.set(job.id, [
       {
         outputId: 'lines',
+        stage: 'draft',
         format: 'csv',
         bucket: 'outputs',
         key: 'demo/v2/lines/x.csv',
@@ -68,7 +69,10 @@ describe('specs and models API', () => {
   it('lists all spec versions and fetches the latest by default', async () => {
     const { app } = await testApp();
     expect(
-      (await app.inject('/api/specs')).json().map((s: { version: number }) => s.version),
+      (await app.inject('/api/specs'))
+        .json()
+        .filter((s: { id: string }) => s.id === 'demo')
+        .map((s: { version: number }) => s.version),
     ).toEqual([1, 2]);
     expect((await app.inject('/api/specs/demo')).json().version).toBe(2);
     expect((await app.inject('/api/specs/demo?version=1')).json().version).toBe(1);

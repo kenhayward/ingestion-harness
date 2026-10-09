@@ -1,4 +1,4 @@
-import { DocumentSpecSchema } from '@ih/shared';
+import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
 import { buildApp } from '../src/app.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
@@ -15,13 +15,44 @@ export const demoSpec = DocumentSpecSchema.parse({
   outputs: [{ id: 'all', format: 'json', from: '*' }],
 });
 
+/** A document template (review workflow): two fields and one table. */
+export const demoTemplate = TemplateSchema.parse({
+  id: 'tdemo',
+  version: 1,
+  name: 'Template demo',
+  document: { sections: [{ id: 'all', anchor: '\\A' }] },
+  outputs: {
+    fields: [
+      { id: 'product', type: 'text' },
+      { id: 'executed_on', type: 'date' },
+    ],
+    tables: [
+      {
+        id: 'results',
+        columns: [
+          { id: 'batch', type: 'text' },
+          { id: 'value', type: 'decimal' },
+        ],
+      },
+    ],
+  },
+  pipeline: [
+    { type: 'extract', id: 'head', fields: ['product', 'executed_on'], sections: ['all'] },
+    { type: 'extract', id: 'data', table: 'results', sections: ['all'] },
+  ],
+});
+
 export async function testApp() {
   const repo = new MemoryRepo();
   const store = new MemoryObjectStore();
   const app = await buildApp({
     repo,
     store,
-    specs: SpecRegistry.fromSpecs([demoSpec, { ...demoSpec, version: 2, title: 'Demo v2' }]),
+    specs: SpecRegistry.fromDefinitions([
+      { kind: 'spec', id: 'demo', version: 1, spec: demoSpec },
+      { kind: 'spec', id: 'demo', version: 2, spec: { ...demoSpec, version: 2, title: 'Demo v2' } },
+      { kind: 'template', id: 'tdemo', version: 1, template: demoTemplate },
+    ]),
     buckets: { inbox: 'inbox', outputs: 'outputs' },
     maxUploadBytes: 1024 * 1024,
   });

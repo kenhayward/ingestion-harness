@@ -24,9 +24,11 @@ describe('storage keys', () => {
 });
 
 describe('job status', () => {
-  it('treats succeeded, failed and needs_review as terminal', () => {
+  it('treats succeeded, failed, needs_review and rejected as terminal', () => {
     expect(isTerminal('queued')).toBe(false);
     expect(isTerminal('running')).toBe(false);
+    expect(isTerminal('awaiting_review')).toBe(false); // waiting for a person, not finished
     expect(isTerminal('needs_review')).toBe(true);
+    expect(isTerminal('rejected')).toBe(true);
   });
 });

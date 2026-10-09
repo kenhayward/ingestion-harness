@@ -13,10 +13,20 @@
 ## Job lifecycle
 
 ```
-upload ─► queued ─► running ─┬─► succeeded
-              ▲              ├─► needs_review   (DocumentError: not retried; human looks, then Retry)
-              └── backoff ◄──┴─► failed         (transient errors, after max_attempts)
+upload ─► queued ─► running ─┬─► succeeded ......... published to the final target (no review needed)
+              ▲              ├─► awaiting_review ─┬─ approve ─► queued (task=publish) ─► succeeded
+              │              │    (data review)   └─ reject ──► rejected (final, with reason)
+              │              ├─► needs_review      (processing problem: document/spec/config; Retry)
+              └── backoff ◄──┴─► failed            (transient errors, after max_attempts)
 ```
+
+Review (template documents): the review policy (`always` / `on_warnings` / `never`) decides
+whether a processed document waits in `awaiting_review`. Drafts stay in the outputs bucket.
+Reviewers add edits (`POST /api/jobs/:id/edits`, recorded in `review_edits` with old/new value,
+editor, reason) and approve or reject. Approval re-queues the job as a *publish* task: the
+worker applies the edits to the draft `document.json` (re-normalised by type, issues for edited
+values replaced, checks re-run), renders the outputs with a `review` block and writes them to
+the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are never modified.
 
 1. **Upload** (`POST /api/documents`): PDF magic-byte check, spec resolved (latest version unless
    pinned), optional model override validated against discovered models. PDF stored at
