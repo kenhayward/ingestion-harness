@@ -158,8 +158,34 @@ def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[R
     return published
 
 
+def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any:
+    """The job's document type: a database template if one exists, else a file (spec or
+    template) from the specs directory."""
+    from pydantic import ValidationError
+
+    from .template import Template
+
+    raw = queue.load_template(job.spec_id, job.spec_version)
+    if raw is None:
+        return deps.specs.get(job.spec_id, job.spec_version)
+    name = f"template {job.spec_id} v{job.spec_version}"
+    try:
+        template = Template.model_validate(raw)
+    except ValidationError as exc:
+        raise DocumentError(f"{name} is invalid: {exc}") from exc
+    custom = [
+        s.id for s in template.extract_steps() if s.prompt and not s.prompt.startswith("builtin/")
+    ]
+    if custom:
+        raise DocumentError(
+            f"{name}: custom prompt files are not supported for database templates "
+            f"(steps {', '.join(custom)}); use instructions"
+        )
+    return LoadedTemplate(template, None)
+
+
 def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ProcessResult:
-    loaded = deps.specs.get(job.spec_id, job.spec_version)
+    loaded = load_definition(job, deps, queue)
     if isinstance(loaded, LoadedTemplate):
         from .template_pipeline import process_template_job
 
@@ -269,7 +295,7 @@ def _ocr_pages(
 def run_step_extraction(
     job: ClaimedJob,
     deps: PipelineDeps,
-    directory: Path,
+    directory: Path | None,
     ex: Extraction,
     provider: LLMProvider,
     model_id: str,

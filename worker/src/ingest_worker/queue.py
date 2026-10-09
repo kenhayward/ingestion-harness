@@ -26,6 +26,8 @@ class ClaimedJob:
     max_attempts: int
     #: "process" (extract) or "publish" (apply review edits and deliver to the final target).
     task: str = "process"
+    #: Test run of a (draft) template: processed and reviewable, never published.
+    test: bool = False
 
 
 class JobQueue(Protocol):
@@ -54,6 +56,10 @@ class JobQueue(Protocol):
         ...
 
     def review_decision(self, job_id: str) -> dict[str, Any] | None: ...
+
+    def load_template(self, template_id: str, version: int) -> dict[str, Any] | None:
+        """Template definition stored in the database (None: not a database template)."""
+        ...
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None: ...
 
@@ -85,7 +91,7 @@ WITH next AS (
   RETURNING j.*
 )
 SELECT c.id::text, c.document_id::text, d.spec_id, d.spec_version, d.bucket, d.object_key,
-       c.model_override, c.attempts, c.max_attempts, c.task
+       c.model_override, c.attempts, c.max_attempts, c.task, c.test
   FROM claimed c JOIN documents d ON d.id = c.document_id
 """
 
@@ -171,6 +177,13 @@ class PgJobQueue:
         if row is None or row[2] is None:
             return None
         return {"reviewer": row[0], "note": row[1], "reviewed_at": row[2].isoformat()}
+
+    def load_template(self, template_id: str, version: int) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT definition FROM templates WHERE id = %s AND version = %s",
+            (template_id, version),
+        ).fetchone()
+        return row[0] if row else None
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
         self._finish(job.id, "needs_review", reason)

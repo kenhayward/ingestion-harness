@@ -15,6 +15,7 @@ from .pipeline import (
     DocumentError,
     PipelineDeps,
     Target,
+    load_definition,
     process_job,
     publish_outputs,
 )
@@ -54,8 +55,8 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             queue.await_review(job, result.outputs, deps.buckets.outputs, result.review_reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(result.review_reasons))
         else:
-            published = publish_outputs(deps, result.outputs)
-            if deps.target is not None:
+            published = [] if job.test else publish_outputs(deps, result.outputs)
+            if deps.target is not None and published:
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, result.outputs, deps.buckets.outputs)
             log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
@@ -63,7 +64,9 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
 
 
 def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
-    loaded = deps.specs.get(job.spec_id, job.spec_version)
+    if job.test:
+        raise DocumentError("test runs are never published")
+    loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only template documents go through review/publish")
     return publish_template_job(job, deps, queue, loaded)

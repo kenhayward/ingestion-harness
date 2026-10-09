@@ -10,7 +10,7 @@ BUILTIN_DIR = Path(__file__).parent / "prompt_templates"
 
 
 def render_prompt(
-    spec_dir: Path,
+    spec_dir: Path | None,
     template: str,
     sections: dict[str, str],
     section_ids: list[str],
@@ -21,7 +21,10 @@ def render_prompt(
     ({index, count} for chunked extractions, else None) and any extra `context` variables."""
     env = Environment(
         loader=ChoiceLoader(
-            [FileSystemLoader(spec_dir), PrefixLoader({"builtin": FileSystemLoader(BUILTIN_DIR)})]
+            [
+                *([FileSystemLoader(spec_dir)] if spec_dir is not None else []),
+                PrefixLoader({"builtin": FileSystemLoader(BUILTIN_DIR)}),
+            ]
         ),
         undefined=StrictUndefined,
         autoescape=False,  # prompts, not HTML

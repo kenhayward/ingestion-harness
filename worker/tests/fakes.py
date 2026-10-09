@@ -67,6 +67,8 @@ class FakeQueue:
     published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Templates stored in the database, keyed by (id, version).
+    templates: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
@@ -91,6 +93,9 @@ class FakeQueue:
 
     def review_decision(self, job_id: str) -> dict[str, Any] | None:
         return self.decisions.get(job_id)
+
+    def load_template(self, template_id: str, version: int) -> dict[str, Any] | None:
+        return self.templates.get((template_id, version))
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
         self.reviewed.append((job.id, reason))

@@ -189,11 +189,12 @@ class LoadedSpec:
 class LoadedTemplate:
     """A validated document template (ingest_worker.template) and its directory."""
 
-    def __init__(self, template: Any, directory: Path) -> None:
+    def __init__(self, template: Any, directory: Path | None) -> None:
         from .template import Template
 
         assert isinstance(template, Template)
         self.template: Template = template
+        #: None for templates stored in the database (built-in prompts only).
         self.directory = directory
 
 
