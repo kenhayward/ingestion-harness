@@ -44,6 +44,45 @@ def test_copies_and_page_images() -> None:
         DocumentSpec.model_validate({**MINIMAL, "extractions": [{**ex, "pageImages": [0]}]})
 
 
+ARRAY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["rows", "note"],
+    "properties": {
+        "rows": {"type": "array", "items": {"type": "object"}},
+        "note": {"type": "string"},
+    },
+}
+
+
+def chunked(**overrides: object) -> dict[str, object]:
+    ex = {**MINIMAL["extractions"][0], "schema": ARRAY_SCHEMA, "chunkPages": 2, "mergePath": "rows"}  # type: ignore[dict-item]
+    return {**MINIMAL, "extractions": [{**ex, **overrides}]}
+
+
+def test_chunking_and_max_tokens() -> None:
+    spec = DocumentSpec.model_validate(chunked(maxTokens=32000))
+    ex = spec.extractions[0]
+    assert (ex.chunk_pages, ex.merge_path, ex.max_tokens) == (2, "rows", 32000)
+    assert DocumentSpec.model_validate(MINIMAL).extractions[0].max_tokens == 16000
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"mergePath": None}, "mergePath"),
+        ({"mergePath": "note"}, "array"),
+        ({"mergePath": "missing"}, "array"),
+        ({"sections": ["h", "h2"]}, "exactly one section"),
+    ],
+)
+def test_chunking_is_validated(overrides: dict[str, object], message: str) -> None:
+    raw = chunked(**overrides)
+    raw["document"] = {"sections": [{"id": "h", "anchor": "^H"}, {"id": "h2", "anchor": "^J"}]}
+    with pytest.raises(ValidationError, match=message):
+        DocumentSpec.model_validate(raw)
+
+
 def test_ocr_mode_is_validated() -> None:
     doc = {**MINIMAL["document"], "ocr": "always"}  # type: ignore[dict-item]
     assert DocumentSpec.model_validate({**MINIMAL, "document": doc}).document.ocr == "always"

@@ -34,6 +34,12 @@ class Extraction(_Model):
     max_attempts: int = Field(default=2, ge=1, le=5, alias="maxAttempts")
     #: 1-based PDF pages sent as images with the prompt (needs a vision-capable model).
     page_images: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, alias="pageImages")
+    #: Output token budget per LLM call.
+    max_tokens: int = Field(default=16000, ge=256, le=128000, alias="maxTokens")
+    #: Run once per N pages of the (single) section and concatenate `merge_path` arrays.
+    chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
+    #: Top-level array property of the schema merged across chunks.
+    merge_path: str | None = Field(default=None, min_length=1, alias="mergePath")
 
 
 class CsvColumn(_Model):
@@ -111,6 +117,18 @@ class DocumentSpec(_Model):
                 for s in e.sections
                 if s not in section_ids
             ]
+        for e in self.extractions:
+            if e.chunk_pages is None:
+                continue
+            if len(e.sections) != 1:
+                errors.append(f"extraction {e.id!r}: chunkPages needs exactly one section")
+            if not e.merge_path:
+                errors.append(f"extraction {e.id!r}: chunkPages needs mergePath")
+            elif e.schema_.get("properties", {}).get(e.merge_path, {}).get("type") != "array":
+                errors.append(
+                    f"extraction {e.id!r}: mergePath {e.merge_path!r} must be a top-level "
+                    "array property of the schema"
+                )
         for o in self.outputs:
             if o.from_ != "*" and o.from_ not in extraction_ids:
                 errors.append(f"output {o.id!r}: unknown extraction {o.from_!r}")

@@ -14,6 +14,7 @@ from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ocr import OcrSettings
 from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.prompts import render_prompt
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import CopySelection, LoadedSpec, SpecRegistry, load_specs
 from ingest_worker.storage import MemoryObjectStore
@@ -308,6 +309,43 @@ def test_copy_selection_segments_only_the_selected_copy(setup, fixture_specs_dir
     assert "DRAFT" not in provider.calls[0][1].prompt
     assert "Acme Supplies" in provider.calls[0][1].prompt
     assert ("job-1", "info", "selected copy") in queue.events
+
+
+def test_chunked_extraction_runs_per_page_and_merges_arrays(setup, fixture_specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    loaded = deps.specs.get("example-invoice", 1)
+    extractions = list(loaded.spec.extractions)
+    extractions[1] = extractions[1].model_copy(
+        update={"chunk_pages": 1, "merge_path": "items", "max_tokens": 4000}
+    )
+    with_spec_changes(deps, fixture_specs_dir, extractions=extractions)
+    first, second = LINES["items"]
+    provider.responses = [HEADER, {"items": [first]}, {"items": [second]}]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    chunk_calls = provider.calls[1:]
+    assert len(chunk_calls) == 2
+    assert "Widget" in chunk_calls[0][1].prompt and "Gadget" not in chunk_calls[0][1].prompt
+    assert "Gadget" in chunk_calls[1][1].prompt and "Widget" not in chunk_calls[1][1].prompt
+    assert all(req.max_tokens == 4000 for _, req in chunk_calls)
+    lines_csv = store.get("outputs", "example-invoice/v1/invoice_lines/doc-1.csv").decode()
+    assert [row.split(",")[2] for row in lines_csv.splitlines()[1:]] == ["Widget", "Gadget"]
+    assert ("runs", "job-1/line_items.chunk-2/attempt-1.json") in store.objects
+
+
+def test_chunk_info_is_available_to_prompt_templates(tmp_path: Path) -> None:
+    (tmp_path / "p.j2").write_text(
+        "{% if chunk %}part {{ chunk.index }}/{{ chunk.count }}{% else %}whole{% endif %}",
+        encoding="utf-8",
+    )
+    assert render_prompt(tmp_path, "p.j2", {"s": "x"}, ["s"]) == "whole"
+    assert (
+        render_prompt(tmp_path, "p.j2", {"s": "x"}, ["s"], chunk={"index": 2, "count": 5})
+        == "part 2/5"
+    )
 
 
 class ConcurrentOcr(FakeProvider):

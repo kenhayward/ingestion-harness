@@ -31,6 +31,12 @@ export const ExtractionSchema = z
     maxAttempts: z.number().int().min(1).max(5).default(2),
     /** 1-based PDF pages sent as images with the prompt (needs a vision-capable model). */
     pageImages: z.array(z.number().int().positive()).default([]),
+    /** Output token budget per LLM call. */
+    maxTokens: z.number().int().min(256).max(128000).default(16000),
+    /** Run once per N pages of the (single) section and concatenate `mergePath` arrays. */
+    chunkPages: z.number().int().positive().optional(),
+    /** Top-level array property of the schema merged across chunks. */
+    mergePath: z.string().min(1).optional(),
   })
   .strict();
 
@@ -125,6 +131,26 @@ export const DocumentSpecSchema = z
         }
       }),
     );
+
+    spec.extractions.forEach((e, i) => {
+      if (e.chunkPages === undefined) return;
+      const path = ['extractions', i];
+      if (e.sections.length !== 1) {
+        ctx.addIssue({ code: 'custom', path, message: 'chunkPages needs exactly one section' });
+      }
+      if (!e.mergePath) {
+        ctx.addIssue({ code: 'custom', path, message: 'chunkPages needs mergePath' });
+        return;
+      }
+      const props = (e.schema as { properties?: Record<string, { type?: unknown }> }).properties;
+      if (props?.[e.mergePath]?.type !== 'array') {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: `mergePath "${e.mergePath}" must be a top-level array property of the schema`,
+        });
+      }
+    });
 
     spec.outputs.forEach((o, i) => {
       if (o.from !== '*' && !extractionIds.has(o.from)) {

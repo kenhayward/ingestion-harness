@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
 def render_prompt(
-    spec_dir: Path, template: str, sections: dict[str, str], section_ids: list[str]
+    spec_dir: Path,
+    template: str,
+    sections: dict[str, str],
+    section_ids: list[str],
+    chunk: dict[str, Any] | None = None,
 ) -> str:
-    """Render a spec's Jinja2 prompt. Templates receive `sections` as [{id, text}, ...]."""
+    """Render a spec's Jinja2 prompt. Templates receive `sections` as [{id, text}, ...] and
+    `chunk` ({index, count} for chunked extractions, else None)."""
     env = Environment(
         loader=FileSystemLoader(spec_dir),
         undefined=StrictUndefined,
@@ -17,4 +23,5 @@ def render_prompt(
     )
     return env.get_template(template).render(
         sections=[{"id": sid, "text": sections[sid]} for sid in section_ids],
+        chunk=chunk,
     )

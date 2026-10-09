@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from .extract import ExtractionFailedError, run_extraction
+from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import LLMProvider, RefusalError
 from .llm.registry import ModelRegistry, ModelResolutionError
 from .ocr import (
@@ -21,8 +21,8 @@ from .outputs import RenderedOutput, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
-from .segment import MissingSectionsError, segment, select_copy
-from .specs import OcrMode, SpecRegistry
+from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
+from .specs import Extraction, LoadedSpec, OcrMode, SpecRegistry
 from .storage import ObjectStore, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
@@ -101,24 +101,8 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     models_used: dict[str, str] = {}
     for ex in spec.extractions:
         provider, model_id = resolved[ex.id]
-        prompt = render_prompt(loaded.directory, ex.prompt, sections, ex.sections)
         images = _page_images(job, deps, queue, pdf, ex.page_images, total_pages)
-        try:
-            result = run_extraction(
-                extraction_id=ex.id,
-                provider=provider,
-                model_id=model_id,
-                prompt=prompt,
-                schema=ex.schema_,
-                max_attempts=ex.max_attempts,
-                images=images,
-            )
-        except ExtractionFailedError as exc:
-            _audit(deps, job.id, ex.id, exc.attempts)
-            raise DocumentError(str(exc)) from exc
-        except RefusalError as exc:
-            raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
-        _audit(deps, job.id, ex.id, result.attempts)
+        result = _run_extraction(job, deps, loaded, ex, provider, model_id, sections, images)
         results[ex.id] = result.data
         models_used[ex.id] = result.model_ref
         queue.event(
@@ -191,6 +175,66 @@ def _ocr_pages(
         {"model": f"{provider.name}/{model_id}", "pages": [i + 1 for i in targets]},
     )
     return pages
+
+
+def _run_extraction(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    loaded: LoadedSpec,
+    ex: Extraction,
+    provider: LLMProvider,
+    model_id: str,
+    sections: dict[str, str],
+    images: tuple[bytes, ...],
+) -> ExtractionResult:
+    """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
+    (keeps each call's output well inside the model's output token limit)."""
+    plan: list[tuple[str, dict[str, str], dict[str, Any] | None]]
+    if ex.chunk_pages is None:
+        plan = [(ex.id, sections, None)]
+    else:
+        section_id = ex.sections[0]
+        pages = [p.strip() for p in sections[section_id].split(PAGE_BREAK) if p.strip()]
+        size = ex.chunk_pages
+        groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
+        plan = [
+            (
+                f"{ex.id}.chunk-{n}",
+                {**sections, section_id: text},
+                {"index": n, "count": len(groups)},
+            )
+            for n, text in enumerate(groups, start=1)
+        ]
+
+    merged: ExtractionResult | None = None
+    for audit_id, chunk_sections, chunk in plan:
+        prompt = render_prompt(loaded.directory, ex.prompt, chunk_sections, ex.sections, chunk)
+        where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
+        try:
+            result = run_extraction(
+                extraction_id=ex.id,
+                provider=provider,
+                model_id=model_id,
+                prompt=prompt,
+                schema=ex.schema_,
+                max_attempts=ex.max_attempts,
+                images=images,
+                max_tokens=ex.max_tokens,
+            )
+        except ExtractionFailedError as exc:
+            _audit(deps, job.id, audit_id, exc.attempts)
+            raise DocumentError(f"{exc}{where}") from exc
+        except RefusalError as exc:
+            raise DocumentError(f"extraction {ex.id!r}{where}: {exc}") from exc
+        _audit(deps, job.id, audit_id, result.attempts)
+        if merged is None:
+            merged = result
+        else:
+            assert ex.merge_path is not None  # guaranteed by spec validation
+            merged.data[ex.merge_path].extend(result.data[ex.merge_path])
+            merged.attempts.extend(result.attempts)
+    assert merged is not None
+    return merged
 
 
 def _page_images(

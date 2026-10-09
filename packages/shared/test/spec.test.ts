@@ -38,6 +38,50 @@ describe('DocumentSpecSchema', () => {
     ).toBe(false);
   });
 
+  describe('chunked extractions', () => {
+    const arraySchema = {
+      type: 'object',
+      properties: { rows: { type: 'array' }, note: { type: 'string' } },
+    };
+    const twoSections = {
+      sections: [
+        { id: 'header', anchor: '^HEADER' },
+        { id: 'body', anchor: '^BODY' },
+      ],
+    };
+    const chunked = (overrides: Record<string, unknown>) =>
+      DocumentSpecSchema.safeParse({
+        ...valid,
+        document: twoSections,
+        extractions: [
+          {
+            ...valid.extractions[0],
+            schema: arraySchema,
+            chunkPages: 1,
+            mergePath: 'rows',
+            ...overrides,
+          },
+        ],
+      });
+
+    it('accepts chunkPages + mergePath and defaults maxTokens', () => {
+      const result = chunked({ maxTokens: 32000 });
+      expect(result.success).toBe(true);
+      expect(result.data?.extractions[0]?.maxTokens).toBe(32000);
+      expect(DocumentSpecSchema.parse(valid).extractions[0]?.maxTokens).toBe(16000);
+    });
+
+    it.each([
+      [{ mergePath: undefined }, 'mergePath'],
+      [{ mergePath: 'note' }, 'array'],
+      [{ sections: ['header', 'body'] }, 'exactly one section'],
+    ])('rejects %j', (overrides, message) => {
+      const result = chunked(overrides);
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain(message);
+    });
+  });
+
   it('validates the OCR mode', () => {
     const withOcr = (ocr: string) =>
       DocumentSpecSchema.safeParse({ ...valid, document: { ...valid.document, ocr } });
