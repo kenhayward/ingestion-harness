@@ -61,6 +61,9 @@ export const OutputSchema = z.discriminatedUnion('format', [
     .strict(),
 ]);
 
+export const OcrModeSchema = z.enum(['auto', 'always', 'never']);
+export type OcrMode = z.infer<typeof OcrModeSchema>;
+
 export const DocumentSpecSchema = z
   .object({
     id: Id,
@@ -73,6 +76,8 @@ export const DocumentSpecSchema = z
           .object({ min: z.number().int().positive(), max: z.number().int().positive() })
           .strict()
           .optional(),
+        /** auto: OCR pages with little/no text layer; always: OCR every page; never: text layer only. */
+        ocr: OcrModeSchema.default('auto'),
         sections: z.array(SectionSchema).min(1),
       })
       .strict(),

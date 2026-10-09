@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 from typing import Any, Literal
 
@@ -12,10 +13,15 @@ from .base import (
     ModelDescriptor,
     ProviderKind,
     RefusalError,
+    VisionRequest,
 )
 
 #: How to ask an OpenAI-compatible server for JSON. Many local servers lack json_schema.
 ResponseFormat = Literal["json_schema", "json_object", "none"]
+
+
+def _data_url(png: bytes) -> str:
+    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
 def _wrap_errors(exc: Exception) -> Exception:
@@ -83,6 +89,28 @@ class OpenAIChatProvider(_OpenAIBase):
         if self._max_tokens_param:
             params[self._max_tokens_param] = request.max_tokens
 
+        return self._create(params)
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
+        params: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": request.prompt},
+                        {"type": "image_url", "image_url": {"url": _data_url(request.image_png)}},
+                    ],
+                }
+            ],
+        }
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        if self._max_tokens_param:
+            params[self._max_tokens_param] = request.max_tokens
+        return self._create(params)
+
+    def _create(self, params: dict[str, Any]) -> CompletionResult:
         try:
             resp = self._client.chat.completions.create(**params)
         except Exception as exc:
@@ -125,6 +153,27 @@ class OpenAIResponsesProvider(_OpenAIBase):
         elif self._response_format == "json_object":
             params["text"] = {"format": {"type": "json_object"}}
 
+        return self._create(params)
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
+        params: dict[str, Any] = {
+            "model": model,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": request.prompt},
+                        {"type": "input_image", "image_url": _data_url(request.image_png)},
+                    ],
+                }
+            ],
+            "max_output_tokens": request.max_tokens,
+        }
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        return self._create(params)
+
+    def _create(self, params: dict[str, Any]) -> CompletionResult:
         try:
             resp = self._client.responses.create(**params)
         except Exception as exc:

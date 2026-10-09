@@ -9,6 +9,7 @@ from ingest_worker.llm.base import (
     CompletionResult,
     ModelDescriptor,
     ProviderKind,
+    VisionRequest,
 )
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
@@ -29,6 +30,8 @@ class FakeProvider:
         self.responses = list(responses or [])
         self.models = models or []
         self.calls: list[tuple[str, CompletionRequest]] = []
+        self.vision_responses: list[str | Exception] = []
+        self.vision_calls: list[tuple[str, VisionRequest]] = []
         self.list_models_error: Exception | None = None
 
     def list_models(self) -> list[ModelDescriptor]:
@@ -43,6 +46,13 @@ class FakeProvider:
             raise response
         text = response if isinstance(response, str) else json.dumps(response)
         return CompletionResult(text=text, model=model, input_tokens=10, output_tokens=5)
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
+        self.vision_calls.append((model, request))
+        response = self.vision_responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return CompletionResult(text=response, model=model)
 
 
 @dataclass

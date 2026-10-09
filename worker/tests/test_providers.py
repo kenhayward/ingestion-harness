@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from ingest_worker.llm.anthropic_provider import FALLBACK_BETA, AnthropicProvider
-from ingest_worker.llm.base import CompletionRequest, RefusalError
+from ingest_worker.llm.base import CompletionRequest, RefusalError, VisionRequest
 from ingest_worker.llm.openai_providers import OpenAIChatProvider, OpenAIResponsesProvider
 
 REQ = CompletionRequest(system="sys", prompt="doc", json_schema={"type": "object"}, schema_name="x")
@@ -153,3 +154,56 @@ def test_openai_model_filter() -> None:
     client: Any = SimpleNamespace(models=SimpleNamespace(list=lambda: models))
     found = OpenAIResponsesProvider("openai", client, model_filter=r"^(gpt-|o\d)").list_models()
     assert [d.model_id for d in found] == ["gpt-5", "o4-mini"]
+
+
+VISION = VisionRequest(
+    prompt="read this", image_png=b"\x89PNGdata", max_tokens=8000, temperature=0.1
+)
+DATA_URL = "data:image/png;base64," + base64.b64encode(b"\x89PNGdata").decode()
+
+
+def test_openai_chat_vision_sends_image_url_without_response_format() -> None:
+    completions = Recorder(chat_response("page text"))
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    provider = OpenAIChatProvider("local", client, max_tokens_param="max_tokens")
+    result = provider.complete_vision("olmocr-2-7b-1025", VISION)
+
+    assert result.text == "page text"
+    [message] = completions.kwargs["messages"]
+    assert message["content"] == [
+        {"type": "text", "text": "read this"},
+        {"type": "image_url", "image_url": {"url": DATA_URL}},
+    ]
+    assert "response_format" not in completions.kwargs
+    assert completions.kwargs["max_tokens"] == 8000
+    assert completions.kwargs["temperature"] == 0.1
+
+
+def test_openai_responses_vision_uses_input_image() -> None:
+    resp = SimpleNamespace(
+        id="r", model="m", status="completed", output_text="t", output=[], usage=None
+    )
+    responses = Recorder(resp)
+    client: Any = SimpleNamespace(responses=responses)
+    OpenAIResponsesProvider("openai", client).complete_vision("m", VISION)
+    [message] = responses.kwargs["input"]
+    assert message["content"][1] == {"type": "input_image", "image_url": DATA_URL}
+
+
+def test_anthropic_vision_sends_base64_image_block() -> None:
+    messages = Recorder(anthropic_message(text="page text"))
+    client: Any = SimpleNamespace(messages=messages)
+    provider = AnthropicProvider("a", client, server_fallbacks=False)
+    result = provider.complete_vision("claude-opus-5-5", VISION)
+    assert result.text == "page text"
+    content = messages.kwargs["messages"][0]["content"]
+    assert content[0] == {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": base64.b64encode(b"\x89PNGdata").decode(),
+        },
+    }
+    assert content[1] == {"type": "text", "text": "read this"}
+    assert "temperature" not in messages.kwargs  # rejected by current Claude models

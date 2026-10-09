@@ -18,6 +18,15 @@ describe('DocumentSpecSchema', () => {
     expect(spec.extractions[0]?.model).toBe('default');
     expect(spec.extractions[0]?.maxAttempts).toBe(2);
     expect(spec.document.sections[0]?.required).toBe(true);
+    expect(spec.document.ocr).toBe('auto');
+  });
+
+  it('validates the OCR mode', () => {
+    const withOcr = (ocr: string) =>
+      DocumentSpecSchema.safeParse({ ...valid, document: { ...valid.document, ocr } });
+    expect(withOcr('always').success).toBe(true);
+    expect(withOcr('never').success).toBe(true);
+    expect(withOcr('sometimes').success).toBe(false);
   });
 
   it('rejects extractions that reference unknown sections', () => {

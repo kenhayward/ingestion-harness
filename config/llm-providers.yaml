@@ -8,6 +8,7 @@
 # models:      static list, always offered even if discovery is off or fails.
 # optional:    skip the provider with a warning when its API key is missing.
 # aliases:     names specs can use in `extractions[].model`; values are provider/model-id.
+# ocr:         vision model that transcribes image-only / low-text pages before segmentation.
 
 providers:
   - name: anthropic
@@ -29,11 +30,12 @@ providers:
 
   - name: local
     kind: openai-chat
-    enabled: ${LOCAL_LLM_ENABLED:-false}
-    baseUrl: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+    enabled: ${LOCAL_LLM_ENABLED:-true}
+    baseUrl: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
     apiKeyEnv: LOCAL_LLM_API_KEY
     apiKeyRequired: false
     discover: true
+    models: [qwen3.8-27b-mtp, olmocr-2-7b-1025]
     options:
       # Many local servers only support json_object or ignore strict schemas.
       responseFormat: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
@@ -41,5 +43,15 @@ providers:
       maxTokensParam: max_tokens
 
 aliases:
-  default: anthropic/claude-opus-5-5
+  default: local/qwen3.8-27b-mtp
   fast: anthropic/claude-haiku-5-5
+
+# OCR for image-only / low-text pages (spec `document.ocr`: auto | always | never).
+# The model must accept images; olmOCR's prompt and YAML front matter handling are built in.
+ocr:
+  enabled: ${OCR_ENABLED:-true}
+  model: ${OCR_MODEL:-local/olmocr-2-7b-1025}
+  minChars: 25 # pages with fewer non-space characters in their text layer are OCR'd
+  longestDim: 1288 # render size olmOCR 2 was trained on
+  maxTokens: 8000
+  temperature: 0.1

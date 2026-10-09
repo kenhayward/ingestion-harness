@@ -28,6 +28,14 @@ def test_defaults_and_aliases() -> None:
     assert spec.extractions[0].model == "default"
     assert spec.extractions[0].max_attempts == 2
     assert spec.extractions[0].schema_ == {"type": "object"}
+    assert spec.document.ocr == "auto"
+
+
+def test_ocr_mode_is_validated() -> None:
+    doc = {**MINIMAL["document"], "ocr": "always"}  # type: ignore[dict-item]
+    assert DocumentSpec.model_validate({**MINIMAL, "document": doc}).document.ocr == "always"
+    with pytest.raises(ValidationError):
+        DocumentSpec.model_validate({**MINIMAL, "document": {**doc, "ocr": "sometimes"}})
 
 
 @pytest.mark.parametrize(

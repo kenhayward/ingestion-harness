@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from ingest_worker.llm.base import LLMError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
+from ingest_worker.ocr import OcrSettings
 from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import LoadedSpec, SpecRegistry, load_specs
@@ -169,3 +171,87 @@ def test_models_are_resolved_before_any_extraction_runs(setup, specs_dir: Path) 
     [(_, reason)] = queue.reviewed
     assert "line_items" in reason and "missing-alias" in reason
     assert provider.calls == []
+
+
+# --- OCR -----------------------------------------------------------------------------------
+
+OLMOCR_OK = "---\nprimary_language: en\nis_rotation_valid: true\nrotation_correction: 0\n---\n"
+
+
+def with_ocr(deps: PipelineDeps, ocr_provider: FakeProvider) -> None:
+    deps.models = ModelRegistry(
+        {"anthropic": deps.models.resolve("default")[0], "local": ocr_provider},
+        {
+            "anthropic": ProviderConfig(name="anthropic", kind="anthropic"),
+            "local": ProviderConfig(name="local", kind="openai-chat"),
+        },
+        {"default": "anthropic/claude-opus-5-5"},
+    )
+    deps.ocr = OcrSettings(model="local/olmocr-2-7b-1025")
+    deps.render_page = lambda pdf, index, dim, rotation: b"\x89PNG" + bytes([index])
+
+
+def test_image_only_pages_are_ocrd_then_extracted(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: ["", "   "]
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert [m for m, _ in ocr.vision_calls] == ["olmocr-2-7b-1025"] * 2
+    assert "Acme Supplies" in provider.calls[0][1].prompt  # OCR text reached extraction
+    audit = store.get("runs", "job-1/ocr/page-2.md").decode()  # raw model output, unparsed
+    assert audit.startswith(OLMOCR_OK) and "Total 15.60 GBP" in audit
+    assert any(msg == "ocr" for _, _, msg in queue.events)
+
+
+def test_only_low_text_pages_are_ocrd_in_auto_mode(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: [PAGES[0], ""]
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    [(_, request)] = ocr.vision_calls
+    assert request.image_png == b"\x89PNG\x01"  # page index 1 only
+
+
+def test_image_only_pdf_without_ocr_configured_needs_review(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    deps.extract_text = lambda _pdf: ["", ""]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "OCR" in reason
+    assert provider.calls == []
+
+
+def test_unresolvable_ocr_model_needs_review(setup) -> None:  # type: ignore[no-untyped-def]
+    _, _, deps = setup
+    deps.ocr = OcrSettings(model="nowhere/olmocr")
+    deps.extract_text = lambda _pdf: ["", ""]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "nowhere" in reason
+
+
+def test_transient_ocr_errors_are_retried(setup) -> None:  # type: ignore[no-untyped-def]
+    _, _, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [LLMError("503 model loading")]
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: ["", ""]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    assert queue.failed and "503" in queue.failed[0][1]

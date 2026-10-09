@@ -8,6 +8,7 @@ description: Single-supplier invoice with a header block, line-item table and to
 
 document:
   pages: { min: 1, max: 20 }
+  ocr: auto # OCR pages without a usable text layer (auto | always | never)
   sections:
     - id: header
       anchor: '^\s*INVOICE\b'

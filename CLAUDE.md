@@ -7,8 +7,8 @@ through an LLM prompt harness, and writes validated CSV/JSON to S3 (SeaweedFS).
 
 `app` (React, served by nginx) → `api` (Fastify, Node 24/TypeScript) stores the uploaded PDF in
 the SeaweedFS **inbox** bucket and inserts a `documents` row + `jobs` row in Postgres. The
-`worker` (Python 3.13) claims jobs with `SELECT … FOR UPDATE SKIP LOCKED`, extracts page text,
-segments it into sections using the document **spec**, runs one LLM call per spec extraction
+`worker` (Python 3.13) claims jobs with `SELECT … FOR UPDATE SKIP LOCKED`, extracts page text
+(OCR'ing image-only pages with a vision model, default olmOCR 2), segments it into sections using the document **spec**, runs one LLM call per spec extraction
 (JSON Schema-constrained, validated, retried with errors fed back), and writes CSV/JSON to the
 **outputs** bucket plus a prompt/response audit trail to the **runs** bucket. Full detail:
 [docs/architecture.md](docs/architecture.md). Decisions: [docs/adr/](docs/adr/).
@@ -75,7 +75,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 
 | Contract | TypeScript | Python |
 | --- | --- | --- |
-| Spec format | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
+| Spec format (incl. `document.ocr`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
 | Object keys | `packages/shared/src/storage-keys.ts` | `worker/src/ingest_worker/storage.py` |
 | Job statuses | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
 | Models table | `ModelInfo` in `packages/shared/src/models.ts`, `PgRepo.listModels` | `PgJobQueue.upsert_models` |
@@ -90,7 +90,13 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   protocol (`list_models`, `complete_json`). Kinds: `anthropic`, `openai-chat`,
   `openai-responses`; any OpenAI-compatible local server is an `openai-*` provider with
   `baseUrl`. Model refs are `provider/model-id` or an alias from `config/llm-providers.yaml`
-  (`default` → `anthropic/claude-opus-5-5`, `fast` → `anthropic/claude-haiku-5-5`).
+  (`default` → `local/qwen3.8-27b-mtp` on the LM Studio endpoint, `fast` →
+  `anthropic/claude-haiku-5-5`). Unresolvable refs raise `ModelResolutionError` and are resolved
+  for every extraction *before* any LLM call (config error → `needs_review`, never retried).
+- **OCR** (`worker/src/ingest_worker/ocr.py`): `ocr:` in `config/llm-providers.yaml` names a
+  vision model (default `local/olmocr-2-7b-1025`); spec `document.ocr` is `auto|always|never`.
+  Providers implement `complete_vision`; tests use `PipelineDeps.render_page` fakes, and only
+  `test_render_page_png_scales_longest_side` renders a real PDF (pypdfium2, in-memory).
   Job-level model override beats the spec's model. Discovered models land in `llm_models`
   and populate the UI picker.
 - Anthropic calls use structured outputs (`output_config.format` json_schema) plus

@@ -7,6 +7,10 @@ specs/<spec-id>/v<N>/spec.yaml
 specs/<spec-id>/v<N>/prompts/*.md.j2
 ```
 
+- `document.ocr` — `auto` (default) OCRs pages whose text layer has fewer than `ocr.minChars`
+  non-space characters; `always` OCRs every page; `never` uses the text layer only. OCR'd
+  tables are flattened to one line per row (cells separated by two spaces), so anchors should
+  tolerate variable whitespace (`\s+`).
 - `document.sections[].anchor` — multiline regex marking where a section starts in the
   extracted PDF text. Sections run until the next anchor match.
 - `extractions[]` — one LLM call per extraction: the listed sections are rendered into the

@@ -41,11 +41,24 @@ class ProviderConfig(BaseModel):
     options: dict[str, Any] = Field(default_factory=dict)
 
 
+class OcrConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    enabled: bool = True
+    #: Alias or provider/model-id of a vision model (olmOCR-style prompt + front matter).
+    model: str
+    min_chars: int = Field(default=25, ge=0, alias="minChars")
+    longest_dim: int = Field(default=1288, gt=0, alias="longestDim")
+    max_tokens: int = Field(default=8000, gt=0, alias="maxTokens")
+    temperature: float | None = 0.1
+
+
 class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     providers: list[ProviderConfig]
     aliases: dict[str, str] = Field(default_factory=dict)
+    ocr: OcrConfig | None = None
 
 
 def _expand_env(value: Any, env: Mapping[str, str]) -> Any:

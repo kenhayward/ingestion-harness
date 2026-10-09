@@ -7,6 +7,7 @@ import time
 
 from .config import Settings
 from .llm.registry import build_registry, load_llm_config
+from .ocr import OcrSettings
 from .pdf import extract_pages
 from .pipeline import Buckets, DocumentError, PipelineDeps, process_job
 from .queue import JobQueue, PgJobQueue
@@ -42,7 +43,19 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings.from_env()
     specs = load_specs(settings.specs_dir)
-    models = build_registry(load_llm_config(settings.llm_config))
+    llm_config = load_llm_config(settings.llm_config)
+    models = build_registry(llm_config)
+    ocr = (
+        OcrSettings(
+            model=llm_config.ocr.model,
+            min_chars=llm_config.ocr.min_chars,
+            longest_dim=llm_config.ocr.longest_dim,
+            max_tokens=llm_config.ocr.max_tokens,
+            temperature=llm_config.ocr.temperature,
+        )
+        if llm_config.ocr and llm_config.ocr.enabled
+        else None
+    )
     queue = PgJobQueue(settings.database_url)
     deps = PipelineDeps(
         store=S3ObjectStore(
@@ -52,12 +65,14 @@ def main() -> None:
         models=models,
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
+        ocr=ocr,
     )
     log.info(
-        "worker %s started: %d specs, providers=%s",
+        "worker %s started: %d specs, providers=%s, ocr=%s",
         settings.worker_id,
         len(specs),
         models.provider_names,
+        ocr.model if ocr else "disabled",
     )
 
     stop = threading.Event()

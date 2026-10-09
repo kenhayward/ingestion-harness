@@ -28,6 +28,17 @@ class CompletionRequest:
 
 
 @dataclass(frozen=True)
+class VisionRequest:
+    """Free-text completion over one image (used for OCR). No JSON constraint."""
+
+    prompt: str
+    image_png: bytes
+    max_tokens: int = 8000
+    #: None = provider default. Ignored by providers whose models reject sampling params.
+    temperature: float | None = None
+
+
+@dataclass(frozen=True)
 class CompletionResult:
     text: str
     model: str
@@ -54,3 +65,5 @@ class LLMProvider(Protocol):
     def list_models(self) -> list[ModelDescriptor]: ...
 
     def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult: ...
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult: ...

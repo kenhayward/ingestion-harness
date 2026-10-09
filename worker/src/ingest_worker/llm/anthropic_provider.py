@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import base64
 from typing import Any, Literal
 
 import anthropic
 
-from .base import CompletionRequest, CompletionResult, LLMError, ModelDescriptor, RefusalError
+from .base import (
+    CompletionRequest,
+    CompletionResult,
+    LLMError,
+    ModelDescriptor,
+    RefusalError,
+    VisionRequest,
+)
 
 #: Beta enabling server-side refusal fallbacks (`fallbacks="default"`).
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -40,13 +48,38 @@ class AnthropicProvider:
         }
         if self._effort:
             output_config["effort"] = self._effort
+        return self._send(
+            {
+                "model": model,
+                "max_tokens": request.max_tokens,
+                "system": request.system,
+                "messages": [{"role": "user", "content": request.prompt}],
+                "output_config": output_config,
+            }
+        )
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
+        # request.temperature is deliberately not sent: current Claude models reject it.
+        image = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": base64.b64encode(request.image_png).decode("ascii"),
+            },
+        }
         params: dict[str, Any] = {
             "model": model,
             "max_tokens": request.max_tokens,
-            "system": request.system,
-            "messages": [{"role": "user", "content": request.prompt}],
-            "output_config": output_config,
+            "messages": [
+                {"role": "user", "content": [image, {"type": "text", "text": request.prompt}]}
+            ],
         }
+        if self._effort:
+            params["output_config"] = {"effort": self._effort}
+        return self._send(params)
+
+    def _send(self, params: dict[str, Any]) -> CompletionResult:
         try:
             if self._server_fallbacks:
                 message: Any = self._client.beta.messages.create(

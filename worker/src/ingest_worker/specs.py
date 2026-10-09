@@ -61,8 +61,13 @@ class PageRange(_Model):
     max: int = Field(gt=0)
 
 
+OcrMode = Literal["auto", "always", "never"]
+
+
 class DocumentLayout(_Model):
     pages: PageRange | None = None
+    #: auto: OCR pages with little/no text layer; always: every page; never: text layer only.
+    ocr: OcrMode = "auto"
     sections: list[Section] = Field(min_length=1)
 
 

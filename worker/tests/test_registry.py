@@ -50,8 +50,16 @@ def test_committed_config_parses_with_env_expansion(llm_config_path: Path) -> No
     cfg = load_llm_config(llm_config_path, env={"LOCAL_LLM_BASE_URL": "http://vllm:8000/v1"})
     local = next(p for p in cfg.providers if p.name == "local")
     assert local.base_url == "http://vllm:8000/v1"
-    assert local.enabled is False  # ${LOCAL_LLM_ENABLED:-false}
-    assert cfg.aliases["default"].startswith("anthropic/")
+    assert local.enabled is True  # ${LOCAL_LLM_ENABLED:-true}
+    assert cfg.aliases["default"] == "local/qwen3.8-27b-mtp"
+    assert {"qwen3.8-27b-mtp", "olmocr-2-7b-1025"} <= set(local.models)
+    assert cfg.ocr is not None and cfg.ocr.enabled
+    assert cfg.ocr.model == "local/olmocr-2-7b-1025"
+
+
+def test_ocr_can_be_disabled_by_env(llm_config_path: Path) -> None:
+    cfg = load_llm_config(llm_config_path, env={"OCR_ENABLED": "false"})
+    assert cfg.ocr is not None and not cfg.ocr.enabled
 
 
 def test_resolves_aliases_transitively() -> None:

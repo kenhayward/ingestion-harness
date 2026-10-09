@@ -26,6 +26,12 @@ upload ─► queued ─► running ─┬─► succeeded
    records `locked_by/locked_at`. Stale locks (crashed worker) are re-queued after `STALE_LOCK_S`.
 3. **Extract text**: `pypdf` text layer, one string per page. Page count checked against
    `spec.document.pages`.
+   **OCR** (`document.ocr: auto` by default): pages with fewer than `ocr.minChars` non-space
+   characters are rendered with pypdfium2 (longest side 1288px) and transcribed by the OCR
+   vision model (default `local/olmocr-2-7b-1025`) using olmOCR's prompt. Its YAML front matter
+   is parsed: if the page is reported rotated, it is re-rendered with the suggested clockwise
+   correction and retried once. HTML tables are flattened to text rows. Raw output goes to
+   `runs/{jobId}/ocr/page-N.md`.
 4. **Segment**: each section starts at the first match of its multiline regex anchor and runs
    to the next matched anchor. Missing required sections → `needs_review`.
 5. **Extract**: per spec extraction, render the Jinja2 prompt with the selected sections, call
@@ -56,15 +62,17 @@ resolution (`default`, `fast`, …) → `provider/model-id`. Discovery runs at w
 | Failure | Classification | Outcome |
 | --- | --- | --- |
 | Rate limit / 5xx / network | transient (`LLMError`, any unexpected exception) | re-queue with backoff 30s·n², then `failed` |
-| Missing sections, page count, no text layer | `DocumentError` | `needs_review` |
+| Missing sections, page count, no text even after OCR | `DocumentError` | `needs_review` |
+| Unresolvable extraction/OCR model (config) | `ModelResolutionError` → `DocumentError` | `needs_review`, before any LLM call |
 | Schema never satisfied after `maxAttempts` | `DocumentError` | `needs_review` (audit trail in runs bucket) |
 | Model refusal | `RefusalError` → `DocumentError` | `needs_review` |
 | Worker crash mid-job | stale lock | re-queued by `reap_stale` |
 
 ## Known gaps / next steps
 
-- **Scanned PDFs** have no text layer. Options: OCR step (e.g. Tesseract/ocrmypdf) before
-  segmentation, or an extraction mode that sends the PDF itself as a `document` block to Claude.
+- OCR pages run sequentially; parallelise per page if large scanned documents become common.
+- OCR'd text differs in layout from pypdf text; specs used for both should use whitespace-tolerant
+  anchors. A spec-level eval set of real scans would catch drift.
 - Integration tests for `PgRepo` / `PgJobQueue` against `dev-infra` (marked `integration`).
 - AuthN/Z on the API (currently assumes a trusted network behind nginx).
 - Downstream load: outputs are partitioned by spec/version/output for direct ingestion by

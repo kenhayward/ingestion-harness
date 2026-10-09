@@ -18,6 +18,11 @@ def run_key(job_id: str, extraction_id: str, attempt: int) -> str:
     return f"{job_id}/{extraction_id}/attempt-{attempt}.json"
 
 
+def ocr_run_key(job_id: str, page_number: int) -> str:
+    """Raw OCR model output for a 1-based page number."""
+    return f"{job_id}/ocr/page-{page_number}.md"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 
