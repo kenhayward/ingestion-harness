@@ -1,0 +1,283 @@
+# Process Validation Protocol — document template (outputs-first).
+# v3 (vs v2): written as a template: atomic fields (compound, medicinal product, execution date,
+# ...) with evidence + page, typed tables (stage enum, numeric result_value), built-in prompts
+# driven by plain instructions, page markers, normalisation + issues, review on warnings.
+# Developed against docs/samples (gmpsop TEM-290 text template; Safetab scanned protocol cum
+# report). Published versions are immutable — copy to v4/ for changes that alter outputs.
+id: process-validation-protocol
+version: 3
+name: Process Validation Protocol
+description: >-
+  Pharmaceutical process validation protocol or protocol-cum-report: identification, product and
+  compound, signatories, batches, materials, critical parameters, equipment, test results, outcome.
+
+preamble: |
+  You are reading a pharmaceutical Process Validation Protocol. It may be a blank template, an
+  approved protocol, or a "protocol cum report" that also contains executed batch results.
+  Templates differ between companies; rely on meaning, not section numbers.
+
+  How the text was produced:
+  - Pages with a text layer were extracted directly; scanned pages were OCR'd. OCR'd tables are
+    flattened to one line per row with cells separated by two spaces.
+  - Handwritten entries (names, dates, batch numbers, results) may be misread by OCR. Similar
+    characters are often confused (1/I/T/Y/7, 0/O, 5/S). When a value appears several times,
+    use the reading that is most consistent across the document.
+  - Page headers and footers may be missing from scanned pages. When a page image is attached,
+    treat it as authoritative for anything printed in the page header.
+
+  Rules:
+  - Use null when a value is absent, blank, unreadable, or a template placeholder: bracketed
+    prompts like "[Type Name]", runs of X ("XXXX", "XXXXkg"), blanks ("____"), "Section X".
+  - Template guidance is not data. Sentences that instruct or give examples to whoever fills in
+    the template ("Detail if prospective, concurrent or retrospective ...", "e.g. A prospective
+    validation approach will be used ...") must never be used as a value.
+
+document:
+  pages: { min: 1, max: 200 }
+  ocr: auto
+  pageMarkers: true
+  dateOrder: DMY
+  copies:
+    anchor: '(?i)^\W*(?:\d+\.0\s*)?PROTOCOL APPROVAL\b'
+    select: last
+  sections:
+    - { id: front_matter, anchor: '\A' }
+    - { id: approvals, anchor: '(?i)^\W*(?:\d+\.0\s*)?PROTOCOL APPROVAL\b|^\s*WRITTEN:' }
+    - { id: purpose_scope, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+PURPOSE\b', required: false }
+    - { id: strategy, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+VALIDATION STRATEGY\b', required: false }
+    - { id: product, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+PRODUCT DETAILS\b', required: false }
+    - { id: references, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+REFERENCED?\s+DOCUMENTS\b', required: false }
+    - { id: materials, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+BILL OF (?:RAW )?MATERIALS\b', required: false }
+    - { id: process, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+(?:MANUFACTURING PROCESS|CRITICAL PROCESS STAGES)\b' }
+    - { id: test_program, anchor: '(?i)^\W*(?:\d+(?:\.0)?\.?\s+TEST PROGRAM\b|APPENDIX\s*4\b)', required: false }
+    - { id: test_data, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+TEST DATA FOR VALIDATION\b', required: false }
+    - { id: deviations, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+(?:PROCESS VALIDATION\s+)?DEVIATIONS\b', required: false }
+    - { id: conclusion, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+EVALUATION OF RESULTS\b', required: false }
+    - { id: report_approval, anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+REPORT APPROVAL\b', required: false }
+
+outputs:
+  fields:
+    # identification (mostly in the page header: see the page-1 image)
+    - { id: document_title, type: text }
+    - id: document_kind
+      type: enum
+      enum: [template, protocol, protocol_cum_report, report]
+      description: template = placeholders only; protocol_cum_report = also contains executed results
+    - { id: protocol_number, type: text }
+    - { id: revision, type: text }
+    - { id: effective_date, type: date }
+    - { id: organisation, type: text, description: 'Company that owns the protocol' }
+    - id: template_reference
+      type: text
+      description: Form/template id printed on the page (e.g. TEM-290, ST/QA/029 (R2):F4), not the protocol number
+    # product
+    - { id: medicinal_product, name: Medicinal Product, type: text, description: 'Product name incl. dosage form' }
+    - id: compound
+      name: Compound
+      type: list
+      description: Active pharmaceutical ingredient(s) of the product
+    - { id: brand_name, type: text }
+    - { id: dosage_form, type: text, description: 'e.g. tablets, hard gelatin capsules' }
+    - { id: batch_size, type: text, description: 'As written incl. units' }
+    # validation plan
+    - { id: number_of_batches, type: integer, description: 'Number of validation batches planned' }
+    - id: validation_approach
+      type: enum
+      enum: [prospective, concurrent, retrospective]
+    - { id: reason_for_validation, type: text, description: 'Ticked reason(s) for validation' }
+    - { id: stages_validated, type: list, description: 'Process stages under validation' }
+    # execution and outcome
+    - id: execution_date
+      name: Execution Date
+      type: date
+      description: Date the validation batches were manufactured/executed (earliest if several)
+    - { id: executed, type: boolean, description: 'True only if executed results/conclusions are recorded' }
+    - { id: validated, type: boolean, description: 'Outcome as concluded by the document' }
+    - { id: deviations_reported, type: boolean }
+    - { id: conclusion_summary, type: text }
+    - { id: concluded_by, type: text }
+    - { id: conclusion_date, type: date }
+
+  tables:
+    - id: signatories
+      columns:
+        - { id: phase, type: enum, enum: [protocol, protocol_completion, report] }
+        - { id: role, type: enum, enum: [prepared, reviewed, verified, approved, compiled] }
+        - { id: department, type: text }
+        - { id: name, type: text }
+        - { id: designation, type: text }
+        - { id: date, type: date }
+    - id: batches
+      columns:
+        - { id: sequence, type: integer, description: '1 for the 1st validation batch, etc.' }
+        - { id: batch_number, type: text }
+        - { id: batch_number_variants, type: list, description: 'Other spellings seen in the document' }
+        - { id: brand_name, type: text }
+        - { id: batch_size, type: text }
+        - { id: manufacturing_date, type: date }
+        - { id: expiry_date, type: date }
+    - id: materials
+      columns:
+        - { id: category, type: enum, enum: [active, excipient, capsule_shell, coating, packaging, other] }
+        - { id: name, type: text }
+        - { id: material_code, type: text }
+        - { id: label_claim, type: text }
+        - { id: specification, type: text, description: 'Pharmacopoeia, e.g. BP, USP, IH' }
+        - { id: overage, type: text }
+        - { id: total_quantity, type: text, description: 'As written incl. units' }
+        - { id: vendor, type: text }
+    - id: reference_documents
+      columns:
+        - { id: title, type: text }
+        - { id: document_number, type: text }
+    - id: critical_parameters
+      columns:
+        - { id: stage, type: text }
+        - { id: parameter, type: text }
+        - { id: acceptance_criteria, type: text }
+        - { id: criticality, type: text }
+        - { id: sampling, type: text }
+        - { id: test_reference, type: text }
+    - id: equipment
+      columns:
+        - { id: process_step, type: text }
+        - { id: equipment, type: text }
+        - { id: equipment_id, type: text }
+        - { id: validation_status, type: text }
+        - { id: validation_reference, type: text }
+    - id: test_results
+      columns:
+        - { id: batch_number, type: text }
+        - { id: batch_sequence, type: integer, description: '1, 2 or 3' }
+        - { id: stage, type: enum, enum: [Blending, Lubrication, Capsule filling, Other] }
+        - { id: test, type: text, description: 'e.g. Blend uniformity, Fill weight' }
+        - { id: analyte, type: text, description: 'e.g. Folic acid' }
+        - id: sample_location
+          type: text
+          description: 'Sampling point or phase, e.g. TCL, MBC, Initial, Middle, Final, Composite, Avg., RSD'
+        - { id: result, type: text, description: 'Result exactly as written (number or text such as Complies)' }
+        - { id: result_value, type: decimal, description: 'Numeric value of the result, null if not numeric' }
+        - { id: acceptance_criteria, type: text }
+
+pipeline:
+  - type: extract
+    id: identification
+    fields: [document_title, document_kind, protocol_number, revision, effective_date, organisation, template_reference]
+    sections: [front_matter, approvals, purpose_scope]
+    pageImages: [1]
+    instructions: >-
+      protocol_number, revision, effective_date, organisation and template_reference are usually
+      in the page header shown in the attached page image, or on the cover page.
+
+  - type: extract
+    id: product
+    fields: [medicinal_product, brand_name, dosage_form, batch_size]
+    sections: [front_matter, purpose_scope, product]
+
+  - type: extract
+    id: compound
+    fields: [compound]
+    sections: [product, materials, front_matter]
+    instructions: >-
+      List each active pharmaceutical ingredient once, by name only (no strength), e.g. for a
+      label claim "Carbonyl Iron equivalent to Elemental Iron 100mg" the compound is "Carbonyl
+      Iron". Excipients and capsule shells are not compounds. For a multi-ingredient product
+      without an ingredient list (e.g. "Multi vitamin tablets"), return the product's stated
+      active ingredients only if listed, otherwise an empty list.
+
+  - type: extract
+    id: plan
+    fields: [number_of_batches, validation_approach, reason_for_validation, stages_validated]
+    sections: [purpose_scope, strategy, references, process, conclusion]
+    instructions: >-
+      stages_validated: every process stage the document validates, combining the critical
+      process stages, test data headings and the conclusion (e.g. Blending, Lubrication, Capsule
+      filling). reason_for_validation: only ticked/selected reasons from a reason-for-validation
+      table; ignore unticked or "NA" rows.
+
+  - type: extract
+    id: execution_date
+    fields: [execution_date]
+    sections: [product, test_data, conclusion, report_approval]
+    instructions: >-
+      The execution date is when the validation batches were manufactured. Prefer the
+      manufacturing date of the 1st validation batch (it may be month precision, e.g. 02/2023).
+      Do not use protocol approval or report signature dates. Null for blank templates.
+
+  - type: extract
+    id: signatories
+    table: signatories
+    sections: [front_matter, approvals, report_approval]
+    instructions: >-
+      One row per signatory slot in the approval tables, including slots whose name is a
+      placeholder (name null). phase: protocol (incl. "approved for execution"),
+      protocol_completion, or report. role: Written/Prepared -> prepared (compiled for reports),
+      Reviewed -> reviewed, Verified -> verified, Approved -> approved.
+
+  - type: extract
+    id: batches
+    table: batches
+    sections: [product, strategy, conclusion]
+    instructions: >-
+      The validation batches in order (normally three). Batch numbers are handwritten: choose the
+      most consistent reading as batch_number and list other spellings in batch_number_variants.
+      If batches are planned but not filled in, return one row per planned batch with nulls.
+
+  - type: extract
+    id: materials
+    table: materials
+    sections: [materials]
+    instructions: One row per ingredient row of the bill of materials (actives, excipients, capsule shells).
+
+  - type: extract
+    id: reference_documents
+    table: reference_documents
+    sections: [references]
+    instructions: Documents listed as references for manufacturing and testing, with their numbers. Ignore template guidance.
+
+  - type: extract
+    id: critical_parameters
+    table: critical_parameters
+    sections: [process, test_program]
+    instructions: One row per parameter per stage, from critical step/parameter tables and the test programme. Not equipment.
+
+  - type: extract
+    id: equipment
+    table: equipment
+    sections: [process]
+    instructions: Rows of equipment / validation-status tables; keep the process step even when the equipment cell is blank.
+
+  - type: extract
+    id: test_results
+    table: test_results
+    sections: [test_data]
+    chunkPages: 1
+    maxAttempts: 3
+    instructions: >-
+      One row per recorded value: blend uniformity at each sample location (TCL, TC, MBL, ...)
+      for each analyte plus Avg., RSD and Composite rows; capsule filling tests at Initial,
+      Middle, Final and Composite. stage is the process stage (Blending, Lubrication, Capsule
+      filling); the sampling point or phase goes in sample_location, never in stage. If this
+      page does not state the batch for a table, use null for batch_number and batch_sequence.
+      Skip empty result cells.
+
+  - type: extract
+    id: outcome
+    fields: [executed, validated, deviations_reported, conclusion_summary, concluded_by, conclusion_date]
+    sections: [conclusion, deviations, report_approval]
+    pageImages: []
+    instructions: >-
+      deviations_reported: true only if deviations are recorded; false if the deviation section
+      states none, is struck through or "NA"; null if the document only describes the process.
+      conclusion_date: the date written next to the conclusion signature.
+
+  - type: check
+    id: batch_number_check
+    description: Batch numbers recorded with results match the validation batch list.
+    values: test_results.batch_number
+    reference: batches.batch_number
+    aliases: batches.batch_number_variants
+    maxDistance: 2
+
+review:
+  required: on_warnings

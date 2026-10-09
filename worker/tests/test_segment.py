@@ -76,3 +76,11 @@ def test_coinciding_anchors_give_the_text_to_the_later_declared_section() -> Non
     ]
     result = segment(["APPROVAL\nsigned\nBODY\ntext"], sections)
     assert result == {"zz_front": "", "approvals": "APPROVAL\nsigned", "body": "BODY\ntext"}
+
+
+def test_sections_starting_mid_page_carry_their_page_marker() -> None:
+    pages = ["[page 1]\nINVOICE 1\nDescription Qty\nx", "[page 2]\nmore rows\nSubtotal 1"]
+    result = segment(pages, SECTIONS, page_marker=r"^\[page \d+\]$")
+    assert result["header"] == "[page 1]\nINVOICE 1"
+    assert result["lines"].startswith("[page 1]\nDescription Qty")
+    assert result["totals"] == "[page 2]\nSubtotal 1"

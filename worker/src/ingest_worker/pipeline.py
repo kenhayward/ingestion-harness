@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .checks import run_check
@@ -24,7 +25,7 @@ from .pdf import TextExtractor
 from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
-from .specs import Extraction, LoadedSpec, OcrMode, SpecRegistry
+from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
 from .storage import ObjectStore, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
@@ -54,33 +55,53 @@ class PipelineDeps:
     render_page: PageRenderer = field(default=render_page_png)
 
 
-def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
-    loaded = deps.specs.get(job.spec_id, job.spec_version)
-    spec = loaded.spec
+@dataclass
+class Prepared:
+    """The document after text extraction, OCR, copy selection, page markers, segmentation."""
 
-    # Resolve every model before the first LLM call so a config error costs no tokens.
+    pdf: bytes
+    total_pages: int
+    sections: dict[str, str]
+
+
+#: Matches the lines added by mark_pages.
+PAGE_MARKER = r"^\[page \d+\]$"
+
+
+def mark_pages(pages: list[str], first_page: int) -> list[str]:
+    """Prefix pages with "[page N]" using original (1-based) PDF page numbers."""
+    return [f"[page {first_page + i}]\n{text}" for i, text in enumerate(pages)]
+
+
+def resolve_models(
+    job: ClaimedJob, deps: PipelineDeps, extractions: list[Extraction]
+) -> dict[str, tuple[LLMProvider, str]]:
+    """Resolve every model before the first LLM call so a config error costs no tokens."""
     resolved: dict[str, tuple[LLMProvider, str]] = {}
-    for ex in spec.extractions:
-        ref = job.model_override or ex.model
+    for ex in extractions:
         try:
-            resolved[ex.id] = deps.models.resolve(ref)
+            resolved[ex.id] = deps.models.resolve(job.model_override or ex.model)
         except ModelResolutionError as exc:
             raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
+    return resolved
 
+
+def prepare_document(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
+) -> Prepared:
     pdf = deps.store.get(job.bucket, job.object_key)
     pages = deps.extract_text(pdf)
     total_pages = len(pages)
-    if spec.document.pages and not (
-        spec.document.pages.min <= len(pages) <= spec.document.pages.max
-    ):
+    if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):
         raise DocumentError(
             f"page count {len(pages)} outside expected range "
-            f"{spec.document.pages.min}-{spec.document.pages.max}"
+            f"{document.pages.min}-{document.pages.max}"
         )
 
-    pages = _ocr_pages(job, deps, queue, pdf, pages, spec.document.ocr)
-    if spec.document.copies:
-        first, pages = select_copy(pages, spec.document.copies)
+    pages = _ocr_pages(job, deps, queue, pdf, pages, document.ocr)
+    first = 0
+    if document.copies:
+        first, pages = select_copy(pages, document.copies)
         if first:
             queue.event(job.id, "info", "selected copy", {"first_page": first + 1})
     if not any(p.strip() for p in pages):
@@ -88,23 +109,41 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
             "OCR is not configured"
             if deps.ocr is None
             else "OCR disabled by spec (document.ocr: never)"
-            if spec.document.ocr == "never"
+            if document.ocr == "never"
             else "OCR returned no text"
         )
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")
+    if getattr(document, "page_markers", False):
+        pages = mark_pages(pages, first + 1)
 
     try:
-        sections = segment(pages, spec.document.sections)
+        marker = PAGE_MARKER if getattr(document, "page_markers", False) else None
+        sections = segment(pages, document.sections, page_marker=marker)
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
     queue.event(job.id, "info", "segmented", {"pages": len(pages), "sections": list(sections)})
+    return Prepared(pdf, total_pages, sections)
+
+
+def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
+    loaded = deps.specs.get(job.spec_id, job.spec_version)
+    if isinstance(loaded, LoadedTemplate):
+        from .template_pipeline import process_template_job
+
+        return process_template_job(job, deps, queue, loaded)
+    spec = loaded.spec
+
+    resolved = resolve_models(job, deps, spec.extractions)
+    doc = prepare_document(job, deps, queue, spec.document)
 
     results: dict[str, dict[str, Any]] = {}
     models_used: dict[str, str] = {}
     for ex in spec.extractions:
         provider, model_id = resolved[ex.id]
-        images = _page_images(job, deps, queue, pdf, ex.page_images, total_pages)
-        result = _run_extraction(job, deps, loaded, ex, provider, model_id, sections, images)
+        images = page_images(job, deps, queue, doc.pdf, ex.page_images, doc.total_pages)
+        result = run_step_extraction(
+            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images
+        )
         results[ex.id] = result.data
         models_used[ex.id] = result.model_ref
         queue.event(
@@ -115,15 +154,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
         )
 
     for check in spec.checks:
-        results[check.id] = run_check(check, results)
-        unmatched = [r["value"] for r in results[check.id]["rows"] if r["status"] == "unmatched"]
-        if unmatched:
-            queue.event(
-                job.id,
-                "warn",
-                f"check {check.id}: {len(unmatched)} unmatched",
-                {"values": unmatched},
-            )
+        results[check.id] = run_check_with_event(job, queue, check, results)
 
     outputs = render_outputs(
         spec,
@@ -202,10 +233,10 @@ def _ocr_pages(
     return pages
 
 
-def _run_extraction(
+def run_step_extraction(
     job: ClaimedJob,
     deps: PipelineDeps,
-    loaded: LoadedSpec,
+    directory: Path,
     ex: Extraction,
     provider: LLMProvider,
     model_id: str,
@@ -233,7 +264,9 @@ def _run_extraction(
 
     merged: ExtractionResult | None = None
     for audit_id, chunk_sections, chunk in plan:
-        prompt = render_prompt(loaded.directory, ex.prompt, chunk_sections, ex.sections, chunk)
+        prompt = render_prompt(
+            directory, ex.prompt, chunk_sections, ex.sections, chunk, ex.prompt_context
+        )
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
         try:
             result = run_extraction(
@@ -262,7 +295,7 @@ def _run_extraction(
     return merged
 
 
-def _page_images(
+def page_images(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
@@ -279,6 +312,18 @@ def _page_images(
         for n in page_numbers
         if n <= total_pages
     )
+
+
+def run_check_with_event(
+    job: ClaimedJob, queue: JobQueue, check: Check, results: dict[str, Any]
+) -> dict[str, Any]:
+    result = run_check(check, results)
+    unmatched = [r["value"] for r in result["rows"] if r["status"] == "unmatched"]
+    if unmatched:
+        queue.event(
+            job.id, "warn", f"check {check.id}: {len(unmatched)} unmatched", {"values": unmatched}
+        )
+    return result
 
 
 def _audit(deps: PipelineDeps, job_id: str, extraction_id: str, attempts: list[Any]) -> None:

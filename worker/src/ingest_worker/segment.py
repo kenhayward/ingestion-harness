@@ -13,13 +13,18 @@ class MissingSectionsError(Exception):
         self.missing = missing
 
 
-def segment(pages: list[str], sections: list[Section]) -> dict[str, str]:
+def segment(
+    pages: list[str], sections: list[Section], page_marker: str | None = None
+) -> dict[str, str]:
     """Split document text into sections.
 
     Each section starts at the first match of its anchor (multiline regex) and runs until the
     next matched anchor, in document order. Missing optional sections map to "". When anchors
     match at the same position, the section declared earlier is empty and the later one gets the
     text, so a catch-all start-of-text section yields to a more specific one.
+
+    With `page_marker` (a multiline regex such as the "[page N]" lines added to each page), a
+    section starting mid-page is prefixed with that page's marker so its page stays known.
     """
     text = PAGE_BREAK.join(pages)
     starts: list[tuple[int, int, str]] = []
@@ -33,11 +38,20 @@ def segment(pages: list[str], sections: list[Section]) -> dict[str, str]:
     if missing:
         raise MissingSectionsError(missing)
 
+    markers = (
+        [(m.start(), m.group(0)) for m in re.finditer(page_marker, text, re.MULTILINE)]
+        if page_marker
+        else []
+    )
     starts.sort()
     result = {s.id: "" for s in sections}
     for i, (start, _, section_id) in enumerate(starts):
         end = starts[i + 1][0] if i + 1 < len(starts) else len(text)
-        result[section_id] = text[start:end].strip()
+        body = text[start:end].strip()
+        marker = next((m for pos, m in reversed(markers) if pos <= start), None)
+        if body and marker and not body.startswith(marker):
+            body = f"{marker}\n{body}"
+        result[section_id] = body
     return result
 
 

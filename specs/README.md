@@ -1,4 +1,44 @@
-# Document specs
+# Document types
+
+Two formats live here, one per version directory:
+
+- **`template.yaml` — document templates (preferred, from PVP v3).** Outputs first: atomic
+  `fields` and typed `tables`, an ordered `pipeline` of `extract` and `check` steps, and a
+  `review` policy. See [Templates](#templates) below.
+- `spec.yaml` — the original spec format (PVP v1/v2), still supported by the engine.
+
+## Templates
+
+```yaml
+id: my-doc            # directory specs/my-doc/v1/
+version: 1
+name: My document
+preamble: Domain guidance placed at the top of every prompt.
+document: { ocr: auto, copies: {...}, pageMarkers: true, dateOrder: DMY, sections: [...] }
+outputs:
+  fields:   [{ id, name?, type, description?, enum? }]      # atoms: one value per document
+  tables:   [{ id, columns: [{ id, type, description?, enum? }] }]
+pipeline:
+  - { type: extract, id, fields: [..] | table: x, sections: [..], instructions?, prompt?,
+      model?, pageImages?, maxAttempts?, maxTokens?, chunkPages? }
+  - { type: check, id, values: table.column | field, reference: ..., aliases?, maxDistance? }
+review: { required: always | on_warnings | never }
+```
+
+- Types: `text | integer | decimal | date | boolean | enum | list`. Every field and table is
+  filled by exactly one extract step; a step fills several fields (one prompt) or a single field
+  (its own prompt, e.g. Compound or Execution Date) or one table.
+- JSON Schemas are generated from the definitions. Fields come back as
+  `{value, evidence, page}`; values are normalised by type (`137·8` → `137.8`, `16/02/2023` →
+  `2023-02-16`, enum casing). Unparseable values are kept and listed in `issues.csv`.
+- Steps use the built-in prompt (`builtin/extract.md.j2`: preamble, definitions, `instructions`,
+  section text) unless `prompt` names a custom Jinja2 file.
+- Outputs: `fields.csv` (one row, one column per field), `<table>.csv`, `<check>.csv`,
+  `issues.csv`, `document.json` (evidence, pages, checks, issues, review decision).
+- Review: `on_warnings` requires review when there are normalisation issues or unmatched check
+  values; the reasons are recorded in `document.json`.
+
+## Spec format (spec.yaml)
 
 One directory per document type, one subdirectory per immutable version:
 

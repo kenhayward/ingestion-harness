@@ -1,74 +1,128 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { DocumentSpecSchema, type DocumentSpec, type SpecSummary } from '@ih/shared';
+import {
+  DocumentSpecSchema,
+  TemplateSchema,
+  type DocumentSpec,
+  type SpecSummary,
+  type Template,
+} from '@ih/shared';
+
+/** A loaded document type definition: legacy spec.yaml or document template (template.yaml). */
+export type Definition =
+  | { kind: 'spec'; id: string; version: number; spec: DocumentSpec }
+  | { kind: 'template'; id: string; version: number; template: Template };
+
+export type DefinitionSummary = SpecSummary & { kind: Definition['kind'] };
+
+const issuesOf = (error: { issues: { path: (string | number)[]; message: string }[] }) =>
+  error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
 
 export class SpecRegistry {
-  private constructor(private readonly specs: Map<string, DocumentSpec[]>) {}
+  private constructor(private readonly defs: Map<string, Definition[]>) {}
 
-  /** Build from already-parsed specs (tests). Versions are sorted ascending. */
+  /** Build from already-parsed legacy specs (tests). */
   static fromSpecs(list: DocumentSpec[]): SpecRegistry {
-    const byId = new Map<string, DocumentSpec[]>();
-    for (const spec of list) {
-      byId.set(spec.id, [...(byId.get(spec.id) ?? []), spec]);
-    }
+    return SpecRegistry.fromDefinitions(
+      list.map((spec) => ({ kind: 'spec', id: spec.id, version: spec.version, spec })),
+    );
+  }
+
+  static fromDefinitions(list: Definition[]): SpecRegistry {
+    const byId = new Map<string, Definition[]>();
+    for (const def of list) byId.set(def.id, [...(byId.get(def.id) ?? []), def]);
     for (const versions of byId.values()) versions.sort((a, b) => a.version - b.version);
     return new SpecRegistry(byId);
   }
 
   /**
-   * Load every specs/<id>/v<N>/spec.yaml. Fails loudly on any invalid spec, a directory
-   * name that disagrees with the file's id/version, or a missing prompt template.
+   * Load every specs/<id>/v<N>/{spec,template}.yaml. Fails loudly on any invalid file, a
+   * directory name that disagrees with the file's id/version, or a missing prompt file.
    */
   static loadFromDir(root: string): SpecRegistry {
     const errors: string[] = [];
-    const loaded: DocumentSpec[] = [];
+    const loaded: Definition[] = [];
 
     for (const idDir of readdirSync(root, { withFileTypes: true })) {
       if (!idDir.isDirectory()) continue;
       for (const verDir of readdirSync(join(root, idDir.name), { withFileTypes: true })) {
         if (!verDir.isDirectory() || !/^v\d+$/.test(verDir.name)) continue;
         const dir = join(root, idDir.name, verDir.name);
-        const file = join(dir, 'spec.yaml');
-        if (!existsSync(file)) {
-          errors.push(`${dir}: missing spec.yaml`);
+        const specFile = join(dir, 'spec.yaml');
+        const templateFile = join(dir, 'template.yaml');
+        const prompts: [string, string][] = [];
+        let def: Definition;
+
+        if (existsSync(templateFile)) {
+          const result = TemplateSchema.safeParse(parseYaml(readFileSync(templateFile, 'utf8')));
+          if (!result.success) {
+            errors.push(`${templateFile}: ${issuesOf(result.error)}`);
+            continue;
+          }
+          const t = result.data;
+          def = { kind: 'template', id: t.id, version: t.version, template: t };
+          for (const step of t.pipeline) {
+            if (step.type === 'extract' && step.prompt)
+              prompts.push([`step "${step.id}"`, step.prompt]);
+          }
+        } else if (existsSync(specFile)) {
+          const result = DocumentSpecSchema.safeParse(parseYaml(readFileSync(specFile, 'utf8')));
+          if (!result.success) {
+            errors.push(`${specFile}: ${issuesOf(result.error)}`);
+            continue;
+          }
+          const s = result.data;
+          def = { kind: 'spec', id: s.id, version: s.version, spec: s };
+          for (const ex of s.extractions) prompts.push([`extraction "${ex.id}"`, ex.prompt]);
+        } else {
+          errors.push(`${dir}: missing spec.yaml or template.yaml`);
           continue;
         }
-        const result = DocumentSpecSchema.safeParse(parseYaml(readFileSync(file, 'utf8')));
-        if (!result.success) {
-          errors.push(
-            `${file}: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
-          );
-          continue;
+
+        if (def.id !== idDir.name || `v${def.version}` !== verDir.name) {
+          errors.push(`${dir}: id/version (${def.id} v${def.version}) does not match directory`);
         }
-        const spec = result.data;
-        if (spec.id !== idDir.name || `v${spec.version}` !== verDir.name) {
-          errors.push(`${file}: id/version (${spec.id} v${spec.version}) does not match directory`);
-        }
-        for (const ex of spec.extractions) {
-          if (!existsSync(join(dir, ex.prompt))) {
-            errors.push(`${file}: extraction "${ex.id}" prompt not found: ${ex.prompt}`);
+        for (const [owner, prompt] of prompts) {
+          if (!prompt.startsWith('builtin/') && !existsSync(join(dir, prompt))) {
+            errors.push(`${dir}: ${owner} prompt not found: ${prompt}`);
           }
         }
-        loaded.push(spec);
+        loaded.push(def);
       }
     }
 
     if (errors.length) throw new Error(`Invalid document specs:\n  ${errors.join('\n  ')}`);
-    return SpecRegistry.fromSpecs(loaded);
+    return SpecRegistry.fromDefinitions(loaded);
   }
 
   /** Latest version when `version` is omitted. */
-  get(id: string, version?: number): DocumentSpec | undefined {
-    const versions = this.specs.get(id);
+  get(id: string, version?: number): Definition | undefined {
+    const versions = this.defs.get(id);
     if (!versions) return undefined;
-    return version === undefined ? versions.at(-1) : versions.find((s) => s.version === version);
+    return version === undefined ? versions.at(-1) : versions.find((d) => d.version === version);
   }
 
-  list(): SpecSummary[] {
-    return [...this.specs.values()]
+  list(): DefinitionSummary[] {
+    return [...this.defs.values()]
       .flat()
-      .map(({ id, version, title, description }) => ({ id, version, title, description }))
+      .map((d) =>
+        d.kind === 'spec'
+          ? {
+              id: d.id,
+              version: d.version,
+              title: d.spec.title,
+              description: d.spec.description,
+              kind: d.kind,
+            }
+          : {
+              id: d.id,
+              version: d.version,
+              title: d.template.name,
+              description: d.template.description,
+              kind: d.kind,
+            },
+      )
       .sort((a, b) => a.id.localeCompare(b.id) || a.version - b.version);
   }
 }

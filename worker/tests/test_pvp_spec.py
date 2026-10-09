@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
 
 from ingest_worker.pdf import extract_pages
+from ingest_worker.pipeline import PAGE_MARKER, mark_pages
 from ingest_worker.prompts import render_prompt
 from ingest_worker.segment import segment, select_copy
-from ingest_worker.specs import LoadedSpec, load_specs
+from ingest_worker.specs import LoadedSpec, LoadedTemplate, load_specs
+from ingest_worker.template import compile_step
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEXT_PDF = REPO_ROOT / "docs" / "samples" / "TEXT process_validation_protocol.pdf"
@@ -109,7 +112,12 @@ def test_extraction_schemas_are_strict_structured_output_compatible(spec_dir: Pa
             for i, child in enumerate(node):
                 check(child, f"{path}/{i}")
 
-    for ex in loaded.spec.extractions:
+    extractions = (
+        [compile_step(loaded.template, step) for step in loaded.template.extract_steps()]
+        if isinstance(loaded, LoadedTemplate)
+        else loaded.spec.extractions
+    )
+    for ex in extractions:
         Draft202012Validator.check_schema(ex.schema_)
         check(ex.schema_, ex.id)
 
@@ -177,3 +185,85 @@ def test_v2_cross_checks_batch_numbers_and_outputs_the_result(pvp2: LoadedSpec) 
     )
     out = next(o for o in pvp2.spec.outputs if o.id == "batch_number_check")
     assert out.from_ == "batch_numbers" and out.format == "csv"
+
+
+# --- v3: document template (fields + tables + steps) ----------------------------------------
+
+
+@pytest.fixture(scope="module")
+def pvp3() -> Any:
+    loaded = load_specs(REPO_ROOT / "specs").get("process-validation-protocol", 3)
+    assert isinstance(loaded, LoadedTemplate)
+    return loaded
+
+
+def prepare_v3(pvp3: Any, pages: list[str]) -> tuple[int, dict[str, str]]:
+    doc = pvp3.template.document
+    first, kept = select_copy(pages, doc.copies)
+    marked = mark_pages(kept, first + 1)
+    return first, segment(marked, doc.sections, page_marker=PAGE_MARKER)
+
+
+def test_v3_segments_both_samples_like_v2_plus_page_markers(
+    pvp2: LoadedSpec, pvp3: Any, text_pages: list[str], image_pages: list[str]
+) -> None:
+    for pages in (text_pages, image_pages):
+        first2, v2 = prepare(pvp2, pages)
+        first3, v3 = prepare_v3(pvp3, pages)
+        assert first3 == first2 and set(v3) == set(v2)
+        for section_id, text in v2.items():
+            plain = "\n".join(
+                line for line in v3[section_id].splitlines() if not line.startswith("[page ")
+            )
+            assert plain.split() == text.split(), section_id
+    _, image = prepare_v3(pvp3, image_pages)
+    assert image["approvals"].startswith("[page 32]")
+    assert image["test_data"].startswith("[page 44]")
+
+
+def test_v3_declares_the_atoms_and_fills_some_with_dedicated_prompts(pvp3: Any) -> None:
+    t = pvp3.template
+    types = {f.id: f.type for f in t.outputs.fields}
+    assert types["compound"] == "list"
+    assert types["medicinal_product"] == "text"
+    assert types["execution_date"] == "date"
+    assert types["effective_date"] == "date" and types["number_of_batches"] == "integer"
+    single = {s.fields[0] for s in t.extract_steps() if len(s.fields) == 1}
+    assert {"compound", "execution_date"} <= single
+    assert t.filler_of_field("protocol_number").page_images == [1]
+
+
+def test_v3_tables_fix_v2_stage_and_decimal_problems(pvp3: Any) -> None:
+    results = pvp3.template.table("test_results")
+    columns = {c.id: c for c in results.columns}
+    assert columns["stage"].type == "enum"
+    assert columns["stage"].enum == ["Blending", "Lubrication", "Capsule filling", "Other"]
+    assert columns["result"].type == "text" and columns["result_value"].type == "decimal"
+    step = pvp3.template.filler_of_table("test_results")
+    assert (step.chunk_pages, step.sections) == (1, ["test_data"])
+
+
+def test_v3_cross_checks_batch_numbers(pvp3: Any) -> None:
+    [check] = [s for s in pvp3.template.pipeline if s.type == "check"]
+    assert (check.values, check.reference, check.aliases) == (
+        "test_results.batch_number",
+        "batches.batch_number",
+        "batches.batch_number_variants",
+    )
+
+
+def test_v3_builtin_prompts_render_for_every_step_on_both_samples(
+    pvp3: Any, text_pages: list[str], image_pages: list[str]
+) -> None:
+    t = pvp3.template
+    for pages in (text_pages, image_pages):
+        _, sections = prepare_v3(pvp3, pages)
+        for step in t.extract_steps():
+            ex = compile_step(t, step)
+            chunk = {"index": 1, "count": 2} if ex.chunk_pages else None
+            prompt = render_prompt(
+                pvp3.directory, ex.prompt, sections, ex.sections, chunk, ex.prompt_context
+            )
+            assert "Process Validation Protocol" in prompt, step.id
+            assert "[page" in prompt, step.id
+            assert len(prompt) < 120_000, step.id

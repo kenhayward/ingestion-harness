@@ -40,6 +40,8 @@ class Extraction(_Model):
     chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
     #: Top-level array property of the schema merged across chunks.
     merge_path: str | None = Field(default=None, min_length=1, alias="mergePath")
+    #: Extra variables for the prompt template (set when compiled from a document template).
+    prompt_context: dict[str, Any] | None = Field(default=None, alias="promptContext")
 
 
 class CsvColumn(_Model):
@@ -184,11 +186,29 @@ class LoadedSpec:
         self.directory = directory
 
 
-class SpecRegistry:
-    def __init__(self, specs: list[LoadedSpec]) -> None:
-        self._by_key = {(s.spec.id, s.spec.version): s for s in specs}
+class LoadedTemplate:
+    """A validated document template (ingest_worker.template) and its directory."""
 
-    def get(self, spec_id: str, version: int) -> LoadedSpec:
+    def __init__(self, template: Any, directory: Path) -> None:
+        from .template import Template
+
+        assert isinstance(template, Template)
+        self.template: Template = template
+        self.directory = directory
+
+
+Loaded = LoadedSpec | LoadedTemplate
+
+
+class SpecRegistry:
+    def __init__(self, specs: list[LoadedSpec] | list[Loaded]) -> None:
+        self._by_key: dict[tuple[str, int], Loaded] = {}
+        for s in specs:
+            item = s.spec if isinstance(s, LoadedSpec) else s.template
+            self._by_key[(item.id, item.version)] = s
+
+    def get(self, spec_id: str, version: int) -> Any:
+        """LoadedSpec (legacy spec.yaml) or LoadedTemplate (template.yaml)."""
         try:
             return self._by_key[(spec_id, version)]
         except KeyError:
@@ -198,27 +218,41 @@ class SpecRegistry:
         return len(self._by_key)
 
 
+def _check_prompt(directory: Path, prompt: str, owner: str, file: Path, errors: list[str]) -> None:
+    if not prompt.startswith("builtin/") and not (directory / prompt).is_file():
+        errors.append(f"{file}: {owner} prompt not found: {prompt}")
+
+
 def load_specs(root: Path) -> SpecRegistry:
-    """Load specs/<id>/v<N>/spec.yaml, failing on any invalid spec or missing prompt."""
+    """Load specs/<id>/v<N>/spec.yaml (legacy) and template.yaml (document templates), failing
+    on any invalid file, id/version that disagrees with its directory, or missing prompt."""
+    from .template import Template
+
     errors: list[str] = []
-    loaded: list[LoadedSpec] = []
-    for file in sorted(root.glob("*/v*/spec.yaml")):
+    loaded: list[Loaded] = []
+    files = sorted(root.glob("*/v*/spec.yaml")) + sorted(root.glob("*/v*/template.yaml"))
+    for file in files:
         directory = file.parent
+        raw = yaml.safe_load(file.read_text(encoding="utf-8"))
         try:
-            spec = DocumentSpec.model_validate(yaml.safe_load(file.read_text(encoding="utf-8")))
+            if file.name == "template.yaml":
+                template = Template.model_validate(raw)
+                ident: tuple[str, int] = (template.id, template.version)
+                for step in template.extract_steps():
+                    if step.prompt:
+                        _check_prompt(directory, step.prompt, f"step {step.id!r}", file, errors)
+                loaded.append(LoadedTemplate(template, directory))
+            else:
+                spec = DocumentSpec.model_validate(raw)
+                ident = (spec.id, spec.version)
+                for e in spec.extractions:
+                    _check_prompt(directory, e.prompt, f"extraction {e.id!r}", file, errors)
+                loaded.append(LoadedSpec(spec, directory))
         except ValidationError as exc:
             errors.append(f"{file}: {exc}")
             continue
-        if spec.id != directory.parent.name or f"v{spec.version}" != directory.name:
-            errors.append(
-                f"{file}: id/version ({spec.id} v{spec.version}) does not match directory"
-            )
-        errors += [
-            f"{file}: extraction {e.id!r} prompt not found: {e.prompt}"
-            for e in spec.extractions
-            if not (directory / e.prompt).is_file()
-        ]
-        loaded.append(LoadedSpec(spec, directory))
+        if ident[0] != directory.parent.name or f"v{ident[1]}" != directory.name:
+            errors.append(f"{file}: id/version ({ident[0]} v{ident[1]}) does not match directory")
     if errors:
         raise ValueError("invalid document specs:\n  " + "\n  ".join(errors))
     return SpecRegistry(loaded)

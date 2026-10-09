@@ -76,12 +76,14 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Contract | TypeScript | Python |
 | --- | --- | --- |
 | Spec format (incl. `document.ocr`, `copies`, chunking, `checks`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
+| Template format (fields, tables, steps, review) | `packages/shared/src/template.ts` | `worker/src/ingest_worker/template.py` |
 | Object keys | `packages/shared/src/storage-keys.ts` | `worker/src/ingest_worker/storage.py` |
 | Job statuses | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
 | Models table | `ModelInfo` in `packages/shared/src/models.ts`, `PgRepo.listModels` | `PgJobQueue.upsert_models` |
 
 ## Rules of the road
 
+- **Document templates (`template.yaml`) are the preferred format** — outputs first (fields + typed tables), steps compile to the engine's `Extraction` (`template.compile_step`), run by `template_pipeline.py`. Legacy `spec.yaml` still runs via `pipeline.py`; both share `prepare_document` (OCR, copies, page markers, sections).
 - **Specs are immutable once published.** Change a document type by adding `specs/<id>/v<N+1>/`;
   jobs record the spec id + version they ran with. Prompts are Jinja2 with `StrictUndefined`.
 - **Migrations are forward-only**: add `db/migrations/NNNN_description.sql`; never edit an

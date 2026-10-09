@@ -37,6 +37,8 @@ export const ExtractionSchema = z
     chunkPages: z.number().int().positive().optional(),
     /** Top-level array property of the schema merged across chunks. */
     mergePath: z.string().min(1).optional(),
+    /** Extra prompt variables (set when compiled from a document template). */
+    promptContext: z.record(z.unknown()).optional(),
   })
   .strict();
 

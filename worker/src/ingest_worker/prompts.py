@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PrefixLoader, StrictUndefined
+
+#: Built-in prompts, addressed as "builtin/<name>" from any spec or template.
+BUILTIN_DIR = Path(__file__).parent / "prompt_templates"
 
 
 def render_prompt(
@@ -12,16 +15,20 @@ def render_prompt(
     sections: dict[str, str],
     section_ids: list[str],
     chunk: dict[str, Any] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> str:
-    """Render a spec's Jinja2 prompt. Templates receive `sections` as [{id, text}, ...] and
-    `chunk` ({index, count} for chunked extractions, else None)."""
+    """Render a Jinja2 prompt. Templates receive `sections` as [{id, text}, ...], `chunk`
+    ({index, count} for chunked extractions, else None) and any extra `context` variables."""
     env = Environment(
-        loader=FileSystemLoader(spec_dir),
+        loader=ChoiceLoader(
+            [FileSystemLoader(spec_dir), PrefixLoader({"builtin": FileSystemLoader(BUILTIN_DIR)})]
+        ),
         undefined=StrictUndefined,
         autoescape=False,  # prompts, not HTML
         keep_trailing_newline=True,
     )
     return env.get_template(template).render(
+        **(context or {}),
         sections=[{"id": sid, "text": sections[sid]} for sid in section_ids],
         chunk=chunk,
     )

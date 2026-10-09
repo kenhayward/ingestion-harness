@@ -32,6 +32,46 @@ describe('SpecRegistry', () => {
     expect(() => SpecRegistry.loadFromDir(root)).toThrow(/does not match directory/);
   });
 
+  it('loads document templates (template.yaml) alongside legacy specs', () => {
+    const root = mkdtempSync(join(tmpdir(), 'specs-'));
+    const dir = join(root, 'demo', 'v3');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'template.yaml'),
+      [
+        'id: demo',
+        'version: 3',
+        'name: Demo document',
+        'document: { sections: [{ id: h, anchor: "^H" }] }',
+        'outputs: { fields: [{ id: product, type: text }] }',
+        'pipeline: [{ type: extract, id: s, fields: [product], sections: [h] }]',
+      ].join('\n'),
+    );
+    const registry = SpecRegistry.loadFromDir(root);
+    expect(registry.list()).toEqual([
+      { id: 'demo', version: 3, title: 'Demo document', description: undefined, kind: 'template' },
+    ]);
+    expect(registry.get('demo')?.version).toBe(3);
+  });
+
+  it('fails when a template step names a missing custom prompt', () => {
+    const root = mkdtempSync(join(tmpdir(), 'specs-'));
+    const dir = join(root, 'demo', 'v1');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'template.yaml'),
+      [
+        'id: demo',
+        'version: 1',
+        'name: Demo',
+        'document: { sections: [{ id: h, anchor: "^H" }] }',
+        'outputs: { fields: [{ id: product }] }',
+        'pipeline: [{ type: extract, id: s, fields: [product], sections: [h], prompt: p.j2 }]',
+      ].join('\n'),
+    );
+    expect(() => SpecRegistry.loadFromDir(root)).toThrow(/prompt not found/);
+  });
+
   it('fails when a prompt template is missing', () => {
     const root = mkdtempSync(join(tmpdir(), 'specs-'));
     const dir = join(root, 'demo', 'v1');
