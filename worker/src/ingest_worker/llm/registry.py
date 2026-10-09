@@ -119,6 +119,11 @@ def _openai_factory(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
         strict=bool(cfg.options.get("strict", True)),
         response_format=cfg.options.get("responseFormat", "json_schema"),
         max_tokens_param=cfg.options.get("maxTokensParam"),
+        temperature=(
+            float(cfg.options["temperature"])
+            if cfg.options.get("temperature") is not None
+            else None
+        ),
     )
 
 

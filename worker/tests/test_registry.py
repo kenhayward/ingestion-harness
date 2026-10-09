@@ -145,3 +145,22 @@ def test_factories_apply_timeout_and_retry_options() -> None:
     )
     provider = DEFAULT_FACTORIES["anthropic"](cfg, "key")
     assert provider._client.timeout == 300 and provider._client.max_retries == 1
+
+
+def test_temperature_option_reaches_openai_providers(llm_config_path: Path) -> None:
+    from ingest_worker.llm.registry import DEFAULT_FACTORIES
+
+    cfg = ProviderConfig.model_validate(
+        {
+            "name": "local",
+            "kind": "openai-chat",
+            "baseUrl": "http://x/v1",
+            "options": {"temperature": 0},
+        }
+    )
+    provider: Any = DEFAULT_FACTORIES["openai-chat"](cfg, None)
+    assert provider._temperature == 0
+    committed = load_llm_config(llm_config_path, env={})
+    local = next(p for p in committed.providers if p.name == "local")
+    assert local.options["temperature"] == 0  # deterministic extraction on the local model
+    assert committed.ocr is not None and committed.ocr.temperature == 0

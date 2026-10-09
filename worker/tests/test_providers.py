@@ -292,3 +292,23 @@ def test_truncation_is_reported_by_every_provider() -> None:
 def test_complete_responses_are_not_truncated() -> None:
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=Recorder(chat_response())))
     assert not OpenAIChatProvider("l", client).complete_json("m", REQ).truncated
+
+
+def test_openai_providers_send_a_configured_temperature() -> None:
+    completions = Recorder(chat_response())
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    OpenAIChatProvider("local", client, temperature=0.0).complete_json("m", REQ)
+    assert completions.kwargs["temperature"] == 0.0
+
+    completions = Recorder(chat_response())
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    OpenAIChatProvider("local", client).complete_json("m", REQ)
+    assert "temperature" not in completions.kwargs  # server default unless configured
+
+    resp = SimpleNamespace(
+        id="r", model="m", status="completed", output_text="{}", output=[], usage=None
+    )
+    responses = Recorder(resp)
+    client = SimpleNamespace(responses=responses)
+    OpenAIResponsesProvider("o", client, temperature=0.0).complete_json("m", REQ)
+    assert responses.kwargs["temperature"] == 0.0

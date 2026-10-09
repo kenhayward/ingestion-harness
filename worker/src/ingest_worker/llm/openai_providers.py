@@ -65,6 +65,7 @@ class _OpenAIBase:
         strict: bool = True,
         response_format: ResponseFormat = "json_schema",
         max_tokens_param: str | None = None,
+        temperature: float | None = None,
     ) -> None:
         self.name = name
         self._client = client
@@ -72,6 +73,8 @@ class _OpenAIBase:
         self._strict = strict
         self._response_format = response_format
         self._max_tokens_param = max_tokens_param
+        #: Extraction temperature (None = server default). 0 makes local models deterministic.
+        self._temperature = temperature
 
     def list_models(self) -> list[ModelDescriptor]:
         return [
@@ -107,6 +110,8 @@ class OpenAIChatProvider(_OpenAIBase):
             params["response_format"] = {"type": "json_object"}
         if self._max_tokens_param:
             params[self._max_tokens_param] = request.max_tokens
+        if self._temperature is not None:
+            params["temperature"] = self._temperature
 
         return self._create(params)
 
@@ -169,6 +174,8 @@ class OpenAIResponsesProvider(_OpenAIBase):
             }
         elif self._response_format == "json_object":
             params["text"] = {"format": {"type": "json_object"}}
+        if self._temperature is not None:
+            params["temperature"] = self._temperature
 
         return self._create(params)
 
