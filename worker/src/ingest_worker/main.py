@@ -22,7 +22,7 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
-from .template_pipeline import publish_template_job
+from .template_pipeline import publish_template_job, rerun_template_job
 
 log = logging.getLogger("ingest_worker")
 
@@ -40,6 +40,14 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s published %d outputs", job.id, len(published))
+            return True
+        if job.task == "rerun":
+            loaded = load_definition(job, deps, queue)
+            if not isinstance(loaded, LoadedTemplate):
+                raise DocumentError("only template documents can re-run steps")
+            rerun = rerun_template_job(job, deps, queue, loaded)
+            queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
+            log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
             return True
         result = process_job(job, deps, queue)
     except DocumentError as exc:

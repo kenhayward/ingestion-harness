@@ -69,6 +69,7 @@ class FakeQueue:
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Templates stored in the database, keyed by (id, version).
     templates: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
+    step_runs: list[dict[str, Any]] = field(default_factory=list)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
@@ -93,6 +94,9 @@ class FakeQueue:
 
     def review_decision(self, job_id: str) -> dict[str, Any] | None:
         return self.decisions.get(job_id)
+
+    def record_step_run(self, job_id: str, run: dict[str, Any]) -> None:
+        self.step_runs.append({"job_id": job_id, **run})
 
     def load_template(self, template_id: str, version: int) -> dict[str, Any] | None:
         return self.templates.get((template_id, version))

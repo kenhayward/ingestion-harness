@@ -18,7 +18,11 @@ Return one entry in `rows` per row of data, in document order, with these column
 {% if chunk %}
 You are given page {{ chunk.index }} of {{ chunk.count }} of this part of the document; the other
 pages are extracted separately. Only return rows that appear on this page.
-{% endif %}{% endif %}{% if instructions %}
+{% endif %}{% endif %}{% if step_context %}
+Context from earlier steps (use it to resolve ambiguous or misread values; do not copy it into
+fields it does not apply to):
+{% for c in step_context %}- {{ c.name }} ({{ c.path }}): {{ c.text }}
+{% endfor %}{% endif %}{% if instructions %}
 Additional instructions:
 {{ instructions }}
 {% endif %}

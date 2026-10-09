@@ -67,6 +67,8 @@ class ExtractStep(_Model):
     max_attempts: int = Field(default=2, ge=1, le=5, alias="maxAttempts")
     max_tokens: int = Field(default=16000, ge=256, le=128000, alias="maxTokens")
     chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
+    #: Values from earlier steps shown in the prompt: name -> `<field>` or `<table>.<column>`.
+    context: dict[Id, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _fills(self) -> ExtractStep:
@@ -208,6 +210,23 @@ class Template(_Model):
             elif count > 1:
                 errors.append(f"{kind} {output_id!r} is filled by more than one step")
 
+        if not errors:  # context must come from steps that have already run
+            order = {s.id: i for i, s in enumerate(self.pipeline)}
+            for step in self.extract_steps():
+                for name, path in step.context.items():
+                    if self._resolve(path) is None:
+                        errors.append(
+                            f"step {step.id!r}: context {name!r}: unknown field or column {path!r}"
+                        )
+                        continue
+                    head, _, column = path.partition(".")
+                    filler = self.filler_of_table(head) if column else self.filler_of_field(head)
+                    if order[filler.id] >= order[step.id]:
+                        errors.append(
+                            f"step {step.id!r}: context {name!r} refers to {path!r}, which is "
+                            "not filled by an earlier step"
+                        )
+
         if not errors:  # path resolution needs a consistent template
             for check in self.pipeline:
                 if isinstance(check, CheckStep):
@@ -300,7 +319,10 @@ def compile_step(template: Template, step: ExtractStep) -> Extraction:
             },
         }
     context.update(
-        preamble=template.preamble, instructions=step.instructions, document_name=template.name
+        preamble=template.preamble,
+        instructions=step.instructions,
+        document_name=template.name,
+        step_context=[],  # filled at run time from earlier steps' results
     )
     return Extraction.model_validate(
         {

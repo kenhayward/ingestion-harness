@@ -17,11 +17,15 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from .extract import ExtractionResult
+from .llm.base import LLMProvider
+from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell
 from .pipeline import (
     DocumentError,
     PipelineDeps,
+    Prepared,
     ProcessResult,
     page_images,
     prepare_document,
@@ -31,8 +35,8 @@ from .pipeline import (
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
-from .review import apply_edits
-from .specs import LoadedTemplate
+from .review import apply_edits, run_checks
+from .specs import Extraction, LoadedTemplate
 from .storage import output_key, page_preview_key
 from .template import CheckStep, ExtractStep, Template, compile_step
 
@@ -62,20 +66,21 @@ def process_template_job(
                 job, queue, check, step_results
             )
             continue
-        ex = compiled[step.id]
-        provider, model_id = resolved[step.id]
-        images = page_images(job, deps, queue, doc.pdf, ex.page_images, doc.total_pages)
-        result = run_step_extraction(
-            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images
+        result = _run_step(
+            job,
+            deps,
+            queue,
+            loaded,
+            step,
+            compiled[step.id],
+            resolved[step.id],
+            doc,
+            fields,
+            tables,
+            trigger="process",
         )
         models_used[step.id] = result.model_ref
         step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
-        queue.event(
-            job.id,
-            "info",
-            f"extracted {step.id}",
-            {"model": result.model_ref, "attempts": len(result.attempts)},
-        )
 
     reasons = _review_reasons(template, checks, issues)
     if reasons:
@@ -126,6 +131,178 @@ def publish_template_job(
     published = publish_outputs(deps, render_document(template, document))
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+def context_values(
+    template: Template,
+    step: ExtractStep,
+    fields: dict[str, dict[str, Any]],
+    tables: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, str]]:
+    """Render a step's `context` from earlier results: field values as-is, table columns as
+    distinct values with counts (most frequent first), e.g. "G17230211 (13x), GTT230211 (2x)"."""
+    out = []
+    for name, path in step.context.items():
+        head, _, column = path.partition(".")
+        if column:
+            counts: dict[str, int] = {}
+            for row in tables.get(head, []):
+                cell = row.get(column)
+                for v in cell if isinstance(cell, list) else [cell]:
+                    if v not in (None, ""):
+                        counts[str(v)] = counts.get(str(v), 0) + 1
+            ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            text = ", ".join(f"{v} ({n}x)" for v, n in ranked) or "(none)"
+        else:
+            value = (fields.get(head) or {}).get("value")
+            text = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
+        out.append({"name": name, "path": path, "text": text})
+    return out
+
+
+def _run_step(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    loaded: LoadedTemplate,
+    step: ExtractStep,
+    ex: Extraction,
+    model: tuple[LLMProvider, str],
+    doc: Prepared,
+    fields: dict[str, dict[str, Any]],
+    tables: dict[str, list[dict[str, Any]]],
+    *,
+    trigger: str,
+    extra_instructions: str | None = None,
+) -> ExtractionResult:
+    """Run one extract step with context from earlier steps; record it in step_runs."""
+    provider, model_id = model
+    context = dict(ex.prompt_context or {})
+    context["step_context"] = context_values(loaded.template, step, fields, tables)
+    if extra_instructions:
+        guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
+        base = context.get("instructions")
+        context["instructions"] = f"{base}\n\n{guidance}" if base else guidance
+    ex = ex.model_copy(update={"prompt_context": context})
+    images = page_images(job, deps, queue, doc.pdf, ex.page_images, doc.total_pages)
+    run: dict[str, Any] = {
+        "step_id": step.id,
+        "trigger": trigger,
+        "model": f"{provider.name}/{model_id}",
+        "attempts": 0,
+        "input_tokens": None,
+        "output_tokens": None,
+        "started_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        result = run_step_extraction(
+            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images
+        )
+    except Exception as exc:
+        attempts = getattr(exc.__cause__, "attempts", [])
+        queue.record_step_run(
+            job.id,
+            {
+                **run,
+                "attempts": len(attempts),
+                "status": "failed",
+                "error": str(exc)[:2000],
+                "finished_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        raise
+
+    def total(key: str) -> int | None:
+        values = [getattr(a, key) for a in result.attempts if getattr(a, key) is not None]
+        return sum(values) if values else None
+
+    queue.record_step_run(
+        job.id,
+        {
+            **run,
+            "model": result.model_ref,
+            "attempts": len(result.attempts),
+            "input_tokens": total("input_tokens"),
+            "output_tokens": total("output_tokens"),
+            "status": "succeeded",
+            "finished_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    queue.event(
+        job.id,
+        "info",
+        f"extracted {step.id}" if trigger == "process" else f"re-ran {step.id}",
+        {"model": result.model_ref, "attempts": len(result.attempts)},
+    )
+    return result
+
+
+def rerun_template_job(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: LoadedTemplate
+) -> ProcessResult:
+    """Re-run one extract step of a document in review: OCR text is reused from the runs
+    bucket, only that step calls the model, its outputs are replaced, checks re-run, and the
+    draft goes back to review."""
+    template = loaded.template
+    params = job.rerun or {}
+    step = next((s for s in template.extract_steps() if s.id == params.get("step")), None)
+    if step is None:
+        raise DocumentError(
+            f"no extract step {params.get('step')!r} in {template.id} v{template.version}"
+        )
+    ex = compile_step(template, step)
+    try:
+        model = deps.models.resolve(params.get("model") or job.model_override or step.model)
+    except ModelResolutionError as exc:
+        raise DocumentError(f"re-run of {step.id!r}: {exc}") from exc
+
+    draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
+    document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
+    fields: dict[str, dict[str, Any]] = document["fields"]
+    tables: dict[str, list[dict[str, Any]]] = document["tables"]
+    doc = prepare_document(job, deps, queue, template.document)
+
+    result = _run_step(
+        job,
+        deps,
+        queue,
+        loaded,
+        step,
+        ex,
+        model,
+        doc,
+        fields,
+        tables,
+        trigger="rerun",
+        extra_instructions=params.get("instructions"),
+    )
+    issues = [i for i in document.get("issues", []) if i.get("step") != step.id]
+    _normalise_step(template, step, result.data, fields, tables, issues)
+    checks = run_checks(template, fields, tables)
+    reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
+    document.update(
+        fields=fields,
+        tables=tables,
+        checks=checks,
+        issues=issues,
+        review_required=True,
+        review_reasons=reasons,
+        models={**document.get("models", {}), step.id: result.model_ref},
+        reruns=[
+            *document.get("reruns", []),
+            {
+                "step": step.id,
+                "model": result.model_ref,
+                "instructions": params.get("instructions"),
+                "at": datetime.now(UTC).isoformat(),
+            },
+        ],
+    )
+    outputs = render_document(template, document)
+    for o in outputs:
+        content_type = "text/csv" if o.format == "csv" else "application/json"
+        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
+    return ProcessResult(outputs, reasons)
 
 
 def _save_previews(

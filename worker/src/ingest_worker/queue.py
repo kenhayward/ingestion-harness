@@ -28,6 +28,8 @@ class ClaimedJob:
     task: str = "process"
     #: Test run of a (draft) template: processed and reviewable, never published.
     test: bool = False
+    #: task="rerun": {"step": id, "model"?: ref, "instructions"?: text}
+    rerun: dict[str, Any] | None = None
 
 
 class JobQueue(Protocol):
@@ -61,6 +63,10 @@ class JobQueue(Protocol):
         """Template definition stored in the database (None: not a database template)."""
         ...
 
+    def record_step_run(self, job_id: str, run: dict[str, Any]) -> None:
+        """One extract step execution: step_id, trigger, model, attempts, tokens, status, times."""
+        ...
+
     def needs_review(self, job: ClaimedJob, reason: str) -> None: ...
 
     def fail(self, job: ClaimedJob, error: str) -> None:
@@ -91,7 +97,7 @@ WITH next AS (
   RETURNING j.*
 )
 SELECT c.id::text, c.document_id::text, d.spec_id, d.spec_version, d.bucket, d.object_key,
-       c.model_override, c.attempts, c.max_attempts, c.task, c.test
+       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun
   FROM claimed c JOIN documents d ON d.id = c.document_id
 """
 
@@ -184,6 +190,16 @@ class PgJobQueue:
             (template_id, version),
         ).fetchone()
         return row[0] if row else None
+
+    def record_step_run(self, job_id: str, run: dict[str, Any]) -> None:
+        self._conn.execute(
+            """INSERT INTO step_runs (job_id, step_id, trigger, model, attempts, input_tokens,
+                                      output_tokens, status, error, started_at, finished_at)
+               VALUES (%(job_id)s, %(step_id)s, %(trigger)s, %(model)s, %(attempts)s,
+                       %(input_tokens)s, %(output_tokens)s, %(status)s, %(error)s,
+                       %(started_at)s, %(finished_at)s)""",
+            {"job_id": job_id, "error": None, **run},
+        )
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
         self._finish(job.id, "needs_review", reason)
