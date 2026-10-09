@@ -80,6 +80,24 @@ export const CopySelectionSchema = z
   })
   .strict();
 
+/** Deterministic cross-extraction consistency check (worker/src/ingest_worker/checks.py). */
+export const CheckSchema = z
+  .object({
+    id: Id,
+    description: z.string().optional(),
+    /** Values to classify, e.g. "test_results.results[*].batch_number". */
+    values: z.string().min(1),
+    /** Reference values, e.g. "batches.batches[*].batch_number". */
+    reference: z.string().min(1),
+    /** Per-reference alternative spellings, sharing the reference's list prefix. */
+    aliases: z.string().min(1).optional(),
+    /** Max edit distance for a "near" match. */
+    maxDistance: z.number().int().min(0).default(2),
+  })
+  .strict();
+
+const pathRoot = (path: string) => path.split('.')[0]!.split('[')[0]!;
+
 export const OcrModeSchema = z.enum(['auto', 'always', 'never']);
 export type OcrMode = z.infer<typeof OcrModeSchema>;
 
@@ -103,6 +121,7 @@ export const DocumentSpecSchema = z
       .strict(),
     extractions: z.array(ExtractionSchema).min(1),
     outputs: z.array(OutputSchema).min(1),
+    checks: z.array(CheckSchema).default([]),
   })
   .strict()
   .superRefine((spec, ctx) => {
@@ -114,6 +133,7 @@ export const DocumentSpecSchema = z
       ['section', spec.document.sections.map((s) => s.id)],
       ['extraction', spec.extractions.map((e) => e.id)],
       ['output', spec.outputs.map((o) => o.id)],
+      ['extraction/check', [...spec.extractions, ...spec.checks].map((x) => x.id)],
     ] as const) {
       for (const d of dupes([...ids])) {
         ctx.addIssue({ code: 'custom', message: `duplicate ${label} id "${d}"` });
@@ -152,8 +172,36 @@ export const DocumentSpecSchema = z
       }
     });
 
+    spec.checks.forEach((c, i) => {
+      for (const [label, path] of [
+        ['values', c.values],
+        ['reference', c.reference],
+        ['aliases', c.aliases],
+      ] as const) {
+        if (path !== undefined && !extractionIds.has(pathRoot(path))) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['checks', i, label],
+            message: `unknown extraction "${pathRoot(path)}"`,
+          });
+        }
+      }
+      if (c.aliases) {
+        const cut = c.reference.lastIndexOf('[*]');
+        const prefix = cut >= 0 ? c.reference.slice(0, cut + 3) : pathRoot(c.reference);
+        if (!c.aliases.startsWith(`${prefix}.`)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['checks', i, 'aliases'],
+            message: `aliases must start with "${prefix}"`,
+          });
+        }
+      }
+    });
+
+    const sources = new Set([...extractionIds, ...spec.checks.map((c) => c.id)]);
     spec.outputs.forEach((o, i) => {
-      if (o.from !== '*' && !extractionIds.has(o.from)) {
+      if (o.from !== '*' && !sources.has(o.from)) {
         ctx.addIssue({
           code: 'custom',
           path: ['outputs', i, 'from'],

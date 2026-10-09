@@ -16,7 +16,14 @@ from ingest_worker.ocr import OcrSettings
 from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.prompts import render_prompt
 from ingest_worker.queue import ClaimedJob
-from ingest_worker.specs import CopySelection, LoadedSpec, SpecRegistry, load_specs
+from ingest_worker.specs import (
+    Check,
+    CopySelection,
+    CsvOutput,
+    LoadedSpec,
+    SpecRegistry,
+    load_specs,
+)
 from ingest_worker.storage import MemoryObjectStore
 
 from .fakes import FakeProvider, FakeQueue
@@ -346,6 +353,41 @@ def test_chunk_info_is_available_to_prompt_templates(tmp_path: Path) -> None:
         render_prompt(tmp_path, "p.j2", {"s": "x"}, ["s"], chunk={"index": 2, "count": 5})
         == "part 2/5"
     )
+
+
+def test_checks_run_after_extraction_and_feed_outputs(setup, fixture_specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    loaded = deps.specs.get("example-invoice", 1)
+    check = Check.model_validate(
+        {
+            "id": "descriptions",
+            "values": "line_items.items[*].description",
+            "reference": "invoice_header.supplier_name",
+        }
+    )
+    csv_out = CsvOutput.model_validate(
+        {
+            "id": "description_check",
+            "format": "csv",
+            "from": "descriptions",
+            "rowsPath": "rows",
+            "columns": [{"name": "value", "path": "value"}, {"name": "status", "path": "status"}],
+        }
+    )
+    with_spec_changes(
+        deps, fixture_specs_dir, checks=[check], outputs=[*loaded.spec.outputs, csv_out]
+    )
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    csv = store.get("outputs", "example-invoice/v1/description_check/doc-1.csv").decode()
+    assert "doc-1,Widget,unmatched" in csv and "doc-1,Acme Supplies Ltd,unused" in csv
+    assert ("job-1", "warn", "check descriptions: 2 unmatched") in queue.events
+    full = json.loads(store.get("outputs", "example-invoice/v1/invoice_full/doc-1.json"))
+    assert full["data"]["descriptions"]["rows"]
 
 
 class ConcurrentOcr(FakeProvider):

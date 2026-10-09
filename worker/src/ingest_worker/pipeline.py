@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from .checks import run_check
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import LLMProvider, RefusalError
 from .llm.registry import ModelRegistry, ModelResolutionError
@@ -112,6 +113,17 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
             f"extracted {ex.id}",
             {"model": result.model_ref, "attempts": len(result.attempts)},
         )
+
+    for check in spec.checks:
+        results[check.id] = run_check(check, results)
+        unmatched = [r["value"] for r in results[check.id]["rows"] if r["status"] == "unmatched"]
+        if unmatched:
+            queue.event(
+                job.id,
+                "warn",
+                f"check {check.id}: {len(unmatched)} unmatched",
+                {"values": unmatched},
+            )
 
     outputs = render_outputs(
         spec,

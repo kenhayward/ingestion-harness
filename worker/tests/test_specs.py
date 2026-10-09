@@ -83,6 +83,40 @@ def test_chunking_is_validated(overrides: dict[str, object], message: str) -> No
         DocumentSpec.model_validate(raw)
 
 
+def with_check(check: dict[str, object], **extra: object) -> dict[str, object]:
+    base = {"id": "c", "values": "e.rows[*].a", "reference": "e.rows[*].b"}
+    return {**MINIMAL, "checks": [{**base, **check}], **extra}
+
+
+def test_checks_are_parsed_and_can_feed_outputs() -> None:
+    outputs = [
+        *MINIMAL["outputs"],
+        {
+            "id": "c_csv",
+            "format": "csv",
+            "from": "c",
+            "rowsPath": "rows",  # type: ignore[list-item]
+            "columns": [{"name": "v", "path": "value"}],
+        },
+    ]
+    spec = DocumentSpec.model_validate(with_check({"maxDistance": 1}, outputs=outputs))
+    assert spec.checks[0].max_distance == 1 and spec.checks[0].aliases is None
+    assert DocumentSpec.model_validate(MINIMAL).checks == []
+
+
+@pytest.mark.parametrize(
+    ("check", "message"),
+    [
+        ({"values": "nope.rows[*].a"}, "unknown extraction"),
+        ({"reference": "x"}, "unknown extraction"),
+        ({"id": "e"}, "duplicate"),
+    ],
+)
+def test_checks_are_validated(check: dict[str, object], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        DocumentSpec.model_validate(with_check(check))
+
+
 def test_ocr_mode_is_validated() -> None:
     doc = {**MINIMAL["document"], "ocr": "always"}  # type: ignore[dict-item]
     assert DocumentSpec.model_validate({**MINIMAL, "document": doc}).document.ocr == "always"

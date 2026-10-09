@@ -64,6 +64,25 @@ class JsonOutput(_Model):
 Output = Annotated[CsvOutput | JsonOutput, Field(discriminator="format")]
 
 
+class Check(_Model):
+    """Deterministic consistency check between extractions (see ingest_worker.checks)."""
+
+    id: Id
+    description: str | None = None
+    #: Values to classify, e.g. "test_results.results[*].batch_number".
+    values: str = Field(min_length=1)
+    #: Reference values, e.g. "batches.batches[*].batch_number".
+    reference: str = Field(min_length=1)
+    #: Per-reference alternative spellings, sharing the reference's list prefix.
+    aliases: str | None = None
+    #: Max edit distance for a "near" match (OCR misreads).
+    max_distance: int = Field(default=2, ge=0, alias="maxDistance")
+
+
+def _path_root(path: str) -> str:
+    return path.split(".", 1)[0].split("[", 1)[0]
+
+
 class PageRange(_Model):
     min: int = Field(gt=0)
     max: int = Field(gt=0)
@@ -96,6 +115,7 @@ class DocumentSpec(_Model):
     document: DocumentLayout
     extractions: list[Extraction] = Field(min_length=1)
     outputs: list[Output] = Field(min_length=1)
+    checks: list[Check] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _cross_references(self) -> DocumentSpec:
@@ -104,6 +124,7 @@ class DocumentSpec(_Model):
             ("section", [s.id for s in self.document.sections]),
             ("extraction", [e.id for e in self.extractions]),
             ("output", [o.id for o in self.outputs]),
+            ("extraction/check", [e.id for e in self.extractions] + [c.id for c in self.checks]),
         ):
             errors += [
                 f"duplicate {label} id {i!r}" for i in sorted({i for i in ids if ids.count(i) > 1})
@@ -129,8 +150,24 @@ class DocumentSpec(_Model):
                     f"extraction {e.id!r}: mergePath {e.merge_path!r} must be a top-level "
                     "array property of the schema"
                 )
+        for c in self.checks:
+            for label, path in (
+                ("values", c.values),
+                ("reference", c.reference),
+                ("aliases", c.aliases),
+            ):
+                if path is not None and _path_root(path) not in extraction_ids:
+                    errors.append(
+                        f"check {c.id!r}: unknown extraction {_path_root(path)!r} in {label}"
+                    )
+            if c.aliases:
+                cut = c.reference.rfind("[*]")
+                prefix = c.reference[: cut + 3] if cut >= 0 else _path_root(c.reference)
+                if not c.aliases.startswith(prefix + "."):
+                    errors.append(f"check {c.id!r}: aliases must start with {prefix!r}")
+        sources = extraction_ids | {c.id for c in self.checks}
         for o in self.outputs:
-            if o.from_ != "*" and o.from_ not in extraction_ids:
+            if o.from_ != "*" and o.from_ not in sources:
                 errors.append(f"output {o.id!r}: unknown extraction {o.from_!r}")
         if self.document.pages and self.document.pages.min > self.document.pages.max:
             errors.append("document.pages: min > max")

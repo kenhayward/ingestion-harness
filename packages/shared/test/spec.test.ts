@@ -82,6 +82,37 @@ describe('DocumentSpecSchema', () => {
     });
   });
 
+  describe('checks', () => {
+    const base = { id: 'c', values: 'head.rows[*].a', reference: 'head.rows[*].b' };
+    const withCheck = (check: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+      DocumentSpecSchema.safeParse({ ...valid, checks: [{ ...base, ...check }], ...extra });
+
+    it('parses checks with defaults and lets outputs read from them', () => {
+      const result = withCheck(
+        {},
+        {
+          outputs: [
+            ...valid.outputs,
+            { id: 'c_csv', format: 'csv', from: 'c', columns: [{ name: 'v', path: 'value' }] },
+          ],
+        },
+      );
+      expect(result.success).toBe(true);
+      expect(result.data?.checks[0]?.maxDistance).toBe(2);
+      expect(DocumentSpecSchema.parse(valid).checks).toEqual([]);
+    });
+
+    it.each([
+      [{ values: 'nope.rows[*].a' }, 'unknown extraction'],
+      [{ id: 'head' }, 'duplicate'],
+      [{ aliases: 'other.rows[*].x' }, 'aliases must start with'],
+    ])('rejects %j', (check, message) => {
+      const result = withCheck(check);
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain(message);
+    });
+  });
+
   it('validates the OCR mode', () => {
     const withOcr = (ocr: string) =>
       DocumentSpecSchema.safeParse({ ...valid, document: { ...valid.document, ocr } });
