@@ -7,6 +7,7 @@ import {
   type Template,
 } from '@ih/shared';
 import { z } from 'zod';
+import { resolveDefinition } from '../templates/definitions.js';
 
 const UUID = z.string().uuid();
 
@@ -35,7 +36,8 @@ async function loadContext(
   if (!UUID.safeParse(jobId).success) return notFound('not found');
   const job = await app.deps.repo.getJob(jobId);
   if (!job) return notFound('not found');
-  const def = app.deps.specs.get(job.specId, job.specVersion);
+  const resolved = await resolveDefinition(app.deps, job.specId, job.specVersion);
+  const def = resolved?.ok ? resolved.definition : undefined;
   if (def?.kind !== 'template') return notFound('job is not a template document');
   const draft = job.outputs.find((o) => o.stage === 'draft' && o.outputId === 'document');
   if (!draft) return notFound('no draft document for this job');
@@ -109,6 +111,9 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
     const body = ApproveRequestSchema.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    if ((await app.deps.repo.getJob(req.params.id))?.test) {
+      return reply.code(409).send({ error: 'test runs are never published; reject or discard it' });
+    }
     const job = await app.deps.repo.approve(
       req.params.id,
       body.data.reviewer ?? null,

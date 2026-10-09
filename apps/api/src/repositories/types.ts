@@ -30,7 +30,11 @@ export interface NewEdit {
 /** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
 export interface IngestionRepo {
   ping(): Promise<void>;
-  createDocumentAndJob(doc: NewDocument, modelOverride: string | null): Promise<JobSummary>;
+  createDocumentAndJob(
+    doc: NewDocument,
+    modelOverride: string | null,
+    test?: boolean,
+  ): Promise<JobSummary>;
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */

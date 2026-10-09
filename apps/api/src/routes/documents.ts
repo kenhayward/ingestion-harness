@@ -1,18 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { inboxKey } from '@ih/shared';
+import { resolveDefinition } from '../templates/definitions.js';
 
 const PDF_MAGIC = Buffer.from('%PDF-');
 
 /**
  * POST /api/documents (multipart/form-data)
- *   fields (must precede the file part): specId, specVersion?, model?
+ *   fields (must precede the file part): specId, specVersion?, model?, test?
+ *   (draft template versions can only be uploaded as test runs: test=true)
  *   file: the PDF
  * Stores the PDF in the inbox bucket and enqueues a job.
  */
 export const documentRoutes: FastifyPluginAsync = async (app) => {
   app.post('/documents', async (req, reply) => {
-    const { repo, store, specs, buckets } = app.deps;
+    const { repo, store, buckets } = app.deps;
 
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: 'file part is required' });
@@ -26,8 +28,20 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     const specId = field('specId');
     if (!specId) return reply.code(400).send({ error: 'specId field is required' });
     const versionField = field('specVersion');
-    const spec = specs.get(specId, versionField ? Number(versionField) : undefined);
-    if (!spec) return reply.code(400).send({ error: `unknown spec ${specId}` });
+    const test = field('test') === 'true';
+    const resolved = await resolveDefinition(
+      app.deps,
+      specId,
+      versionField ? Number(versionField) : undefined,
+    );
+    if (!resolved) return reply.code(400).send({ error: `unknown spec ${specId}` });
+    if (!resolved.ok) return reply.code(400).send({ error: resolved.error });
+    if (resolved.draft && !test) {
+      return reply
+        .code(400)
+        .send({ error: 'draft templates can only be test-run (set test=true)' });
+    }
+    const spec = resolved.definition;
 
     const model = field('model') || null;
     if (model) {
@@ -56,6 +70,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
         objectKey: key,
       },
       model,
+      test,
     );
     return reply.code(201).send(job);
   });

@@ -13,7 +13,11 @@ export class MemoryRepo implements IngestionRepo {
 
   async ping(): Promise<void> {}
 
-  async createDocumentAndJob(doc: NewDocument, modelOverride: string | null): Promise<JobSummary> {
+  async createDocumentAndJob(
+    doc: NewDocument,
+    modelOverride: string | null,
+    test = false,
+  ): Promise<JobSummary> {
     this.documents.set(doc.id, doc);
     const now = new Date().toISOString();
     const job: JobSummary = {
@@ -27,6 +31,7 @@ export class MemoryRepo implements IngestionRepo {
       attempts: 0,
       error: null,
       task: 'process',
+      test,
       reviewReasons: null,
       reviewer: null,
       reviewNote: null,

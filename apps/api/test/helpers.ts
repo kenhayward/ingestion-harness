@@ -3,6 +3,7 @@ import { buildApp } from '../src/app.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
+import { MemoryTemplateRepo } from '../src/templates/repo.js';
 
 export const demoSpec = DocumentSpecSchema.parse({
   id: 'demo',
@@ -45,9 +46,11 @@ export const demoTemplate = TemplateSchema.parse({
 export async function testApp() {
   const repo = new MemoryRepo();
   const store = new MemoryObjectStore();
+  const templates = new MemoryTemplateRepo();
   const app = await buildApp({
     repo,
     store,
+    templates,
     specs: SpecRegistry.fromDefinitions([
       { kind: 'spec', id: 'demo', version: 1, spec: demoSpec },
       { kind: 'spec', id: 'demo', version: 2, spec: { ...demoSpec, version: 2, title: 'Demo v2' } },
@@ -56,7 +59,7 @@ export async function testApp() {
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
   });
-  return { app, repo, store };
+  return { app, repo, store, templates };
 }
 
 /** Build a multipart body for app.inject(). Fields are written before the file. */

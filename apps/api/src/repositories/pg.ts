@@ -12,7 +12,7 @@ import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types
 
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at
     FROM jobs j JOIN documents d ON d.id = j.document_id`;
 
@@ -27,6 +27,7 @@ interface JobRow {
   attempts: number;
   error: string | null;
   task: 'process' | 'publish';
+  test: boolean;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -47,6 +48,7 @@ function toSummary(r: JobRow): JobSummary {
     attempts: r.attempts,
     error: r.error,
     task: r.task,
+    test: r.test,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,
@@ -100,7 +102,11 @@ export class PgRepo implements IngestionRepo {
     await this.pool.query('SELECT 1');
   }
 
-  async createDocumentAndJob(doc: NewDocument, modelOverride: string | null): Promise<JobSummary> {
+  async createDocumentAndJob(
+    doc: NewDocument,
+    modelOverride: string | null,
+    test = false,
+  ): Promise<JobSummary> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -119,8 +125,8 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override) VALUES ($1, $2) RETURNING id`,
-        [doc.id, modelOverride],
+        `INSERT INTO jobs (document_id, model_override, test) VALUES ($1, $2, $3) RETURNING id`,
+        [doc.id, modelOverride, test],
       );
       await client.query('COMMIT');
       const job = await this.getJob(rows[0]!.id);

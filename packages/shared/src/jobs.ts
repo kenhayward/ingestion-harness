@@ -40,6 +40,8 @@ export const JobSummarySchema = z.object({
   error: z.string().nullable(),
   /** process: extraction; publish: apply review edits and deliver to the final target. */
   task: z.enum(['process', 'publish']),
+  /** Test run of a (draft) template: reviewable, never published. */
+  test: z.boolean(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),

@@ -3,6 +3,8 @@ import multipart from '@fastify/multipart';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
+import type { TemplateRepo } from './templates/repo.js';
+import { templateRoutes } from './routes/templates.js';
 import { healthRoutes } from './routes/health.js';
 import { specRoutes } from './routes/specs.js';
 import { documentRoutes } from './routes/documents.js';
@@ -14,6 +16,7 @@ export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
   specs: SpecRegistry;
+  templates: TemplateRepo;
   buckets: { inbox: string; outputs: string; runs: string };
   maxUploadBytes: number;
   logger?: boolean | { level: string };
@@ -38,6 +41,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(jobRoutes, { prefix: '/api' });
   await app.register(modelRoutes, { prefix: '/api' });
   await app.register(reviewRoutes, { prefix: '/api' });
+  await app.register(templateRoutes, { prefix: '/api' });
 
   return app;
 }
