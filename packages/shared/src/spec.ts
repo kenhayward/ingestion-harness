@@ -29,6 +29,8 @@ export const ExtractionSchema = z
     /** JSON Schema the LLM output must satisfy. */
     schema: z.record(z.unknown()),
     maxAttempts: z.number().int().min(1).max(5).default(2),
+    /** 1-based PDF pages sent as images with the prompt (needs a vision-capable model). */
+    pageImages: z.array(z.number().int().positive()).default([]),
   })
   .strict();
 
@@ -61,6 +63,17 @@ export const OutputSchema = z.discriminatedUnion('format', [
     .strict(),
 ]);
 
+/**
+ * For PDFs holding several copies of the document (e.g. the approved blank protocol followed by
+ * the executed one): pages are split where `anchor` matches and one copy is kept.
+ */
+export const CopySelectionSchema = z
+  .object({
+    anchor: z.string().min(1),
+    select: z.enum(['first', 'last']).default('last'),
+  })
+  .strict();
+
 export const OcrModeSchema = z.enum(['auto', 'always', 'never']);
 export type OcrMode = z.infer<typeof OcrModeSchema>;
 
@@ -78,6 +91,7 @@ export const DocumentSpecSchema = z
           .optional(),
         /** auto: OCR pages with little/no text layer; always: OCR every page; never: text layer only. */
         ocr: OcrModeSchema.default('auto'),
+        copies: CopySelectionSchema.optional(),
         sections: z.array(SectionSchema).min(1),
       })
       .strict(),

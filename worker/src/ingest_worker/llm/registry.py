@@ -51,6 +51,7 @@ class OcrConfig(BaseModel):
     longest_dim: int = Field(default=1288, gt=0, alias="longestDim")
     max_tokens: int = Field(default=8000, gt=0, alias="maxTokens")
     temperature: float | None = 0.1
+    concurrency: int = Field(default=1, ge=1, le=32)
 
 
 class LLMConfig(BaseModel):

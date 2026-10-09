@@ -24,6 +24,25 @@ def _data_url(png: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
+def _chat_content(prompt: str, images: tuple[bytes, ...]) -> str | list[dict[str, Any]]:
+    if not images:
+        return prompt
+    return [
+        {"type": "text", "text": prompt},
+        *({"type": "image_url", "image_url": {"url": _data_url(png)}} for png in images),
+    ]
+
+
+def _responses_input(prompt: str, images: tuple[bytes, ...]) -> str | list[dict[str, Any]]:
+    if not images:
+        return prompt
+    content = [
+        {"type": "input_text", "text": prompt},
+        *({"type": "input_image", "image_url": _data_url(png)} for png in images),
+    ]
+    return [{"role": "user", "content": content}]
+
+
 def _wrap_errors(exc: Exception) -> Exception:
     if isinstance(exc, openai.APIStatusError) and (
         exc.status_code in (408, 409, 429) or exc.status_code >= 500
@@ -72,7 +91,7 @@ class OpenAIChatProvider(_OpenAIBase):
             "model": model,
             "messages": [
                 {"role": "system", "content": request.system},
-                {"role": "user", "content": request.prompt},
+                {"role": "user", "content": _chat_content(request.prompt, request.images)},
             ],
         }
         if self._response_format == "json_schema":
@@ -97,10 +116,7 @@ class OpenAIChatProvider(_OpenAIBase):
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": request.prompt},
-                        {"type": "image_url", "image_url": {"url": _data_url(request.image_png)}},
-                    ],
+                    "content": _chat_content(request.prompt, (request.image_png,)),
                 }
             ],
         }
@@ -138,7 +154,7 @@ class OpenAIResponsesProvider(_OpenAIBase):
         params: dict[str, Any] = {
             "model": model,
             "instructions": request.system,
-            "input": request.prompt,
+            "input": _responses_input(request.prompt, request.images),
             "max_output_tokens": request.max_tokens,
         }
         if self._response_format == "json_schema":
@@ -158,15 +174,7 @@ class OpenAIResponsesProvider(_OpenAIBase):
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
         params: dict[str, Any] = {
             "model": model,
-            "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": request.prompt},
-                        {"type": "input_image", "image_url": _data_url(request.image_png)},
-                    ],
-                }
-            ],
+            "input": _responses_input(request.prompt, (request.image_png,)),
             "max_output_tokens": request.max_tokens,
         }
         if request.temperature is not None:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from ingest_worker.segment import MissingSectionsError, segment
-from ingest_worker.specs import Section
+from ingest_worker.segment import MissingSectionsError, segment, select_copy
+from ingest_worker.specs import CopySelection, Section
 
 SECTIONS = [
     Section(id="header", anchor=r"^INVOICE"),
@@ -36,3 +36,32 @@ def test_missing_required_sections_raise() -> None:
     with pytest.raises(MissingSectionsError) as exc:
         segment(["INVOICE only"], SECTIONS)
     assert exc.value.missing == ["lines", "totals"]
+
+
+# --- copy selection (documents that contain e.g. a blank protocol followed by the executed one)
+
+COPY_PAGES = [
+    "TITLE",
+    "1.0 PROTOCOL APPROVAL\nblank",
+    "15.0 TEST DATA\nBATCH NO.:",
+    "TITLE",
+    "1.0 PROTOCOL APPROVAL\nsigned",
+    "15.0 TEST DATA\nBATCH NO.: G17230211",
+]
+
+
+def test_select_copy_last_keeps_pages_from_the_last_anchor_match() -> None:
+    sel = CopySelection(anchor=r"^\W*1\.0 PROTOCOL APPROVAL", select="last")
+    assert select_copy(COPY_PAGES, sel) == (4, COPY_PAGES[4:])
+
+
+def test_select_copy_first_stops_before_the_second_copy() -> None:
+    sel = CopySelection(anchor=r"^\W*1\.0 PROTOCOL APPROVAL", select="first")
+    assert select_copy(COPY_PAGES, sel) == (0, COPY_PAGES[:4])
+
+
+def test_select_copy_is_a_no_op_for_single_copy_documents() -> None:
+    sel = CopySelection(anchor=r"^\W*1\.0 PROTOCOL APPROVAL")
+    pages = COPY_PAGES[:3]
+    assert select_copy(pages, sel) == (0, pages)
+    assert select_copy(["no anchor here"], sel) == (0, ["no anchor here"])

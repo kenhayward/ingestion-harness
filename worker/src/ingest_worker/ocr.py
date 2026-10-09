@@ -42,6 +42,8 @@ class OcrSettings:
     longest_dim: int = 1288
     max_tokens: int = 8000
     temperature: float | None = 0.1
+    #: Pages OCR'd in parallel. Match the server's parallel-request capacity.
+    concurrency: int = 1
 
 
 @dataclass

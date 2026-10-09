@@ -55,3 +55,4 @@ ocr:
   longestDim: 1288 # render size olmOCR 2 was trained on
   maxTokens: 8000
   temperature: 0.1
+  concurrency: ${OCR_CONCURRENCY:-4} # pages in flight; match LM Studio's parallel request slots

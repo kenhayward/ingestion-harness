@@ -21,6 +21,23 @@ describe('DocumentSpecSchema', () => {
     expect(spec.document.ocr).toBe('auto');
   });
 
+  it('accepts copy selection and page images with defaults', () => {
+    const spec = DocumentSpecSchema.parse({
+      ...valid,
+      document: { ...valid.document, copies: { anchor: '^APPROVAL' } },
+      extractions: [{ ...valid.extractions[0], pageImages: [1, 2] }],
+    });
+    expect(spec.document.copies?.select).toBe('last');
+    expect(spec.extractions[0]?.pageImages).toEqual([1, 2]);
+    expect(DocumentSpecSchema.parse(valid).extractions[0]?.pageImages).toEqual([]);
+    expect(
+      DocumentSpecSchema.safeParse({
+        ...valid,
+        extractions: [{ ...valid.extractions[0], pageImages: [0] }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('validates the OCR mode', () => {
     const withOcr = (ocr: string) =>
       DocumentSpecSchema.safeParse({ ...valid, document: { ...valid.document, ocr } });

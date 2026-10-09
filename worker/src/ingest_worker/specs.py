@@ -32,6 +32,8 @@ class Extraction(_Model):
     model: str = "default"
     schema_: dict[str, Any] = Field(alias="schema")
     max_attempts: int = Field(default=2, ge=1, le=5, alias="maxAttempts")
+    #: 1-based PDF pages sent as images with the prompt (needs a vision-capable model).
+    page_images: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, alias="pageImages")
 
 
 class CsvColumn(_Model):
@@ -64,10 +66,19 @@ class PageRange(_Model):
 OcrMode = Literal["auto", "always", "never"]
 
 
+class CopySelection(_Model):
+    """For PDFs holding several copies of the document (e.g. the approved blank protocol
+    followed by the executed one): pages are split where `anchor` matches; one copy is kept."""
+
+    anchor: str = Field(min_length=1)
+    select: Literal["first", "last"] = "last"
+
+
 class DocumentLayout(_Model):
     pages: PageRange | None = None
     #: auto: OCR pages with little/no text layer; always: every page; never: text layer only.
     ocr: OcrMode = "auto"
+    copies: CopySelection | None = None
     sections: list[Section] = Field(min_length=1)
 
 

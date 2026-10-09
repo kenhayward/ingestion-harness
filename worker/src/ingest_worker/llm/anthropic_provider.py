@@ -18,6 +18,24 @@ from .base import (
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
+def _content(prompt: str, images: tuple[bytes, ...]) -> str | list[dict[str, Any]]:
+    """Plain string when there are no images; otherwise image blocks first, then the text."""
+    if not images:
+        return prompt
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": base64.b64encode(png).decode("ascii"),
+            },
+        }
+        for png in images
+    ]
+    return [*blocks, {"type": "text", "text": prompt}]
+
+
 class AnthropicProvider:
     """Claude via the Messages API with structured outputs (output_config.format)."""
 
@@ -53,26 +71,18 @@ class AnthropicProvider:
                 "model": model,
                 "max_tokens": request.max_tokens,
                 "system": request.system,
-                "messages": [{"role": "user", "content": request.prompt}],
+                "messages": [{"role": "user", "content": _content(request.prompt, request.images)}],
                 "output_config": output_config,
             }
         )
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
         # request.temperature is deliberately not sent: current Claude models reject it.
-        image = {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": base64.b64encode(request.image_png).decode("ascii"),
-            },
-        }
         params: dict[str, Any] = {
             "model": model,
             "max_tokens": request.max_tokens,
             "messages": [
-                {"role": "user", "content": [image, {"type": "text", "text": request.prompt}]}
+                {"role": "user", "content": _content(request.prompt, (request.image_png,))}
             ],
         }
         if self._effort:

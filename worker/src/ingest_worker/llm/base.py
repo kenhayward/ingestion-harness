@@ -25,6 +25,8 @@ class CompletionRequest:
     json_schema: dict[str, Any]
     schema_name: str
     max_tokens: int = 16000
+    #: PNG page images sent alongside the prompt (vision-capable models only).
+    images: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)

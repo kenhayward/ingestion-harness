@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -8,14 +9,24 @@ from typing import Any
 from .extract import ExtractionFailedError, run_extraction
 from .llm.base import LLMProvider, RefusalError
 from .llm.registry import ModelRegistry, ModelResolutionError
-from .ocr import OcrSettings, PageRenderer, ocr_page, pages_needing_ocr, render_page_png
+from .ocr import (
+    OcrPage,
+    OcrSettings,
+    PageRenderer,
+    ocr_page,
+    pages_needing_ocr,
+    render_page_png,
+)
 from .outputs import RenderedOutput, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
-from .segment import MissingSectionsError, segment
+from .segment import MissingSectionsError, segment, select_copy
 from .specs import OcrMode, SpecRegistry
 from .storage import ObjectStore, ocr_run_key, run_key
+
+#: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
+PAGE_IMAGE_LONGEST_DIM = 1288
 
 
 class DocumentError(Exception):
@@ -56,6 +67,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
 
     pdf = deps.store.get(job.bucket, job.object_key)
     pages = deps.extract_text(pdf)
+    total_pages = len(pages)
     if spec.document.pages and not (
         spec.document.pages.min <= len(pages) <= spec.document.pages.max
     ):
@@ -65,6 +77,10 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
         )
 
     pages = _ocr_pages(job, deps, queue, pdf, pages, spec.document.ocr)
+    if spec.document.copies:
+        first, pages = select_copy(pages, spec.document.copies)
+        if first:
+            queue.event(job.id, "info", "selected copy", {"first_page": first + 1})
     if not any(p.strip() for p in pages):
         hint = (
             "OCR is not configured"
@@ -86,6 +102,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     for ex in spec.extractions:
         provider, model_id = resolved[ex.id]
         prompt = render_prompt(loaded.directory, ex.prompt, sections, ex.sections)
+        images = _page_images(job, deps, queue, pdf, ex.page_images, total_pages)
         try:
             result = run_extraction(
                 extraction_id=ex.id,
@@ -94,6 +111,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
                 prompt=prompt,
                 schema=ex.schema_,
                 max_attempts=ex.max_attempts,
+                images=images,
             )
         except ExtractionFailedError as exc:
             _audit(deps, job.id, ex.id, exc.attempts)
@@ -143,12 +161,22 @@ def _ocr_pages(
     except ModelResolutionError as exc:
         raise DocumentError(f"OCR model: {exc}") from exc
 
-    pages = list(pages)
-    for index in targets:
+    settings = deps.ocr
+
+    def run(index: int) -> OcrPage:
         try:
-            page = ocr_page(provider, model_id, pdf, index, deps.ocr, deps.render_page)
+            return ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
+
+    # Pages are independent, so OCR them concurrently; results are written back in page order
+    # and the first exception (transient or DocumentError) propagates.
+    with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
+        ocr_results = list(pool.map(run, targets))
+
+    pages = list(pages)
+    for page in ocr_results:
+        index = page.index
         pages[index] = page.text
         deps.store.put(
             deps.buckets.runs,
@@ -163,6 +191,25 @@ def _ocr_pages(
         {"model": f"{provider.name}/{model_id}", "pages": [i + 1 for i in targets]},
     )
     return pages
+
+
+def _page_images(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    pdf: bytes,
+    page_numbers: list[int],
+    total_pages: int,
+) -> tuple[bytes, ...]:
+    """Render the requested 1-based pages. Pages beyond the document are skipped."""
+    missing = [n for n in page_numbers if n > total_pages]
+    if missing:
+        queue.event(job.id, "warn", "page images skipped", {"pages": missing})
+    return tuple(
+        deps.render_page(pdf, n - 1, PAGE_IMAGE_LONGEST_DIM, 0)
+        for n in page_numbers
+        if n <= total_pages
+    )
 
 
 def _audit(deps: PipelineDeps, job_id: str, extraction_id: str, attempts: list[Any]) -> None:

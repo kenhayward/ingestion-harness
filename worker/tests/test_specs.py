@@ -31,6 +31,17 @@ def test_defaults_and_aliases() -> None:
     assert spec.document.ocr == "auto"
 
 
+def test_copies_and_page_images() -> None:
+    doc = {**MINIMAL["document"], "copies": {"anchor": "^APPROVAL"}}  # type: ignore[dict-item]
+    ex = {**MINIMAL["extractions"][0], "pageImages": [1, 2]}  # type: ignore[dict-item]
+    spec = DocumentSpec.model_validate({**MINIMAL, "document": doc, "extractions": [ex]})
+    assert spec.document.copies is not None and spec.document.copies.select == "last"
+    assert spec.extractions[0].page_images == [1, 2]
+    assert DocumentSpec.model_validate(MINIMAL).extractions[0].page_images == []
+    with pytest.raises(ValidationError):
+        DocumentSpec.model_validate({**MINIMAL, "extractions": [{**ex, "pageImages": [0]}]})
+
+
 def test_ocr_mode_is_validated() -> None:
     doc = {**MINIMAL["document"], "ocr": "always"}  # type: ignore[dict-item]
     assert DocumentSpec.model_validate({**MINIMAL, "document": doc}).document.ocr == "always"

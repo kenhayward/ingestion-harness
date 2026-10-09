@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from ingest_worker.llm.base import LLMError
+from ingest_worker.llm.base import CompletionResult, LLMError, VisionRequest
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ocr import OcrSettings
 from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.queue import ClaimedJob
-from ingest_worker.specs import LoadedSpec, SpecRegistry, load_specs
+from ingest_worker.specs import CopySelection, LoadedSpec, SpecRegistry, load_specs
 from ingest_worker.storage import MemoryObjectStore
 
 from .fakes import FakeProvider, FakeQueue
@@ -255,3 +257,88 @@ def test_transient_ocr_errors_are_retried(setup) -> None:  # type: ignore[no-unt
     queue = FakeQueue(jobs=[job()])
     run_once(queue, deps, "w1")
     assert queue.failed and "503" in queue.failed[0][1]
+
+
+# --- page images, copy selection, OCR concurrency -------------------------------------------
+
+
+def with_spec_changes(deps: PipelineDeps, specs_dir: Path, **changes: object) -> None:
+    """Swap in a modified copy of the fixture spec (specs are immutable models)."""
+    loaded = deps.specs.get("example-invoice", 1)
+    spec = loaded.spec
+    document = spec.document.model_copy(update=changes.pop("document", {}))  # type: ignore[arg-type]
+    spec = spec.model_copy(update={"document": document, **changes})
+    deps.specs = SpecRegistry([LoadedSpec(spec, loaded.directory)])
+
+
+def test_page_images_are_rendered_for_extractions_that_ask_for_them(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    loaded = deps.specs.get("example-invoice", 1)
+    extractions = list(loaded.spec.extractions)
+    extractions[0] = extractions[0].model_copy(update={"page_images": [1, 2, 9]})
+    with_spec_changes(deps, specs_dir, extractions=extractions)
+    renders: list[tuple[int, int]] = []
+    deps.render_page = lambda pdf, i, dim, rot: renders.append((i, dim)) or b"\x89PNG" + bytes([i])  # type: ignore[func-returns-value]
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    header_req, lines_req = provider.calls[0][1], provider.calls[1][1]
+    assert header_req.images == (b"\x89PNG\x00", b"\x89PNG\x01")  # page 9 doesn't exist: skipped
+    assert lines_req.images == ()
+    assert renders == [(0, 1288), (1, 1288)]
+
+
+def test_copy_selection_segments_only_the_selected_copy(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    blank = ["INVOICE DRAFT\nDescription Qty\n(blank)\nSubtotal 0.00"]
+    deps.extract_text = lambda _pdf: blank + PAGES
+    copies = CopySelection(anchor=r"^\s*INVOICE\b", select="last")
+    with_spec_changes(deps, specs_dir, document={"copies": copies})
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    assert "DRAFT" not in provider.calls[0][1].prompt
+    assert "Acme Supplies" in provider.calls[0][1].prompt
+    assert ("job-1", "info", "selected copy") in queue.events
+
+
+class ConcurrentOcr(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__("local")
+        self.in_flight = 0
+        self.max_in_flight = 0
+        self._lock = threading.Lock()
+
+    def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
+        with self._lock:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        time.sleep(0.05)
+        with self._lock:
+            self.in_flight -= 1
+        page = request.image_png[-1]
+        text = PAGES[page] if page < 2 else f"page {page}"
+        return CompletionResult(text=OLMOCR_OK + text, model=model)
+
+
+def test_ocr_runs_pages_concurrently_and_keeps_page_order(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    ocr = ConcurrentOcr()
+    with_ocr(deps, ocr)
+    deps.ocr = OcrSettings(model="local/olmocr-2-7b-1025", concurrency=3)
+    deps.extract_text = lambda _pdf: [""] * 6
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert ocr.max_in_flight == 3
+    prompt = provider.calls[0][1].prompt
+    assert prompt.index("INVOICE INV-001") < prompt.index("Subtotal 13.00")

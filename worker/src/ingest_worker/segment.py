@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .specs import Section
+from .specs import CopySelection, Section
 
 PAGE_BREAK = "\n\f\n"
 
@@ -37,3 +37,18 @@ def segment(pages: list[str], sections: list[Section]) -> dict[str, str]:
         end = starts[i + 1][0] if i + 1 < len(starts) else len(text)
         result[section_id] = text[start:end].strip()
     return result
+
+
+def select_copy(pages: list[str], copies: CopySelection) -> tuple[int, list[str]]:
+    """Keep one copy of a multi-copy document. Returns (index of first kept page, pages).
+
+    Copies start on pages where `copies.anchor` matches. `last` keeps the last copy through to
+    the end; `first` keeps everything before the second copy. Fewer than two matches: no-op.
+    """
+    pattern = re.compile(copies.anchor, re.MULTILINE)
+    starts = [i for i, text in enumerate(pages) if pattern.search(text)]
+    if len(starts) < 2:
+        return 0, pages
+    if copies.select == "last":
+        return starts[-1], pages[starts[-1] :]
+    return 0, pages[: starts[1]]

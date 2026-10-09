@@ -207,3 +207,58 @@ def test_anthropic_vision_sends_base64_image_block() -> None:
     }
     assert content[1] == {"type": "text", "text": "read this"}
     assert "temperature" not in messages.kwargs  # rejected by current Claude models
+
+
+# --- extraction requests that carry page images ---------------------------------------------
+
+REQ_IMG = CompletionRequest(
+    system="sys",
+    prompt="doc",
+    json_schema={"type": "object"},
+    schema_name="x",
+    images=(b"\x89PNGdata",),
+)
+
+
+def test_openai_chat_json_with_images_keeps_response_format() -> None:
+    completions = Recorder(chat_response())
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    OpenAIChatProvider("local", client).complete_json("qwen", REQ_IMG)
+    user = completions.kwargs["messages"][1]
+    assert user["content"] == [
+        {"type": "text", "text": "doc"},
+        {"type": "image_url", "image_url": {"url": DATA_URL}},
+    ]
+    assert completions.kwargs["response_format"]["type"] == "json_schema"
+
+
+def test_openai_chat_json_without_images_sends_plain_string() -> None:
+    completions = Recorder(chat_response())
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    OpenAIChatProvider("local", client).complete_json("qwen", REQ)
+    assert completions.kwargs["messages"][1] == {"role": "user", "content": "doc"}
+
+
+def test_openai_responses_json_with_images() -> None:
+    resp = SimpleNamespace(
+        id="r", model="m", status="completed", output_text="{}", output=[], usage=None
+    )
+    responses = Recorder(resp)
+    client: Any = SimpleNamespace(responses=responses)
+    OpenAIResponsesProvider("openai", client).complete_json("m", REQ_IMG)
+    [message] = responses.kwargs["input"]
+    assert message["content"] == [
+        {"type": "input_text", "text": "doc"},
+        {"type": "input_image", "image_url": DATA_URL},
+    ]
+    assert responses.kwargs["text"]["format"]["type"] == "json_schema"
+
+
+def test_anthropic_json_with_images_puts_images_before_text() -> None:
+    messages = Recorder(anthropic_message())
+    client: Any = SimpleNamespace(messages=messages)
+    AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ_IMG)
+    content = messages.kwargs["messages"][0]["content"]
+    assert content[0]["type"] == "image" and content[0]["source"]["media_type"] == "image/png"
+    assert content[1] == {"type": "text", "text": "doc"}
+    assert "format" in messages.kwargs["output_config"]

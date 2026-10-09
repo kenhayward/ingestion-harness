@@ -65,6 +65,7 @@ def run_extraction(
     prompt: str,
     schema: dict[str, Any],
     max_attempts: int,
+    images: tuple[bytes, ...] = (),
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out."""
@@ -79,6 +80,7 @@ def run_extraction(
                 prompt=current_prompt,
                 json_schema=schema,
                 schema_name=extraction_id,
+                images=images,
             ),
         )
         data, errors = validate(result.text, validator)
