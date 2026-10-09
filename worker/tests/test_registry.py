@@ -104,3 +104,14 @@ def test_discovery_merges_static_and_discovered_and_tolerates_failures() -> None
     )
     refs = [d.ref for d in registry.discover()]
     assert refs == ["anthropic/claude-haiku-5-5", "anthropic/claude-opus-5-5"]
+
+
+def test_resolution_errors_have_a_dedicated_type() -> None:
+    from ingest_worker.llm.registry import ModelResolutionError
+
+    registry = build_registry(
+        config(), env={"ANTHROPIC_API_KEY": "k"}, factories=fake_factories({})
+    )
+    with pytest.raises(ModelResolutionError, match="not configured"):
+        registry.resolve("openai/gpt-5")
+    assert issubclass(ModelResolutionError, ValueError)

@@ -14,6 +14,12 @@ from .base import LLMProvider, ModelDescriptor, ProviderKind
 
 log = logging.getLogger(__name__)
 
+
+class ModelResolutionError(ValueError):
+    """A model alias/ref cannot be resolved to a configured provider (a config error, not
+    something a retry will fix)."""
+
+
 _ENV_REF = re.compile(r"\$\{([A-Z0-9_]+)(?::-([^}]*))?\}")
 
 
@@ -119,15 +125,17 @@ class ModelRegistry:
         seen: list[str] = []
         while ref in self._aliases:
             if ref in seen:
-                raise ValueError(f"alias cycle: {' -> '.join([*seen, ref])}")
+                raise ModelResolutionError(f"alias cycle: {' -> '.join([*seen, ref])}")
             seen.append(ref)
             ref = self._aliases[ref]
         provider_name, sep, model_id = ref.partition("/")
         if not sep or not model_id:
-            raise ValueError(f"unknown model alias or malformed ref {ref!r}")
+            raise ModelResolutionError(f"unknown model alias or malformed ref {ref!r}")
         provider = self._providers.get(provider_name)
         if provider is None:
-            raise ValueError(f"model {ref!r}: provider {provider_name!r} is not configured/enabled")
+            raise ModelResolutionError(
+                f"model {ref!r}: provider {provider_name!r} is not configured/enabled"
+            )
         return provider, model_id
 
     def discover(self) -> list[ModelDescriptor]:

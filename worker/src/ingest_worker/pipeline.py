@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .extract import ExtractionFailedError, run_extraction
-from .llm.base import RefusalError
-from .llm.registry import ModelRegistry
+from .llm.base import LLMProvider, RefusalError
+from .llm.registry import ModelRegistry, ModelResolutionError
 from .outputs import RenderedOutput, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
@@ -60,8 +60,17 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
 
     results: dict[str, dict[str, Any]] = {}
     models_used: dict[str, str] = {}
+    # Resolve every model before the first LLM call so a config error costs no tokens.
+    resolved: dict[str, tuple[LLMProvider, str]] = {}
     for ex in spec.extractions:
-        provider, model_id = deps.models.resolve(job.model_override or ex.model)
+        ref = job.model_override or ex.model
+        try:
+            resolved[ex.id] = deps.models.resolve(ref)
+        except ModelResolutionError as exc:
+            raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
+
+    for ex in spec.extractions:
+        provider, model_id = resolved[ex.id]
         prompt = render_prompt(loaded.directory, ex.prompt, sections, ex.sections)
         try:
             result = run_extraction(

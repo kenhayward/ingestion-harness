@@ -11,7 +11,7 @@ from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.queue import ClaimedJob
-from ingest_worker.specs import load_specs
+from ingest_worker.specs import LoadedSpec, SpecRegistry, load_specs
 from ingest_worker.storage import MemoryObjectStore
 
 from .fakes import FakeProvider, FakeQueue
@@ -142,3 +142,30 @@ def test_unexpected_errors_are_retryable_failures(setup) -> None:  # type: ignor
 def test_empty_queue_returns_false(setup) -> None:  # type: ignore[no-untyped-def]
     _, _, deps = setup
     assert run_once(FakeQueue(), deps, "w1") is False
+
+
+def test_unconfigured_model_override_goes_to_review_without_llm_calls(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    queue = FakeQueue(jobs=[job(model_override="openai/gpt-5")])
+    run_once(queue, deps, "w1")
+    assert not queue.failed, "config errors must not be retried"
+    [(_, reason)] = queue.reviewed
+    assert "openai" in reason and "not configured" in reason
+    assert provider.calls == []
+
+
+def test_models_are_resolved_before_any_extraction_runs(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    """A bad model on a later extraction must not waste tokens on earlier ones."""
+    provider, _, deps = setup
+    loaded = load_specs(specs_dir).get("example-invoice", 1)
+    extractions = list(loaded.spec.extractions)
+    extractions[1] = extractions[1].model_copy(update={"model": "missing-alias"})
+    bad = LoadedSpec(loaded.spec.model_copy(update={"extractions": extractions}), loaded.directory)
+    deps.specs = SpecRegistry([bad])
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "line_items" in reason and "missing-alias" in reason
+    assert provider.calls == []

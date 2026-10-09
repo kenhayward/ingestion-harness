@@ -12,7 +12,14 @@ from .base import (
     ModelDescriptor,
     RefusalError,
 )
-from .registry import LLMConfig, ModelRegistry, ProviderConfig, build_registry, load_llm_config
+from .registry import (
+    LLMConfig,
+    ModelRegistry,
+    ModelResolutionError,
+    ProviderConfig,
+    build_registry,
+    load_llm_config,
+)
 
 __all__ = [
     "CompletionRequest",
@@ -22,6 +29,7 @@ __all__ = [
     "LLMProvider",
     "ModelDescriptor",
     "ModelRegistry",
+    "ModelResolutionError",
     "ProviderConfig",
     "RefusalError",
     "build_registry",
