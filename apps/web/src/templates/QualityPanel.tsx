@@ -255,7 +255,10 @@ export function QualityPanel({
               {report.items.map((item) => {
                 const c = item.comparison;
                 const fields = c?.fields.filter((f) => !f.match) ?? [];
-                const tables = c?.tables.filter((t) => t.missing.length || t.extra.length) ?? [];
+                const tables =
+                  c?.tables.filter(
+                    (t) => t.missing.length || t.extra.length || (t.changed ?? []).length,
+                  ) ?? [];
                 return (
                   <tr key={item.reference.id}>
                     <td>{item.reference.name}</td>
@@ -277,8 +280,23 @@ export function QualityPanel({
                         </div>
                       ))}
                       {tables.map((t) => (
-                        <div key={t.id}>
-                          {t.id}: {t.missing.length} missing, {t.extra.length} extra
+                        <div
+                          key={t.id}
+                          title={(t.changed ?? [])
+                            .slice(0, 10)
+                            .map((ch) =>
+                              ch.columns
+                                .map(
+                                  (col) =>
+                                    `${col}: ${show(ch.expected[col])} → ${show(ch.actual[col])}`,
+                                )
+                                .join('; '),
+                            )
+                            .join('\n')}
+                        >
+                          {t.id}: {t.missing.length} missing, {t.extra.length} extra,{' '}
+                          {(t.changed ?? []).length} changed
+                          {t.cellsTotal ? ` (cells ${pct((t.cells ?? 0) / t.cellsTotal)})` : ''}
                         </div>
                       ))}
                       {c && !fields.length && !tables.length && 'none'}

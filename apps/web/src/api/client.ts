@@ -83,6 +83,13 @@ export interface RegressionReport {
         matched: number;
         missing: Record<string, unknown>[];
         extra: Record<string, unknown>[];
+        changed?: {
+          expected: Record<string, unknown>;
+          actual: Record<string, unknown>;
+          columns: string[];
+        }[];
+        cells?: number;
+        cellsTotal?: number;
       }[];
     } | null;
   }[];

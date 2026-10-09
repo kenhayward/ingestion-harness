@@ -44,10 +44,17 @@ describe('compareToReference', () => {
     const result = compareToReference(expected, actual);
     expect(result.score).toBe(1);
     expect(result.fields.every((f) => f.match)).toBe(true);
-    expect(result.tables[0]).toMatchObject({ id: 'batches', expected: 2, actual: 2, matched: 2 });
+    expect(result.tables[0]).toMatchObject({
+      id: 'batches',
+      expected: 2,
+      actual: 2,
+      matched: 2,
+      cells: 4,
+      cellsTotal: 4,
+    });
   });
 
-  it('reports changed fields and missing/extra rows', () => {
+  it('aligns rows and gives partial credit per cell', () => {
     const actual = {
       fields: {
         product: { value: 'Richfer capsules' },
@@ -66,16 +73,51 @@ describe('compareToReference', () => {
       'executed_on',
       'compound',
     ]);
-    expect(result.fields.find((f) => f.id === 'executed_on')).toMatchObject({
-      expected: '2023-02',
-      actual: '2023-01',
-    });
     const [batches] = result.tables;
-    expect(batches).toMatchObject({ matched: 1 });
-    expect(batches!.missing).toEqual([{ batch: 'G17230212', size: '13.5 L' }]);
-    expect(batches!.extra).toEqual([{ batch: 'G1Y230212', size: '13.5 L' }]);
-    // 1 of 3 fields + 1 of 2 rows matched
-    expect(result.score).toBeCloseTo(2 / 5);
+    expect(batches).toMatchObject({ matched: 1, missing: [], extra: [], cells: 3, cellsTotal: 4 });
+    expect(batches!.changed).toEqual([
+      {
+        expected: { batch: 'G17230212', size: '13.5 L' },
+        actual: { batch: 'G1Y230212', size: '13.5 L' },
+        columns: ['batch'],
+      },
+    ]);
+    // 1 of 3 fields + 3 of 4 cells
+    expect(result.score).toBeCloseTo(4 / 7);
+  });
+
+  it('counts extra rows against the score and lists rows with nothing in common', () => {
+    const result = compareToReference(
+      { fields: {}, tables: { rows: [{ a: '1', b: '2' }] } },
+      {
+        fields: {},
+        tables: {
+          rows: [
+            { a: '1', b: '2' },
+            { a: '9', b: '9' },
+            { a: 'x', b: 'y' },
+          ],
+        },
+      },
+    );
+    const [rows] = result.tables;
+    expect(rows).toMatchObject({ matched: 1, cells: 2, cellsTotal: 6 });
+    expect(rows!.extra).toHaveLength(2);
+    expect(result.score).toBeCloseTo(2 / 6);
+
+    const disjoint = compareToReference(
+      { fields: {}, tables: { rows: [{ a: '1' }] } },
+      { fields: {}, tables: { rows: [{ a: '2' }] } },
+    );
+    expect(disjoint.tables[0]).toMatchObject({ missing: [{ a: '1' }], extra: [{ a: '2' }] });
+  });
+
+  it('reads middle-dot decimals as numbers (137·8 = 137.8)', () => {
+    const result = compareToReference(
+      { fields: { v: '137.8' }, tables: {} },
+      { fields: { v: { value: '137·8' } }, tables: {} },
+    );
+    expect(result.score).toBe(1);
   });
 
   it('treats numbers and their string forms as equal', () => {

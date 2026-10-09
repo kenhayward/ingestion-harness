@@ -2,8 +2,10 @@
  * Compare a run's document against a reference's expected values.
  *
  * Values are compared loosely the way a reviewer would: case and whitespace are ignored,
- * numbers equal their string forms ("120.10" = 120.1), list order is ignored, and table rows
- * are matched as a multiset (row order does not matter).
+ * numbers equal their string forms ("120.10" = 120.1, "137·8" = 137.8), list order is ignored.
+ * Table rows are aligned to their best-matching counterpart (row order does not matter) and
+ * scored per cell, so one noisy cell costs one cell rather than the whole row; extra rows count
+ * against the score (it measures agreement with the reference, in both directions).
  */
 
 export interface Expected {
@@ -28,13 +30,25 @@ export interface TableComparison {
   id: string;
   expected: number;
   actual: number;
+  /** Rows identical to their expected counterpart. */
   matched: number;
+  /** Expected rows with no counterpart sharing any cell. */
   missing: Record<string, unknown>[];
+  /** Actual rows not aligned to any expected row. */
   extra: Record<string, unknown>[];
+  /** Aligned rows that differ, with the differing columns. */
+  changed: {
+    expected: Record<string, unknown>;
+    actual: Record<string, unknown>;
+    columns: string[];
+  }[];
+  /** Equal cells / all cells considered (aligned rows, missing rows, extra rows). */
+  cells: number;
+  cellsTotal: number;
 }
 
 export interface Comparison {
-  /** Matched fields + matched rows over expected fields + expected rows (1 = identical). */
+  /** (matched fields + equal cells) / (fields + all cells considered); 1 = identical. */
   score: number;
   fields: FieldComparison[];
   tables: TableComparison[];
@@ -52,7 +66,8 @@ function normalise(value: unknown): unknown {
   if (typeof value === 'number') return value;
   if (typeof value === 'string') {
     const text = value.trim().replace(/\s+/g, ' ');
-    if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
+    const numeric = text.replace('·', '.');
+    if (/^-?\d+(\.\d+)?$/.test(numeric)) return Number(numeric);
     return text.toLowerCase();
   }
   if (Array.isArray(value)) return value.map((v) => JSON.stringify(normalise(v))).sort();
@@ -75,33 +90,57 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
   });
 
   const tables = Object.entries(expected.tables).map(([id, rows]) => {
-    const remaining = new Map<string, Record<string, unknown>[]>();
-    for (const row of actual.tables[id] ?? []) {
-      const k = key(row);
-      remaining.set(k, [...(remaining.get(k) ?? []), row]);
-    }
-    const missing: Record<string, unknown>[] = [];
-    let matched = 0;
-    for (const row of rows) {
-      const bucket = remaining.get(key(row));
-      if (bucket?.length) {
-        bucket.pop();
-        matched += 1;
-      } else {
-        missing.push(row);
-      }
-    }
-    return {
+    const candidates = actual.tables[id] ?? [];
+    const used = new Set<number>();
+    const result: TableComparison = {
       id,
       expected: rows.length,
-      actual: actual.tables[id]?.length ?? 0,
-      matched,
-      missing,
-      extra: [...remaining.values()].flat(),
+      actual: candidates.length,
+      matched: 0,
+      missing: [],
+      extra: [],
+      changed: [],
+      cells: 0,
+      cellsTotal: 0,
     };
+    for (const row of rows) {
+      let best = -1;
+      let bestEqual = 0;
+      candidates.forEach((candidate, i) => {
+        if (used.has(i)) return;
+        const equal = columnsOf(row, candidate).filter(
+          (c) => key(row[c]) === key(candidate[c]),
+        ).length;
+        if (equal > bestEqual) [best, bestEqual] = [i, equal];
+      });
+      if (best < 0) {
+        result.missing.push(row);
+        result.cellsTotal += Object.keys(row).length;
+        continue;
+      }
+      used.add(best);
+      const counterpart = candidates[best]!;
+      const columns = columnsOf(row, counterpart);
+      const differing = columns.filter((c) => key(row[c]) !== key(counterpart[c]));
+      result.cells += columns.length - differing.length;
+      result.cellsTotal += columns.length;
+      if (differing.length)
+        result.changed.push({ expected: row, actual: counterpart, columns: differing });
+      else result.matched += 1;
+    }
+    candidates.forEach((candidate, i) => {
+      if (used.has(i)) return;
+      result.extra.push(candidate);
+      result.cellsTotal += Object.keys(candidate).length;
+    });
+    return result;
   });
 
-  const total = fields.length + tables.reduce((n, t) => n + t.expected, 0);
-  const hits = fields.filter((f) => f.match).length + tables.reduce((n, t) => n + t.matched, 0);
+  const total = fields.length + tables.reduce((n, t) => n + t.cellsTotal, 0);
+  const hits = fields.filter((f) => f.match).length + tables.reduce((n, t) => n + t.cells, 0);
   return { score: total === 0 ? 1 : hits / total, fields, tables };
+}
+
+function columnsOf(a: Record<string, unknown>, b: Record<string, unknown>): string[] {
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])];
 }

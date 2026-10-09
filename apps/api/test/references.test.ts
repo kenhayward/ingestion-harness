@@ -172,9 +172,11 @@ describe('regression runs', () => {
     ctx.repo.jobs.set(run.id, { ...ctx.repo.jobs.get(run.id)!, status: 'succeeded' });
 
     report = (await ctx.app.inject('/api/templates/letter/versions/2/regression')).json();
+    // sender matches; lines: 1 of 2 expected cells (one row missing) -> 2 of 3
     expect(report.items[0].comparison.score).toBeCloseTo(2 / 3);
     expect(report.items[0].comparison.tables[0].missing).toEqual([{ item: 'nuts' }]);
-    expect(report.summary).toMatchObject({ references: 1, completed: 1, averageScore: 2 / 3 });
+    expect(report.summary).toMatchObject({ references: 1, completed: 1 });
+    expect(report.summary.averageScore).toBeCloseTo(2 / 3);
   });
 
   it('needs at least one reference', async () => {
