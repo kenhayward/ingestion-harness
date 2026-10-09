@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -28,7 +29,7 @@ from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
 from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
-from .storage import ObjectStore, ocr_run_key, run_key
+from .storage import ObjectStore, ocr_cache_key, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 PAGE_IMAGE_LONGEST_DIM = 1288
@@ -250,11 +251,24 @@ def _ocr_pages(
 
     settings = deps.ocr
     pages = list(pages)
+    model_ref = f"{provider.name}/{model_id}"
+    shared_key = _ocr_cache_keyer(pdf, model_ref, settings) if settings.cache else None
 
-    # Reuse transcriptions saved by an earlier attempt of this job (retries, crashed workers).
+    # Reuse transcriptions saved by an earlier attempt of this job (retries, crashed workers),
+    # then those of earlier jobs of the same PDF: OCR servers are not deterministic even at
+    # temperature 0, so re-runs and regressions would otherwise see different page text.
     cached: list[int] = []
+    shared: list[int] = []
     for index in targets:
         raw = deps.store.get_optional(deps.buckets.runs, ocr_run_key(job.id, index + 1))
+        if raw is None and shared_key is not None:
+            raw = deps.store.get_optional(deps.buckets.runs, shared_key(index + 1))
+            if raw is not None:
+                # The job keeps its own copy: its audit trail must not depend on the cache.
+                deps.store.put(
+                    deps.buckets.runs, ocr_run_key(job.id, index + 1), raw, "text/markdown"
+                )
+                shared.append(index)
         if raw is not None:
             pages[index] = parse_olmocr(raw.decode("utf-8"))[0]
             cached.append(index)
@@ -266,12 +280,10 @@ def _ocr_pages(
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
         # Saved as each page finishes, so a later failure doesn't lose completed pages.
-        deps.store.put(
-            deps.buckets.runs,
-            ocr_run_key(job.id, index + 1),
-            page.raw[-1].encode("utf-8"),
-            "text/markdown",
-        )
+        raw = page.raw[-1].encode("utf-8")
+        deps.store.put(deps.buckets.runs, ocr_run_key(job.id, index + 1), raw, "text/markdown")
+        if shared_key is not None:
+            deps.store.put(deps.buckets.runs, shared_key(index + 1), raw, "text/markdown")
         return page
 
     # Pages are independent, so OCR them concurrently; results are written back in page order
@@ -284,12 +296,26 @@ def _ocr_pages(
         "info",
         "ocr",
         {
-            "model": f"{provider.name}/{model_id}",
+            "model": model_ref,
             "pages": [i + 1 for i in targets],
             "cached": [i + 1 for i in cached],
+            "shared": [i + 1 for i in shared],
         },
     )
     return pages
+
+
+def _ocr_cache_keyer(pdf: bytes, model_ref: str, settings: OcrSettings) -> Callable[[int], str]:
+    """Cache keys for this PDF's content and the settings that change the transcription."""
+    digest = hashlib.sha256(pdf).hexdigest()
+    knobs = {
+        "model": model_ref,
+        "longest_dim": settings.longest_dim,
+        "max_tokens": settings.max_tokens,
+        "temperature": settings.temperature,
+    }
+    fingerprint = hashlib.sha256(json.dumps(knobs, sort_keys=True).encode()).hexdigest()[:16]
+    return lambda page_number: ocr_cache_key(digest, fingerprint, page_number)
 
 
 def run_step_extraction(

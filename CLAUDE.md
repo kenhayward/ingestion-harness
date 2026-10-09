@@ -100,6 +100,8 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   vision model (default `local/olmocr-2-7b-1025`); spec `document.ocr` is `auto|always|never`.
   Providers implement `complete_vision`; tests use `PipelineDeps.render_page` fakes, and only
   `test_render_page_png_scales_longest_side` renders a real PDF (pypdfium2, in-memory).
+  OCR output is cached per PDF sha256 + OCR settings (`runs/ocr-cache/`), so re-runs and
+  regressions see identical page text.
   Job-level model override beats the spec's model. Discovered models land in `llm_models`
   and populate the UI picker.
 - Anthropic calls use structured outputs (`output_config.format` json_schema) plus

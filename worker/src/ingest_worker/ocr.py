@@ -44,6 +44,8 @@ class OcrSettings:
     temperature: float | None = 0.1
     #: Pages OCR'd in parallel. Match the server's parallel-request capacity.
     concurrency: int = 1
+    #: Share transcriptions between jobs of the same PDF (see pipeline._ocr_pages).
+    cache: bool = True
 
 
 @dataclass

@@ -62,6 +62,8 @@ class FakeQueue:
     reviewed: list[tuple[str, str]] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
     events: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Same events with their data payloads.
+    event_details: list[tuple[str, str, str, dict[str, Any]]] = field(default_factory=list)
     models: list[ModelDescriptor] = field(default_factory=list)
     awaiting: list[tuple[str, list[RenderedOutput], list[str]]] = field(default_factory=list)
     published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
@@ -111,6 +113,7 @@ class FakeQueue:
         self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
     ) -> None:
         self.events.append((job_id, level, message))
+        self.event_details.append((job_id, level, message, data or {}))
 
     def upsert_models(self, models: list[ModelDescriptor]) -> None:
         self.models = models

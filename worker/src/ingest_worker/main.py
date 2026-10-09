@@ -94,6 +94,7 @@ def main() -> None:
             max_tokens=llm_config.ocr.max_tokens,
             temperature=llm_config.ocr.temperature,
             concurrency=llm_config.ocr.concurrency,
+            cache=llm_config.ocr.cache,
         )
         if llm_config.ocr and llm_config.ocr.enabled
         else None

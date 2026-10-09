@@ -23,6 +23,11 @@ def ocr_run_key(job_id: str, page_number: int) -> str:
     return f"{job_id}/ocr/page-{page_number}.md"
 
 
+def ocr_cache_key(pdf_sha256: str, settings_fingerprint: str, page_number: int) -> str:
+    """OCR output shared by every job of the same PDF and OCR settings (worker-internal)."""
+    return f"ocr-cache/{pdf_sha256}/{settings_fingerprint}/page-{page_number}.md"
+
+
 def reviewed_document_key(job_id: str) -> str:
     """The approved document.json (edits applied) of a reviewed job, in the runs bucket."""
     return f"{job_id}/reviewed-document.json"

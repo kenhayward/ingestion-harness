@@ -41,7 +41,12 @@ the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are neve
    vision model (default `local/olmocr-2-7b-1025`) using olmOCR's prompt. Its YAML front matter
    is parsed: if the page is reported rotated, it is re-rendered with the suggested clockwise
    correction and retried once. HTML tables are flattened to text rows. Raw output goes to
-   `runs/{jobId}/ocr/page-N.md`.
+   `runs/{jobId}/ocr/page-N.md` and to a shared cache,
+   `runs/ocr-cache/{pdfSha256}/{settingsFingerprint}/page-N.md` (fingerprint = OCR model +
+   longest side + max tokens + temperature). Later jobs of the same PDF (re-runs, regressions,
+   new template versions) reuse it: OCR servers aren't deterministic even at temperature 0, so
+   without it extraction would be compared on different text. Turn off with `ocr.cache: false`;
+   changing any fingerprinted setting re-OCRs.
 4. **Segment**: each section starts at the first match of its multiline regex anchor and runs
    to the next matched anchor. Missing required sections → `needs_review`.
 5. **Extract**: per spec extraction, render the Jinja2 prompt with the selected sections, call
@@ -80,7 +85,7 @@ resolution (`default`, `fast`, …) → `provider/model-id`. Discovery runs at w
 
 ## Known gaps / next steps
 
-- OCR pages run sequentially; parallelise per page if large scanned documents become common.
+- The OCR cache is never pruned; delete `runs/ocr-cache/` to force fresh transcriptions.
 - OCR'd text differs in layout from pypdf text; specs used for both should use whitespace-tolerant
   anchors. A spec-level eval set of real scans would catch drift.
 - Integration tests for `PgRepo` / `PgJobQueue` against `dev-infra` (marked `integration`).

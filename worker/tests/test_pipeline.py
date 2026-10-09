@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -443,3 +444,87 @@ def test_ocr_reuses_pages_already_transcribed_for_this_job(setup) -> None:  # ty
     [(_, request)] = ocr.vision_calls
     assert request.image_png == b"\x89PNG\x01"
     assert "Acme Supplies" in provider.calls[0][1].prompt  # cached page 1 text was used
+
+
+def ocr_twice(deps: PipelineDeps, store: MemoryObjectStore, provider: FakeProvider) -> FakeQueue:
+    """Process job-1, then job-2 for the same PDF; returns job-2's queue."""
+    provider.responses = [HEADER, LINES, HEADER, LINES]
+    deps.extract_text = lambda _pdf: ["", ""]
+    run_once(FakeQueue(jobs=[job()]), deps, "w1")
+    queue = FakeQueue(jobs=[job(id="job-2", document_id="doc-2")])
+    run_once(queue, deps, "w1")
+    return queue
+
+
+def test_ocr_is_shared_by_jobs_of_the_same_pdf(setup) -> None:  # type: ignore[no-untyped-def]
+    """Re-runs and regressions must see the same page text: OCR servers are not deterministic
+    even at temperature 0, and a 60-page scan takes minutes to transcribe."""
+    provider, store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)
+
+    queue = ocr_twice(deps, store, provider)
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert len(ocr.vision_calls) == 2  # job-1 only
+    assert "Acme Supplies" in provider.calls[2][1].prompt
+    # job-2 keeps its own audit copy of the text it used
+    assert "Total 15.60 GBP" in store.get("runs", "job-2/ocr/page-2.md").decode()
+    [details] = [d for _, _, msg, d in queue.event_details if msg == "ocr"]
+    assert details["shared"] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"model": "local/other-ocr"},
+        {"longest_dim": 1024},
+        {"max_tokens": 4000},
+        {"temperature": 0.5},
+    ],
+)
+def test_ocr_cache_is_keyed_by_the_settings_that_change_the_text(setup, change) -> None:  # type: ignore[no-untyped-def]
+    provider, _store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]] * 2
+    with_ocr(deps, ocr)
+    provider.responses = [HEADER, LINES]
+    deps.extract_text = lambda _pdf: ["", ""]
+    run_once(FakeQueue(jobs=[job()]), deps, "w1")
+
+    deps.ocr = replace(deps.ocr, **change)
+    provider.responses = [HEADER, LINES]
+    queue = FakeQueue(jobs=[job(id="job-2")])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert len(ocr.vision_calls) == 4
+
+
+def test_ocr_cache_is_keyed_by_pdf_content(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]] * 2
+    with_ocr(deps, ocr)
+    store.put("inbox", "other.pdf", b"%PDF-other", "application/pdf")
+    provider.responses = [HEADER, LINES, HEADER, LINES]
+    deps.extract_text = lambda _pdf: ["", ""]
+
+    run_once(FakeQueue(jobs=[job()]), deps, "w1")
+    run_once(FakeQueue(jobs=[job(id="job-2", object_key="other.pdf")]), deps, "w1")
+
+    assert len(ocr.vision_calls) == 4
+
+
+def test_ocr_cache_can_be_turned_off(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]] * 2
+    with_ocr(deps, ocr)
+    deps.ocr = replace(deps.ocr, cache=False)
+
+    queue = ocr_twice(deps, store, provider)
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert len(ocr.vision_calls) == 4

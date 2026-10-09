@@ -61,3 +61,4 @@ ocr:
   maxTokens: 8000
   temperature: 0 # deterministic OCR (was 0.1: re-runs read handwriting differently)
   concurrency: ${OCR_CONCURRENCY:-4} # pages in flight; match LM Studio's parallel request slots
+  cache: true # reuse transcriptions for the same PDF + OCR settings (keeps re-runs comparable)
