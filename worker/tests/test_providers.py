@@ -262,3 +262,33 @@ def test_anthropic_json_with_images_puts_images_before_text() -> None:
     assert content[0]["type"] == "image" and content[0]["source"]["media_type"] == "image/png"
     assert content[1] == {"type": "text", "text": "doc"}
     assert "format" in messages.kwargs["output_config"]
+
+
+# --- truncation (output hit max tokens) -----------------------------------------------------
+
+
+def test_truncation_is_reported_by_every_provider() -> None:
+    chat = Recorder(chat_response())
+    chat.result.choices[0].finish_reason = "length"
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=chat))
+    assert OpenAIChatProvider("l", client).complete_json("m", REQ).truncated
+
+    resp = SimpleNamespace(
+        id="r",
+        model="m",
+        status="incomplete",
+        output_text='{"a"',
+        output=[],
+        usage=None,
+        incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+    )
+    client = SimpleNamespace(responses=Recorder(resp))
+    assert OpenAIResponsesProvider("o", client).complete_json("m", REQ).truncated
+
+    client = SimpleNamespace(messages=Recorder(anthropic_message(stop_reason="max_tokens")))
+    assert AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ).truncated
+
+
+def test_complete_responses_are_not_truncated() -> None:
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=Recorder(chat_response())))
+    assert not OpenAIChatProvider("l", client).complete_json("m", REQ).truncated

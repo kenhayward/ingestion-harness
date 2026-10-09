@@ -114,6 +114,7 @@ class AnthropicProvider:
             text=text,
             model=message.model,
             stop_reason=message.stop_reason,
+            truncated=message.stop_reason == "max_tokens",
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
             raw={"id": message.id},

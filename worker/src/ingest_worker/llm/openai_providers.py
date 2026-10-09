@@ -139,6 +139,7 @@ class OpenAIChatProvider(_OpenAIBase):
             text=choice.message.content or "",
             model=resp.model,
             stop_reason=choice.finish_reason,
+            truncated=choice.finish_reason == "length",
             input_tokens=resp.usage.prompt_tokens if resp.usage else None,
             output_tokens=resp.usage.completion_tokens if resp.usage else None,
             raw={"id": resp.id},
@@ -195,6 +196,9 @@ class OpenAIResponsesProvider(_OpenAIBase):
             text=resp.output_text,
             model=resp.model,
             stop_reason=resp.status,
+            truncated=resp.status == "incomplete"
+            and getattr(getattr(resp, "incomplete_details", None), "reason", None)
+            == "max_output_tokens",
             input_tokens=resp.usage.input_tokens if resp.usage else None,
             output_tokens=resp.usage.output_tokens if resp.usage else None,
             raw={"id": resp.id},

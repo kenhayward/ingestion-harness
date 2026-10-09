@@ -43,6 +43,19 @@ class ExtractionFailedError(Exception):
         self.attempts = attempts
 
 
+class OutputTruncatedError(ExtractionFailedError):
+    """The model hit the output token limit. Retrying with a longer prompt cannot help; split
+    the extraction (chunkPages) or raise its maxTokens."""
+
+    def __init__(self, extraction_id: str, attempts: list[Attempt], max_tokens: int) -> None:
+        Exception.__init__(
+            self,
+            f"extraction {extraction_id!r}: output truncated at {max_tokens} max tokens "
+            "(split it with chunkPages or raise maxTokens)",
+        )
+        self.attempts = attempts
+
+
 def validate(text: str, validator: Draft202012Validator) -> tuple[dict[str, Any] | None, list[str]]:
     try:
         data = json.loads(text)
@@ -66,6 +79,7 @@ def run_extraction(
     schema: dict[str, Any],
     max_attempts: int,
     images: tuple[bytes, ...] = (),
+    max_tokens: int = 16000,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out."""
@@ -81,8 +95,21 @@ def run_extraction(
                 json_schema=schema,
                 schema_name=extraction_id,
                 images=images,
+                max_tokens=max_tokens,
             ),
         )
+        if result.truncated:
+            attempts.append(
+                Attempt(
+                    n,
+                    current_prompt,
+                    result.text,
+                    ["output truncated at max tokens"],
+                    result.input_tokens,
+                    result.output_tokens,
+                )
+            )
+            raise OutputTruncatedError(extraction_id, attempts, max_tokens)
         data, errors = validate(result.text, validator)
         attempts.append(
             Attempt(

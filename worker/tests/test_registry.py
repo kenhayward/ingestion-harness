@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -123,3 +124,24 @@ def test_resolution_errors_have_a_dedicated_type() -> None:
     with pytest.raises(ModelResolutionError, match="not configured"):
         registry.resolve("openai/gpt-5")
     assert issubclass(ModelResolutionError, ValueError)
+
+
+def test_factories_apply_timeout_and_retry_options() -> None:
+    from ingest_worker.llm.registry import DEFAULT_FACTORIES
+
+    cfg = ProviderConfig.model_validate(
+        {
+            "name": "local",
+            "kind": "openai-chat",
+            "baseUrl": "http://x/v1",
+            "options": {"timeoutS": 900, "maxRetries": 0},
+        }
+    )
+    provider: Any = DEFAULT_FACTORIES["openai-chat"](cfg, None)
+    assert provider._client.timeout == 900 and provider._client.max_retries == 0
+
+    cfg = ProviderConfig.model_validate(
+        {"name": "anthropic", "kind": "anthropic", "options": {"timeoutS": 300, "maxRetries": 1}}
+    )
+    provider = DEFAULT_FACTORIES["anthropic"](cfg, "key")
+    assert provider._client.timeout == 300 and provider._client.max_retries == 1

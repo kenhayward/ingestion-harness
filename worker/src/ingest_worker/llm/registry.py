@@ -86,7 +86,12 @@ def _anthropic_factory(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
 
     from .anthropic_provider import AnthropicProvider
 
-    client = anthropic.Anthropic(api_key=api_key, base_url=cfg.base_url)
+    client = anthropic.Anthropic(
+        api_key=api_key,
+        base_url=cfg.base_url,
+        timeout=float(cfg.options.get("timeoutS", 600)),
+        max_retries=int(cfg.options.get("maxRetries", 2)),
+    )
     return AnthropicProvider(
         cfg.name,
         client,
@@ -100,7 +105,12 @@ def _openai_factory(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
 
     from .openai_providers import OpenAIChatProvider, OpenAIResponsesProvider
 
-    client = openai.OpenAI(api_key=api_key or "not-needed", base_url=cfg.base_url)
+    client = openai.OpenAI(
+        api_key=api_key or "not-needed",
+        base_url=cfg.base_url,
+        timeout=float(cfg.options.get("timeoutS", 600)),
+        max_retries=int(cfg.options.get("maxRetries", 2)),
+    )
     cls = OpenAIChatProvider if cfg.kind == "openai-chat" else OpenAIResponsesProvider
     return cls(
         cfg.name,

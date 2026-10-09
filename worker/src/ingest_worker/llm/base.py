@@ -48,6 +48,8 @@ class CompletionResult:
     input_tokens: int | None = None
     output_tokens: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    #: Generation stopped at the output token limit, so the text is incomplete.
+    truncated: bool = False
 
 
 class LLMError(Exception):

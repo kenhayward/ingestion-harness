@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from ingest_worker.extract import ExtractionFailedError, run_extraction
@@ -58,3 +60,17 @@ def test_raises_after_max_attempts() -> None:
 def test_transient_provider_errors_propagate() -> None:
     with pytest.raises(LLMError):
         extract(FakeProvider(responses=[LLMError("429")]))
+
+
+def test_truncated_output_raises_without_retrying() -> None:
+    from ingest_worker.extract import OutputTruncatedError
+
+    class Truncating(FakeProvider):
+        def complete_json(self, model, request):  # type: ignore[no-untyped-def]
+            result = super().complete_json(model, request)
+            return dataclasses.replace(result, truncated=True)
+
+    provider = Truncating(responses=['{"total": 1', '{"total": 1}'])
+    with pytest.raises(OutputTruncatedError, match="max tokens"):
+        extract(provider, max_attempts=3)
+    assert len(provider.calls) == 1  # a longer retry prompt can only make it worse
