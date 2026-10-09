@@ -89,6 +89,31 @@ export interface RegressionReport {
   summary: { references: number; completed: number; averageScore: number | null };
 }
 
+/** GET /api/templates/:id/metrics (see apps/api/src/metrics.ts). */
+export interface TemplateMetrics {
+  templateId: string;
+  versions: {
+    version: number;
+    jobs: number;
+    testJobs: number;
+    byStatus: Record<string, number>;
+    reviewed: number;
+    reviewRate: number | null;
+    editsPerReviewed: number | null;
+    avgProcessingSeconds: number | null;
+  }[];
+  steps: {
+    stepId: string;
+    runs: number;
+    reruns: number;
+    failures: number;
+    avgAttempts: number;
+    avgOutputTokens: number | null;
+    avgSeconds: number | null;
+  }[];
+  topEdited: { target: string; edits: number }[];
+}
+
 export interface VersionDiff {
   from: number;
   to: number;
@@ -123,6 +148,7 @@ export interface Api {
   pageUrl(jobId: string, page: number): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
+  getMetrics(templateId: string): Promise<TemplateMetrics>;
   listReferences(templateId: string): Promise<Reference[]>;
   createReference(templateId: string, jobId: string, name: string): Promise<Reference>;
   deleteReference(templateId: string, referenceId: string): Promise<void>;
@@ -187,6 +213,8 @@ export function createHttpApi(base = '/api'): Api {
     getStepRuns: (jobId) => fetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
+    getMetrics: (templateId) =>
+      fetch(`${base}/templates/${templateId}/metrics`).then(json<TemplateMetrics>),
     listReferences: (templateId) =>
       fetch(`${base}/templates/${templateId}/references`).then(json<Reference[]>),
     createReference: (templateId, jobId, name) =>

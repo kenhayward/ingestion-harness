@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Reference } from '@ih/shared';
-import type { Api, RegressionReport, VersionDiff } from '../api/client.js';
+import type { Api, RegressionReport, TemplateMetrics, VersionDiff } from '../api/client.js';
 
 const pct = (score: number) => `${Math.round(score * 100)}%`;
+const num = (n: number | null, digits = 0) =>
+  n === null ? '—' : n.toLocaleString('en-GB', { maximumFractionDigits: digits });
+const duration = (s: number | null) =>
+  s === null ? '—' : s < 120 ? `${num(s)} s` : `${(s / 60).toFixed(1)} min`;
 const show = (value: unknown) =>
   value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
 
@@ -20,16 +24,19 @@ export function QualityPanel({
   const [diff, setDiff] = useState<VersionDiff | null>(null);
   const [references, setReferences] = useState<Reference[]>([]);
   const [report, setReport] = useState<RegressionReport | null>(null);
+  const [metrics, setMetrics] = useState<TemplateMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [refs, regression] = await Promise.all([
+      const [refs, regression, stats] = await Promise.all([
         api.listReferences(templateId),
         api.getRegression(templateId, version),
+        api.getMetrics(templateId),
       ]);
       setReferences(refs);
       setReport(regression);
+      setMetrics(stats);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -70,6 +77,85 @@ export function QualityPanel({
   return (
     <div className="quality">
       {error && <p role="alert">{error}</p>}
+
+      <h3>Metrics</h3>
+      {!metrics || metrics.versions.length === 0 ? (
+        <p>No documents processed with this document type yet.</p>
+      ) : (
+        <>
+          <table aria-label="metrics by version">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Documents</th>
+                <th>Test runs</th>
+                <th>Review rate</th>
+                <th>Edits / reviewed</th>
+                <th>Avg processing</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.versions.map((v) => (
+                <tr key={v.version} className={v.version === version ? 'current' : undefined}>
+                  <td>v{v.version}</td>
+                  <td>{v.jobs}</td>
+                  <td>{v.testJobs}</td>
+                  <td>{v.reviewRate === null ? '—' : pct(v.reviewRate)}</td>
+                  <td>{num(v.editsPerReviewed, 1)}</td>
+                  <td>{duration(v.avgProcessingSeconds)}</td>
+                  <td>
+                    {Object.entries(v.byStatus)
+                      .map(([status, n]) => `${status} ${n}`)
+                      .join(', ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {metrics.steps.length > 0 && (
+            <table aria-label="metrics by step">
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>Runs</th>
+                  <th>Re-runs</th>
+                  <th>Failures</th>
+                  <th>Avg attempts</th>
+                  <th>Avg output tokens</th>
+                  <th>Avg duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.steps.map((s) => (
+                  <tr key={s.stepId}>
+                    <td>
+                      <code>{s.stepId}</code>
+                    </td>
+                    <td>{s.runs}</td>
+                    <td>{s.reruns}</td>
+                    <td>{s.failures}</td>
+                    <td>{num(s.avgAttempts, 1)}</td>
+                    <td>{num(s.avgOutputTokens)}</td>
+                    <td>{duration(s.avgSeconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {metrics.topEdited.length > 0 && (
+            <p>
+              Most corrected by reviewers:{' '}
+              {metrics.topEdited.map((t, i) => (
+                <span key={t.target}>
+                  {i > 0 && ', '}
+                  <code>{t.target}</code> ({t.edits} edits)
+                </span>
+              ))}
+            </p>
+          )}
+        </>
+      )}
 
       <h3>Changes</h3>
       <label>

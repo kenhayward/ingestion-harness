@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
   JobStatus,
@@ -327,6 +328,65 @@ export class PgRepo implements IngestionRepo {
     );
     const jobs = await Promise.all(rows.map((r) => this.getJob(r.id)));
     return jobs.filter((j): j is JobDetail => j !== null);
+  }
+
+  async metricsData(templateId: string): Promise<MetricsData> {
+    const { rows: jobRows } = await this.pool.query<JobRow>(`${JOB_SELECT} WHERE d.spec_id = $1`, [
+      templateId,
+    ]);
+    const { rows: edits } = await this.pool.query<{
+      job_id: string;
+      field_id: string | null;
+      table_id: string | null;
+      column_id: string | null;
+    }>(
+      `SELECT e.job_id, e.field_id, e.table_id, e.column_id FROM review_edits e
+         JOIN jobs j ON j.id = e.job_id JOIN documents d ON d.id = j.document_id
+        WHERE d.spec_id = $1`,
+      [templateId],
+    );
+    const { rows: runs } = await this.pool.query<{
+      id: string;
+      job_id: string;
+      step_id: string;
+      trigger: 'process' | 'rerun';
+      model: string | null;
+      attempts: number;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      status: 'succeeded' | 'failed';
+      error: string | null;
+      started_at: Date;
+      finished_at: Date;
+    }>(
+      `SELECT s.* FROM step_runs s
+         JOIN jobs j ON j.id = s.job_id JOIN documents d ON d.id = j.document_id
+        WHERE d.spec_id = $1`,
+      [templateId],
+    );
+    return {
+      jobs: jobRows.map(toSummary),
+      edits: edits.map((e) => ({
+        jobId: e.job_id,
+        field: e.field_id,
+        table: e.table_id,
+        column: e.column_id,
+      })),
+      stepRuns: runs.map((r) => ({
+        id: Number(r.id),
+        jobId: r.job_id,
+        stepId: r.step_id,
+        trigger: r.trigger,
+        model: r.model,
+        attempts: r.attempts,
+        inputTokens: r.input_tokens,
+        outputTokens: r.output_tokens,
+        status: r.status,
+        error: r.error,
+        startedAt: r.started_at.toISOString(),
+        finishedAt: r.finished_at.toISOString(),
+      })),
+    };
   }
 
   async listStepRuns(jobId: string): Promise<StepRun[]> {

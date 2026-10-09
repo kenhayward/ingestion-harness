@@ -7,6 +7,7 @@ import {
   type RunDocument,
 } from '../regression/compare.js';
 import { diffDefinitions } from '../regression/diff.js';
+import { computeMetrics } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
 
 const CreateReference = z
@@ -149,5 +150,10 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
         changes: diffDefinitions(from.definition, to.definition),
       };
     },
+  );
+
+  /** Operational metrics for a document type: per version, per step, most-edited targets. */
+  app.get<{ Params: { id: string } }>('/templates/:id/metrics', async (req) =>
+    computeMetrics(req.params.id, await app.deps.repo.metricsData(req.params.id)),
   );
 };

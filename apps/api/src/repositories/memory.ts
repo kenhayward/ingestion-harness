@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
   JobOutput,
@@ -115,6 +116,22 @@ export class MemoryRepo implements IngestionRepo {
       .filter((j) => j.referenceId && j.specId === templateId && j.specVersion === version)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return jobs.map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
+  }
+
+  async metricsData(templateId: string): Promise<MetricsData> {
+    const jobs = [...this.jobs.values()].filter((j) => j.specId === templateId);
+    const ids = new Set(jobs.map((j) => j.id));
+    return {
+      jobs,
+      edits: [...this.edits.entries()]
+        .filter(([jobId]) => ids.has(jobId))
+        .flatMap(([jobId, edits]) =>
+          edits.map((e) => ({ jobId, field: e.field, table: e.table, column: e.column })),
+        ),
+      stepRuns: [...this.stepRuns.entries()]
+        .filter(([jobId]) => ids.has(jobId))
+        .flatMap(([jobId, runs]) => runs.map((r) => ({ ...r, jobId }))),
+    };
   }
 
   async listEdits(jobId: string): Promise<ReviewEdit[]> {

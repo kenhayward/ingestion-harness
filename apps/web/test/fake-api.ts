@@ -65,6 +65,12 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     listTemplates: vi.fn(async () => []),
     getStepRuns: vi.fn(async () => []),
     listReferences: vi.fn(async () => []),
+    getMetrics: vi.fn(async (templateId: string) => ({
+      templateId,
+      versions: [],
+      steps: [],
+      topEdited: [],
+    })),
     createReference: vi.fn(async (templateId: string, jobId: string, name: string) => ({
       id: 'ref-1',
       templateId,

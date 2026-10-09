@@ -1,3 +1,4 @@
+import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
   JobStatus,
@@ -60,6 +61,9 @@ export interface IngestionRepo {
   createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;
   /** Regression jobs of a template version, newest first. */
   listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]>;
+
+  /** Raw rows behind GET /api/templates/:id/metrics. */
+  metricsData(templateId: string): Promise<MetricsData>;
 
   // --- review (jobs in awaiting_review) ---
   listEdits(jobId: string): Promise<ReviewEdit[]>;

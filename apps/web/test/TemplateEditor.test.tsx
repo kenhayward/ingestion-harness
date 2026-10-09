@@ -230,6 +230,47 @@ describe('TemplateEditor', () => {
     expect(screen.getByText(/Average score 50%/)).toBeInTheDocument();
   });
 
+  it('shows operational metrics for the document type', async () => {
+    setup(view({ ...validDefinition(), version: 3 }), {
+      getMetrics: vi.fn(async () => ({
+        templateId: 'letter',
+        versions: [
+          {
+            version: 3,
+            jobs: 3,
+            testJobs: 1,
+            byStatus: { succeeded: 2, awaiting_review: 1 },
+            reviewed: 2,
+            reviewRate: 2 / 3,
+            editsPerReviewed: 1.5,
+            avgProcessingSeconds: 540,
+          },
+        ],
+        steps: [
+          {
+            stepId: 'test_results',
+            runs: 2,
+            reruns: 0,
+            failures: 0,
+            avgAttempts: 15,
+            avgOutputTokens: 58500,
+            avgSeconds: 225,
+          },
+        ],
+        topEdited: [{ target: 'batches.batch_number', edits: 2 }],
+      })),
+    });
+    await userEvent.click(await tab(/Quality/));
+    const versions = await screen.findByRole('table', { name: 'metrics by version' });
+    expect(within(versions).getByRole('row', { name: /^v3/ })).toHaveTextContent('67%');
+    expect(within(versions).getByRole('row', { name: /^v3/ })).toHaveTextContent('9.0 min');
+    const steps = screen.getByRole('table', { name: 'metrics by step' });
+    expect(within(steps).getByRole('row', { name: /test_results/ })).toHaveTextContent('58,500');
+    expect(screen.getByText(/Most corrected by reviewers/)).toHaveTextContent(
+      'batches.batch_number (2 edits)',
+    );
+  });
+
   it('test-runs a draft on a sample document', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
