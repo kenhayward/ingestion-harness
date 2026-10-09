@@ -14,7 +14,7 @@ export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
   specs: SpecRegistry;
-  buckets: { inbox: string; outputs: string };
+  buckets: { inbox: string; outputs: string; runs: string };
   maxUploadBytes: number;
   logger?: boolean | { level: string };
 }

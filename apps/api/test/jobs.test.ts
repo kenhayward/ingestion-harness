@@ -90,3 +90,21 @@ describe('specs and models API', () => {
     expect((await app.inject('/api/models?all=true')).json()).toHaveLength(2);
   });
 });
+
+describe('GET /api/jobs/:id/pages/:n', () => {
+  it('serves the JPEG page preview rendered by the worker', async () => {
+    const { app, store, job } = await seedJob();
+    await store.put('runs', `${job.id}/pages/page-2.jpg`, Buffer.from('jpeg-bytes'), 'image/jpeg');
+    const res = await app.inject(`/api/jobs/${job.id}/pages/2`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(res.body).toBe('jpeg-bytes');
+  });
+
+  it('404s for missing pages and rejects bad page numbers', async () => {
+    const { app, job } = await seedJob();
+    expect((await app.inject(`/api/jobs/${job.id}/pages/9`)).statusCode).toBe(404);
+    expect((await app.inject(`/api/jobs/${job.id}/pages/0`)).statusCode).toBe(400);
+    expect((await app.inject(`/api/jobs/${job.id}/pages/x`)).statusCode).toBe(400);
+  });
+});

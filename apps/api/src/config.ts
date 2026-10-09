@@ -14,6 +14,7 @@ const EnvSchema = z.object({
   S3_SECRET_KEY: z.string().min(1),
   S3_BUCKET_INBOX: z.string().default('ingest-inbox'),
   S3_BUCKET_OUTPUTS: z.string().default('ingest-outputs'),
+  S3_BUCKET_RUNS: z.string().default('ingest-runs'),
   SPECS_DIR: z.string().default(defaultSpecsDir),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
 });

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { JobStatusSchema } from '@ih/shared';
+import { JobStatusSchema, pagePreviewKey } from '@ih/shared';
 import { z } from 'zod';
 
 const ListQuery = z.object({
@@ -46,4 +46,22 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         .send(body);
     },
   );
+
+  /** JPEG page preview rendered by the worker (review screen). */
+  app.get<{ Params: { id: string; n: string } }>('/jobs/:id/pages/:n', async (req, reply) => {
+    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    const page = Number(req.params.n);
+    if (!Number.isInteger(page) || page < 1 || page > 5000) {
+      return reply.code(400).send({ error: 'page must be a positive integer' });
+    }
+    const body = await app.deps.store.get(
+      app.deps.buckets.runs,
+      pagePreviewKey(req.params.id, page),
+    );
+    if (!body) return reply.code(404).send({ error: 'page preview not found' });
+    return reply
+      .header('content-type', 'image/jpeg')
+      .header('cache-control', 'private, max-age=3600')
+      .send(body);
+  });
 };

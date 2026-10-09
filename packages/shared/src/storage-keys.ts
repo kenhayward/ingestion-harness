@@ -18,3 +18,8 @@ export function outputKey(
 ): string {
   return `${specId}/v${version}/${outputId}/${documentId}.${format}`;
 }
+
+/** JPEG preview of a 1-based page for the review screen (runs bucket). */
+export function pagePreviewKey(jobId: string, pageNumber: number): string {
+  return `${jobId}/pages/page-${pageNumber}.jpg`;
+}

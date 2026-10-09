@@ -83,11 +83,9 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
       }
       const rows = document.tables[edit.table] ?? [];
       if (edit.row > rows.length) {
-        return reply
-          .code(400)
-          .send({
-            error: `row ${edit.row} of "${edit.table}" does not exist (${rows.length} rows)`,
-          });
+        return reply.code(400).send({
+          error: `row ${edit.row} of "${edit.table}" does not exist (${rows.length} rows)`,
+        });
       }
       draftValue = rows[edit.row - 1]?.[edit.column] ?? null;
       sameTarget = (e) => e.table === edit.table && e.row === edit.row && e.column === edit.column;

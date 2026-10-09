@@ -53,7 +53,7 @@ export async function testApp() {
       { kind: 'spec', id: 'demo', version: 2, spec: { ...demoSpec, version: 2, title: 'Demo v2' } },
       { kind: 'template', id: 'tdemo', version: 1, template: demoTemplate },
     ]),
-    buckets: { inbox: 'inbox', outputs: 'outputs' },
+    buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
   });
   return { app, repo, store };

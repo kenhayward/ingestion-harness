@@ -16,7 +16,11 @@ const app = await buildApp({
     secretAccessKey: config.S3_SECRET_KEY,
   }),
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
-  buckets: { inbox: config.S3_BUCKET_INBOX, outputs: config.S3_BUCKET_OUTPUTS },
+  buckets: {
+    inbox: config.S3_BUCKET_INBOX,
+    outputs: config.S3_BUCKET_OUTPUTS,
+    runs: config.S3_BUCKET_RUNS,
+  },
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   logger: { level: config.LOG_LEVEL },
 });
