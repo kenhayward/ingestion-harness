@@ -1,0 +1,15 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: extract the bill of materials and the reference documents.
+- materials: one entry per ingredient row (active ingredients, excipients, empty capsule shells,
+  coating materials). category "active" for active pharmaceutical ingredients.
+- reference_documents: documents listed as references for manufacturing and testing (e.g. Master
+  Formula Record, Batch Manufacturing Record, specifications), with their document numbers.
+  Ignore template guidance text and placeholders.
+- Return empty lists when a table is absent.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

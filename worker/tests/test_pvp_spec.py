@@ -112,3 +112,68 @@ def test_extraction_schemas_are_strict_structured_output_compatible(spec_dir: Pa
     for ex in loaded.spec.extractions:
         Draft202012Validator.check_schema(ex.schema_)
         check(ex.schema_, ex.id)
+
+
+# --- v2: chunked test results, consistency check, wider protocol context --------------------
+
+
+@pytest.fixture(scope="module")
+def pvp2() -> LoadedSpec:
+    return load_specs(REPO_ROOT / "specs").get("process-validation-protocol", 2)
+
+
+def test_v2_segments_both_samples_like_v1(
+    pvp: LoadedSpec, pvp2: LoadedSpec, text_pages: list[str], image_pages: list[str]
+) -> None:
+    for pages in (text_pages, image_pages):
+        assert prepare(pvp2, pages) == prepare(pvp, pages)
+
+
+def test_v2_test_results_run_one_page_at_a_time(pvp2: LoadedSpec, image_pages: list[str]) -> None:
+    ex = next(e for e in pvp2.spec.extractions if e.id == "test_results")
+    assert (ex.chunk_pages, ex.merge_path, ex.sections) == (1, "results", ["test_data"])
+    _, sections = prepare(pvp2, image_pages)
+    pages = [p for p in sections["test_data"].split("\f") if p.strip()]
+    assert len(pages) == 14  # executed copy pages 44-57 (deviations start on page 58)
+    prompt = render_prompt(
+        pvp2.directory,
+        ex.prompt,
+        {**sections, "test_data": pages[0]},
+        ex.sections,
+        chunk={"index": 1, "count": 14},
+    )
+    assert "page 1 of 14" in prompt and "TCL  120.1  116.4" in prompt
+    assert "Mixing time (5 min" not in prompt  # page 2's lubrication table is not included
+
+
+def test_v2_protocol_sees_reason_for_validation_and_all_stages(
+    pvp2: LoadedSpec, image_pages: list[str]
+) -> None:
+    ex = next(e for e in pvp2.spec.extractions if e.id == "protocol")
+    _, sections = prepare(pvp2, image_pages)
+    prompt = render_prompt(pvp2.directory, ex.prompt, sections, ex.sections)
+    assert "REASON FOR VALIDATION" in prompt and "New formulation" in prompt
+    assert "Capsule filling" in prompt
+    assert ex.page_images == [1]
+
+
+def test_v2_prompts_treat_template_guidance_as_non_data(
+    pvp2: LoadedSpec, text_pages: list[str]
+) -> None:
+    ex = next(e for e in pvp2.spec.extractions if e.id == "protocol")
+    _, sections = prepare(pvp2, text_pages)
+    prompt = render_prompt(pvp2.directory, ex.prompt, sections, ex.sections)
+    assert "XXXXkg" in prompt  # the trap is present in the document ...
+    assert "guidance" in prompt and "XXXX" in prompt.split("<section")[0]  # ... and in the rules
+
+
+def test_v2_cross_checks_batch_numbers_and_outputs_the_result(pvp2: LoadedSpec) -> None:
+    [check] = pvp2.spec.checks
+    assert (check.id, check.values, check.reference, check.aliases) == (
+        "batch_numbers",
+        "test_results.results[*].batch_number",
+        "batches.batches[*].batch_number",
+        "batches.batches[*].batch_number_variants[*]",
+    )
+    out = next(o for o in pvp2.spec.outputs if o.id == "batch_number_check")
+    assert out.from_ == "batch_numbers" and out.format == "csv"

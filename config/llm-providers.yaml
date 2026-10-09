@@ -7,6 +7,8 @@
 #              and record results in the llm_models table (shown in the UI model picker).
 # models:      static list, always offered even if discovery is off or fails.
 # optional:    skip the provider with a warning when its API key is missing.
+# options:     per kind — effort/serverFallbacks (anthropic); responseFormat/strict/maxTokensParam
+#              (openai-*); timeoutS (default 600) and maxRetries (SDK, default 2) for all.
 # aliases:     names specs can use in `extractions[].model`; values are provider/model-id.
 # ocr:         vision model that transcribes image-only / low-text pages before segmentation.
 
@@ -41,6 +43,8 @@ providers:
       responseFormat: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
       strict: false
       maxTokensParam: max_tokens
+      timeoutS: 900 # long extractions on a local 27B model; keep chunks well under this
+      maxRetries: 1 # SDK-level retries (timeouts/5xx); job-level retries happen on top
 
 aliases:
   default: local/qwen3.8-27b-mtp

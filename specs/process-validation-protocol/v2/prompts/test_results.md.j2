@@ -1,0 +1,21 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: list every executed test result in the test data tables.
+{% if chunk %}
+You are given page {{ chunk.index }} of {{ chunk.count }} of the test data; other pages are
+extracted separately. List only results recorded on this page. If this page does not state the
+batch for a table, use null for batch_number and batch_sequence rather than guessing.
+{% endif %}
+- One entry per recorded value: e.g. blend uniformity at each sample location (TCL, TC, MBL, ...)
+  for each analyte, plus Avg., RSD and Composite rows; fill weight / disintegration / assay etc.
+  for each stage (Initial, Middle, Final, Composite) and batch.
+- batch_sequence: 1, 2 or 3 for the 1st/2nd/3rd batch; batch_number as written in that table.
+- acceptance_criteria: the criterion stated for that test.
+- Skip empty result cells. Return an empty list if no results have been recorded (blank protocol
+  or template).
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

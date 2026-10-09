@@ -1,0 +1,14 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: list the critical process parameters and the measured parameters / acceptance criteria of
+the test programme.
+- One entry per parameter per stage (e.g. stage "Tabletting", parameter "Main compression force").
+- criticality as written ("Critical", "For information only", ...) or null.
+- sampling: how/where samples are taken for this parameter, if described.
+- Do not list equipment rows here.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

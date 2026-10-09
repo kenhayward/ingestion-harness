@@ -1,0 +1,15 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: list the validation batches (normally three), in order.
+- Batch numbers are handwritten and OCR often spells them differently in different places.
+  Choose the most consistent reading as batch_number and list every other spelling you see in
+  batch_number_variants (empty list if none).
+- If batches are planned but no batch numbers are filled in, still return one entry per planned
+  batch with batch_number null.
+- Return an empty list if the document does not mention individual batches.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

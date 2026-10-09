@@ -1,0 +1,14 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: extract the validation outcome.
+- executed: true only if the document records an evaluation/conclusion of executed batches.
+- validated: true/false as concluded by the document; null if not concluded.
+- deviations_reported: true if deviations were recorded, false if the deviation section states
+  none (or is struck through / "NA"), null if the document only describes the deviation process.
+- concluded_by / conclusion_date: who signed the conclusion and when, as written.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

@@ -1,0 +1,21 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: extract the protocol header and validation plan.
+- document_kind: "template" if the document is a template with placeholders; "protocol_cum_report"
+  if it says so or contains executed results; otherwise "protocol" or "report".
+- protocol_number, revision, effective_date, organisation and template_reference are usually in
+  the page header (see the attached page image) or on the cover page.
+- template_reference is the form/template id printed on the page (e.g. "TEM-290",
+  "ST/QA/029 (R2):F4"), not the protocol number.
+- number_of_batches: the number of validation batches planned (e.g. "three batches" -> 3).
+- stages_validated: every process stage the document validates — combine the critical
+  process stages, test data headings and the conclusion (e.g. Blending, Lubrication, Capsule
+  filling). Use the document's wording, one entry per stage.
+- reason_for_validation: the ticked/selected reason(s) from a "reason for validation" table
+  (e.g. "New formulation"); ignore unticked or "NA" rows.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

@@ -75,7 +75,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 
 | Contract | TypeScript | Python |
 | --- | --- | --- |
-| Spec format (incl. `document.ocr`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
+| Spec format (incl. `document.ocr`, `copies`, chunking, `checks`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
 | Object keys | `packages/shared/src/storage-keys.ts` | `worker/src/ingest_worker/storage.py` |
 | Job statuses | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
 | Models table | `ModelInfo` in `packages/shared/src/models.ts`, `PgRepo.listModels` | `PgJobQueue.upsert_models` |
