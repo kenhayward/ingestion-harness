@@ -15,6 +15,7 @@ from .ocr import (
     PageRenderer,
     ocr_page,
     pages_needing_ocr,
+    parse_olmocr,
     render_page_png,
 )
 from .outputs import RenderedOutput, render_outputs
@@ -146,33 +147,45 @@ def _ocr_pages(
         raise DocumentError(f"OCR model: {exc}") from exc
 
     settings = deps.ocr
+    pages = list(pages)
+
+    # Reuse transcriptions saved by an earlier attempt of this job (retries, crashed workers).
+    cached: list[int] = []
+    for index in targets:
+        raw = deps.store.get_optional(deps.buckets.runs, ocr_run_key(job.id, index + 1))
+        if raw is not None:
+            pages[index] = parse_olmocr(raw.decode("utf-8"))[0]
+            cached.append(index)
+    todo = [i for i in targets if i not in cached]
 
     def run(index: int) -> OcrPage:
         try:
-            return ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
+            page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
-
-    # Pages are independent, so OCR them concurrently; results are written back in page order
-    # and the first exception (transient or DocumentError) propagates.
-    with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
-        ocr_results = list(pool.map(run, targets))
-
-    pages = list(pages)
-    for page in ocr_results:
-        index = page.index
-        pages[index] = page.text
+        # Saved as each page finishes, so a later failure doesn't lose completed pages.
         deps.store.put(
             deps.buckets.runs,
             ocr_run_key(job.id, index + 1),
             page.raw[-1].encode("utf-8"),
             "text/markdown",
         )
+        return page
+
+    # Pages are independent, so OCR them concurrently; results are written back in page order
+    # and the first exception (transient or DocumentError) propagates.
+    with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
+        for page in pool.map(run, todo):
+            pages[page.index] = page.text
     queue.event(
         job.id,
         "info",
         "ocr",
-        {"model": f"{provider.name}/{model_id}", "pages": [i + 1 for i in targets]},
+        {
+            "model": f"{provider.name}/{model_id}",
+            "pages": [i + 1 for i in targets],
+            "cached": [i + 1 for i in cached],
+        },
     )
     return pages
 

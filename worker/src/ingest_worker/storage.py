@@ -26,6 +26,8 @@ def ocr_run_key(job_id: str, page_number: int) -> str:
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 
+    def get_optional(self, bucket: str, key: str) -> bytes | None: ...
+
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None: ...
 
 
@@ -38,6 +40,10 @@ class MemoryObjectStore:
             return self.objects[(bucket, key)][0]
         except KeyError:
             raise KeyError(f"s3://{bucket}/{key} not found") from None
+
+    def get_optional(self, bucket: str, key: str) -> bytes | None:
+        entry = self.objects.get((bucket, key))
+        return entry[0] if entry else None
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self.objects[(bucket, key)] = (body, content_type)
@@ -61,6 +67,12 @@ class S3ObjectStore:
 
     def get(self, bucket: str, key: str) -> bytes:
         return self._client.get_object(Bucket=bucket, Key=key)["Body"].read()
+
+    def get_optional(self, bucket: str, key: str) -> bytes | None:
+        try:
+            return self.get(bucket, key)
+        except self._client.exceptions.NoSuchKey:
+            return None
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self._client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)

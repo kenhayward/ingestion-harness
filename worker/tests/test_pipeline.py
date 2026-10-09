@@ -382,3 +382,22 @@ def test_ocr_runs_pages_concurrently_and_keeps_page_order(setup) -> None:  # typ
     assert ocr.max_in_flight == 3
     prompt = provider.calls[0][1].prompt
     assert prompt.index("INVOICE INV-001") < prompt.index("Subtotal 13.00")
+
+
+def test_ocr_reuses_pages_already_transcribed_for_this_job(setup) -> None:  # type: ignore[no-untyped-def]
+    """A retried job must not pay for OCR again (60-page scans take minutes)."""
+    provider, store, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[1]]  # only page 2 still needs OCR
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: ["", ""]
+    store.put("runs", "job-1/ocr/page-1.md", (OLMOCR_OK + PAGES[0]).encode(), "text/markdown")
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job(attempts=2)])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    [(_, request)] = ocr.vision_calls
+    assert request.image_png == b"\x89PNG\x01"
+    assert "Acme Supplies" in provider.calls[0][1].prompt  # cached page 1 text was used
