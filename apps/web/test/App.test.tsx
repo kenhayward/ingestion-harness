@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { fakeApi, job } from './fake-api.js';
 
@@ -40,5 +40,32 @@ describe('App', () => {
       />,
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('503');
+  });
+});
+
+describe('review routing', () => {
+  it('links jobs awaiting review to the review screen', async () => {
+    const api = fakeApi({
+      listJobs: async () => [
+        job({
+          id: 'r1',
+          filename: 'scan.pdf',
+          status: 'awaiting_review',
+          reviewReasons: ['2 unmatched'],
+        }),
+      ],
+    });
+    render(<App api={api} pollMs={0} />);
+    const link = await screen.findByRole('link', { name: 'Review' });
+    expect(link).toHaveAttribute('href', '#/review/r1');
+    expect(screen.getByText('2 unmatched')).toBeInTheDocument();
+  });
+
+  it('renders the review screen for #/review/<id>', async () => {
+    window.location.hash = '#/review/r1';
+    const api = fakeApi();
+    render(<App api={api} pollMs={0} />);
+    await vi.waitFor(() => expect(api.getReview).toHaveBeenCalledWith('r1'));
+    window.location.hash = '';
   });
 });

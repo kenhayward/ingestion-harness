@@ -3,8 +3,22 @@ import type { JobSummary } from '@ih/shared';
 import type { Api } from './api/client.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
+import { ReviewPage } from './review/ReviewPage.js';
+import { navigate, useHashRoute } from './router.js';
 
 export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
+  const route = useHashRoute();
+  if (route.name === 'review') {
+    return (
+      <main className="wide">
+        <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />
+      </main>
+    );
+  }
+  return <JobsView api={api} pollMs={pollMs} />;
+}
+
+function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 

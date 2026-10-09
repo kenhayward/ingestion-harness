@@ -34,10 +34,17 @@ export function JobsTable({
             <td>
               <span className={`status status-${job.status}`}>{job.status}</span>
               {job.error && <div className="error">{job.error}</div>}
+              {job.status === 'awaiting_review' &&
+                job.reviewReasons?.map((r) => (
+                  <div key={r} className="error">
+                    {r}
+                  </div>
+                ))}
             </td>
             <td>{job.attempts}</td>
             <td>{new Date(job.createdAt).toLocaleString()}</td>
             <td>
+              {job.status === 'awaiting_review' && <a href={`#/review/${job.id}`}>Review</a>}
               {(job.status === 'failed' || job.status === 'needs_review') && (
                 <button onClick={() => api.retryJob(job.id).then(onChanged)}>Retry</button>
               )}

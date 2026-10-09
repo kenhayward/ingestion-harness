@@ -52,3 +52,101 @@ td {
 .status-rejected {
   color: #57606a;
 }
+
+main.wide {
+  max-width: none;
+}
+button.link {
+  background: none;
+  border: none;
+  padding: 0 0.25rem;
+  color: #0969da;
+  cursor: pointer;
+  text-decoration: underline;
+}
+button.danger {
+  color: #cf222e;
+}
+.review-header h2 {
+  margin: 0.25rem 0;
+}
+.reasons {
+  margin: 0.25rem 0;
+  color: #9a6700;
+}
+.review-body {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .review-body {
+    grid-template-columns: 1fr;
+  }
+}
+.page-viewer {
+  position: sticky;
+  top: 0.5rem;
+}
+.page-viewer img {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: #fff;
+}
+.page-nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+[role='tablist'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+[role='tab'][aria-selected='true'] {
+  font-weight: 700;
+  border-bottom: 2px solid #0969da;
+}
+.table-scroll {
+  max-height: 70vh;
+  overflow: auto;
+}
+.fields th[scope='row'] small {
+  opacity: 0.6;
+  font-weight: normal;
+}
+tr.flagged,
+td.flag {
+  background: color-mix(in srgb, #d4a72c 25%, transparent);
+}
+td.edited-cell,
+.edited {
+  color: #1a7f37;
+}
+.edited {
+  margin-left: 0.5rem;
+}
+.value.editing input {
+  min-width: 10rem;
+}
+.filter {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+.edit-log li {
+  margin-bottom: 0.25rem;
+}
+.decision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}

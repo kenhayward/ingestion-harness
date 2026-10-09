@@ -35,6 +35,13 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     retryJob: vi.fn(async () => job()),
     upload: vi.fn(async () => job()),
     outputUrl: (jobId, outputId) => `/api/jobs/${jobId}/outputs/${outputId}`,
+    getReview: vi.fn(async () => {
+      throw new Error('getReview not stubbed');
+    }),
+    addEdit: vi.fn(async () => ({}) as never),
+    approve: vi.fn(async () => job({ status: 'queued' })),
+    reject: vi.fn(async () => job({ status: 'rejected' })),
+    pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
     ...overrides,
   };
 }
