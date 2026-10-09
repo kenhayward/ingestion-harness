@@ -126,6 +126,11 @@ export interface StepRun {
 }
 
 export const RerunRequestSchema = z
-  .object({ model: z.string().min(1).optional(), instructions: z.string().min(1).optional() })
+  .object({
+    model: z.string().min(1).optional(),
+    instructions: z.string().min(1).optional(),
+    /** 1-based pages sent as images so a vision model reads them directly (e.g. handwriting). */
+    pageImages: z.array(z.number().int().positive()).min(1).max(20).optional(),
+  })
   .strict();
 export type RerunRequest = z.infer<typeof RerunRequestSchema>;

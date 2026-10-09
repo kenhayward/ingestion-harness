@@ -7,6 +7,13 @@ import { PageViewer } from './PageViewer.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
+/** "3, 59" -> [3, 59] (positive integers only). */
+const pageList = (text: string): number[] =>
+  text
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+
 function loadReviewer(): string {
   try {
     return localStorage.getItem(REVIEWER_KEY) ?? '';
@@ -42,9 +49,12 @@ export function ReviewPage({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [stepRuns, setStepRuns] = useState<StepRun[]>([]);
-  const [rerun, setRerun] = useState<{ step: string; model: string; instructions: string } | null>(
-    null,
-  );
+  const [rerun, setRerun] = useState<{
+    step: string;
+    model: string;
+    instructions: string;
+    pages: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -294,7 +304,12 @@ export function ReviewPage({
                               type="button"
                               aria-label={`Re-run ${step.id}`}
                               onClick={() =>
-                                setRerun({ step: step.id, model: '', instructions: '' })
+                                setRerun({
+                                  step: step.id,
+                                  model: '',
+                                  instructions: '',
+                                  pages: String(page),
+                                })
                               }
                             >
                               Re-run
@@ -318,6 +333,9 @@ export function ReviewPage({
                         ...(rerun.instructions.trim()
                           ? { instructions: rerun.instructions.trim() }
                           : {}),
+                        ...(pageList(rerun.pages).length
+                          ? { pageImages: pageList(rerun.pages) }
+                          : {}),
                       }),
                     );
                   }}
@@ -340,6 +358,13 @@ export function ReviewPage({
                       rows={3}
                       value={rerun.instructions}
                       onChange={(e) => setRerun({ ...rerun, instructions: e.target.value })}
+                    />
+                  </label>
+                  <label title="Sent as images so a vision model reads the pages directly (e.g. handwriting the OCR misread). Leave empty for text only.">
+                    Pages to show the model
+                    <input
+                      value={rerun.pages}
+                      onChange={(e) => setRerun({ ...rerun, pages: e.target.value })}
                     />
                   </label>
                   <button type="submit" disabled={busy}>

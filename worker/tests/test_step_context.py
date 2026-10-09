@@ -141,3 +141,24 @@ def test_rerun_of_an_unknown_step_goes_to_operator_review(tmp_path: Path) -> Non
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert "no extract step 'nope'" in reason
+
+
+def test_rerun_can_show_the_model_page_images(tmp_path: Path) -> None:
+    """For handwriting OCR misread, the reviewer sends the page itself to a vision model."""
+    deps, providers = make(tmp_path, RESPONSES)
+    deps.render_page = lambda pdf, index, dim, rotation: b"\x89PNG" + bytes([index])
+    queue = FakeQueue(jobs=[JOB], templates={("demo", 1): TEMPLATE})
+    run_once(queue, deps, "w1")
+
+    providers["other"].responses = [
+        {"executed_on": {"value": "06/10/2023", "evidence": "06/10/23", "page": 3}}
+    ]
+    rerun = {"step": "date", "model": "other/vision", "pageImages": [3, 9]}
+    queue.jobs = [replace(JOB, task="rerun", rerun=rerun)]
+    run_once(queue, deps, "w1")
+
+    [(_, request)] = providers["other"].calls
+    assert request.images == (b"\x89PNG\x02",)  # page 9 does not exist: skipped
+    document = json.loads(next(o.body for o in queue.awaiting[-1][1] if o.output_id == "document"))
+    assert document["fields"]["executed_on"]["value"] == "2023-10-06"
+    assert document["reruns"][0]["page_images"] == [3, 9]

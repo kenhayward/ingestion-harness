@@ -58,6 +58,17 @@ describe('step runs and re-runs', () => {
     expect(res.json()).toMatchObject({ status: 'queued', task: 'rerun' });
   });
 
+  it('passes page images for the model to read, and validates them', async () => {
+    const { app, repo, job } = await seed();
+    const res = await app.inject(
+      post(`/api/jobs/${job.id}/steps/head/rerun`, { pageImages: [59] }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(repo.reruns.get(job.id)).toEqual({ step: 'head', pageImages: [59] });
+    const bad = await app.inject(post(`/api/jobs/${job.id}/steps/head/rerun`, { pageImages: [0] }));
+    expect(bad.statusCode).toBe(400);
+  });
+
   it.each([['nope', 400, 'no extract step']])('rejects step %s', async (step, code, message) => {
     const { app, job } = await seed();
     const res = await app.inject(post(`/api/jobs/${job.id}/steps/${step}/rerun`, {}));

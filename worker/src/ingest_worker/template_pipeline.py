@@ -251,6 +251,8 @@ def rerun_template_job(
             f"no extract step {params.get('step')!r} in {template.id} v{template.version}"
         )
     ex = compile_step(template, step)
+    if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
+        ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
     try:
         model = deps.models.resolve(params.get("model") or job.model_override or step.model)
     except ModelResolutionError as exc:
@@ -294,6 +296,7 @@ def rerun_template_job(
                 "step": step.id,
                 "model": result.model_ref,
                 "instructions": params.get("instructions"),
+                "page_images": params.get("pageImages"),
                 "at": datetime.now(UTC).isoformat(),
             },
         ],

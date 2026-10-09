@@ -146,10 +146,15 @@ describe('ReviewPage', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'Re-run data' }));
     await userEvent.type(screen.getByLabelText('Model for re-run'), 'other/better');
     await userEvent.type(screen.getByLabelText('Guidance for re-run'), 'Results are numeric.');
+    const pages = screen.getByLabelText('Pages to show the model');
+    expect(pages).toHaveValue('1'); // defaults to the page in the viewer
+    await userEvent.clear(pages);
+    await userEvent.type(pages, '3, 2');
     await userEvent.click(screen.getByRole('button', { name: 'Queue re-run' }));
     expect(api.rerunStep).toHaveBeenCalledWith(JOB_ID, 'data', {
       model: 'other/better',
       instructions: 'Results are numeric.',
+      pageImages: [3, 2],
     });
     expect(onDone).toHaveBeenCalled();
   });
