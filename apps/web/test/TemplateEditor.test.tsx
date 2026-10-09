@@ -1,0 +1,150 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import type { TemplateRecordView } from '../src/api/client.js';
+import { TemplateEditor } from '../src/templates/TemplateEditor.js';
+import { fakeApi } from './fake-api.js';
+import { validDefinition } from './template-fixture.js';
+
+const skeleton = {
+  id: 'letter',
+  version: 1,
+  name: 'Letter',
+  document: { ocr: 'auto', sections: [{ id: 'all', anchor: '\\A' }] },
+  outputs: { fields: [], tables: [] },
+  pipeline: [],
+  review: { required: 'on_warnings' },
+};
+
+const view = (
+  definition: Record<string, unknown>,
+  status: 'draft' | 'published' = 'draft',
+): TemplateRecordView => ({
+  record: {
+    id: String(definition.id),
+    version: Number(definition.version),
+    status,
+    definition,
+    createdAt: '',
+    updatedAt: '',
+    publishedAt: null,
+  },
+  issues: [],
+});
+
+function setup(record: TemplateRecordView, overrides = {}) {
+  const onNavigate = vi.fn();
+  const api = fakeApi({
+    getTemplate: vi.fn(async () => record),
+    saveTemplate: vi.fn(async (_id: string, _v: number, definition: Record<string, unknown>) =>
+      view(definition),
+    ),
+    ...overrides,
+  });
+  render(
+    <TemplateEditor
+      api={api}
+      templateId={record.record.id}
+      version={record.record.version}
+      onNavigate={onNavigate}
+    />,
+  );
+  return { api, onNavigate };
+}
+
+const tab = (name: RegExp) => screen.findByRole('tab', { name });
+
+describe('TemplateEditor', () => {
+  it('shows live validation issues for an incomplete draft', async () => {
+    setup(view(skeleton));
+    const issues = await screen.findByRole('list', { name: 'Validation issues' });
+    expect(issues).toHaveTextContent('pipeline');
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+  });
+
+  it('builds a template: field, then a step that fills it, then saves', async () => {
+    const { api } = setup(view(skeleton));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    await userEvent.type(screen.getByLabelText('Field 1 id'), 'sender');
+    await userEvent.selectOptions(screen.getByLabelText('Field 1 type'), 'text');
+
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: 'Add extract step' }));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    await userEvent.type(within(step).getByLabelText('Step id'), 'head');
+    await userEvent.click(within(step).getByRole('checkbox', { name: 'sender' }));
+    await userEvent.click(within(step).getByRole('checkbox', { name: 'all' }));
+    await userEvent.type(
+      within(step).getByLabelText('Instructions'),
+      'The sender is in the letterhead.',
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole('list', { name: 'Validation issues' })).not.toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const saved = vi.mocked(api.saveTemplate).mock.calls[0]!;
+    expect(saved[0]).toBe('letter');
+    expect(saved[2]).toMatchObject({
+      outputs: { fields: [{ id: 'sender', type: 'text' }] },
+      pipeline: [
+        {
+          type: 'extract',
+          id: 'head',
+          fields: ['sender'],
+          sections: ['all'],
+          instructions: 'The sender is in the letterhead.',
+        },
+      ],
+    });
+  });
+
+  it('publishes only a saved, valid draft', async () => {
+    const definition = { ...validDefinition(), version: 1 };
+    const { api } = setup(view(definition), {
+      publishTemplate: vi.fn(async () => view(definition, 'published')),
+    });
+    const publish = await screen.findByRole('button', { name: 'Publish' });
+    expect(publish).toBeEnabled();
+
+    await userEvent.type(screen.getByLabelText('Name'), ' (edited)');
+    expect(publish).toBeDisabled(); // unsaved changes
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(publish).toBeEnabled());
+    await userEvent.click(publish);
+    expect(api.publishTemplate).toHaveBeenCalledWith('letter', 1);
+  });
+
+  it('shows published versions read-only and starts new drafts from them', async () => {
+    const { api, onNavigate } = setup(view({ ...validDefinition(), version: 1 }, 'published'), {
+      newDraft: vi.fn(async () => view({ ...validDefinition(), version: 2 })),
+    });
+    expect(await screen.findByLabelText('Name')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'New draft from v1' }));
+    expect(api.newDraft).toHaveBeenCalledWith('letter', 1);
+    expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/2');
+  });
+
+  it('edits as YAML', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/YAML/));
+    const editor = screen.getByLabelText('Template YAML');
+    expect((editor as HTMLTextAreaElement).value).toContain('name: Letter');
+    await userEvent.clear(editor);
+    await userEvent.type(editor, 'id: letter{enter}version: 1{enter}name: Memo');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply YAML' }));
+    await userEvent.click(await tab(/General/));
+    expect(screen.getByLabelText('Name')).toHaveValue('Memo');
+  });
+
+  it('test-runs a draft on a sample document', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
+    await userEvent.upload(await screen.findByLabelText('Sample PDF'), file);
+    await userEvent.click(screen.getByRole('button', { name: 'Test run' }));
+    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
+    expect(await screen.findByRole('status')).toHaveTextContent('Test run queued');
+  });
+});

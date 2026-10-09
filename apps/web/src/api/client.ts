@@ -44,6 +44,28 @@ export interface ReviewData {
   edits: ReviewEdit[];
 }
 
+export interface TemplateListItem {
+  id: string;
+  name: string;
+  description: string | null;
+  published: number | null;
+  draft: number | null;
+  versions: { version: number; status: 'draft' | 'published'; updatedAt: string }[];
+}
+
+export interface TemplateRecordView {
+  record: {
+    id: string;
+    version: number;
+    status: 'draft' | 'published';
+    definition: Record<string, unknown>;
+    createdAt: string;
+    updatedAt: string;
+    publishedAt: string | null;
+  };
+  issues: { path: string; message: string }[];
+}
+
 export interface UploadRequest {
   file: File;
   specId: string;
@@ -65,6 +87,21 @@ export interface Api {
   approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
   pageUrl(jobId: string, page: number): string;
+  listTemplates(): Promise<TemplateListItem[]>;
+  createTemplate(id: string, name: string): Promise<TemplateRecordView>;
+  getTemplate(id: string, version: number): Promise<TemplateRecordView>;
+  saveTemplate(
+    id: string,
+    version: number,
+    definition: Record<string, unknown>,
+  ): Promise<TemplateRecordView>;
+  publishTemplate(id: string, version: number): Promise<TemplateRecordView>;
+  newDraft(id: string, from: number): Promise<TemplateRecordView>;
+  deleteDraft(id: string, version: number): Promise<void>;
+  importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
+  exportUrl(id: string, version: number): string;
+  /** Upload a sample against a (draft) version as a test run (never published). */
+  testRun(file: File, id: string, version: number): Promise<JobSummary>;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -75,9 +112,9 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-function post<T>(url: string, body: unknown): Promise<T> {
+function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
   return fetch(url, {
-    method: 'POST',
+    method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   }).then(json<T>);
@@ -105,6 +142,34 @@ export function createHttpApi(base = '/api'): Api {
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
+    listTemplates: () => fetch(`${base}/templates`).then(json<TemplateListItem[]>),
+    createTemplate: (id, name) => post<TemplateRecordView>(`${base}/templates`, { id, name }),
+    getTemplate: (id, version) =>
+      fetch(`${base}/templates/${id}/versions/${version}`).then(json<TemplateRecordView>),
+    saveTemplate: (id, version, definition) =>
+      post<TemplateRecordView>(
+        `${base}/templates/${id}/versions/${version}`,
+        { definition },
+        'PUT',
+      ),
+    publishTemplate: (id, version) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
+    newDraft: (id, from) => post<TemplateRecordView>(`${base}/templates/${id}/drafts`, { from }),
+    deleteDraft: async (id, version) => {
+      const res = await fetch(`${base}/templates/${id}/versions/${version}`, { method: 'DELETE' });
+      if (!res.ok) await json(res);
+    },
+    importTemplate: (yaml, publish) =>
+      post<TemplateRecordView>(`${base}/templates/import`, { yaml, publish }),
+    exportUrl: (id, version) => `${base}/templates/${id}/versions/${version}/export`,
+    testRun: (file, id, version) => {
+      const form = new FormData();
+      form.append('specId', id);
+      form.append('specVersion', String(version));
+      form.append('test', 'true');
+      form.append('file', file);
+      return fetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
+    },
   };
 }
 

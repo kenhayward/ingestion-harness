@@ -83,6 +83,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 
 ## Rules of the road
 
+- **Templates live in the database** (`templates` table, migration 0003; `apps/api/src/templates/`, `apps/web/src/templates/`): drafts editable, published immutable (DB triggers too), YAML import/export, `specs/*/template.yaml` seeded on API start. The worker loads a job's template from the DB first (`pipeline.load_definition`), files second. Draft test runs set `jobs.test` and are never published.
 - **Document templates (`template.yaml`) are the preferred format** — outputs first (fields + typed tables), steps compile to the engine's `Extraction` (`template.compile_step`), run by `template_pipeline.py`. Legacy `spec.yaml` still runs via `pipeline.py`; both share `prepare_document` (OCR, copies, page markers, sections).
 - **Specs are immutable once published.** Change a document type by adding `specs/<id>/v<N+1>/`;
   jobs record the spec id + version they ran with. Prompts are Jinja2 with `StrictUndefined`.

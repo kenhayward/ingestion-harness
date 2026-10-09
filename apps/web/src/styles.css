@@ -171,3 +171,85 @@ td.edited-cell,
     opacity: 1;
   }
 }
+
+.top-nav {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+.top-nav a[aria-current='page'] {
+  font-weight: 700;
+}
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+.template-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+.template-actions form {
+  flex-direction: column;
+  align-items: stretch;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: end;
+  margin: 0.5rem 0;
+}
+.issues {
+  color: #cf222e;
+  font-size: 0.875rem;
+}
+.hint {
+  color: #9a6700;
+}
+.editor-body {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.editor-body .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem 1rem;
+}
+.editor-body textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+}
+.value-row,
+.list-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed color-mix(in srgb, currentColor 15%, transparent);
+}
+.table-def {
+  width: 100%;
+}
+.step {
+  margin-bottom: 1rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 6px;
+}
+.step-tools {
+  display: flex;
+  gap: 0.25rem;
+}
+fieldset.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}

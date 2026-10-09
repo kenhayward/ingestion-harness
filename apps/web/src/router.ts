@@ -1,13 +1,27 @@
 import { useEffect, useState } from 'react';
 
-export type Route = { name: 'jobs' } | { name: 'review'; jobId: string };
+export type Route =
+  | { name: 'jobs' }
+  | { name: 'review'; jobId: string }
+  | { name: 'templates' }
+  | { name: 'template'; templateId: string; version: number };
 
 export function parseHash(hash: string): Route {
   const review = /^#\/review\/([^/]+)$/.exec(hash);
-  return review ? { name: 'review', jobId: decodeURIComponent(review[1]!) } : { name: 'jobs' };
+  if (review) return { name: 'review', jobId: decodeURIComponent(review[1]!) };
+  const template = /^#\/templates\/([^/]+)\/(\d+)$/.exec(hash);
+  if (template) {
+    return {
+      name: 'template',
+      templateId: decodeURIComponent(template[1]!),
+      version: Number(template[2]),
+    };
+  }
+  if (hash === '#/templates') return { name: 'templates' };
+  return { name: 'jobs' };
 }
 
-/** Minimal hash routing: #/ (jobs) and #/review/<jobId>. */
+/** Minimal hash routing: #/ (jobs), #/review/<jobId>, #/templates, #/templates/<id>/<version>. */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));
   useEffect(() => {

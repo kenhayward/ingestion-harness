@@ -1,5 +1,15 @@
 # Document types
 
+**Templates are stored in the database** and edited in the app (**Document types** page): create a
+document type (v1 draft), edit the draft (saved even while invalid, with live validation), publish
+it (immutable from then on), and start a new draft from any version. Drafts can be test-run on a
+sample PDF (`test` jobs are reviewable but never published). Templates import/export as YAML.
+
+This directory holds **seed and import material**: on startup the API imports any
+`*/v<N>/template.yaml` that is not in the database yet (as published) and never touches existing
+versions. Database templates use the built-in prompt with step `instructions` only (no custom
+prompt files). Legacy `spec.yaml` versions are still read from here.
+
 Two formats live here, one per version directory:
 
 - **`template.yaml` — document templates (preferred, from PVP v3).** Outputs first: atomic

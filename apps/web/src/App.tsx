@@ -1,21 +1,55 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api } from './api/client.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
+import { TemplateEditor } from './templates/TemplateEditor.js';
+import { TemplatesPage } from './templates/TemplatesPage.js';
 
 export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
   const route = useHashRoute();
+  let page: ReactNode;
   if (route.name === 'review') {
-    return (
-      <main className="wide">
-        <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />
-      </main>
+    page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
+  } else if (route.name === 'templates') {
+    page = <TemplatesPage api={api} onNavigate={navigate} />;
+  } else if (route.name === 'template') {
+    page = (
+      <TemplateEditor
+        key={`${route.templateId}@${route.version}`}
+        api={api}
+        templateId={route.templateId}
+        version={route.version}
+        onNavigate={navigate}
+      />
     );
+  } else {
+    page = <JobsView api={api} pollMs={pollMs} />;
   }
-  return <JobsView api={api} pollMs={pollMs} />;
+  return (
+    <main className={route.name === 'jobs' ? undefined : 'wide'}>
+      <nav className="top-nav" aria-label="Main">
+        <strong>Ingestion Harness</strong>
+        <a
+          href="#/"
+          aria-current={route.name === 'jobs' || route.name === 'review' ? 'page' : undefined}
+        >
+          Jobs
+        </a>
+        <a
+          href="#/templates"
+          aria-current={
+            route.name === 'templates' || route.name === 'template' ? 'page' : undefined
+          }
+        >
+          Document types
+        </a>
+      </nav>
+      {page}
+    </main>
+  );
 }
 
 function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
@@ -39,11 +73,10 @@ function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
   }, [refresh, pollMs]);
 
   return (
-    <main>
-      <h1>Ingestion Harness</h1>
+    <>
       <UploadForm api={api} onUploaded={refresh} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <JobsTable api={api} jobs={jobs} onChanged={refresh} />
-    </main>
+    </>
   );
 }

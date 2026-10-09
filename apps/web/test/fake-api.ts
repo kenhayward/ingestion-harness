@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { JobSummary } from '@ih/shared';
-import type { Api } from '../src/api/client.js';
+import type { Api, TemplateRecordView } from '../src/api/client.js';
 
 export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   return {
@@ -25,6 +25,24 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   };
 }
 
+export function templateView(
+  definition: Record<string, unknown>,
+  status: 'draft' | 'published' = 'draft',
+): TemplateRecordView {
+  return {
+    record: {
+      id: String(definition.id),
+      version: Number(definition.version),
+      status,
+      definition,
+      createdAt: '',
+      updatedAt: '',
+      publishedAt: null,
+    },
+    issues: [],
+  };
+}
+
 export function fakeApi(overrides: Partial<Api> = {}): Api {
   return {
     listSpecs: vi.fn(async () => [
@@ -43,6 +61,22 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     approve: vi.fn(async () => job({ status: 'queued' })),
     reject: vi.fn(async () => job({ status: 'rejected' })),
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
+    listTemplates: vi.fn(async () => []),
+    createTemplate: vi.fn(async (id: string, name: string) =>
+      templateView({ id, version: 1, name }),
+    ),
+    getTemplate: vi.fn(async () => {
+      throw new Error('getTemplate not stubbed');
+    }),
+    saveTemplate: vi.fn(async (_id: string, _v: number, d: Record<string, unknown>) =>
+      templateView(d),
+    ),
+    publishTemplate: vi.fn(async () => templateView({ id: 'x', version: 1 }, 'published')),
+    newDraft: vi.fn(async () => templateView({ id: 'x', version: 2 })),
+    deleteDraft: vi.fn(async () => undefined),
+    importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
+    exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
+    testRun: vi.fn(async () => job({ test: true })),
     ...overrides,
   };
 }
