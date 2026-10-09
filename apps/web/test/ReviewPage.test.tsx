@@ -122,6 +122,38 @@ describe('ReviewPage', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it('lists step runs and re-runs a step with a different model and guidance', async () => {
+    const { api, onDone } = setup({
+      getStepRuns: vi.fn(async () => [
+        {
+          id: 1,
+          stepId: 'data',
+          trigger: 'process',
+          model: 'local/qwen',
+          attempts: 2,
+          inputTokens: 900,
+          outputTokens: 300,
+          status: 'succeeded',
+          error: null,
+          startedAt: '2026-10-09T10:00:00Z',
+          finishedAt: '2026-10-09T10:01:00Z',
+        },
+      ]),
+    });
+    await userEvent.click(await screen.findByRole('tab', { name: /Steps/ }));
+    const row = await screen.findByRole('row', { name: /data/ });
+    expect(row).toHaveTextContent('local/qwen');
+    await userEvent.click(within(row).getByRole('button', { name: 'Re-run data' }));
+    await userEvent.type(screen.getByLabelText('Model for re-run'), 'other/better');
+    await userEvent.type(screen.getByLabelText('Guidance for re-run'), 'Results are numeric.');
+    await userEvent.click(screen.getByRole('button', { name: 'Queue re-run' }));
+    expect(api.rerunStep).toHaveBeenCalledWith(JOB_ID, 'data', {
+      model: 'other/better',
+      instructions: 'Results are numeric.',
+    });
+    expect(onDone).toHaveBeenCalled();
+  });
+
   it('is read-only once the job has left review', async () => {
     const data = reviewData();
     setup({

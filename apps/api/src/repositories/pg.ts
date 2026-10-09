@@ -5,7 +5,9 @@ import type {
   JobSummary,
   ModelInfo,
   ProviderKind,
+  RerunRequest,
   ReviewEdit,
+  StepRun,
 } from '@ih/shared';
 import { modelRef } from '@ih/shared';
 import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types.js';
@@ -220,6 +222,45 @@ export class PgRepo implements IngestionRepo {
               updated_at = now()
         WHERE id = $1 AND status = 'awaiting_review'`,
       [jobId, reviewer, note],
+    );
+    return rowCount ? await this.getJob(jobId) : null;
+  }
+
+  async listStepRuns(jobId: string): Promise<StepRun[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      step_id: string;
+      trigger: 'process' | 'rerun';
+      model: string | null;
+      attempts: number;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      status: 'succeeded' | 'failed';
+      error: string | null;
+      started_at: Date;
+      finished_at: Date;
+    }>('SELECT * FROM step_runs WHERE job_id = $1 ORDER BY id', [jobId]);
+    return rows.map((r) => ({
+      id: Number(r.id),
+      stepId: r.step_id,
+      trigger: r.trigger,
+      model: r.model,
+      attempts: r.attempts,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      status: r.status,
+      error: r.error,
+      startedAt: r.started_at.toISOString(),
+      finishedAt: r.finished_at.toISOString(),
+    }));
+  }
+
+  async requestRerun(jobId: string, step: string, params: RerunRequest) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE jobs SET status = 'queued', task = 'rerun', rerun = $2, attempts = 0, error = NULL,
+              run_after = now(), updated_at = now()
+        WHERE id = $1 AND status = 'awaiting_review'`,
+      [jobId, JSON.stringify({ step, ...params })],
     );
     return rowCount ? await this.getJob(jobId) : null;
   }

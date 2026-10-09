@@ -51,6 +51,19 @@ describe('TemplateSchema', () => {
     expect(t.pipeline[0]).toMatchObject({ model: 'default', maxTokens: 16000 });
   });
 
+  it('accepts context from earlier steps only', () => {
+    const later = { ...valid.pipeline[1], context: { batches: 'results.batch' } };
+    const ok = {
+      ...valid,
+      pipeline: [valid.pipeline[0], valid.pipeline[2], later, valid.pipeline[3]],
+    };
+    expect(issues(ok)).toBe('');
+    const early = { ...valid.pipeline[0], context: { batches: 'results.batch' } };
+    expect(issues(withPipeline([early, ...valid.pipeline.slice(1)]))).toContain(
+      'not filled by an earlier step',
+    );
+  });
+
   it.each<[string, (v: Raw) => unknown, string]>([
     [
       'field filled twice',

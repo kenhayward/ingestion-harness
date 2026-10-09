@@ -499,6 +499,10 @@ function ExtractStep({
         selected={step.sections ?? []}
         onToggle={(id, on) => toggle('sections', id, on)}
       />
+      <ContextEditor
+        value={step.context ?? {}}
+        onChange={(context) => set('context', Object.keys(context).length ? context : undefined)}
+      />
       <Area
         label="Instructions"
         value={step.instructions}
@@ -530,6 +534,42 @@ function ExtractStep({
         onChange={(v) => set('maxAttempts', optInt(v))}
       />
     </div>
+  );
+}
+
+/**
+ * Values from earlier steps for the prompt, one per line: `name = field` or `name = table.column`.
+ * Keeps its own text so half-typed lines aren't lost; only complete lines are stored.
+ */
+function ContextEditor({
+  value,
+  onChange,
+}: {
+  value: Record<string, string>;
+  onChange: (value: Record<string, string>) => void;
+}) {
+  const [text, setText] = useState(() =>
+    Object.entries(value)
+      .map(([name, path]) => `${name} = ${path}`)
+      .join('\n'),
+  );
+  return (
+    <label title="One per line: name = field or table.column (must be filled by an earlier step)">
+      Context
+      <textarea
+        rows={2}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const entries = e.target.value
+            .split('\n')
+            .map((line) => line.split('='))
+            .filter((parts) => parts.length === 2 && parts[0]!.trim() && parts[1]!.trim())
+            .map(([name, path]) => [name!.trim(), path!.trim()] as const);
+          onChange(Object.fromEntries(entries));
+        }}
+      />
+    </label>
   );
 }
 

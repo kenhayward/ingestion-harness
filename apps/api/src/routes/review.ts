@@ -3,6 +3,7 @@ import {
   ApproveRequestSchema,
   EditRequestSchema,
   RejectRequestSchema,
+  RerunRequestSchema,
   type JobDetail,
   type Template,
 } from '@ih/shared';
@@ -133,4 +134,48 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
     );
     return job ?? reply.code(409).send({ error: 'job not found or not awaiting review' });
   });
+
+  /** Recorded executions of each extract step (model, attempts, tokens, timing). */
+  app.get<{ Params: { id: string } }>('/jobs/:id/steps', async (req, reply) => {
+    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    return app.deps.repo.listStepRuns(req.params.id);
+  });
+
+  /** Re-run one extract step of a document in review (worker reuses OCR; checks re-run). */
+  app.post<{ Params: { id: string; step: string } }>(
+    '/jobs/:id/steps/:step/rerun',
+    async (req, reply) => {
+      const body = RerunRequestSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (!UUID.safeParse(req.params.id).success) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const job = await app.deps.repo.getJob(req.params.id);
+      if (!job) return reply.code(404).send({ error: 'not found' });
+      if (job.status !== 'awaiting_review') {
+        return reply.code(409).send({ error: `job is ${job.status}, not awaiting_review` });
+      }
+      const resolved = await resolveDefinition(app.deps, job.specId, job.specVersion);
+      const def = resolved?.ok ? resolved.definition : undefined;
+      if (def?.kind !== 'template') {
+        return reply.code(404).send({ error: 'job is not a template document' });
+      }
+      const step = def.template.pipeline.find(
+        (s) => s.type === 'extract' && s.id === req.params.step,
+      );
+      if (!step || step.type !== 'extract') {
+        return reply.code(400).send({ error: `no extract step "${req.params.step}"` });
+      }
+      const edited = (await app.deps.repo.listEdits(job.id)).filter((e) =>
+        e.field ? step.fields.includes(e.field) : e.table === step.table,
+      );
+      if (edited.length) {
+        return reply.code(409).send({
+          error: `step "${step.id}" outputs already have ${edited.length} reviewer edits; a re-run would discard them`,
+        });
+      }
+      const updated = await app.deps.repo.requestRerun(job.id, step.id, body.data);
+      return updated ?? reply.code(409).send({ error: 'job is no longer awaiting review' });
+    },
+  );
 };

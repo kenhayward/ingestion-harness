@@ -127,6 +127,19 @@ describe('TemplateEditor', () => {
     expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/2');
   });
 
+  it('sets step context from earlier steps', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    const head = screen.getByRole('group', { name: 'Step 1' });
+    // validDefinition: step 1 fills "sender"; step 2 fills table "lines" -> step 2 can use step 1
+    const rows = screen.getByRole('group', { name: 'Step 2' });
+    await userEvent.type(within(rows).getByLabelText('Context'), 'from_letterhead = sender');
+    expect(within(head).getByLabelText('Context')).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const saved = vi.mocked(api.saveTemplate).mock.calls[0]![2] as { pipeline: object[] };
+    expect(saved.pipeline[1]).toMatchObject({ context: { from_letterhead: 'sender' } });
+  });
+
   it('edits as YAML', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/YAML/));

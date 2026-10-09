@@ -3,8 +3,10 @@ import type {
   JobDetail,
   JobSummary,
   ModelInfo,
+  RerunRequest,
   ReviewEdit,
   SpecSummary,
+  StepRun,
   Template,
 } from '@ih/shared';
 
@@ -87,6 +89,8 @@ export interface Api {
   approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
   pageUrl(jobId: string, page: number): string;
+  getStepRuns(jobId: string): Promise<StepRun[]>;
+  rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   listTemplates(): Promise<TemplateListItem[]>;
   createTemplate(id: string, name: string): Promise<TemplateRecordView>;
   getTemplate(id: string, version: number): Promise<TemplateRecordView>;
@@ -142,6 +146,9 @@ export function createHttpApi(base = '/api'): Api {
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
+    getStepRuns: (jobId) => fetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
+    rerunStep: (jobId, stepId, body) =>
+      post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
     listTemplates: () => fetch(`${base}/templates`).then(json<TemplateListItem[]>),
     createTemplate: (id, name) => post<TemplateRecordView>(`${base}/templates`, { id, name }),
     getTemplate: (id, version) =>

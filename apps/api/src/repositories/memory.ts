@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { JobDetail, JobOutput, JobSummary, ModelInfo, ReviewEdit } from '@ih/shared';
+import type {
+  JobDetail,
+  JobOutput,
+  JobSummary,
+  ModelInfo,
+  RerunRequest,
+  ReviewEdit,
+  StepRun,
+} from '@ih/shared';
 import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types.js';
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
@@ -8,6 +16,8 @@ export class MemoryRepo implements IngestionRepo {
   readonly outputs = new Map<string, JobOutput[]>();
   readonly documents = new Map<string, NewDocument>();
   readonly edits = new Map<string, ReviewEdit[]>();
+  readonly stepRuns = new Map<string, StepRun[]>();
+  readonly reruns = new Map<string, { step: string } & RerunRequest>();
   models: ModelInfo[] = [];
   private editSeq = 0;
 
@@ -85,6 +95,16 @@ export class MemoryRepo implements IngestionRepo {
       reviewNote: note,
       reviewedAt: new Date().toISOString(),
     });
+  }
+
+  async listStepRuns(jobId: string): Promise<StepRun[]> {
+    return this.stepRuns.get(jobId) ?? [];
+  }
+
+  async requestRerun(jobId: string, step: string, params: RerunRequest) {
+    if (this.jobs.get(jobId)?.status !== 'awaiting_review') return null;
+    this.reruns.set(jobId, { step, ...params });
+    return this.update(jobId, { status: 'queued', task: 'rerun', attempts: 0 });
   }
 
   async reject(jobId: string, reviewer: string | null, reason: string) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EditRequest } from '@ih/shared';
+import type { EditRequest, StepRun } from '@ih/shared';
 import type { Api, ReviewData } from '../api/client.js';
 import { EditableValue } from './EditableValue.js';
 import { display, effectiveView } from './effective.js';
@@ -41,6 +41,10 @@ export function ReviewPage({
   const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [stepRuns, setStepRuns] = useState<StepRun[]>([]);
+  const [rerun, setRerun] = useState<{ step: string; model: string; instructions: string } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     try {
@@ -54,6 +58,10 @@ export function ReviewPage({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === 'steps') api.getStepRuns(jobId).then(setStepRuns, () => setStepRuns([]));
+  }, [api, jobId, tab]);
 
   const view = useMemo(() => (data ? effectiveView(data) : null), [data]);
 
@@ -127,6 +135,9 @@ export function ReviewPage({
             ))}
             <button role="tab" aria-selected={tab === 'edits'} onClick={() => setTab('edits')}>
               Edits ({edits.length})
+            </button>
+            <button role="tab" aria-selected={tab === 'steps'} onClick={() => setTab('steps')}>
+              Steps
             </button>
           </div>
 
@@ -248,6 +259,99 @@ export function ReviewPage({
                 </div>
               );
             })}
+
+          {tab === 'steps' && (
+            <div className="steps">
+              <table aria-label="steps">
+                <thead>
+                  <tr>
+                    <th>Step</th>
+                    <th>Fills</th>
+                    <th>Last run</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {template.pipeline.map((step) => {
+                    if (step.type !== 'extract') return null;
+                    const last = stepRuns.filter((r) => r.stepId === step.id).at(-1);
+                    return (
+                      <tr key={step.id}>
+                        <td>
+                          <code>{step.id}</code>
+                        </td>
+                        <td>{step.table ?? step.fields.join(', ')}</td>
+                        <td>
+                          {last
+                            ? `${last.model ?? '?'} · ${last.attempts} attempt(s) · ${last.status}` +
+                              (last.outputTokens ? ` · ${last.outputTokens} output tokens` : '') +
+                              (last.trigger === 'rerun' ? ' · re-run' : '')
+                            : '—'}
+                        </td>
+                        <td>
+                          {editable && (
+                            <button
+                              type="button"
+                              aria-label={`Re-run ${step.id}`}
+                              onClick={() =>
+                                setRerun({ step: step.id, model: '', instructions: '' })
+                              }
+                            >
+                              Re-run
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {rerun && (
+                <form
+                  className="rerun"
+                  aria-label={`Re-run ${rerun.step}`}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void decide(() =>
+                      api.rerunStep(jobId, rerun.step, {
+                        ...(rerun.model.trim() ? { model: rerun.model.trim() } : {}),
+                        ...(rerun.instructions.trim()
+                          ? { instructions: rerun.instructions.trim() }
+                          : {}),
+                      }),
+                    );
+                  }}
+                >
+                  <p>
+                    Re-run <code>{rerun.step}</code>: only this step calls the model again (OCR is
+                    reused), its values are replaced and the checks re-run.
+                  </p>
+                  <label>
+                    Model for re-run
+                    <input
+                      value={rerun.model}
+                      placeholder="step default"
+                      onChange={(e) => setRerun({ ...rerun, model: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Guidance for re-run
+                    <textarea
+                      rows={3}
+                      value={rerun.instructions}
+                      onChange={(e) => setRerun({ ...rerun, instructions: e.target.value })}
+                    />
+                  </label>
+                  <button type="submit" disabled={busy}>
+                    Queue re-run
+                  </button>
+                  <button type="button" className="link" onClick={() => setRerun(null)}>
+                    Cancel
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
 
           {tab === 'edits' && (
             <ol className="edit-log">

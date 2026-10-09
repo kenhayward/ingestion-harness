@@ -62,6 +62,8 @@ export const ExtractStepSchema = z
     maxAttempts: z.number().int().min(1).max(5).default(2),
     maxTokens: z.number().int().min(256).max(128000).default(16000),
     chunkPages: z.number().int().positive().optional(),
+    /** Values from earlier steps shown in the prompt: name -> `<field>` or `<table>.<column>`. */
+    context: z.record(Id, z.string().min(1)).default({}),
   })
   .strict();
 
@@ -162,6 +164,25 @@ export const TemplateSchema = z
       if (column === undefined) return fieldIds.includes(head);
       return tables.get(head)?.columns.some((c) => c.id === column) ?? false;
     };
+    const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
+    const fillerOf = (path: string) => {
+      const [head, column] = path.split('.', 2) as [string, string | undefined];
+      return extracts.find((s) => (column ? s.table === head : s.fields.includes(head)));
+    };
+    for (const step of extracts) {
+      for (const [name, path] of Object.entries(step.context)) {
+        if (!resolves(path)) {
+          issue(`step "${step.id}": context "${name}": unknown field or column "${path}"`);
+          continue;
+        }
+        const filler = fillerOf(path);
+        if (filler && order.get(filler.id)! >= order.get(step.id)!) {
+          issue(
+            `step "${step.id}": context "${name}" refers to "${path}", which is not filled by an earlier step`,
+          );
+        }
+      }
+    }
     for (const step of t.pipeline) {
       if (step.type !== 'check') continue;
       [step.values, step.reference, step.aliases]

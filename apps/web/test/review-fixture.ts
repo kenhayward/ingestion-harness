@@ -47,6 +47,7 @@ export function reviewData(overrides: Partial<ReviewData> = {}): ReviewData {
           pageImages: [],
           maxAttempts: 2,
           maxTokens: 16000,
+          context: {},
         },
         {
           type: 'extract',
@@ -58,6 +59,7 @@ export function reviewData(overrides: Partial<ReviewData> = {}): ReviewData {
           pageImages: [],
           maxAttempts: 2,
           maxTokens: 16000,
+          context: {},
         },
         {
           type: 'check',

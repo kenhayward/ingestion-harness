@@ -39,7 +39,7 @@ export const JobSummarySchema = z.object({
   attempts: z.number().int(),
   error: z.string().nullable(),
   /** process: extraction; publish: apply review edits and deliver to the final target. */
-  task: z.enum(['process', 'publish']),
+  task: z.enum(['process', 'publish', 'rerun']),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
   reviewReasons: z.array(z.string()).nullable(),
@@ -109,3 +109,23 @@ export const ApproveRequestSchema = z
 export const RejectRequestSchema = z
   .object({ reviewer: z.string().optional(), reason: z.string().min(1) })
   .strict();
+
+/** One extract step execution recorded by the worker (step_runs). */
+export interface StepRun {
+  id: number;
+  stepId: string;
+  trigger: 'process' | 'rerun';
+  model: string | null;
+  attempts: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  status: 'succeeded' | 'failed';
+  error: string | null;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export const RerunRequestSchema = z
+  .object({ model: z.string().min(1).optional(), instructions: z.string().min(1).optional() })
+  .strict();
+export type RerunRequest = z.infer<typeof RerunRequestSchema>;
