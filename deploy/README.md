@@ -44,6 +44,19 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 | `S3_PUBLIC_PORT` (8333) | SeaweedFS S3 for downstream loaders | `127.0.0.1` (set `S3_PUBLIC_BIND`) |
 | 5432, 9333, 8888 | Postgres, SeaweedFS master/filer UIs | dev overlay only, localhost |
 
+## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
+
+Zscaler's PAC file returns `PROXY 127.0.0.1:8888; PROXY 127.0.0.1:9001`. Docker Desktop tries
+only the first entry, and nothing listens on 8888. Fix it in Docker Desktop → Settings →
+Resources → Proxies → **Manual proxy configuration**:
+
+- Web server (HTTP) and secure web server (HTTPS): `http://127.0.0.1:9001`
+- Bypass: `localhost,127.0.0.1,host.docker.internal,*.local`
+
+Apply & restart, then rebuild. Zscaler does not TLS-inspect Docker Hub, ghcr.io, npm, PyPI or
+the Debian/Alpine mirrors (checked 2026-10-09). If that changes, builds will fail with x509
+errors, and the Zscaler root CA will need adding to the images.
+
 ## Notes
 
 - Pin `SEAWEEDFS_TAG` to a specific release in production `.env` files.

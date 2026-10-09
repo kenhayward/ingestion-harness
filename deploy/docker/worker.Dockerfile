@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # Build context: repo root.
 FROM python:3.13-slim
 COPY --from=ghcr.io/astral-sh/uv:0.10.5 /uv /usr/local/bin/uv

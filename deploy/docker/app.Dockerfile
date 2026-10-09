@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # React build served by nginx, which also reverse-proxies /api to the api service.
 FROM node:24-alpine AS build
 WORKDIR /app
