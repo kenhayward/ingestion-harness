@@ -4,6 +4,7 @@ import type {
   JobSummary,
   ModelInfo,
   RerunRequest,
+  Reference,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
@@ -42,12 +43,23 @@ export interface IngestionRepo {
     doc: NewDocument,
     modelOverride: string | null,
     test?: boolean,
+    referenceId?: string | null,
   ): Promise<JobSummary>;
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */
   retryJob(id: string): Promise<JobSummary | null>;
   listModels(): Promise<ModelInfo[]>;
+
+  // --- references and regression runs ---
+  /** Throws ReferenceConflictError when the name is taken for the template. */
+  createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference>;
+  listReferences(templateId: string): Promise<Reference[]>;
+  deleteReference(templateId: string, id: string): Promise<boolean>;
+  /** Test job of `version` re-running the reference's PDF (new document row, same object). */
+  createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;
+  /** Regression jobs of a template version, newest first. */
+  listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]>;
 
   // --- review (jobs in awaiting_review) ---
   listEdits(jobId: string): Promise<ReviewEdit[]>;
@@ -60,3 +72,5 @@ export interface IngestionRepo {
   /** awaiting_review -> rejected (final). Null if the job is not awaiting review. */
   reject(jobId: string, reviewer: string | null, reason: string): Promise<JobSummary | null>;
 }
+
+export class ReferenceConflictError extends Error {}

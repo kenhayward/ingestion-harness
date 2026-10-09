@@ -5,6 +5,7 @@ import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
 import type { TemplateRepo } from './templates/repo.js';
 import { templateRoutes } from './routes/templates.js';
+import { referenceRoutes } from './routes/references.js';
 import { healthRoutes } from './routes/health.js';
 import { specRoutes } from './routes/specs.js';
 import { documentRoutes } from './routes/documents.js';
@@ -42,6 +43,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(modelRoutes, { prefix: '/api' });
   await app.register(reviewRoutes, { prefix: '/api' });
   await app.register(templateRoutes, { prefix: '/api' });
+  await app.register(referenceRoutes, { prefix: '/api' });
 
   return app;
 }

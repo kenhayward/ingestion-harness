@@ -5,10 +5,17 @@ import type {
   JobSummary,
   ModelInfo,
   RerunRequest,
+  Reference,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
-import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types.js';
+import {
+  ReferenceConflictError,
+  type IngestionRepo,
+  type ListJobsQuery,
+  type NewDocument,
+  type NewEdit,
+} from './types.js';
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
 export class MemoryRepo implements IngestionRepo {
@@ -17,6 +24,7 @@ export class MemoryRepo implements IngestionRepo {
   readonly documents = new Map<string, NewDocument>();
   readonly edits = new Map<string, ReviewEdit[]>();
   readonly stepRuns = new Map<string, StepRun[]>();
+  readonly references = new Map<string, Reference>();
   readonly reruns = new Map<string, { step: string } & RerunRequest>();
   models: ModelInfo[] = [];
   private editSeq = 0;
@@ -27,6 +35,7 @@ export class MemoryRepo implements IngestionRepo {
     doc: NewDocument,
     modelOverride: string | null,
     test = false,
+    referenceId: string | null = null,
   ): Promise<JobSummary> {
     this.documents.set(doc.id, doc);
     const now = new Date().toISOString();
@@ -42,6 +51,7 @@ export class MemoryRepo implements IngestionRepo {
       error: null,
       task: 'process',
       test,
+      referenceId,
       reviewReasons: null,
       reviewer: null,
       reviewNote: null,
@@ -73,6 +83,38 @@ export class MemoryRepo implements IngestionRepo {
 
   async listModels(): Promise<ModelInfo[]> {
     return this.models;
+  }
+
+  async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
+    const taken = [...this.references.values()].some(
+      (r) => r.templateId === input.templateId && r.name === input.name,
+    );
+    if (taken) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
+    const ref: Reference = { ...input, id: randomUUID(), createdAt: new Date().toISOString() };
+    this.references.set(ref.id, ref);
+    return ref;
+  }
+
+  async listReferences(templateId: string): Promise<Reference[]> {
+    return [...this.references.values()].filter((r) => r.templateId === templateId);
+  }
+
+  async deleteReference(templateId: string, id: string): Promise<boolean> {
+    if (this.references.get(id)?.templateId !== templateId) return false;
+    return this.references.delete(id);
+  }
+
+  async createRegressionJob(reference: Reference, version: number): Promise<JobSummary> {
+    const source = this.documents.get(reference.documentId)!;
+    const doc = { ...source, id: randomUUID(), specVersion: version };
+    return this.createDocumentAndJob(doc, null, true, reference.id);
+  }
+
+  async listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+    const jobs = [...this.jobs.values()]
+      .filter((j) => j.referenceId && j.specId === templateId && j.specVersion === version)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return jobs.map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
   }
 
   async listEdits(jobId: string): Promise<ReviewEdit[]> {

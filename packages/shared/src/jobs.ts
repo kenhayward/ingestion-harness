@@ -42,6 +42,8 @@ export const JobSummarySchema = z.object({
   task: z.enum(['process', 'publish', 'rerun']),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
+  /** Regression run: the reference document this test job re-runs. */
+  referenceId: z.string().nullable(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),
@@ -134,3 +136,14 @@ export const RerunRequestSchema = z
   })
   .strict();
 export type RerunRequest = z.infer<typeof RerunRequestSchema>;
+
+/** A reference document of a document type: approved values used as the expected result. */
+export interface Reference {
+  id: string;
+  templateId: string;
+  name: string;
+  documentId: string;
+  sourceJobId: string | null;
+  expected: { fields: Record<string, unknown>; tables: Record<string, Record<string, unknown>[]> };
+  createdAt: string;
+}

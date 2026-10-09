@@ -37,7 +37,7 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue
 from .review import apply_edits, run_checks
 from .specs import Extraction, LoadedTemplate
-from .storage import output_key, page_preview_key
+from .storage import output_key, page_preview_key, reviewed_document_key
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
@@ -128,6 +128,14 @@ def publish_template_job(
         "edits": edits,
     }
     document["published_at"] = datetime.now(UTC).isoformat()
+    # Keep the reviewed document next to the job's run data: the final target may be an S3 the
+    # API cannot read, and references/regression need the approved values.
+    deps.store.put(
+        deps.buckets.runs,
+        reviewed_document_key(job.id),
+        json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+    )
     published = publish_outputs(deps, render_document(template, document))
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published

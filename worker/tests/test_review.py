@@ -224,6 +224,10 @@ def test_approval_publishes_the_draft_with_edits_applied(tmp_path: Path) -> None
     published = json.loads(target.get("published", "pvp/demo/v1/document/doc-1.json"))
     assert published["review"]["decision"] == "approved"
     assert published["review"]["reviewer"] == "kh" and len(published["review"]["edits"]) == 2
-    assert deps.store.objects == drafts_before  # drafts are never modified
+    reviewed = json.loads(deps.store.get("runs", "job-1/reviewed-document.json"))
+    assert reviewed["review"]["decision"] == "approved"  # kept for references/regression
+    assert reviewed["fields"]["executed_on"]["value"] == "2023-02-17"
+    drafts_after = {k: v for k, v in deps.store.objects.items() if k[0] != "runs"}
+    assert drafts_after == {k: v for k, v in drafts_before.items() if k[0] != "runs"}
     # the LLM is not called again on publish
     assert len(deps.models.resolve("default")[0].calls) == 4  # type: ignore[attr-defined]

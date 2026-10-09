@@ -23,6 +23,11 @@ def ocr_run_key(job_id: str, page_number: int) -> str:
     return f"{job_id}/ocr/page-{page_number}.md"
 
 
+def reviewed_document_key(job_id: str) -> str:
+    """The approved document.json (edits applied) of a reviewed job, in the runs bucket."""
+    return f"{job_id}/reviewed-document.json"
+
+
 def page_preview_key(job_id: str, page_number: int) -> str:
     """JPEG preview of a 1-based page, shown on the review screen."""
     return f"{job_id}/pages/page-{page_number}.jpg"

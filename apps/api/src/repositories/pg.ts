@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import type {
   JobDetail,
@@ -5,16 +6,23 @@ import type {
   JobSummary,
   ModelInfo,
   ProviderKind,
+  Reference,
   RerunRequest,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
 import { modelRef } from '@ih/shared';
-import type { IngestionRepo, ListJobsQuery, NewDocument, NewEdit } from './types.js';
+import {
+  ReferenceConflictError,
+  type IngestionRepo,
+  type ListJobsQuery,
+  type NewDocument,
+  type NewEdit,
+} from './types.js';
 
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.test, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at
     FROM jobs j JOIN documents d ON d.id = j.document_id`;
 
@@ -30,6 +38,7 @@ interface JobRow {
   error: string | null;
   task: 'process' | 'publish';
   test: boolean;
+  reference_id: string | null;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -51,6 +60,7 @@ function toSummary(r: JobRow): JobSummary {
     error: r.error,
     task: r.task,
     test: r.test,
+    referenceId: r.reference_id,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,
@@ -88,6 +98,26 @@ function toEdit(r: EditRow): ReviewEdit {
   };
 }
 
+interface ReferenceRow {
+  id: string;
+  template_id: string;
+  name: string;
+  document_id: string;
+  source_job_id: string | null;
+  expected: Reference['expected'];
+  created_at: Date;
+}
+
+const toReference = (r: ReferenceRow): Reference => ({
+  id: r.id,
+  templateId: r.template_id,
+  name: r.name,
+  documentId: r.document_id,
+  sourceJobId: r.source_job_id,
+  expected: r.expected,
+  createdAt: r.created_at.toISOString(),
+});
+
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
 export class PgRepo implements IngestionRepo {
   constructor(private readonly pool: pg.Pool) {}
@@ -108,6 +138,7 @@ export class PgRepo implements IngestionRepo {
     doc: NewDocument,
     modelOverride: string | null,
     test = false,
+    referenceId: string | null = null,
   ): Promise<JobSummary> {
     const client = await this.pool.connect();
     try {
@@ -127,8 +158,9 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override, test) VALUES ($1, $2, $3) RETURNING id`,
-        [doc.id, modelOverride, test],
+        `INSERT INTO jobs (document_id, model_override, test, reference_id)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [doc.id, modelOverride, test, referenceId],
       );
       await client.query('COMMIT');
       const job = await this.getJob(rows[0]!.id);
@@ -224,6 +256,77 @@ export class PgRepo implements IngestionRepo {
       [jobId, reviewer, note],
     );
     return rowCount ? await this.getJob(jobId) : null;
+  }
+
+  async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
+    const { rows } = await this.pool.query<ReferenceRow>(
+      `INSERT INTO template_references (template_id, name, document_id, source_job_id, expected)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (template_id, name) DO NOTHING RETURNING *`,
+      [
+        input.templateId,
+        input.name,
+        input.documentId,
+        input.sourceJobId,
+        JSON.stringify(input.expected),
+      ],
+    );
+    if (!rows[0]) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
+    return toReference(rows[0]);
+  }
+
+  async listReferences(templateId: string): Promise<Reference[]> {
+    const { rows } = await this.pool.query<ReferenceRow>(
+      'SELECT * FROM template_references WHERE template_id = $1 ORDER BY created_at',
+      [templateId],
+    );
+    return rows.map(toReference);
+  }
+
+  async deleteReference(templateId: string, id: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
+      'DELETE FROM template_references WHERE template_id = $1 AND id = $2',
+      [templateId, id],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  async createRegressionJob(reference: Reference, version: number): Promise<JobSummary> {
+    const { rows } = await this.pool.query<{
+      filename: string;
+      sha256: string;
+      size_bytes: string;
+      spec_id: string;
+      bucket: string;
+      object_key: string;
+    }>('SELECT * FROM documents WHERE id = $1', [reference.documentId]);
+    const source = rows[0]!;
+    return this.createDocumentAndJob(
+      {
+        id: randomUUID(),
+        filename: source.filename,
+        sha256: source.sha256,
+        sizeBytes: Number(source.size_bytes),
+        specId: source.spec_id,
+        specVersion: version,
+        bucket: source.bucket,
+        objectKey: source.object_key,
+      },
+      null,
+      true,
+      reference.id,
+    );
+  }
+
+  async listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `SELECT j.id FROM jobs j JOIN documents d ON d.id = j.document_id
+        WHERE j.reference_id IS NOT NULL AND d.spec_id = $1 AND d.spec_version = $2
+        ORDER BY j.created_at DESC`,
+      [templateId, version],
+    );
+    const jobs = await Promise.all(rows.map((r) => this.getJob(r.id)));
+    return jobs.filter((j): j is JobDetail => j !== null);
   }
 
   async listStepRuns(jobId: string): Promise<StepRun[]> {
