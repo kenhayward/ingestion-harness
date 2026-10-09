@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "ingest-admin",
+      "credentials": [{ "accessKey": "__ACCESS_KEY__", "secretKey": "__SECRET_KEY__" }],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    }
+  ]
+}

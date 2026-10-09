@@ -1,0 +1,86 @@
+# Example document spec. Copy this directory to start a new document type.
+# Bump the version directory (v2/, v3/...) for any change that alters outputs — never edit
+# a published version in place; jobs record the spec id + version they ran against.
+id: example-invoice
+version: 1
+title: Supplier invoice
+description: Single-supplier invoice with a header block, line-item table and totals.
+
+document:
+  pages: { min: 1, max: 20 }
+  sections:
+    - id: header
+      anchor: '^\s*INVOICE\b'
+      description: Supplier, invoice number, dates, bill-to.
+    - id: line_items
+      anchor: '^\s*(Description|Item)\s+.*Qty'
+      description: Tabular line items.
+    - id: totals
+      anchor: '^\s*Subtotal\b'
+      description: Subtotal, tax, total.
+
+extractions:
+  - id: invoice_header
+    sections: [header, totals]
+    prompt: prompts/invoice_header.md.j2
+    model: default
+    schema:
+      type: object
+      additionalProperties: false
+      required: [invoice_number, invoice_date, supplier_name, currency, total]
+      properties:
+        invoice_number: { type: string }
+        invoice_date: { type: string, description: ISO 8601 date }
+        supplier_name: { type: string }
+        currency: { type: string, description: ISO 4217 code }
+        subtotal: { type: [number, 'null'] }
+        tax: { type: [number, 'null'] }
+        total: { type: number }
+
+  - id: line_items
+    sections: [line_items]
+    prompt: prompts/line_items.md.j2
+    model: default
+    schema:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [description, quantity, unit_price, amount]
+            properties:
+              sku: { type: [string, 'null'] }
+              description: { type: string }
+              quantity: { type: number }
+              unit_price: { type: number }
+              amount: { type: number }
+
+outputs:
+  - id: invoices
+    format: csv
+    from: invoice_header
+    columns:
+      - { name: invoice_number, path: invoice_number }
+      - { name: invoice_date, path: invoice_date }
+      - { name: supplier_name, path: supplier_name }
+      - { name: currency, path: currency }
+      - { name: total, path: total }
+
+  - id: invoice_lines
+    format: csv
+    from: line_items
+    rowsPath: items
+    columns:
+      - { name: sku, path: sku }
+      - { name: description, path: description }
+      - { name: quantity, path: quantity }
+      - { name: unit_price, path: unit_price }
+      - { name: amount, path: amount }
+
+  - id: invoice_full
+    format: json
+    from: '*'

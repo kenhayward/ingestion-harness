@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  # Auto-deploy main to staging after CI passes.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Manual deploys / rollbacks to any environment.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+      ref:
+        description: Git ref to deploy (branch, tag or SHA)
+        default: main
+      no_build:
+        description: Skip build and reuse existing images for this ref (rollback)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # One runner per environment, installed ON the deploy host with Docker access.
+    # Labels: deploy-staging / deploy-production (see docs/runners.md).
+    runs-on: [self-hosted, linux, "deploy-${{ inputs.environment || 'staging' }}"]
+    environment: ${{ inputs.environment || 'staging' }}
+    concurrency:
+      group: deploy-${{ inputs.environment || 'staging' }}
+      cancel-in-progress: false
+    timeout-minutes: 45
+    env:
+      DEPLOY_ENV: ${{ inputs.environment || 'staging' }}
+      # Secrets live on the deploy host, never in the repo or GitHub.
+      ENV_FILE: /etc/ingestion-harness/${{ inputs.environment || 'staging' }}.env
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.workflow_run.head_sha }}
+      - name: Deploy
+        run: |
+          args=()
+          if [[ "${{ inputs.no_build }}" == "true" ]]; then args+=(--no-build); fi
+          deploy/scripts/deploy.sh "${args[@]}"
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Deploy ${DEPLOY_ENV}: $(git rev-parse --short HEAD) — ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"

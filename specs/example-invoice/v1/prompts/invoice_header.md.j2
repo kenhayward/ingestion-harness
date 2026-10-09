@@ -1,0 +1,11 @@
+You are extracting structured data from a supplier invoice.
+
+Return only the fields defined by the JSON schema. Use ISO 8601 for dates and ISO 4217 for
+currency. If a numeric field is absent from the document, return null where the schema allows
+it; never invent values.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

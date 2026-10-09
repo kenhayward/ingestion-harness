@@ -1,0 +1,39 @@
+{
+  "name": "ingestion-harness",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "dev:api": "npm run dev -w @ih/api",
+    "dev:web": "npm run dev -w @ih/web",
+    "migrate": "npm run migrate -w @ih/api",
+    "worker:test": "uv run --directory worker pytest",
+    "worker:lint": "uv run --directory worker ruff check . && uv run --directory worker ruff format --check . && uv run --directory worker mypy src",
+    "check": "npm run lint && npm run typecheck && npm test && npm run worker:lint && npm run worker:test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@vitest/coverage-v8": "^3.2.0",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.0"
+  }
+}

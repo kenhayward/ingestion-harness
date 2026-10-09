@@ -1,0 +1,45 @@
+# LLM providers available to the worker. Strings support ${VAR} and ${VAR:-default}.
+#
+# kind:        anthropic | openai-chat | openai-responses
+# baseUrl:     override endpoint — any OpenAI-compatible server (vLLM, Ollama, LM Studio,
+#              LiteLLM, Azure-compatible gateways) is just an openai-* provider with a baseUrl.
+# discover:    call the provider's /models endpoint (on startup + every DISCOVERY_INTERVAL_S)
+#              and record results in the llm_models table (shown in the UI model picker).
+# models:      static list, always offered even if discovery is off or fails.
+# optional:    skip the provider with a warning when its API key is missing.
+# aliases:     names specs can use in `extractions[].model`; values are provider/model-id.
+
+providers:
+  - name: anthropic
+    kind: anthropic
+    apiKeyEnv: ANTHROPIC_API_KEY
+    optional: true
+    discover: true
+    models: [claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5]
+    options:
+      effort: high # low | medium | high | xhigh | max
+      serverFallbacks: true # retry refusals on a fallback model server-side
+
+  - name: openai
+    kind: openai-responses
+    apiKeyEnv: OPENAI_API_KEY
+    optional: true
+    discover: true
+    modelFilter: '^(gpt-|o\d)'
+
+  - name: local
+    kind: openai-chat
+    enabled: ${LOCAL_LLM_ENABLED:-false}
+    baseUrl: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+    apiKeyEnv: LOCAL_LLM_API_KEY
+    apiKeyRequired: false
+    discover: true
+    options:
+      # Many local servers only support json_object or ignore strict schemas.
+      responseFormat: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
+      strict: false
+      maxTokensParam: max_tokens
+
+aliases:
+  default: anthropic/claude-opus-5-5
+  fast: anthropic/claude-haiku-5-5

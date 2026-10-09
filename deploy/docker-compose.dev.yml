@@ -1,0 +1,14 @@
+# Local development overlay: exposes infra ports so `npm run dev:api`, `npm run dev:web`
+# and `uv run ingest-worker` can run on the host against containerised Postgres + SeaweedFS.
+#
+#   deploy/scripts/dev-infra.sh up      (or dev-infra.ps1 on Windows)
+
+services:
+  postgres:
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
+
+  seaweedfs:
+    ports:
+      - 127.0.0.1:9333:9333 # master UI
+      - 127.0.0.1:8888:8888 # filer UI (browse buckets)

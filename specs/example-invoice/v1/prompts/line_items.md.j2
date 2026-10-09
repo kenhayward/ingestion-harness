@@ -1,0 +1,11 @@
+You are extracting the line-item table from a supplier invoice.
+
+Return one entry in `items` per table row, in document order. Skip subtotal/total rows and
+page-break headers repeated across pages. Quantities and prices are plain numbers (no currency
+symbols or thousands separators).
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

@@ -1,0 +1,142 @@
+# Production-shaped stack: app (nginx + React) / api (Fastify) / worker (Python) on
+# Postgres + SeaweedFS. Run via deploy/scripts/deploy.sh (or compose.sh for ad-hoc commands).
+# Build context is the repo root.
+
+name: ${COMPOSE_PROJECT_NAME:-ingestion}
+
+x-s3-env: &s3-env
+  S3_ENDPOINT: http://seaweedfs:8333
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in deploy/.env}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in deploy/.env}
+  S3_BUCKET_INBOX: ${S3_BUCKET_INBOX:-ingest-inbox}
+  S3_BUCKET_OUTPUTS: ${S3_BUCKET_OUTPUTS:-ingest-outputs}
+  S3_BUCKET_RUNS: ${S3_BUCKET_RUNS:-ingest-runs}
+
+x-db-env: &db-env
+  DATABASE_URL: postgres://${POSTGRES_USER:-ingest}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-ingest}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ingest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ingest}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:${SEAWEEDFS_TAG:-latest}
+    restart: unless-stopped
+    # Render the S3 identity file from env, then run master+volume+filer+s3 in one process.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        sed -e "s|__ACCESS_KEY__|$${S3_ACCESS_KEY}|" -e "s|__SECRET_KEY__|$${S3_SECRET_KEY}|"
+        /etc/seaweedfs/s3.json.template > /tmp/s3.json &&
+        exec weed server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024
+        -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes:
+      - seaweedfs-data:/data
+      - ./seaweedfs/s3.json.template:/etc/seaweedfs/s3.json.template:ro
+    ports:
+      # S3 endpoint for downstream loaders; bound to localhost unless S3_PUBLIC_BIND is set.
+      - ${S3_PUBLIC_BIND:-127.0.0.1}:${S3_PUBLIC_PORT:-8333}:8333
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  init-buckets:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/worker:${IMAGE_TAG:-dev}
+    command: ['python', '-m', 'ingest_worker.admin', 'init-buckets']
+    environment:
+      <<: [*s3-env]
+      DATABASE_URL: unused
+    depends_on:
+      seaweedfs: { condition: service_healthy }
+    restart: 'no'
+
+  migrate:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/api:${IMAGE_TAG:-dev}
+    command: ['node', 'apps/api/dist/db/migrate-cli.js']
+    environment:
+      <<: [*db-env]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/api:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: [*db-env, *s3-env]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-buckets: { condition: service_completed_successfully }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3000/readyz || exit 1']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/worker:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: [*db-env, *s3-env]
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-false}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      LOCAL_LLM_RESPONSE_FORMAT: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
+      POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
+      DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
+    extra_hosts:
+      - host.docker.internal:host-gateway # reach a local LLM server on the docker host
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      init-buckets: { condition: service_completed_successfully }
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    stop_grace_period: 2m # let an in-flight extraction finish
+
+  app:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/app:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/app.Dockerfile
+    restart: unless-stopped
+    ports:
+      - ${APP_BIND:-0.0.0.0}:${APP_PORT:-8080}:80
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1/healthz || exit 1']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  seaweedfs-data:

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# All jobs run on self-hosted runners (see docs/runners.md). Labels:
+#   ingestion-ci — Linux x64 runner with Docker, used for test + image jobs.
+jobs:
+  node:
+    name: Node (lint, typecheck, test, build)
+    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+
+  worker:
+    name: Worker (ruff, mypy, pytest)
+    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.10.5'
+          python-version: '3.13'
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest --cov=ingest_worker --cov-report=term-missing
+
+  stack:
+    name: Images + compose smoke test
+    needs: [node, worker]
+    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: ih-ci-${{ github.run_id }}
+      IMAGE_PREFIX: ih-ci
+      IMAGE_TAG: ${{ github.sha }}
+      APP_PORT: '0' # ephemeral host port; resolved below
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare env file
+        run: |
+          cp deploy/.env.example deploy/.env.ci
+          sed -i "s/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}/" deploy/.env.ci
+          sed -i "s/^IMAGE_PREFIX=.*/IMAGE_PREFIX=${IMAGE_PREFIX}/" deploy/.env.ci
+          sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/" deploy/.env.ci
+      - name: Build images
+        run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
+      - name: Start stack
+        run: |
+          compose() { docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml "$@"; }
+          compose up -d postgres seaweedfs
+          compose run --rm init-buckets
+          compose run --rm migrate
+          compose up -d api worker app
+          echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
+      - name: Smoke test
+        run: BASE_URL="$APP_URL" deploy/scripts/smoke-test.sh
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml logs --tail=200
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml down -v --remove-orphans
+          docker image ls --filter "reference=${IMAGE_PREFIX}/*:${IMAGE_TAG}" -q | xargs -r docker image rm -f

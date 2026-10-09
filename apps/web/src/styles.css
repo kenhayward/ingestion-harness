@@ -1,0 +1,48 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+}
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+.status {
+  font-weight: 600;
+}
+.status-succeeded {
+  color: #1a7f37;
+}
+.status-failed {
+  color: #cf222e;
+}
+.status-needs_review {
+  color: #9a6700;
+}
+.error {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
