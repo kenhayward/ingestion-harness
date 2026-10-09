@@ -1,0 +1,16 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: list every signatory slot in the approval tables.
+- phase: "protocol" for protocol preparation/review/approval (incl. "approved for execution"),
+  "protocol_completion" for protocol completion approval, "report" for report compilation,
+  verification and approval.
+- role: map "Written"/"Prepared"/"Compiled" to prepared or compiled (compiled is for reports),
+  "Reviewed" to reviewed, "Verified" to verified, "Approved" to approved.
+- Include slots whose name is a placeholder (name null) so the approval structure is recorded.
+- name/designation/date as written; date null when blank.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

@@ -10,7 +10,7 @@ const repoSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url));
 describe('SpecRegistry', () => {
   it('loads every spec committed under /specs (contract test — keep green)', () => {
     const registry = SpecRegistry.loadFromDir(repoSpecsDir);
-    expect(registry.get('example-invoice')?.version).toBeGreaterThanOrEqual(1);
+    expect(registry.get('process-validation-protocol')?.version).toBeGreaterThanOrEqual(1);
   });
 
   it('fails when the directory name disagrees with the spec id/version', () => {

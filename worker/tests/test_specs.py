@@ -20,7 +20,9 @@ MINIMAL = {
 def test_every_committed_spec_is_valid(specs_dir: Path) -> None:
     """Contract test shared with apps/api/test/spec-registry.test.ts — keep green."""
     registry = load_specs(specs_dir)
-    assert registry.get("example-invoice", 1).spec.title == "Supplier invoice"
+    assert (
+        registry.get("process-validation-protocol", 1).spec.title == "Process Validation Protocol"
+    )
 
 
 def test_defaults_and_aliases() -> None:

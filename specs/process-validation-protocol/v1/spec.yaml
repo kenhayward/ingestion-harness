@@ -1,0 +1,397 @@
+# Pharmaceutical Process Validation Protocol (incl. "protocol cum report" with executed results).
+# Developed against docs/samples: a gmpsop text template (TEM-290) and a scanned Safetab protocol
+# cum report (ST/QA/029). Templates differ between companies, so anchors accept both numbering
+# styles ("7. MANUFACTURING PROCESS", "13.0 CRITICAL PROCESS STAGES") and most sections are
+# optional. Published versions are immutable — copy to v2/ for changes that alter outputs.
+id: process-validation-protocol
+version: 1
+title: Process Validation Protocol
+description: >-
+  Pharmaceutical process validation protocol or protocol-cum-report: header, signatories,
+  batches, materials, critical parameters, equipment, test results and outcome.
+
+document:
+  pages: { min: 1, max: 200 }
+  ocr: auto
+  # Scanned packs often contain the approved blank protocol followed by the executed copy.
+  # Each copy starts at its protocol approval page; keep the last (executed) one.
+  copies:
+    anchor: '(?i)^\W*(?:\d+\.0\s*)?PROTOCOL APPROVAL\b'
+    select: last
+  sections:
+    - id: front_matter
+      anchor: '\A'
+      description: Title, product, cover-page header grid (anything before approvals).
+    - id: approvals
+      anchor: '(?i)^\W*(?:\d+\.0\s*)?PROTOCOL APPROVAL\b|^\s*WRITTEN:'
+      description: Protocol preparation/review/approval signatories.
+    - id: purpose_scope
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+PURPOSE\b'
+      required: false
+    - id: strategy
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+VALIDATION STRATEGY\b'
+      required: false
+    - id: product
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+PRODUCT DETAILS\b'
+      required: false
+    - id: references
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+REFERENCED?\s+DOCUMENTS\b'
+      required: false
+    - id: materials
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+BILL OF (?:RAW )?MATERIALS\b'
+      required: false
+    - id: process
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+(?:MANUFACTURING PROCESS|CRITICAL PROCESS STAGES)\b'
+      description: Process description, critical steps/parameters, equipment.
+    - id: test_program
+      anchor: '(?i)^\W*(?:\d+(?:\.0)?\.?\s+TEST PROGRAM\b|APPENDIX\s*4\b)'
+      required: false
+    - id: test_data
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+TEST DATA FOR VALIDATION\b'
+      required: false
+      description: Executed results per batch, stage and sample location.
+    - id: deviations
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+(?:PROCESS VALIDATION\s+)?DEVIATIONS\b'
+      required: false
+    - id: conclusion
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+EVALUATION OF RESULTS\b'
+      required: false
+    - id: report_approval
+      anchor: '(?i)^\W*\d+(?:\.0)?\.?\s+REPORT APPROVAL\b'
+      required: false
+
+extractions:
+  - id: protocol
+    sections: [front_matter, approvals, purpose_scope, strategy, product]
+    pageImages: [1] # OCR drops page headers; protocol no./revision/dates live there
+    prompt: prompts/protocol.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        [document_title, document_kind, protocol_number, revision, effective_date, organisation,
+         template_reference, reference_sop, product_name, product_code, brand_name, dosage_form,
+         batch_size, number_of_batches, validation_approach, reason_for_validation,
+         stages_validated, purpose]
+      properties:
+        document_title: { type: string }
+        document_kind:
+          type: string
+          enum: [template, protocol, protocol_cum_report, report]
+        protocol_number: { type: [string, 'null'] }
+        revision: { type: [string, 'null'] }
+        effective_date: { type: [string, 'null'], description: 'As written (e.g. 16/02/2023)' }
+        organisation: { type: [string, 'null'] }
+        template_reference:
+          { type: [string, 'null'], description: 'Form/template id, e.g. TEM-290 or ST/QA/029 (R2):F4' }
+        reference_sop: { type: [string, 'null'] }
+        product_name: { type: [string, 'null'] }
+        product_code: { type: [string, 'null'] }
+        brand_name: { type: [string, 'null'] }
+        dosage_form: { type: [string, 'null'], description: 'e.g. tablets, hard gelatin capsules' }
+        batch_size: { type: [string, 'null'], description: 'As written incl. units' }
+        number_of_batches: { type: [integer, 'null'] }
+        validation_approach:
+          type: [string, 'null']
+          enum: [prospective, concurrent, retrospective, null]
+        reason_for_validation: { type: [string, 'null'] }
+        stages_validated: { type: array, items: { type: string } }
+        purpose: { type: [string, 'null'], description: 'One sentence' }
+
+  - id: signatories
+    sections: [front_matter, approvals, report_approval]
+    prompt: prompts/signatories.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required: [signatories]
+      properties:
+        signatories:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [phase, role, department, name, designation, date]
+            properties:
+              phase: { type: string, enum: [protocol, protocol_completion, report] }
+              role:
+                type: string
+                enum: [prepared, reviewed, verified, approved, compiled]
+              department: { type: [string, 'null'] }
+              name: { type: [string, 'null'] }
+              designation: { type: [string, 'null'] }
+              date: { type: [string, 'null'], description: 'As written' }
+
+  - id: batches
+    sections: [product, strategy, conclusion]
+    prompt: prompts/batches.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required: [batches]
+      properties:
+        batches:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [sequence, batch_number, batch_number_variants, brand_name, batch_size,
+               manufacturing_date, expiry_date]
+            properties:
+              sequence: { type: integer, description: '1 for the 1st validation batch, etc.' }
+              batch_number: { type: [string, 'null'] }
+              batch_number_variants:
+                type: array
+                items: { type: string }
+                description: Other spellings of this batch number seen in the document
+              brand_name: { type: [string, 'null'] }
+              batch_size: { type: [string, 'null'] }
+              manufacturing_date: { type: [string, 'null'] }
+              expiry_date: { type: [string, 'null'] }
+
+  - id: materials
+    sections: [materials, references]
+    prompt: prompts/materials.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required: [materials, reference_documents]
+      properties:
+        materials:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [category, name, material_code, label_claim, specification, overage,
+               total_quantity, vendor]
+            properties:
+              category:
+                type: string
+                enum: [active, excipient, capsule_shell, coating, packaging, other]
+              name: { type: string }
+              material_code: { type: [string, 'null'] }
+              label_claim: { type: [string, 'null'] }
+              specification: { type: [string, 'null'], description: 'e.g. BP, USP, IH' }
+              overage: { type: [string, 'null'] }
+              total_quantity: { type: [string, 'null'], description: 'As written incl. units' }
+              vendor: { type: [string, 'null'] }
+        reference_documents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, document_number]
+            properties:
+              title: { type: string }
+              document_number: { type: [string, 'null'] }
+
+  - id: critical_parameters
+    sections: [process, test_program]
+    prompt: prompts/critical_parameters.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required: [parameters]
+      properties:
+        parameters:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [stage, parameter, acceptance_criteria, criticality, sampling, test_reference]
+            properties:
+              stage: { type: string, description: 'e.g. Blending, Lubrication, Tabletting' }
+              parameter: { type: string }
+              acceptance_criteria: { type: [string, 'null'] }
+              criticality:
+                { type: [string, 'null'], description: 'e.g. Critical, For information only' }
+              sampling: { type: [string, 'null'], description: 'Sampling plan/locations if given' }
+              test_reference: { type: [string, 'null'], description: 'Spec/test procedure no.' }
+
+  - id: equipment
+    sections: [process]
+    prompt: prompts/equipment.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required: [equipment]
+      properties:
+        equipment:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [process_step, equipment, equipment_id, validation_status, validation_reference]
+            properties:
+              process_step: { type: string }
+              equipment: { type: [string, 'null'] }
+              equipment_id: { type: [string, 'null'] }
+              validation_status: { type: [string, 'null'] }
+              validation_reference: { type: [string, 'null'] }
+
+  - id: test_results
+    sections: [test_data]
+    prompt: prompts/test_results.md.j2
+    maxAttempts: 3
+    schema:
+      type: object
+      additionalProperties: false
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              [batch_number, batch_sequence, stage, test, analyte, sample_location, result,
+               acceptance_criteria]
+            properties:
+              batch_number: { type: [string, 'null'] }
+              batch_sequence: { type: [integer, 'null'], description: '1, 2 or 3' }
+              stage: { type: string, description: 'e.g. Blending, Lubrication, Capsule filling' }
+              test: { type: string, description: 'e.g. Blend uniformity, Fill weight' }
+              analyte: { type: [string, 'null'], description: 'e.g. Folic acid' }
+              sample_location: { type: [string, 'null'], description: 'e.g. TCL, Initial' }
+              result: { type: string, description: 'Value as written (number, text, Complies)' }
+              acceptance_criteria: { type: [string, 'null'] }
+
+  - id: outcome
+    sections: [conclusion, deviations, report_approval]
+    prompt: prompts/outcome.md.j2
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        [executed, validated, conclusion_summary, stages_concluded, deviations_reported,
+         deviation_notes, concluded_by, conclusion_date]
+      properties:
+        executed:
+          type: boolean
+          description: True only if the document contains executed results/conclusions
+        validated: { type: [boolean, 'null'] }
+        conclusion_summary: { type: [string, 'null'] }
+        stages_concluded: { type: array, items: { type: string } }
+        deviations_reported: { type: [boolean, 'null'] }
+        deviation_notes: { type: [string, 'null'] }
+        concluded_by: { type: [string, 'null'] }
+        conclusion_date: { type: [string, 'null'], description: 'As written' }
+
+outputs:
+  - id: protocols
+    format: csv
+    from: protocol
+    columns:
+      - { name: protocol_number, path: protocol_number }
+      - { name: revision, path: revision }
+      - { name: effective_date, path: effective_date }
+      - { name: document_kind, path: document_kind }
+      - { name: document_title, path: document_title }
+      - { name: organisation, path: organisation }
+      - { name: template_reference, path: template_reference }
+      - { name: product_name, path: product_name }
+      - { name: product_code, path: product_code }
+      - { name: brand_name, path: brand_name }
+      - { name: dosage_form, path: dosage_form }
+      - { name: batch_size, path: batch_size }
+      - { name: number_of_batches, path: number_of_batches }
+      - { name: validation_approach, path: validation_approach }
+      - { name: reason_for_validation, path: reason_for_validation }
+      - { name: stages_validated, path: stages_validated }
+
+  - id: signatories
+    format: csv
+    from: signatories
+    rowsPath: signatories
+    columns:
+      - { name: phase, path: phase }
+      - { name: role, path: role }
+      - { name: department, path: department }
+      - { name: name, path: name }
+      - { name: designation, path: designation }
+      - { name: date, path: date }
+
+  - id: batches
+    format: csv
+    from: batches
+    rowsPath: batches
+    columns:
+      - { name: sequence, path: sequence }
+      - { name: batch_number, path: batch_number }
+      - { name: batch_number_variants, path: batch_number_variants }
+      - { name: brand_name, path: brand_name }
+      - { name: batch_size, path: batch_size }
+      - { name: manufacturing_date, path: manufacturing_date }
+      - { name: expiry_date, path: expiry_date }
+
+  - id: materials
+    format: csv
+    from: materials
+    rowsPath: materials
+    columns:
+      - { name: category, path: category }
+      - { name: name, path: name }
+      - { name: material_code, path: material_code }
+      - { name: label_claim, path: label_claim }
+      - { name: specification, path: specification }
+      - { name: overage, path: overage }
+      - { name: total_quantity, path: total_quantity }
+      - { name: vendor, path: vendor }
+
+  - id: critical_parameters
+    format: csv
+    from: critical_parameters
+    rowsPath: parameters
+    columns:
+      - { name: stage, path: stage }
+      - { name: parameter, path: parameter }
+      - { name: acceptance_criteria, path: acceptance_criteria }
+      - { name: criticality, path: criticality }
+      - { name: sampling, path: sampling }
+      - { name: test_reference, path: test_reference }
+
+  - id: equipment
+    format: csv
+    from: equipment
+    rowsPath: equipment
+    columns:
+      - { name: process_step, path: process_step }
+      - { name: equipment, path: equipment }
+      - { name: equipment_id, path: equipment_id }
+      - { name: validation_status, path: validation_status }
+      - { name: validation_reference, path: validation_reference }
+
+  - id: test_results
+    format: csv
+    from: test_results
+    rowsPath: results
+    columns:
+      - { name: batch_sequence, path: batch_sequence }
+      - { name: batch_number, path: batch_number }
+      - { name: stage, path: stage }
+      - { name: test, path: test }
+      - { name: analyte, path: analyte }
+      - { name: sample_location, path: sample_location }
+      - { name: result, path: result }
+      - { name: acceptance_criteria, path: acceptance_criteria }
+
+  - id: outcomes
+    format: csv
+    from: outcome
+    columns:
+      - { name: executed, path: executed }
+      - { name: validated, path: validated }
+      - { name: deviations_reported, path: deviations_reported }
+      - { name: concluded_by, path: concluded_by }
+      - { name: conclusion_date, path: conclusion_date }
+      - { name: stages_concluded, path: stages_concluded }
+      - { name: conclusion_summary, path: conclusion_summary }
+      - { name: deviation_notes, path: deviation_notes }
+
+  - id: protocol_full
+    format: json
+    from: '*'

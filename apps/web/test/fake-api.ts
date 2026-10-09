@@ -7,7 +7,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     id: crypto.randomUUID(),
     documentId: crypto.randomUUID(),
     filename: 'invoice.pdf',
-    specId: 'example-invoice',
+    specId: 'process-validation-protocol',
     specVersion: 1,
     status: 'queued',
     modelOverride: null,
@@ -22,7 +22,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
 export function fakeApi(overrides: Partial<Api> = {}): Api {
   return {
     listSpecs: vi.fn(async () => [
-      { id: 'example-invoice', version: 1, title: 'Supplier invoice' },
+      { id: 'process-validation-protocol', version: 1, title: 'Process Validation Protocol' },
     ]),
     listModels: vi.fn(async () => []),
     listJobs: vi.fn(async () => []),

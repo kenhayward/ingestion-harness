@@ -35,3 +35,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Large scanned sample stays local; tests use the recorded OCR fixture instead.
+docs/samples/IMAGE process validation protocol.pdf

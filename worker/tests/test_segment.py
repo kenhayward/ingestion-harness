@@ -65,3 +65,14 @@ def test_select_copy_is_a_no_op_for_single_copy_documents() -> None:
     pages = COPY_PAGES[:3]
     assert select_copy(pages, sel) == (0, pages)
     assert select_copy(["no anchor here"], sel) == (0, ["no anchor here"])
+
+
+def test_coinciding_anchors_give_the_text_to_the_later_declared_section() -> None:
+    """A catch-all start section (start-of-text anchor) yields to a specific one starting at the same place."""
+    sections = [
+        Section(id="zz_front", anchor=r"\A"),
+        Section(id="approvals", anchor=r"^APPROVAL"),
+        Section(id="body", anchor=r"^BODY"),
+    ]
+    result = segment(["APPROVAL\nsigned\nBODY\ntext"], sections)
+    assert result == {"zz_front": "", "approvals": "APPROVAL\nsigned", "body": "BODY\ntext"}

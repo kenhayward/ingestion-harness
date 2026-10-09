@@ -1,4 +1,4 @@
-"""End-to-end pipeline against the committed example spec with in-memory fakes."""
+"""Pipeline mechanics against a test-only invoice spec (tests/fixtures/specs) with fakes."""
 
 from __future__ import annotations
 
@@ -59,13 +59,13 @@ def job(**overrides: object) -> ClaimedJob:
 
 
 @pytest.fixture
-def setup(specs_dir: Path):  # type: ignore[no-untyped-def]
+def setup(fixture_specs_dir: Path):  # type: ignore[no-untyped-def]
     provider = FakeProvider("anthropic", kind="anthropic")
     store = MemoryObjectStore()
     store.put("inbox", "example-invoice/v1/doc-1.pdf", b"%PDF-fake", "application/pdf")
     deps = PipelineDeps(
         store=store,
-        specs=load_specs(specs_dir),
+        specs=load_specs(fixture_specs_dir),
         models=ModelRegistry(
             {"anthropic": provider},
             {"anthropic": ProviderConfig(name="anthropic", kind="anthropic")},
@@ -158,10 +158,10 @@ def test_unconfigured_model_override_goes_to_review_without_llm_calls(setup) -> 
     assert provider.calls == []
 
 
-def test_models_are_resolved_before_any_extraction_runs(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+def test_models_are_resolved_before_any_extraction_runs(setup, fixture_specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
     """A bad model on a later extraction must not waste tokens on earlier ones."""
     provider, _, deps = setup
-    loaded = load_specs(specs_dir).get("example-invoice", 1)
+    loaded = load_specs(fixture_specs_dir).get("example-invoice", 1)
     extractions = list(loaded.spec.extractions)
     extractions[1] = extractions[1].model_copy(update={"model": "missing-alias"})
     bad = LoadedSpec(loaded.spec.model_copy(update={"extractions": extractions}), loaded.directory)
@@ -262,7 +262,7 @@ def test_transient_ocr_errors_are_retried(setup) -> None:  # type: ignore[no-unt
 # --- page images, copy selection, OCR concurrency -------------------------------------------
 
 
-def with_spec_changes(deps: PipelineDeps, specs_dir: Path, **changes: object) -> None:
+def with_spec_changes(deps: PipelineDeps, fixture_specs_dir: Path, **changes: object) -> None:
     """Swap in a modified copy of the fixture spec (specs are immutable models)."""
     loaded = deps.specs.get("example-invoice", 1)
     spec = loaded.spec
@@ -271,12 +271,14 @@ def with_spec_changes(deps: PipelineDeps, specs_dir: Path, **changes: object) ->
     deps.specs = SpecRegistry([LoadedSpec(spec, loaded.directory)])
 
 
-def test_page_images_are_rendered_for_extractions_that_ask_for_them(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+def test_page_images_are_rendered_for_extractions_that_ask_for_them(
+    setup, fixture_specs_dir: Path
+) -> None:  # type: ignore[no-untyped-def]
     provider, _, deps = setup
     loaded = deps.specs.get("example-invoice", 1)
     extractions = list(loaded.spec.extractions)
     extractions[0] = extractions[0].model_copy(update={"page_images": [1, 2, 9]})
-    with_spec_changes(deps, specs_dir, extractions=extractions)
+    with_spec_changes(deps, fixture_specs_dir, extractions=extractions)
     renders: list[tuple[int, int]] = []
     deps.render_page = lambda pdf, i, dim, rot: renders.append((i, dim)) or b"\x89PNG" + bytes([i])  # type: ignore[func-returns-value]
     provider.responses = [HEADER, LINES]
@@ -291,12 +293,12 @@ def test_page_images_are_rendered_for_extractions_that_ask_for_them(setup, specs
     assert renders == [(0, 1288), (1, 1288)]
 
 
-def test_copy_selection_segments_only_the_selected_copy(setup, specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+def test_copy_selection_segments_only_the_selected_copy(setup, fixture_specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
     provider, _, deps = setup
     blank = ["INVOICE DRAFT\nDescription Qty\n(blank)\nSubtotal 0.00"]
     deps.extract_text = lambda _pdf: blank + PAGES
     copies = CopySelection(anchor=r"^\s*INVOICE\b", select="last")
-    with_spec_changes(deps, specs_dir, document={"copies": copies})
+    with_spec_changes(deps, fixture_specs_dir, document={"copies": copies})
     provider.responses = [HEADER, LINES]
 
     queue = FakeQueue(jobs=[job()])

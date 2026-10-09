@@ -1,0 +1,11 @@
+{% include "prompts/_common.md.j2" %}
+
+Task: list equipment used in the validated process, from equipment / validation-status tables.
+- One entry per row. Keep the process step even when the equipment cell is blank (null).
+- Return an empty list if the document has no equipment table.
+
+{% for section in sections %}
+<section id="{{ section.id }}">
+{{ section.text }}
+</section>
+{% endfor %}

@@ -7,7 +7,9 @@ import { fakeApi } from './fake-api.js';
 describe('UploadForm', () => {
   it('disables upload until a file is chosen', async () => {
     render(<UploadForm api={fakeApi()} onUploaded={() => {}} />);
-    expect(await screen.findByRole('option', { name: /Supplier invoice/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('option', { name: /Process Validation Protocol/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
   });
 
@@ -36,7 +38,7 @@ describe('UploadForm', () => {
 
     expect(api.upload).toHaveBeenCalledWith({
       file,
-      specId: 'example-invoice',
+      specId: 'process-validation-protocol',
       specVersion: 1,
       model: 'anthropic/claude-opus-5-5',
     });

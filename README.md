@@ -43,10 +43,16 @@ cd worker && uv run ingest-worker
 
 ## Adding a document type
 
-1. Copy `specs/example-invoice/v1/` to `specs/<your-id>/v1/`.
+The shipped example is `specs/process-validation-protocol/v1/`, developed against the two
+public samples in [docs/samples/](docs/samples/README.md) (a text-layer template and a 60-page
+scanned protocol-cum-report).
+
+1. Copy `specs/process-validation-protocol/v1/` to `specs/<your-id>/v1/`.
 2. Define sections (regex anchors), extractions (prompt + JSON Schema), and outputs (CSV/JSON).
-3. Run `npm test` and `npm run worker:test` — both validate every spec.
-4. Add a pipeline test with representative page text (see `worker/tests/test_pipeline.py`).
+3. Put real samples in `docs/samples/` and write tests against them first, like
+   `worker/tests/test_pvp_spec.py` (scanned samples: record OCR with `worker/scripts/ocr_pdf.py`).
+4. Run `npm run check` — both the API and the worker validate every spec, and every extraction
+   schema must be strict-structured-output compatible.
 
 See [specs/README.md](specs/README.md) for the format.
 
