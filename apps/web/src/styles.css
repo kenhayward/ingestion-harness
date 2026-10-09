@@ -85,9 +85,12 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
-.page-viewer {
-  position: sticky;
-  top: 0.5rem;
+/* Pin the page beside the data only in the two-column layout; stacked, it would cover it. */
+@media (min-width: 901px) {
+  .page-viewer {
+    position: sticky;
+    top: 0.5rem;
+  }
 }
 .page-viewer img {
   width: 100%;
@@ -149,4 +152,22 @@ td.edited-cell,
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+/* Compact data tables: one line per cell; the Edit control appears on hover/focus
+   (always visible on touch screens, which have no hover). */
+.table-scroll td {
+  white-space: nowrap;
+  padding: 0.25rem 0.5rem;
+}
+.review-data td .value button.link {
+  opacity: 0;
+}
+.review-data td:hover .value button.link,
+.review-data td:focus-within .value button.link {
+  opacity: 1;
+}
+@media (hover: none) {
+  .review-data td .value button.link {
+    opacity: 1;
+  }
 }
