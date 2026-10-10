@@ -69,7 +69,7 @@ jobs:
           cp deploy/.env.example deploy/.env.ci
           sed -i "s/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}/" deploy/.env.ci
           sed -i "s/^IMAGE_PREFIX=.*/IMAGE_PREFIX=${IMAGE_PREFIX}/" deploy/.env.ci
-          sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/" deploy/.env.ci
+          sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/" deploy/.env.ci
       - name: Build images
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
       - name: Start stack

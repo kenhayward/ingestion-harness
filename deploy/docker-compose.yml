@@ -59,6 +59,8 @@ services:
     ports:
       # S3 endpoint for downstream loaders; bound to localhost unless S3_PUBLIC_BIND is set.
       - ${S3_PUBLIC_BIND:-127.0.0.1}:${S3_PUBLIC_PORT:-8335}:8333
+      # Master UI (unauthenticated); localhost unless SEAWEEDFS_MASTER_BIND is set.
+      - ${SEAWEEDFS_MASTER_BIND:-127.0.0.1}:${SEAWEEDFS_MASTER_PORT:-9334}:9333
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1']
       interval: 5s

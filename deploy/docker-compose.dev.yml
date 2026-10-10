@@ -10,5 +10,4 @@ services:
 
   seaweedfs:
     ports:
-      - ${SEAWEEDFS_MASTER_BIND:-0.0.0.0}:${SEAWEEDFS_MASTER_PORT:-9334}:9333 # master UI
       - 127.0.0.1:8888:8888 # filer UI (browse buckets)
