@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.850.0",
-    "@fastify/multipart": "^9.0.0",
+    "@fastify/multipart": "^10.1.2",
     "@ih/shared": "*",
     "fastify": "^5.4.0",
     "pg": "^8.16.0",
