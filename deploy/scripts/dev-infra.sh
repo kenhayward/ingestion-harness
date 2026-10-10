@@ -14,8 +14,8 @@ compose() {
     -f "$DEPLOY_DIR/docker-compose.yml" -f "$DEPLOY_DIR/docker-compose.dev.yml" "$@"
 }
 
-export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB}"
-export S3_ENDPOINT="http://localhost:${S3_PUBLIC_PORT:-8333}"
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT:-5433}/${POSTGRES_DB}"
+export S3_ENDPOINT="http://localhost:${S3_PUBLIC_PORT:-8335}"
 
 case "${1:-up}" in
   up)

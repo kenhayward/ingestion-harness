@@ -58,7 +58,7 @@ services:
       - ./seaweedfs/s3.json.template:/etc/seaweedfs/s3.json.template:ro
     ports:
       # S3 endpoint for downstream loaders; bound to localhost unless S3_PUBLIC_BIND is set.
-      - ${S3_PUBLIC_BIND:-127.0.0.1}:${S3_PUBLIC_PORT:-8333}:8333
+      - ${S3_PUBLIC_BIND:-127.0.0.1}:${S3_PUBLIC_PORT:-8335}:8333
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:9333/cluster/status || exit 1']
       interval: 5s
