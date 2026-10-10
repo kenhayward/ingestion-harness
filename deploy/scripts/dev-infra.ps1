@@ -27,8 +27,8 @@ function Invoke-Compose {
 switch ($Action) {
   'up' {
     Invoke-Compose up -d --wait postgres seaweedfs
-    $pgPort = if ($cfg.POSTGRES_PORT) { $cfg.POSTGRES_PORT } else { '5432' }
-    $s3Port = if ($cfg.S3_PUBLIC_PORT) { $cfg.S3_PUBLIC_PORT } else { '8333' }
+    $pgPort = if ($cfg.POSTGRES_PORT) { $cfg.POSTGRES_PORT } else { '5433' }
+    $s3Port = if ($cfg.S3_PUBLIC_PORT) { $cfg.S3_PUBLIC_PORT } else { '8335' }
     $env:DATABASE_URL = "postgres://$($cfg.POSTGRES_USER):$($cfg.POSTGRES_PASSWORD)@localhost:$pgPort/$($cfg.POSTGRES_DB)"
     $env:S3_ENDPOINT = "http://localhost:$s3Port"
     $env:S3_ACCESS_KEY = $cfg.S3_ACCESS_KEY

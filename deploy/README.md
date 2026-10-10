@@ -41,8 +41,10 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 | Port | Service | Default bind |
 | --- | --- | --- |
 | `APP_PORT` (8080) | nginx → UI + `/api` | `0.0.0.0` |
-| `S3_PUBLIC_PORT` (8333) | SeaweedFS S3 for downstream loaders | `127.0.0.1` (set `S3_PUBLIC_BIND`) |
-| 5432, 9333, 8888 | Postgres, SeaweedFS master/filer UIs | dev overlay only, localhost |
+| `S3_PUBLIC_PORT` (8335) | SeaweedFS S3 for downstream loaders | `127.0.0.1` (set `S3_PUBLIC_BIND`) |
+| `POSTGRES_PORT` (5433) | Postgres | dev overlay only, `127.0.0.1` |
+| `SEAWEEDFS_MASTER_PORT` (9334) | SeaweedFS master UI | dev overlay only, `0.0.0.0` (set `SEAWEEDFS_MASTER_BIND`) |
+| 8888 | SeaweedFS filer UI | dev overlay only, `127.0.0.1` |
 
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
 
