@@ -1,5 +1,5 @@
 # React build served by nginx, which also reverse-proxies /api to the api service.
-FROM node:24-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
