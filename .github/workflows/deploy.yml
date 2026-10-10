@@ -41,7 +41,7 @@ jobs:
       # Secrets live on the deploy host, never in the repo or GitHub.
       ENV_FILE: /etc/ingestion-harness/${{ inputs.environment || 'staging' }}.env
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.event.workflow_run.head_sha }}
       - name: Deploy
