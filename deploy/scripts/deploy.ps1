@@ -33,7 +33,7 @@ Invoke-Compose run --rm migrate
 Invoke-Compose up -d --remove-orphans api worker app
 
 $appPort = (Select-String -Path $EnvFile -Pattern '^APP_PORT=(.+)$').Matches.Groups[1].Value
-if (-not $appPort) { $appPort = '8080' }
+if (-not $appPort) { $appPort = '8081' }
 foreach ($path in '/healthz', '/readyz', '/api/specs', '/api/models') {
   $ok = $false
   for ($i = 0; $i -lt 30 -and -not $ok; $i++) {

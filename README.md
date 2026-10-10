@@ -30,7 +30,7 @@ cp deploy/.env.example deploy/.env  # set passwords + ANTHROPIC_API_KEY / OPENAI
 deploy/scripts/deploy.sh            # Windows: deploy\scripts\deploy.ps1
 ```
 
-Then open http://localhost:8080, pick a document type, upload a PDF.
+Then open http://localhost:8081, pick a document type, upload a PDF.
 
 Or run services on the host against containerised infra:
 

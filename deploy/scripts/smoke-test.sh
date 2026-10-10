@@ -2,7 +2,7 @@
 # Post-deploy checks through the nginx front door.
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:${APP_PORT:-8080}}"
+BASE_URL="${BASE_URL:-http://localhost:${APP_PORT:-8081}}"
 TRIES="${TRIES:-30}"
 
 check() {
