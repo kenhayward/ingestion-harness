@@ -49,6 +49,34 @@ sudo -e /etc/ingestion-harness/staging.env   # start from deploy/.env.example
   Prune periodically (`docker system prune --filter until=168h`) via cron.
 - Consider ephemeral runners (`./config.sh --ephemeral`) with an autoscaler if job volume grows.
 
+## Local CI runner on a Windows dev machine (WSL2)
+
+The workflows need a Linux runner, so on Windows run the Linux runner inside WSL2 and let it use
+Docker Desktop's engine.
+
+1. **Enable Actions** for the repo: Settings → Actions → General → "Allow all actions" (or
+   allow `actions/*` and `astral-sh/setup-uv`). With Actions disabled no workflow runs at all.
+2. **WSL + Docker:** `wsl --install -d Ubuntu`, then Docker Desktop → Settings → Resources →
+   WSL integration → enable Ubuntu. Check from Ubuntu: `docker version` and `docker compose version`.
+3. **Enable systemd** so the runner can run as a service: add `[boot]` / `systemd=true` to
+   `/etc/wsl.conf` in Ubuntu, then `wsl --shutdown` from Windows and reopen Ubuntu.
+4. **Register** (inside Ubuntu, as your normal user, which already has Docker Desktop's socket):
+   Settings → Actions → Runners → New self-hosted runner → Linux x64, run the download/verify
+   commands it shows, then
+   ```bash
+   ./config.sh --url https://github.com/<org>/<repo> --token <TOKEN> \
+     --name "$(hostname)-wsl" --labels ingestion-ci --unattended
+   sudo ./svc.sh install "$USER" && sudo ./svc.sh start
+   ```
+   (`self-hosted`, `linux`, `x64` labels are added automatically.)
+5. **Keep WSL running:** WSL stops a distro shortly after its last terminal closes, which takes
+   the runner offline. Add a Task Scheduler task at log-on that runs
+   `wsl.exe -d Ubuntu --exec sleep infinity`.
+
+The runner must be v2.327.1 or newer (the `@v7` actions run on Node 24); a freshly downloaded
+runner is, and it updates itself. To also run `deploy.yml` against this machine, register with
+`--labels ingestion-ci,deploy-staging` and create `/etc/ingestion-harness/staging.env` as above.
+
 ## Windows runners
 
 The workflows assume Linux runners (bash, Docker Linux containers). The deploy scripts have
