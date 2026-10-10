@@ -21,7 +21,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, ingestion-ci]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -41,7 +41,7 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           version: '0.10.5'
@@ -63,7 +63,7 @@ jobs:
       IMAGE_TAG: ${{ github.sha }}
       APP_PORT: '0' # ephemeral host port; resolved below
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Prepare env file
         run: |
           cp deploy/.env.example deploy/.env.ci
