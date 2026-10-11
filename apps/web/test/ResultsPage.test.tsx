@@ -1,5 +1,5 @@
 import type { ResultSummary } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultsPage } from '../src/results/ResultsPage.js';
@@ -97,5 +97,45 @@ describe('ResultsPage', () => {
     });
     render(<ResultsPage api={fakeApi({ listResults: failing })} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load results: boom');
+  });
+
+  it('shows only the latest filter results when responses arrive out of order', async () => {
+    let resolveAll!: (rows: ResultSummary[]) => void;
+    let resolvePvp!: (rows: ResultSummary[]) => void;
+    const listResults = vi.fn(
+      (query?: { templateId?: string }) =>
+        new Promise<ResultSummary[]>((resolve) => {
+          if (query?.templateId === 'pvp') resolvePvp = resolve;
+          else resolveAll = resolve;
+        }),
+    );
+    const api = fakeApi({
+      listResults,
+      listSpecs: vi.fn(async () => [{ id: 'pvp', version: 3, title: 'PVP' }]),
+    });
+    render(<ResultsPage api={api} />);
+    await screen.findByRole('option', { name: 'PVP' });
+    await userEvent.selectOptions(screen.getByLabelText('Document type'), 'pvp');
+    await act(async () => resolvePvp([result({ filename: 'pvp.pdf' })]));
+    await act(async () => resolveAll([result({ filename: 'stale-all.pdf' })]));
+    expect(screen.getByRole('link', { name: 'pvp.pdf' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'stale-all.pdf' })).not.toBeInTheDocument();
+  });
+
+  it('disables Load more while a page is loading', async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => result({ filename: `p1-${i}.pdf` }));
+    let resolveMore!: (rows: ResultSummary[]) => void;
+    const listResults = vi
+      .fn()
+      .mockResolvedValueOnce(page1)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveMore = resolve)));
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    const more = await screen.findByRole('button', { name: 'Load more' });
+    await userEvent.click(more);
+    expect(more).toBeDisabled();
+    await userEvent.click(more);
+    expect(listResults).toHaveBeenCalledTimes(2);
+    await act(async () => resolveMore([result({ filename: 'p2.pdf' })]));
+    expect(screen.getAllByRole('link', { name: 'p2.pdf' })).toHaveLength(1);
   });
 });

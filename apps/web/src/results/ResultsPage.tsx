@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
@@ -18,6 +18,9 @@ export function ResultsPage({ api }: { api: Api }) {
   const [rows, setRows] = useState<ResultSummary[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  /** Only the latest request may update the list (filter changes and Load more race). */
+  const latest = useRef(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,21 +39,29 @@ export function ResultsPage({ api }: { api: Api }) {
 
   const load = useCallback(
     async (before?: string) => {
+      const request = ++latest.current;
+      setLoading(true);
       try {
         const page = await api.listResults({ templateId: templateId || undefined, before });
+        if (request !== latest.current) return;
         setRows((current) => (before ? [...current, ...page] : page));
         setHasMore(page.length === RESULTS_PAGE_SIZE);
         setError(null);
       } catch (err) {
-        setError((err as Error).message);
+        if (request === latest.current) setError((err as Error).message);
       } finally {
-        setLoaded(true);
+        if (request === latest.current) {
+          setLoading(false);
+          setLoaded(true);
+        }
       }
     },
     [api, templateId],
   );
 
   useEffect(() => {
+    setRows([]);
+    setHasMore(false);
     void load();
   }, [load]);
 
@@ -102,7 +113,11 @@ export function ResultsPage({ api }: { api: Api }) {
         </table>
       )}
       {hasMore && (
-        <button type="button" onClick={() => void load(rows.at(-1)?.publishedAt)}>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load(rows.at(-1)?.publishedAt)}
+        >
           Load more
         </button>
       )}

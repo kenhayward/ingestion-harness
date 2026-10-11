@@ -49,7 +49,16 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         ],
       },
       checks: { batch_check: { rows: [{ value: 'B1', status: 'ok' }] } },
-      issues: [{ step: 'data', target: 'results', row: 2, column: 'value', message: 'unreadable' }],
+      issues: [
+        {
+          step: 'data',
+          target: 'results',
+          row: 2,
+          column: 'value',
+          raw: '2,0O',
+          message: 'unreadable',
+        },
+      ],
       review: {
         reviewer: 'Ken',
         note: 'Checked',

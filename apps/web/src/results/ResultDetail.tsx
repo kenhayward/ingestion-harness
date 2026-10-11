@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
-import type { JobOutput, PublishedDocument, ResultDefinition, ResultDetail } from '@ih/shared';
+import type {
+  DocumentError,
+  JobOutput,
+  PublishedDocument,
+  ResultDefinition,
+  ResultDetail,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { display } from '../review/effective.js';
 import { parseCsv } from './csv.js';
 
 export const PREVIEW_ROWS = 500;
+
+const DOCUMENT_ERRORS: Record<DocumentError, string> = {
+  'missing from target': 'The published document is missing from the target',
+  'target storage unavailable': 'The target storage could not be reached',
+  'invalid document': 'The published document in the target is not valid',
+};
 
 type Col = { id: string; name?: string };
 type TableCols = { id: string; name?: string; columns: Col[] };
@@ -72,9 +84,7 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
         ))}
       </nav>
       {documentError && (
-        <p role="alert">
-          Published document {documentError} (bucket {target.bucket}).
-        </p>
+        <p role="alert">{`${DOCUMENT_ERRORS[documentError]} (bucket ${target.bucket}).`}</p>
       )}
       {document ? (
         <DocumentView document={document} definition={definition} />
@@ -105,7 +115,7 @@ function DocumentView({
           columns: Object.keys(rows[0] ?? {}).map((c) => ({ id: c })),
         }));
   const checks = Object.entries(document.checks);
-  const issueColumns = ['step', 'target', 'row', 'column', 'message'];
+  const issueColumns = ['step', 'target', 'row', 'column', 'raw', 'message'];
 
   return (
     <>
@@ -157,6 +167,7 @@ function DocumentView({
                             title={edited ? 'edited in review' : undefined}
                           >
                             {format(row[c.id])}
+                            {edited && <small className="edited">edited</small>}
                           </td>
                         );
                       })}

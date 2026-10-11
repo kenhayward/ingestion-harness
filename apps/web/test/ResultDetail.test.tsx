@@ -59,6 +59,10 @@ describe('ResultDetailView', () => {
     const cell = within(table).getAllByRole('row')[2]!.querySelectorAll('td')[2]!;
     expect(cell).toHaveTextContent('2');
     expect(cell).toHaveClass('edited-cell');
+    // Not colour alone: edited cells carry a visible text marker too.
+    expect(within(cell).getByText('edited')).toBeInTheDocument();
+    const unedited = within(table).getAllByRole('row')[1]!.querySelectorAll('td')[2]!;
+    expect(within(unedited).queryByText('edited')).not.toBeInTheDocument();
   });
 
   it('keeps checks and issues collapsed with counts', async () => {
@@ -71,6 +75,13 @@ describe('ResultDetailView', () => {
     const issues = (await screen.findByText('Issues (1)')).closest('details')!;
     expect(issues).not.toHaveAttribute('open');
     expect(screen.getByText('Checks (1)').closest('details')).not.toHaveAttribute('open');
+    const table = within(issues).getByRole('table', { name: 'Issues' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['step', 'target', 'row', 'column', 'raw', 'message']);
+    expect(within(table).getByText('2,0O')).toBeInTheDocument();
   });
 
   it('falls back to document keys when the template is unknown', async () => {
@@ -84,9 +95,24 @@ describe('ResultDetailView', () => {
     const detail = resultDetail({ document: null, documentError: 'missing from target' });
     render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Published document missing from target (bucket ingest-published).',
+      'The published document is missing from the target (bucket ingest-published).',
     );
     expect(screen.getByRole('navigation', { name: 'Downloads' })).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'target storage unavailable',
+      'The target storage could not be reached (bucket ingest-published).',
+    ],
+    [
+      'invalid document',
+      'The published document in the target is not valid (bucket ingest-published).',
+    ],
+  ] as const)('explains %s in plain words', async (documentError, message) => {
+    const detail = resultDetail({ document: null, documentError });
+    render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
 
   it('previews legacy outputs: CSV truncated to 500 rows, JSON pretty, failures inline', async () => {
