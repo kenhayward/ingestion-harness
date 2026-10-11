@@ -160,6 +160,24 @@ export function outputPath(
   return `${base}/jobs/${jobId}/outputs/${outputId}${qs ? `?${qs}` : ''}`;
 }
 
+export interface CleanupRequest {
+  olderThanDays: number;
+  dryRun: boolean;
+  /** Regression runs feed scores and metrics: kept unless included. */
+  includeRegression: boolean;
+  /** The preview's cutoff, so the delete matches what was previewed. */
+  cutoff?: string;
+}
+
+export interface CleanupResult {
+  /** dryRun: how many jobs match. */
+  count?: number;
+  /** delete: how many this request deleted, and how many still match. */
+  deleted?: number;
+  remaining?: number;
+  cutoff: string;
+}
+
 /** API port — components take this as a prop so tests can pass a fake. */
 export interface Api {
   listSpecs(): Promise<SpecSummary[]>;
@@ -170,11 +188,8 @@ export interface Api {
   retryJob(id: string, model?: string | null): Promise<JobSummary>;
   cancelJob(id: string): Promise<JobSummary>;
   deleteJob(id: string): Promise<void>;
-  /** Finished jobs older than N days: dryRun -> { count }, else { deleted }. */
-  cleanupJobs(
-    olderThanDays: number,
-    dryRun: boolean,
-  ): Promise<{ count?: number; deleted?: number }>;
+  /** Bulk delete of finished jobs (see CleanupRequest); repeat while `remaining` > 0. */
+  cleanupJobs(req: CleanupRequest): Promise<CleanupResult>;
   upload(req: UploadRequest): Promise<JobSummary>;
   outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
   /** Published or draft output body as text (Results previews). Rejects with the API error. */
@@ -248,8 +263,7 @@ export function createHttpApi(base = '/api'): Api {
         throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
       }
     },
-    cleanupJobs: (olderThanDays, dryRun) =>
-      post<{ count?: number; deleted?: number }>(`${base}/jobs/cleanup`, { olderThanDays, dryRun }),
+    cleanupJobs: (req) => post<CleanupResult>(`${base}/jobs/cleanup`, req),
     upload: ({ file, specId, specVersion, model }) => {
       // Fields must precede the file part — the API reads them from the file's preamble.
       const form = new FormData();

@@ -1,28 +1,67 @@
 import { useState } from 'react';
 import type { Api } from '../api/client.js';
 
-/** Bulk delete of finished jobs by age: preview (dry run) first, then confirm. */
+const MAX_DAYS = 3650;
+const jobs = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
+
+/**
+ * Bulk delete of finished jobs by age: preview (dry run) first, then delete exactly the jobs the
+ * preview counted (its cutoff is sent back), in batches so a large first clean-up doesn't time out.
+ */
 export function JobCleanup({ api, onChanged }: { api: Api; onChanged: () => void }) {
-  const [days, setDays] = useState(30);
-  const [preview, setPreview] = useState<number | null>(null);
+  const [daysText, setDaysText] = useState('30');
+  const [includeRegression, setIncludeRegression] = useState(false);
+  const [preview, setPreview] = useState<{ count: number; cutoff: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const act = async (dryRun: boolean) => {
-    setError(null);
+  const days = Number(daysText);
+  const valid = /^\d+$/.test(daysText) && days >= 1 && days <= MAX_DAYS;
+
+  const reset = () => {
+    setPreview(null);
     setDone(null);
+    setError(null);
+  };
+
+  const runPreview = async () => {
+    reset();
     try {
-      const res = await api.cleanupJobs(days, dryRun);
-      if (dryRun) {
-        setPreview(res.count ?? 0);
-      } else {
-        setPreview(null);
-        setDone(`Deleted ${res.deleted ?? 0} jobs.`);
-        onChanged();
+      const res = await api.cleanupJobs({ olderThanDays: days, dryRun: true, includeRegression });
+      setPreview({ count: res.count ?? 0, cutoff: res.cutoff });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const runDelete = async () => {
+    if (!preview) return;
+    const { count, cutoff } = preview;
+    setBusy(true);
+    setError(null);
+    let deleted = 0;
+    try {
+      for (;;) {
+        const res = await api.cleanupJobs({
+          olderThanDays: days,
+          dryRun: false,
+          includeRegression,
+          cutoff,
+        });
+        deleted += res.deleted ?? 0;
+        setDone(`Deleted ${deleted} of ${jobs(count)}…`);
+        if (!res.remaining) break;
       }
+      setPreview(null);
+      setDone(`Deleted ${jobs(deleted)}.`);
     } catch (err) {
       setPreview(null);
+      setDone(deleted ? `Deleted ${jobs(deleted)} before an error.` : null);
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
+      onChanged();
     }
   };
 
@@ -33,24 +72,40 @@ export function JobCleanup({ api, onChanged }: { api: Api; onChanged: () => void
         <input
           type="number"
           min={1}
-          value={days}
+          max={MAX_DAYS}
+          step={1}
+          value={daysText}
+          aria-invalid={!valid}
+          aria-describedby={valid ? undefined : 'cleanup-days-hint'}
           onChange={(e) => {
-            setDays(Number(e.target.value));
-            setPreview(null);
+            setDaysText(e.target.value);
+            reset();
           }}
         />
       </label>
-      <button type="button" onClick={() => void act(true)}>
+      <label className="inline">
+        <input
+          type="checkbox"
+          checked={includeRegression}
+          onChange={(e) => {
+            setIncludeRegression(e.target.checked);
+            reset();
+          }}
+        />
+        Include regression runs
+      </label>
+      <button type="button" disabled={!valid || busy} onClick={() => void runPreview()}>
         Preview
       </button>
-      {preview === 0 && <p>{`No finished jobs older than ${days} days.`}</p>}
-      {preview !== null && preview > 0 && (
+      {!valid && <small id="cleanup-days-hint">Enter whole days from 1 to {MAX_DAYS}.</small>}
+      {preview?.count === 0 && <p>{`No finished jobs older than ${days} days.`}</p>}
+      {preview && preview.count > 0 && (
         <p>
-          {`${preview} jobs will be deleted (published copies are kept).`}{' '}
-          <button type="button" className="danger" onClick={() => void act(false)}>
-            Delete {preview} jobs
+          {`${jobs(preview.count)} will be deleted (published copies are kept).`}{' '}
+          <button type="button" className="danger" disabled={busy} onClick={() => void runDelete()}>
+            Delete {jobs(preview.count)}
           </button>
-          <button type="button" onClick={() => setPreview(null)}>
+          <button type="button" disabled={busy} onClick={() => setPreview(null)}>
             Keep
           </button>
         </p>
