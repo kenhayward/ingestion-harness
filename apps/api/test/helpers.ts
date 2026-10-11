@@ -1,5 +1,5 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
-import { buildApp } from '../src/app.js';
+import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
@@ -43,13 +43,16 @@ export const demoTemplate = TemplateSchema.parse({
   ],
 });
 
-export async function testApp() {
+export async function testApp(overrides: Partial<AppDeps> = {}) {
   const repo = new MemoryRepo();
   const store = new MemoryObjectStore();
+  const targetStore = new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
   const app = await buildApp({
     repo,
     store,
+    targetStore,
+    target: { bucket: 'published', prefix: 'pub/' },
     templates,
     specs: SpecRegistry.fromDefinitions([
       { kind: 'spec', id: 'demo', version: 1, spec: demoSpec },
@@ -58,8 +61,16 @@ export async function testApp() {
     ]),
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
+    ...overrides,
   });
-  return { app, repo, store, templates };
+  return { app, repo, store, targetStore, templates };
+}
+
+/** An object store whose reads fail like an unreachable S3 endpoint. */
+export class UnreachableStore extends MemoryObjectStore {
+  override async get(): Promise<Buffer | null> {
+    throw new Error('connect ECONNREFUSED');
+  }
 }
 
 /** Build a multipart body for app.inject(). Fields are written before the file. */

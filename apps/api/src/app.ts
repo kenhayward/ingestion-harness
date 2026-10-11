@@ -16,6 +16,9 @@ import { reviewRoutes } from './routes/review.js';
 export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
+  /** Final publish target (`TARGET_S3_*`); published job outputs are read from here. */
+  targetStore: ObjectStore;
+  target: { bucket: string; prefix: string };
   specs: SpecRegistry;
   templates: TemplateRepo;
   buckets: { inbox: string; outputs: string; runs: string };
