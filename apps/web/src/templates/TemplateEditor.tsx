@@ -196,15 +196,17 @@ export function TemplateEditor({
 
       <fieldset disabled={!editable} className="editor-body">
         {tab === 'general' && (
-          <div className="grid">
+          <div className="form-rows">
             <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
-            <Text
+            <Area
               label="Description"
+              rows={3}
               value={def.description}
               onChange={(v) => update(['description'], opt(v))}
             />
             <Area
               label="Preamble"
+              rows={14}
               hint="Domain guidance placed at the top of every prompt."
               value={def.preamble}
               onChange={(v) => update(['preamble'], opt(v))}
@@ -227,13 +229,13 @@ export function TemplateEditor({
               options={['DMY', 'MDY']}
               onChange={(v) => update(['document', 'dateOrder'], v)}
             />
-            <label className="inline">
+            <label>
+              Page markers
               <input
                 type="checkbox"
                 checked={getIn(def, ['document', 'pageMarkers']) ?? true}
                 onChange={(e) => update(['document', 'pageMarkers'], e.target.checked)}
               />
-              Page markers
             </label>
             <Text
               label="Copy anchor"
@@ -252,36 +254,42 @@ export function TemplateEditor({
         )}
 
         {tab === 'sections' && (
-          <ListEditor
-            label="section"
+          <RowTable
+            label="Sections"
+            noun="section"
+            columns={[
+              ['Section ID', '16rem'],
+              ['Anchor', undefined],
+              ['Required', '6rem'],
+            ]}
             items={sections}
             onChange={(items) => update(['document', 'sections'], items)}
             create={() => ({ id: '', anchor: '' })}
-            render={(s, i) => (
-              <>
-                <Text
-                  label={`Section ${i + 1} id`}
-                  value={s.id}
-                  onChange={(v) => update(['document', 'sections', i, 'id'], v)}
-                />
-                <Text
-                  label={`Section ${i + 1} anchor`}
-                  hint="Multiline regex where the section starts"
-                  value={getIn(s, ['anchor'])}
-                  onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
-                />
-                <label className="inline">
-                  <input
-                    type="checkbox"
-                    checked={getIn(s, ['required']) ?? true}
-                    onChange={(e) =>
-                      update(['document', 'sections', i, 'required'], e.target.checked)
-                    }
-                  />
-                  Required
-                </label>
-              </>
-            )}
+            cells={(s, i) => [
+              <Text
+                key="id"
+                bare
+                label={`Section ${i + 1} id`}
+                value={s.id}
+                onChange={(v) => update(['document', 'sections', i, 'id'], v)}
+              />,
+              <Text
+                key="anchor"
+                bare
+                className="code"
+                label={`Section ${i + 1} anchor`}
+                hint="Multiline regex where the section starts"
+                value={getIn(s, ['anchor'])}
+                onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
+              />,
+              <input
+                key="required"
+                type="checkbox"
+                aria-label={`Section ${i + 1} required`}
+                checked={getIn(s, ['required']) ?? true}
+                onChange={(e) => update(['document', 'sections', i, 'required'], e.target.checked)}
+              />,
+            ]}
           />
         )}
 
@@ -290,6 +298,8 @@ export function TemplateEditor({
             <h3>Fields</h3>
             <ValueList
               label="Field"
+              heading="Field"
+              tableLabel="Fields"
               addLabel="Add field"
               items={fields}
               onChange={(items) => update(['outputs', 'fields'], items)}
@@ -315,6 +325,8 @@ export function TemplateEditor({
                   />
                   <ValueList
                     label={`Table ${ti + 1} column`}
+                    heading="Column"
+                    tableLabel={`Table ${ti + 1} columns`}
                     addLabel={`Add column to table ${ti + 1}`}
                     items={getIn(t, ['columns']) ?? []}
                     onChange={(items) => update(['outputs', 'tables', ti, 'columns'], items)}
@@ -448,95 +460,99 @@ function ExtractStep({
     set(key, on ? [...current, id] : current.filter((x) => x !== id));
   };
   return (
-    <div className="grid">
-      <Text label="Step id" value={step.id} onChange={(v) => set('id', v)} />
-      <fieldset className="choice">
-        <legend>Fills</legend>
-        <label className="inline">
-          <input
-            type="radio"
-            checked={!fillsTable}
-            onChange={() => {
-              const rest = { ...step };
-              delete rest.table;
-              delete rest.chunkPages;
-              replace({ ...rest, fields: [] });
-            }}
+    <div className="extract-step">
+      <div className="grid step-settings">
+        <Text label="Step id" value={step.id} onChange={(v) => set('id', v)} />
+        <fieldset className="choice">
+          <legend>Fills</legend>
+          <label className="inline">
+            <input
+              type="radio"
+              checked={!fillsTable}
+              onChange={() => {
+                const rest = { ...step };
+                delete rest.table;
+                delete rest.chunkPages;
+                replace({ ...rest, fields: [] });
+              }}
+            />
+            Fields
+          </label>
+          <label className="inline">
+            <input
+              type="radio"
+              checked={fillsTable}
+              onChange={() => replace({ ...step, fields: [], table: tables[0] ?? '' })}
+            />
+            A table
+          </label>
+        </fieldset>
+        {fillsTable ? (
+          <>
+            <Select
+              label="Table"
+              value={step.table}
+              options={tables}
+              onChange={(v) => set('table', v)}
+            />
+            <Text
+              label="Chunk pages"
+              hint="Run once per N pages (large tables)"
+              value={step.chunkPages === undefined ? '' : String(step.chunkPages)}
+              onChange={(v) => set('chunkPages', optInt(v))}
+            />
+          </>
+        ) : (
+          <Checklist
+            label="Fields to fill"
+            options={fields}
+            selected={step.fields ?? []}
+            onToggle={(id, on) => toggle('fields', id, on)}
           />
-          Fields
-        </label>
-        <label className="inline">
-          <input
-            type="radio"
-            checked={fillsTable}
-            onChange={() => replace({ ...step, fields: [], table: tables[0] ?? '' })}
-          />
-          A table
-        </label>
-      </fieldset>
-      {fillsTable ? (
-        <>
-          <Select
-            label="Table"
-            value={step.table}
-            options={tables}
-            onChange={(v) => set('table', v)}
-          />
-          <Text
-            label="Chunk pages"
-            hint="Run once per N pages (large tables)"
-            value={step.chunkPages === undefined ? '' : String(step.chunkPages)}
-            onChange={(v) => set('chunkPages', optInt(v))}
-          />
-        </>
-      ) : (
+        )}
         <Checklist
-          label="Fields to fill"
-          options={fields}
-          selected={step.fields ?? []}
-          onToggle={(id, on) => toggle('fields', id, on)}
+          label="Sections"
+          options={sections}
+          selected={step.sections ?? []}
+          onToggle={(id, on) => toggle('sections', id, on)}
         />
-      )}
-      <Checklist
-        label="Sections"
-        options={sections}
-        selected={step.sections ?? []}
-        onToggle={(id, on) => toggle('sections', id, on)}
-      />
-      <ContextEditor
-        value={step.context ?? {}}
-        onChange={(context) => set('context', Object.keys(context).length ? context : undefined)}
-      />
-      <Area
-        label="Instructions"
-        value={step.instructions}
-        onChange={(v) => set('instructions', opt(v))}
-      />
-      <label>
-        Model
-        <input
-          list="model-options"
-          value={step.model ?? ''}
-          placeholder="default"
-          onChange={(e) => set('model', opt(e.target.value))}
+        <label>
+          Model
+          <input
+            list="model-options"
+            value={step.model ?? ''}
+            placeholder="default"
+            onChange={(e) => set('model', opt(e.target.value))}
+          />
+        </label>
+        <Text
+          label="Page images"
+          hint="1-based pages sent as images, e.g. 1"
+          value={(step.pageImages ?? []).join(', ')}
+          onChange={(v) => set('pageImages', intList(v).length ? intList(v) : undefined)}
         />
-      </label>
-      <Text
-        label="Page images"
-        hint="1-based pages sent as images, e.g. 1"
-        value={(step.pageImages ?? []).join(', ')}
-        onChange={(v) => set('pageImages', intList(v).length ? intList(v) : undefined)}
-      />
-      <Text
-        label="Max tokens"
-        value={step.maxTokens === undefined ? '' : String(step.maxTokens)}
-        onChange={(v) => set('maxTokens', optInt(v))}
-      />
-      <Text
-        label="Max attempts"
-        value={step.maxAttempts === undefined ? '' : String(step.maxAttempts)}
-        onChange={(v) => set('maxAttempts', optInt(v))}
-      />
+        <Text
+          label="Max tokens"
+          value={step.maxTokens === undefined ? '' : String(step.maxTokens)}
+          onChange={(v) => set('maxTokens', optInt(v))}
+        />
+        <Text
+          label="Max attempts"
+          value={step.maxAttempts === undefined ? '' : String(step.maxAttempts)}
+          onChange={(v) => set('maxAttempts', optInt(v))}
+        />
+      </div>
+      <div className="step-prompts">
+        <ContextEditor
+          value={step.context ?? {}}
+          onChange={(context) => set('context', Object.keys(context).length ? context : undefined)}
+        />
+        <Area
+          label="Instructions"
+          value={step.instructions}
+          onChange={(v) => set('instructions', opt(v))}
+        />
+      </div>
     </div>
   );
 }
@@ -558,7 +574,10 @@ function ContextEditor({
       .join('\n'),
   );
   return (
-    <label title="One per line: name = field or table.column (must be filled by an earlier step)">
+    <label
+      className="context"
+      title="One per line: name = field or table.column (must be filled by an earlier step)"
+    >
       Context
       <textarea
         rows={2}
@@ -616,72 +635,171 @@ function CheckStep({
   );
 }
 
-/** Fields or table columns: id, name, type, enum values, description. */
+/** Fields or table columns, one per row: id, name, type, enum values, description. */
 function ValueList({
   label,
+  heading,
+  tableLabel,
   addLabel,
   items,
   onChange,
   update,
 }: {
   label: string;
+  heading: string;
+  tableLabel: string;
   addLabel: string;
   items: Definition[];
   onChange: (items: Definition[]) => void;
   update: (index: number, key: string, value: unknown) => void;
 }) {
   return (
-    <div className="value-list">
-      {items.map((item, i) => {
+    <RowTable
+      label={tableLabel}
+      noun={label}
+      addLabel={addLabel}
+      columns={[
+        [`${heading} ID`, '14rem'],
+        ['Name', '16rem'],
+        ['Type', '8rem'],
+        ['Enum values', '14rem'],
+        ['Description', undefined],
+      ]}
+      items={items}
+      onChange={onChange}
+      create={() => ({ id: '', type: 'text' })}
+      cells={(item, i) => {
         const n = `${label} ${i + 1}`;
-        return (
-          <div key={i} className="value-row">
-            <Text label={`${n} id`} value={item.id} onChange={(v) => update(i, 'id', v)} />
+        return [
+          <Text
+            key="id"
+            bare
+            label={`${n} id`}
+            value={item.id}
+            onChange={(v) => update(i, 'id', v)}
+          />,
+          <Text
+            key="name"
+            bare
+            label={`${n} name`}
+            value={item.name}
+            onChange={(v) => update(i, 'name', opt(v))}
+          />,
+          <Select
+            key="type"
+            bare
+            label={`${n} type`}
+            value={item.type ?? 'text'}
+            options={[...VALUE_TYPES]}
+            onChange={(v) => update(i, 'type', v)}
+          />,
+          item.type === 'enum' ? (
             <Text
-              label={`${n} name`}
-              value={item.name}
-              onChange={(v) => update(i, 'name', opt(v))}
+              key="enum"
+              bare
+              label={`${n} enum`}
+              hint="Comma-separated allowed values"
+              value={(item.enum ?? []).join(', ')}
+              onChange={(v) =>
+                update(
+                  i,
+                  'enum',
+                  v
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                )
+              }
             />
-            <Select
-              label={`${n} type`}
-              value={item.type ?? 'text'}
-              options={[...VALUE_TYPES]}
-              onChange={(v) => update(i, 'type', v)}
-            />
-            {item.type === 'enum' && (
-              <Text
-                label={`${n} enum`}
-                hint="Comma-separated allowed values"
-                value={(item.enum ?? []).join(', ')}
-                onChange={(v) =>
-                  update(
-                    i,
-                    'enum',
-                    v
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  )
-                }
-              />
-            )}
-            <Text
-              label={`${n} description`}
-              value={item.description}
-              onChange={(v) => update(i, 'description', opt(v))}
-            />
-            <button
-              type="button"
-              className="danger"
-              aria-label={`Remove ${n}`}
-              onClick={() => onChange(removeAt(items, i))}
-            >
-              Remove
-            </button>
-          </div>
-        );
-      })}
-      <button type="button" onClick={() => onChange([...items, { id: '', type: 'text' }])}>
+          ) : null,
+          <Text
+            key="description"
+            bare
+            label={`${n} description`}
+            value={item.description}
+            onChange={(v) => update(i, 'description', opt(v))}
+          />,
+        ];
+      }}
+    />
+  );
+}
+
+/**
+ * One item per row under column headings. Each cell's input carries its own accessible label
+ * (e.g. "Section 1 id"), so the headings are visual only.
+ */
+function RowTable<T extends Definition>({
+  label,
+  noun,
+  addLabel = `Add ${noun}`,
+  columns,
+  items,
+  onChange,
+  create,
+  cells,
+}: {
+  label: string;
+  noun: string;
+  addLabel?: string;
+  columns: [heading: string, width: string | undefined][];
+  items: T[];
+  onChange: (items: T[]) => void;
+  create: () => T;
+  cells: (item: T, index: number) => ReactNode[];
+}) {
+  return (
+    <div className="row-table">
+      <table aria-label={label}>
+        <thead>
+          <tr>
+            <th style={{ width: '2.5rem' }}>#</th>
+            {columns.map(([heading, width]) => (
+              <th key={heading} style={{ width }}>
+                {heading}
+              </th>
+            ))}
+            <th style={{ width: '11rem' }} />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, i) => (
+            <tr key={i}>
+              <td className="index">{i + 1}</td>
+              {cells(item, i).map((cell, c) => (
+                <td key={c}>{cell}</td>
+              ))}
+              <td>
+                <div className="step-tools">
+                  <button
+                    type="button"
+                    aria-label={`Move ${noun} ${i + 1} up`}
+                    onClick={() => onChange(moveItem(items, i, -1))}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${noun} ${i + 1} down`}
+                    onClick={() => onChange(moveItem(items, i, 1))}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    aria-label={`Remove ${noun} ${i + 1}`}
+                    onClick={() => onChange(removeAt(items, i))}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" onClick={() => onChange([...items, create()])}>
         {addLabel}
       </button>
     </div>
@@ -768,24 +886,36 @@ function Checklist({
   );
 }
 
+/** `bare` drops the visible label (table cells under a heading); it stays the accessible name. */
 function Text({
   label,
   value,
   hint,
+  bare,
+  className,
   onChange,
 }: {
   label: string;
   value: unknown;
   hint?: string;
+  bare?: boolean;
+  className?: string;
   onChange: (value: string) => void;
 }) {
+  const input = (
+    <input
+      aria-label={bare ? label : undefined}
+      title={bare ? hint : undefined}
+      className={className}
+      value={value === undefined || value === null ? '' : String(value)}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+  if (bare) return input;
   return (
     <label title={hint}>
       {label}
-      <input
-        value={value === undefined || value === null ? '' : String(value)}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      {input}
     </label>
   );
 }
@@ -794,18 +924,20 @@ function Area({
   label,
   value,
   hint,
+  rows = 4,
   onChange,
 }: {
   label: string;
   value: unknown;
   hint?: string;
+  rows?: number;
   onChange: (value: string) => void;
 }) {
   return (
     <label title={hint}>
       {label}
       <textarea
-        rows={4}
+        rows={rows}
         value={value === undefined || value === null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -817,25 +949,35 @@ function Select({
   label,
   value,
   options,
+  bare,
   onChange,
 }: {
   label: string;
   value: unknown;
   options: string[];
+  bare?: boolean;
   onChange: (value: string) => void;
 }) {
   const current = value === undefined || value === null ? '' : String(value);
+  const select = (
+    <select
+      aria-label={bare ? label : undefined}
+      value={current}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {!options.includes(current) && <option value={current}>{current || '— choose —'}</option>}
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o || '—'}
+        </option>
+      ))}
+    </select>
+  );
+  if (bare) return select;
   return (
     <label>
       {label}
-      <select value={current} onChange={(e) => onChange(e.target.value)}>
-        {!options.includes(current) && <option value={current}>{current || '— choose —'}</option>}
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o || '—'}
-          </option>
-        ))}
-      </select>
+      {select}
     </label>
   );
 }

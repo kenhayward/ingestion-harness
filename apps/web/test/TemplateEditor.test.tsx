@@ -271,6 +271,38 @@ describe('TemplateEditor', () => {
     );
   });
 
+  it('lays out sections one per row under column headings', async () => {
+    const { api } = setup(view(skeleton));
+    await userEvent.click(await tab(/Sections/));
+    const grid = screen.getByRole('table', { name: 'Sections' });
+    expect(
+      within(grid)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['#', 'Section ID', 'Anchor', 'Required', '']);
+    const row = within(grid).getAllByRole('row')[1]!;
+    expect(within(row).getByLabelText('Section 1 id')).toHaveValue('all');
+    await userEvent.clear(within(row).getByLabelText('Section 1 anchor'));
+    await userEvent.type(within(row).getByLabelText('Section 1 anchor'), '^Intro');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      document: { sections: [{ id: 'all', anchor: '^Intro' }] },
+    });
+  });
+
+  it('lays out fields one per row under column headings', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.click(screen.getByRole('button', { name: 'Add field' }));
+    const grid = screen.getByRole('table', { name: 'Fields' });
+    expect(
+      within(grid)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['#', 'Field ID', 'Name', 'Type', 'Enum values', 'Description', '']);
+    expect(within(grid).getByLabelText('Field 1 id')).toBeInTheDocument();
+  });
+
   it('test-runs a draft on a sample document', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
