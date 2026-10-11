@@ -24,7 +24,7 @@ specs/<id>/v<N>/     Document specs: spec.yaml + prompts/*.md.j2 (immutable once
 config/              llm-providers.yaml (providers, discovery, model aliases)
 db/migrations/       Forward-only SQL migrations (shared by api and worker)
 deploy/              docker compose, Dockerfiles, deploy/dev scripts (.sh + .ps1)
-.github/workflows/   CI + deploy, on self-hosted runners only
+.github/workflows/   CI (GitHub-hosted) + deploy (self-hosted)
 ```
 
 ## Commands
@@ -122,9 +122,11 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 
 ## CI/CD
 
-GitHub Actions on **self-hosted runners only** (private repo; see [docs/runners.md](docs/runners.md)).
+Public repo (Apache-2.0). **CI runs on GitHub-hosted runners**; only deploys use self-hosted
+runners on the deploy hosts. Never target a self-hosted runner from a `pull_request` workflow
+(see [docs/runners.md](docs/runners.md)). `main` is protected: PRs only, CI must be green.
 `ci.yml`: node + worker jobs, then images build + compose smoke test. `deploy.yml`: main →
-staging after green CI; manual dispatch for production / rollbacks (`no_build` + older ref).
+staging after green CI (once repo variable `AUTO_DEPLOY_STAGING=true`); manual dispatch for production / rollbacks (`no_build` + older ref).
 
 ## Definition of done
 

@@ -18,7 +18,7 @@ permissions:
 jobs:
   node:
     name: Node (lint, typecheck, test, build)
-    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +35,7 @@ jobs:
 
   worker:
     name: Worker (ruff, mypy, pytest)
-    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -55,7 +55,7 @@ jobs:
   stack:
     name: Images + compose smoke test
     needs: [node, worker]
-    runs-on: [self-hosted, linux, x64, ingestion-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       COMPOSE_PROJECT_NAME: ih-ci-${{ github.run_id }}

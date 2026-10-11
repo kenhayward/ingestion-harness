@@ -1,0 +1,17 @@
+Ingestion Harness
+Copyright 2026 The ingestion-harness Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Sample material
+---------------
+docs/samples/ and worker/tests/fixtures/samples/ contain test material derived from two
+publicly available Process Validation Protocol documents, included solely to develop and test
+the example document type:
+
+  * "TEXT process_validation_protocol.pdf": excerpt (5 of 24 pages) of the gmpsop.com
+    template TEM-290. Placeholders only, no executed results.
+  * worker/tests/fixtures/samples/pvp-image-ocr.json: OCR text of a publicly available
+    Safetab Life Science "protocol cum report" (PVP/23/003-01).
+
+These documents remain the property of their respective owners. See docs/samples/README.md.
