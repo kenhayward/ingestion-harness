@@ -12,10 +12,14 @@ import { documentRoutes } from './routes/documents.js';
 import { jobRoutes } from './routes/jobs.js';
 import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
+import { resultRoutes } from './routes/results.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
+  /** Final publish target (`TARGET_S3_*`); published job outputs are read from here. */
+  targetStore: ObjectStore;
+  target: { bucket: string; prefix: string };
   specs: SpecRegistry;
   templates: TemplateRepo;
   buckets: { inbox: string; outputs: string; runs: string };
@@ -44,6 +48,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(reviewRoutes, { prefix: '/api' });
   await app.register(templateRoutes, { prefix: '/api' });
   await app.register(referenceRoutes, { prefix: '/api' });
+  await app.register(resultRoutes, { prefix: '/api' });
 
   return app;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakePdf, multipart, testApp } from './helpers.js';
+import { UnreachableStore, fakePdf, multipart, testApp } from './helpers.js';
 
 async function seedJob() {
   const ctx = await testApp();
@@ -62,6 +62,83 @@ describe('jobs API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.body).toBe('a,b\n1,2\n');
+  });
+});
+
+describe('job output downloads by stage', () => {
+  const reviewedOutputs = [
+    {
+      outputId: 'lines',
+      stage: 'draft' as const,
+      format: 'csv' as const,
+      bucket: 'outputs',
+      key: 'demo/v2/lines/x.csv',
+      rowCount: 1,
+    },
+    {
+      outputId: 'lines',
+      stage: 'published' as const,
+      format: 'csv' as const,
+      bucket: 'published',
+      key: 'pub/demo/v2/lines/x.csv',
+      rowCount: 1,
+    },
+  ];
+
+  it('reads published outputs from the target store and prefers them by default', async () => {
+    const { app, repo, store, targetStore, job } = await seedJob();
+    repo.outputs.set(job.id, reviewedOutputs);
+    await store.put('outputs', 'demo/v2/lines/x.csv', Buffer.from('draft\n'), 'text/csv');
+    await targetStore.put(
+      'published',
+      'pub/demo/v2/lines/x.csv',
+      Buffer.from('published\n'),
+      'text/csv',
+    );
+
+    expect((await app.inject(`/api/jobs/${job.id}/outputs/lines`)).body).toBe('published\n');
+    expect((await app.inject(`/api/jobs/${job.id}/outputs/lines?stage=published`)).body).toBe(
+      'published\n',
+    );
+    expect((await app.inject(`/api/jobs/${job.id}/outputs/lines?stage=draft`)).body).toBe(
+      'draft\n',
+    );
+    expect((await app.inject(`/api/jobs/${job.id}/outputs/lines?stage=bogus`)).statusCode).toBe(
+      400,
+    );
+  });
+
+  it('serves inline for previews and attachment by default', async () => {
+    const { app, repo, targetStore, job } = await seedJob();
+    repo.outputs.set(job.id, reviewedOutputs);
+    await targetStore.put('published', 'pub/demo/v2/lines/x.csv', Buffer.from('a\n'), 'text/csv');
+    const inline = await app.inject(`/api/jobs/${job.id}/outputs/lines?stage=published&inline=1`);
+    expect(inline.headers['content-disposition']).toBe('inline; filename="x.csv"');
+    const download = await app.inject(`/api/jobs/${job.id}/outputs/lines`);
+    expect(download.headers['content-disposition']).toBe('attachment; filename="x.csv"');
+  });
+
+  it('reports a published object missing from the target as 404', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.outputs.set(job.id, reviewedOutputs);
+    const res = await app.inject(`/api/jobs/${job.id}/outputs/lines?stage=published`);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'output object missing from target' });
+  });
+
+  it('returns 502 when the target cannot be reached', async () => {
+    const ctx = await testApp({ targetStore: new UnreachableStore() });
+    const job = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'demo' }, { filename: 'a.pdf', content: fakePdf }),
+      })
+    ).json();
+    ctx.repo.outputs.set(job.id, reviewedOutputs);
+    const res = await ctx.app.inject(`/api/jobs/${job.id}/outputs/lines`);
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'target storage unavailable' });
   });
 });
 

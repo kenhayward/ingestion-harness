@@ -62,6 +62,10 @@ errors, and the Zscaler root CA will need adding to the images.
 ## Notes
 
 - Pin `SEAWEEDFS_TAG` to a specific release in production `.env` files.
+- **Final target (`TARGET_S3_*`):** the worker writes published outputs there and the API reads
+  them back for the Results page. Empty values fall back to the internal SeaweedFS (`S3_*`). For
+  an external target, give the credentials write access for the worker and at least read access
+  for the API.
 - Back up both volumes: `postgres-data` (`pg_dump`) and `seaweedfs-data` (or replicate buckets
   with `weed filer.sync` / an S3 sync to the final target).
 - The worker reaches a host-local LLM server at `host.docker.internal` (mapped via

@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { buildApp } from './app.js';
-import { loadConfig } from './config.js';
+import { loadConfig, targetConfig } from './config.js';
 import { PgRepo } from './repositories/pg.js';
 import { SpecRegistry } from './specs/spec-registry.js';
 import { S3ObjectStore } from './storage/s3.js';
@@ -8,6 +8,7 @@ import { PgTemplateRepo } from './templates/repo.js';
 import { seedTemplates } from './templates/seed.js';
 
 const config = loadConfig();
+const target = targetConfig(config);
 const repo = PgRepo.fromUrl(config.DATABASE_URL);
 const templates = new PgTemplateRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 }),
@@ -23,6 +24,13 @@ const app = await buildApp({
     accessKeyId: config.S3_ACCESS_KEY,
     secretAccessKey: config.S3_SECRET_KEY,
   }),
+  targetStore: new S3ObjectStore({
+    endpoint: target.endpoint,
+    region: target.region,
+    accessKeyId: target.accessKeyId,
+    secretAccessKey: target.secretAccessKey,
+  }),
+  target: { bucket: target.bucket, prefix: target.prefix },
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets: {
     inbox: config.S3_BUCKET_INBOX,

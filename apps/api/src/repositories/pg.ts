@@ -9,6 +9,7 @@ import type {
   ProviderKind,
   Reference,
   RerunRequest,
+  ResultSummary,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
@@ -17,6 +18,7 @@ import {
   ReferenceConflictError,
   type IngestionRepo,
   type ListJobsQuery,
+  type ListPublishedQuery,
   type NewDocument,
   type NewEdit,
 } from './types.js';
@@ -208,6 +210,49 @@ export class PgRepo implements IngestionRepo {
         rowCount: o.row_count,
       })),
     };
+  }
+
+  async listPublished({ limit, templateId, before }: ListPublishedQuery): Promise<ResultSummary[]> {
+    // Publish time = latest published job_outputs.created_at, compared at millisecond precision
+    // because the `before` cursor is an ISO string (ms) taken from a previous page.
+    const { rows } = await this.pool.query<{
+      id: string;
+      document_id: string;
+      filename: string;
+      spec_id: string;
+      spec_version: number;
+      reviewer: string | null;
+      reviewed_at: Date | null;
+      published_at: Date;
+      output_count: number;
+      issue_count: number | null;
+    }>(
+      `SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.reviewer, j.reviewed_at,
+              date_trunc('milliseconds', max(o.created_at)) AS published_at,
+              count(*)::int AS output_count,
+              max(o.row_count) FILTER (WHERE o.output_id = 'issues') AS issue_count
+         FROM jobs j
+         JOIN documents d ON d.id = j.document_id
+         JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published'
+        WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
+        GROUP BY j.id, d.id
+       HAVING ($2::timestamptz IS NULL OR date_trunc('milliseconds', max(o.created_at)) < $2)
+        ORDER BY published_at DESC, j.id
+        LIMIT $3`,
+      [templateId ?? null, before ?? null, limit],
+    );
+    return rows.map((r) => ({
+      jobId: r.id,
+      documentId: r.document_id,
+      filename: r.filename,
+      specId: r.spec_id,
+      specVersion: r.spec_version,
+      publishedAt: r.published_at.toISOString(),
+      reviewer: r.reviewer,
+      reviewedAt: r.reviewed_at?.toISOString() ?? null,
+      outputCount: r.output_count,
+      issueCount: r.issue_count,
+    }));
   }
 
   async retryJob(id: string): Promise<JobSummary | null> {

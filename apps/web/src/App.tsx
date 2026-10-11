@@ -3,6 +3,8 @@ import type { JobSummary } from '@ih/shared';
 import type { Api } from './api/client.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
+import { ResultDetailView } from './results/ResultDetail.js';
+import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
@@ -13,6 +15,10 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
   let page: ReactNode;
   if (route.name === 'review') {
     page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
+  } else if (route.name === 'results') {
+    page = <ResultsPage api={api} />;
+  } else if (route.name === 'result') {
+    page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} />;
   } else if (route.name === 'template') {
@@ -37,6 +43,12 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
           aria-current={route.name === 'jobs' || route.name === 'review' ? 'page' : undefined}
         >
           Jobs
+        </a>
+        <a
+          href="#/results"
+          aria-current={route.name === 'results' || route.name === 'result' ? 'page' : undefined}
+        >
+          Results
         </a>
         <a
           href="#/templates"

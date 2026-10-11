@@ -5,6 +5,8 @@ import type {
   ModelInfo,
   Reference,
   RerunRequest,
+  ResultDetail,
+  ResultSummary,
   ReviewEdit,
   SpecSummary,
   StepRun,
@@ -139,6 +141,25 @@ export interface UploadRequest {
   model?: string;
 }
 
+export interface OutputUrlOptions {
+  stage?: 'draft' | 'published';
+  /** Serve with content-disposition inline (previews) instead of attachment. */
+  inline?: boolean;
+}
+
+export function outputPath(
+  base: string,
+  jobId: string,
+  outputId: string,
+  opts: OutputUrlOptions = {},
+): string {
+  const params = new URLSearchParams();
+  if (opts.stage) params.set('stage', opts.stage);
+  if (opts.inline) params.set('inline', '1');
+  const qs = params.toString();
+  return `${base}/jobs/${jobId}/outputs/${outputId}${qs ? `?${qs}` : ''}`;
+}
+
 /** API port — components take this as a prop so tests can pass a fake. */
 export interface Api {
   listSpecs(): Promise<SpecSummary[]>;
@@ -147,7 +168,11 @@ export interface Api {
   getJob(id: string): Promise<JobDetail>;
   retryJob(id: string): Promise<JobSummary>;
   upload(req: UploadRequest): Promise<JobSummary>;
-  outputUrl(jobId: string, outputId: string): string;
+  outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
+  /** Published or draft output body as text (Results previews). Rejects with the API error. */
+  getOutputText(jobId: string, outputId: string, stage: 'draft' | 'published'): Promise<string>;
+  listResults(query?: { templateId?: string; before?: string }): Promise<ResultSummary[]>;
+  getResult(jobId: string): Promise<ResultDetail>;
   getReview(jobId: string): Promise<ReviewData>;
   addEdit(jobId: string, edit: EditRequest): Promise<ReviewEdit>;
   approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
@@ -211,7 +236,23 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return fetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
-    outputUrl: (jobId, outputId) => `${base}/jobs/${jobId}/outputs/${outputId}`,
+    outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
+    getOutputText: async (jobId, outputId, stage) => {
+      const res = await fetch(outputPath(base, jobId, outputId, { stage, inline: true }));
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
+      }
+      return res.text();
+    },
+    listResults: (query = {}) => {
+      const params = new URLSearchParams();
+      if (query.templateId) params.set('templateId', query.templateId);
+      if (query.before) params.set('before', query.before);
+      const qs = params.toString();
+      return fetch(`${base}/results${qs ? `?${qs}` : ''}`).then(json<ResultSummary[]>);
+    },
+    getResult: (jobId) => fetch(`${base}/results/${jobId}`).then(json<ResultDetail>),
     getReview: (jobId) => fetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
     addEdit: (jobId, edit) => post<ReviewEdit>(`${base}/jobs/${jobId}/edits`, edit),
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),

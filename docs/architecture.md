@@ -28,6 +28,10 @@ worker applies the edits to the draft `document.json` (re-normalised by type, is
 values replaced, checks re-run), renders the outputs with a `review` block and writes them to
 the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are never modified.
 
+The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`) reads published
+outputs back from the target. The API resolves `TARGET_S3_*` like the worker
+([ADR 0004](adr/0004-api-reads-publish-target.md)).
+
 1. **Upload** (`POST /api/documents`): PDF magic-byte check, spec resolved (latest version unless
    pinned), optional model override validated against discovered models. PDF stored at
    `inbox/{specId}/v{version}/{documentId}.pdf`; `documents` + `jobs` rows inserted in one

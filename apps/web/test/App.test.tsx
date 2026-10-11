@@ -68,4 +68,13 @@ describe('review routing', () => {
     await vi.waitFor(() => expect(api.getReview).toHaveBeenCalledWith('r1'));
     window.location.hash = '';
   });
+
+  it('links to Results and marks it current on results pages', async () => {
+    window.location.hash = '#/results';
+    render(<App api={fakeApi()} pollMs={0} />);
+    const link = await screen.findByRole('link', { name: 'Results' });
+    expect(link).toHaveAttribute('href', '#/results');
+    expect(link).toHaveAttribute('aria-current', 'page');
+    window.location.hash = '';
+  });
 });

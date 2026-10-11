@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import type { JobSummary } from '@ih/shared';
-import type { Api, TemplateRecordView } from '../src/api/client.js';
+import { outputPath, type Api, type TemplateRecordView } from '../src/api/client.js';
 
 export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   return {
@@ -54,7 +54,12 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     getJob: vi.fn(),
     retryJob: vi.fn(async () => job()),
     upload: vi.fn(async () => job()),
-    outputUrl: (jobId, outputId) => `/api/jobs/${jobId}/outputs/${outputId}`,
+    outputUrl: (jobId, outputId, opts) => outputPath('/api', jobId, outputId, opts),
+    getOutputText: vi.fn(async () => ''),
+    listResults: vi.fn(async () => []),
+    getResult: vi.fn(async () => {
+      throw new Error('getResult not stubbed');
+    }),
     getReview: vi.fn(async () => {
       throw new Error('getReview not stubbed');
     }),

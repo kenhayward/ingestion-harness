@@ -6,6 +6,7 @@ import type {
   ModelInfo,
   RerunRequest,
   Reference,
+  ResultSummary,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
@@ -24,6 +25,13 @@ export interface NewDocument {
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
+}
+
+export interface ListPublishedQuery {
+  limit: number;
+  templateId?: string;
+  /** ISO timestamp: only results published strictly before it (millisecond precision). */
+  before?: string;
 }
 
 export interface NewEdit {
@@ -48,6 +56,8 @@ export interface IngestionRepo {
   ): Promise<JobSummary>;
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
+  /** Non-test jobs with at least one published output, newest publish first. */
+  listPublished(query: ListPublishedQuery): Promise<ResultSummary[]>;
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */
   retryJob(id: string): Promise<JobSummary | null>;
   listModels(): Promise<ModelInfo[]>;

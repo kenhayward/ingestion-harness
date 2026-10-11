@@ -343,3 +343,42 @@ input.code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Results */
+.result-meta,
+.result-fields {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0.75rem 0;
+}
+.result-fields > div {
+  display: contents;
+}
+.result-meta dt,
+.result-fields dt {
+  font-weight: 600;
+}
+.result-meta dd,
+.result-fields dd {
+  margin: 0;
+}
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0 1rem;
+}
+.result-detail details {
+  margin: 1rem 0;
+}
+.result-detail pre {
+  overflow: auto;
+  max-height: 60vh;
+}
+@media (max-width: 700px) {
+  .result-meta,
+  .result-fields {
+    grid-template-columns: 1fr;
+  }
+}
