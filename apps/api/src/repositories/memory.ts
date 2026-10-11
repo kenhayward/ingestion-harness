@@ -179,7 +179,10 @@ export class MemoryRepo implements IngestionRepo {
   async retryJob(id: string): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
     if (!job || !['failed', 'needs_review', 'cancelled'].includes(job.status)) return null;
-    return this.update(id, { status: 'queued', task: 'process', attempts: 0, error: null });
+    // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
+    // failures re-run processing.
+    const task = job.status === 'cancelled' ? job.task : 'process';
+    return this.update(id, { status: 'queued', task, attempts: 0, error: null });
   }
 
   async listModels(): Promise<ModelInfo[]> {

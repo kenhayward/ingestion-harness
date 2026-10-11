@@ -233,6 +233,24 @@ describe('job cancellation', () => {
     );
   });
 
+  it.each(['publish', 'rerun'] as const)(
+    'retrying a cancelled %s job keeps its task (an approval or re-run is not lost)',
+    async (task) => {
+      const { app, repo, job } = await seedJob();
+      repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'queued', task });
+      await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel` });
+      const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+      expect(res.json()).toMatchObject({ status: 'queued', task });
+    },
+  );
+
+  it('retrying a failed job still re-runs processing', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'failed', task: 'publish' });
+    const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+    expect(res.json()).toMatchObject({ status: 'queued', task: 'process' });
+  });
+
   it('retries a cancelled job', async () => {
     const { app, job } = await seedJob();
     await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel` });

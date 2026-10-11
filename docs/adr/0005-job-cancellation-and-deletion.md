@@ -16,8 +16,21 @@ their files. The worker owns status transitions while a job runs.
   regression reference uses it; then internal files (drafts, `runs/{jobId}/`, the inbox PDF when
   no other document row shares it) are deleted best-effort. Published target copies and the OCR
   cache are kept.
+- A run is identified by its claim (`jobs.locked_at`). `is_cancelled` and every worker status
+  write require `status = 'running'` *and* that claim, so a job that was cancelled, deleted,
+  retried or re-claimed stops its old run, whose late writes are no-ops. Outcome writes that fail
+  because the job row was deleted are logged, never fatal. Drafts are recorded as soon as they are
+  written so Delete can remove them.
+- Retry of a cancelled job keeps its task (`publish`, `rerun`), so an approval or a re-run
+  request survives Cancel → Retry; failed jobs still re-run processing.
 
 ## Consequences
+- **Publishing cannot be undone by a cancel.** The last cancel check is just before publishing;
+  a cancel that lands while files are being written to the final target only changes the status
+  (the delivered files and their `published` rows remain, and Results shows them). Retry of such
+  a job re-publishes over the same keys.
+- Delete and bulk clean-up are destructive and, like every mutating route, assume the API is on a
+  trusted network (the project has no auth layer).
 - Contract change on both sides (enum value + `JOB_STATUSES`); Retry also re-queues cancelled
   jobs.
 - Storage clean-up can leave orphaned files if S3 is down (logged), but never database rows that

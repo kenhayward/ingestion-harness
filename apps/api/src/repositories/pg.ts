@@ -278,7 +278,9 @@ export class PgRepo implements IngestionRepo {
 
   async retryJob(id: string): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
-      `UPDATE jobs SET status = 'queued', task = 'process', attempts = 0, error = NULL, run_after = now(),
+      // A cancelled publish/rerun resumes as that task; failures re-run processing.
+      `UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
+              status = 'queued', attempts = 0, error = NULL, run_after = now(),
               locked_by = NULL, locked_at = NULL, updated_at = now()
         WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')`,
       [id],
