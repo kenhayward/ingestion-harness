@@ -62,6 +62,11 @@ class JobQueue(Protocol):
         """Record draft outputs and park the job until a reviewer approves or rejects it."""
         ...
 
+    def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        """Record draft outputs as soon as they are written, whatever happens to the run next,
+        so deleting the job can find and remove them."""
+        ...
+
     def record_published(
         self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str
     ) -> None: ...
@@ -179,6 +184,9 @@ class PgJobQueue:
             if cur.rowcount == 0:
                 return  # cancelled meanwhile: record nothing
             self._record_outputs(job, outputs, outputs_bucket, "draft")
+
+    def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        self._record_outputs(job, outputs, bucket, "draft")
 
     def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self._record_outputs(job, outputs, bucket, "published")

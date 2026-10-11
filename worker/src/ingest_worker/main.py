@@ -50,11 +50,13 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             if not isinstance(loaded, LoadedTemplate):
                 raise DocumentError("only template documents can re-run steps")
             rerun = rerun_template_job(job, deps, queue, loaded)
+            queue.record_drafts(job, rerun.outputs, deps.buckets.outputs)
             check_cancelled(job, queue)
             queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
             log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
             return True
         result = process_job(job, deps, queue)
+        queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
         check_cancelled(job, queue)
         if result.review_reasons:
             queue.await_review(job, result.outputs, deps.buckets.outputs, result.review_reasons)

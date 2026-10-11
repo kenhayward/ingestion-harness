@@ -73,6 +73,8 @@ class FakeQueue:
     #: Templates stored in the database, keyed by (id, version).
     templates: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
     step_runs: list[dict[str, Any]] = field(default_factory=list)
+    #: Draft outputs recorded as soon as they were written (job id, outputs).
+    drafts: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
 
@@ -93,6 +95,9 @@ class FakeQueue:
         reasons: list[str],
     ) -> None:
         self.awaiting.append((job.id, outputs, reasons))
+
+    def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        self.drafts.append((job.id, outputs))
 
     def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self.published.append((job.id, outputs, bucket))
