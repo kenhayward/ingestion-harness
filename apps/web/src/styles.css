@@ -49,7 +49,8 @@ td {
 .status-awaiting_review {
   color: #0969da;
 }
-.status-rejected {
+.status-rejected,
+.status-cancelled {
   color: #57606a;
 }
 
