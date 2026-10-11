@@ -1,6 +1,10 @@
 import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
+  type ListObjectsV2CommandOutput,
   NoSuchKey,
   PutObjectCommand,
   S3Client,
@@ -31,10 +35,34 @@ export function s3ClientConfig(opts: S3Options): S3ClientConfig {
 
 /** S3-compatible store. SeaweedFS requires path-style addressing. */
 export class S3ObjectStore implements ObjectStore {
-  private readonly client: S3Client;
+  private readonly client: Pick<S3Client, 'send'>;
 
-  constructor(opts: S3Options) {
-    this.client = new S3Client(s3ClientConfig(opts));
+  /** `client` is for tests (a stub `send`); production builds one from `opts`. */
+  constructor(opts: S3Options, client?: Pick<S3Client, 'send'>) {
+    this.client = client ?? new S3Client(s3ClientConfig(opts));
+  }
+
+  async delete(bucket: string, key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  }
+
+  async deletePrefix(bucket: string, prefix: string): Promise<number> {
+    let deleted = 0;
+    let token: string | undefined;
+    do {
+      const page: ListObjectsV2CommandOutput = await this.client.send(
+        new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }),
+      );
+      const keys = (page.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
+      if (keys.length) {
+        await this.client.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } }),
+        );
+        deleted += keys.length;
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return deleted;
   }
 
   async ping(bucket: string): Promise<void> {
