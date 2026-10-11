@@ -17,6 +17,7 @@ const ListQuery = z.object({
   templateId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   before: z.string().datetime({ offset: true }).optional(),
+  beforeId: z.string().uuid().optional(),
 });
 
 /** Published results: what each document delivered to the final target. */
@@ -80,6 +81,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
     const detail: ResultDetail = {
       job,
       target: app.deps.target,
+      publishedAt: (await app.deps.repo.getPublishedAt(job.id)) ?? job.updatedAt,
       outputs,
       document,
       documentError,

@@ -171,7 +171,11 @@ export interface Api {
   outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
   /** Published or draft output body as text (Results previews). Rejects with the API error. */
   getOutputText(jobId: string, outputId: string, stage: 'draft' | 'published'): Promise<string>;
-  listResults(query?: { templateId?: string; before?: string }): Promise<ResultSummary[]>;
+  listResults(query?: {
+    templateId?: string;
+    before?: string;
+    beforeId?: string;
+  }): Promise<ResultSummary[]>;
   getResult(jobId: string): Promise<ResultDetail>;
   getReview(jobId: string): Promise<ReviewData>;
   addEdit(jobId: string, edit: EditRequest): Promise<ReviewEdit>;
@@ -249,6 +253,7 @@ export function createHttpApi(base = '/api'): Api {
       const params = new URLSearchParams();
       if (query.templateId) params.set('templateId', query.templateId);
       if (query.before) params.set('before', query.before);
+      if (query.beforeId) params.set('beforeId', query.beforeId);
       const qs = params.toString();
       return fetch(`${base}/results${qs ? `?${qs}` : ''}`).then(json<ResultSummary[]>);
     },

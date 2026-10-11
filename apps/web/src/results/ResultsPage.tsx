@@ -38,13 +38,13 @@ export function ResultsPage({ api }: { api: Api }) {
   }, [api]);
 
   const load = useCallback(
-    async (before?: string) => {
+    async (cursor?: { before: string; beforeId: string }) => {
       const request = ++latest.current;
       setLoading(true);
       try {
-        const page = await api.listResults({ templateId: templateId || undefined, before });
+        const page = await api.listResults({ templateId: templateId || undefined, ...cursor });
         if (request !== latest.current) return;
-        setRows((current) => (before ? [...current, ...page] : page));
+        setRows((current) => (cursor ? [...current, ...page] : page));
         setHasMore(page.length === RESULTS_PAGE_SIZE);
         setError(null);
       } catch (err) {
@@ -81,7 +81,11 @@ export function ResultsPage({ api }: { api: Api }) {
       </label>
       {error && <p role="alert">Failed to load results: {error}</p>}
       {loaded && !error && rows.length === 0 ? (
-        <p>No published results yet. Test runs and rejected documents never appear here.</p>
+        <p>
+          {templateId
+            ? 'No published results for this document type.'
+            : 'No published results yet. Test runs and rejected documents never appear here.'}
+        </p>
       ) : (
         <table aria-label="Published results">
           <thead>
@@ -116,7 +120,10 @@ export function ResultsPage({ api }: { api: Api }) {
         <button
           type="button"
           disabled={loading}
-          onClick={() => void load(rows.at(-1)?.publishedAt)}
+          onClick={() => {
+            const last = rows.at(-1);
+            if (last) void load({ before: last.publishedAt, beforeId: last.jobId });
+          }}
         >
           Load more
         </button>

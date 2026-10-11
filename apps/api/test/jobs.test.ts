@@ -116,6 +116,10 @@ describe('job output downloads by stage', () => {
     expect(inline.headers['content-disposition']).toBe('inline; filename="x.csv"');
     const download = await app.inject(`/api/jobs/${job.id}/outputs/lines`);
     expect(download.headers['content-disposition']).toBe('attachment; filename="x.csv"');
+    const notInline = await app.inject(`/api/jobs/${job.id}/outputs/lines?inline=0`);
+    expect(notInline.headers['content-disposition']).toBe('attachment; filename="x.csv"');
+    expect(inline.headers['x-content-type-options']).toBe('nosniff');
+    expect(download.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('reports a published object missing from the target as 404', async () => {

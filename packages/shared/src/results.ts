@@ -75,6 +75,8 @@ export type DocumentError = z.infer<typeof DocumentErrorSchema>;
 export const ResultDetailSchema = z.object({
   job: JobSummarySchema,
   target: z.object({ bucket: z.string(), prefix: z.string() }),
+  /** Latest published job_outputs.created_at (same value as the list's publishedAt). */
+  publishedAt: z.string(),
   /** Published outputs only. */
   outputs: z.array(JobOutputSchema),
   document: PublishedDocumentSchema.nullable(),

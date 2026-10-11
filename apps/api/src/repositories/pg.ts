@@ -212,9 +212,15 @@ export class PgRepo implements IngestionRepo {
     };
   }
 
-  async listPublished({ limit, templateId, before }: ListPublishedQuery): Promise<ResultSummary[]> {
+  async listPublished({
+    limit,
+    templateId,
+    before,
+    beforeId,
+  }: ListPublishedQuery): Promise<ResultSummary[]> {
     // Publish time = latest published job_outputs.created_at, compared at millisecond precision
-    // because the `before` cursor is an ISO string (ms) taken from a previous page.
+    // because the `before` cursor is an ISO string (ms) taken from a previous page. Ties at the
+    // same millisecond break on job id (uuid order), so `beforeId` resumes exactly after a page.
     const { rows } = await this.pool.query<{
       id: string;
       document_id: string;
@@ -236,10 +242,14 @@ export class PgRepo implements IngestionRepo {
          JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published'
         WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
         GROUP BY j.id, d.id
-       HAVING ($2::timestamptz IS NULL OR date_trunc('milliseconds', max(o.created_at)) < $2)
-        ORDER BY published_at DESC, j.id
+       HAVING $2::timestamptz IS NULL
+           OR date_trunc('milliseconds', max(o.created_at)) < $2
+           OR ($4::uuid IS NOT NULL
+               AND date_trunc('milliseconds', max(o.created_at)) = $2
+               AND j.id < $4)
+        ORDER BY published_at DESC, j.id DESC
         LIMIT $3`,
-      [templateId ?? null, before ?? null, limit],
+      [templateId ?? null, before ?? null, limit, beforeId ?? null],
     );
     return rows.map((r) => ({
       jobId: r.id,
@@ -253,6 +263,15 @@ export class PgRepo implements IngestionRepo {
       outputCount: r.output_count,
       issueCount: r.issue_count,
     }));
+  }
+
+  async getPublishedAt(jobId: string): Promise<string | null> {
+    const { rows } = await this.pool.query<{ published_at: Date | null }>(
+      `SELECT date_trunc('milliseconds', max(created_at)) AS published_at
+         FROM job_outputs WHERE job_id = $1 AND stage = 'published'`,
+      [jobId],
+    );
+    return rows[0]?.published_at?.toISOString() ?? null;
   }
 
   async retryJob(id: string): Promise<JobSummary | null> {
