@@ -150,11 +150,14 @@ describe('POST /api/jobs/cleanup', () => {
     const recent = await aged(ctx, 'succeeded', 5);
     const oldRunning = await aged(ctx, 'running', 90);
 
-    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json()).toEqual({ count: 2 });
+    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json()).toMatchObject({
+      count: 2,
+    });
     expect(ctx.repo.jobs.size).toBe(4);
 
-    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: false })).json()).toEqual({
+    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: false })).json()).toMatchObject({
       deleted: 2,
+      remaining: 0,
     });
     expect([...ctx.repo.jobs.keys()].sort()).toEqual([recent.id, oldRunning.id].sort());
   });
@@ -162,13 +165,66 @@ describe('POST /api/jobs/cleanup', () => {
   it('returns zero when nothing matches and validates input', async () => {
     const ctx = await testApp();
     await aged(ctx, 'succeeded', 1);
-    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json()).toEqual({ count: 0 });
+    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json()).toMatchObject({
+      count: 0,
+    });
     for (const payload of [
       { olderThanDays: 0, dryRun: true },
       { olderThanDays: 'x', dryRun: true },
       { olderThanDays: 30 },
+      { olderThanDays: 30, dryRun: false, cutoff: 'yesterday' },
+      { olderThanDays: 30, dryRun: false, limit: 0 },
     ]) {
       expect((await cleanup(ctx, payload)).statusCode).toBe(400);
     }
+  });
+
+  it('leaves regression runs out unless asked to include them', async () => {
+    const ctx = await testApp();
+    const plain = await aged(ctx, 'succeeded', 40);
+    const regression = await aged(ctx, 'succeeded', 40);
+    ctx.repo.jobs.set(regression.id, {
+      ...ctx.repo.jobs.get(regression.id)!,
+      referenceId: 'ref-1',
+    });
+
+    expect((await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json().count).toBe(1);
+    await cleanup(ctx, { olderThanDays: 30, dryRun: false });
+    expect(ctx.repo.jobs.has(plain.id)).toBe(false);
+    expect(ctx.repo.jobs.has(regression.id)).toBe(true);
+
+    const all = { olderThanDays: 30, includeRegression: true };
+    expect((await cleanup(ctx, { ...all, dryRun: true })).json().count).toBe(1);
+    await cleanup(ctx, { ...all, dryRun: false });
+    expect(ctx.repo.jobs.has(regression.id)).toBe(false);
+  });
+
+  it('deletes against the previewed cutoff, not a recomputed one', async () => {
+    const ctx = await testApp();
+    const older = await aged(ctx, 'succeeded', 40);
+    const newer = await aged(ctx, 'succeeded', 35);
+    const preview = (await cleanup(ctx, { olderThanDays: 30, dryRun: true })).json();
+    expect(preview).toMatchObject({ count: 2 });
+    expect(Date.parse(preview.cutoff)).toBeGreaterThan(0);
+
+    const cutoff = new Date(Date.now() - 38 * 86_400_000).toISOString();
+    const res = await cleanup(ctx, { olderThanDays: 30, dryRun: false, cutoff });
+    expect(res.json()).toMatchObject({ deleted: 1, remaining: 0, cutoff });
+    expect(ctx.repo.jobs.has(older.id)).toBe(false);
+    expect(ctx.repo.jobs.has(newer.id)).toBe(true);
+  });
+
+  it('deletes in batches and reports how many remain', async () => {
+    const ctx = await testApp();
+    for (const days of [40, 41, 42]) await aged(ctx, 'succeeded', days);
+    const first = (await cleanup(ctx, { olderThanDays: 30, dryRun: false, limit: 2 })).json();
+    expect(first).toMatchObject({ deleted: 2, remaining: 1 });
+    const second = await cleanup(ctx, {
+      olderThanDays: 30,
+      dryRun: false,
+      limit: 2,
+      cutoff: first.cutoff,
+    });
+    expect(second.json()).toMatchObject({ deleted: 1, remaining: 0 });
   });
 });

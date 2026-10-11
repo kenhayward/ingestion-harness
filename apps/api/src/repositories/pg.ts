@@ -374,11 +374,13 @@ export class PgRepo implements IngestionRepo {
     }
   }
 
-  async finishedJobIdsBefore(cutoffIso: string): Promise<string[]> {
+  async finishedJobIdsBefore(cutoffIso: string, includeRegression = false): Promise<string[]> {
     const { rows } = await this.pool.query<{ id: string }>(
       `SELECT id FROM jobs
-        WHERE status = ANY($1::job_status[]) AND updated_at < $2 ORDER BY updated_at`,
-      [DELETABLE_STATUSES, cutoffIso],
+        WHERE status = ANY($1::job_status[]) AND updated_at < $2
+          AND ($3 OR reference_id IS NULL)
+        ORDER BY updated_at`,
+      [DELETABLE_STATUSES, cutoffIso, includeRegression],
     );
     return rows.map((r) => r.id);
   }

@@ -96,8 +96,11 @@ export interface IngestionRepo {
   cancelJob(id: string): Promise<JobSummary | null>;
   /** Delete a finished job (+ its document unless still needed). Storage is the caller's job. */
   deleteJob(id: string): Promise<DeleteJobResult>;
-  /** Ids of finished jobs whose updated_at is before `cutoffIso`. */
-  finishedJobIdsBefore(cutoffIso: string): Promise<string[]>;
+  /**
+   * Ids of finished jobs whose updated_at is before `cutoffIso`, oldest first. Regression runs
+   * (reference_id set) feed regression scores and metrics, so they're left out unless asked.
+   */
+  finishedJobIdsBefore(cutoffIso: string, includeRegression?: boolean): Promise<string[]>;
   listModels(): Promise<ModelInfo[]>;
 
   // --- references and regression runs ---

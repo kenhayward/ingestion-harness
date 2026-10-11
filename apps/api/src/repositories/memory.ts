@@ -181,10 +181,16 @@ export class MemoryRepo implements IngestionRepo {
     return { result: 'deleted', removed: { jobId: id, draftObjects, inboxObject } };
   }
 
-  async finishedJobIdsBefore(cutoffIso: string): Promise<string[]> {
+  async finishedJobIdsBefore(cutoffIso: string, includeRegression = false): Promise<string[]> {
     const cutoff = Date.parse(cutoffIso);
     return [...this.jobs.values()]
-      .filter((j) => DELETABLE_STATUSES.includes(j.status) && Date.parse(j.updatedAt) < cutoff)
+      .filter(
+        (j) =>
+          DELETABLE_STATUSES.includes(j.status) &&
+          Date.parse(j.updatedAt) < cutoff &&
+          (includeRegression || !j.referenceId),
+      )
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       .map((j) => j.id);
   }
 
