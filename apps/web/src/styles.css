@@ -226,7 +226,7 @@ label.inline {
   width: 100%;
   font-family: ui-monospace, monospace;
 }
-.value-row,
+
 .list-item {
   display: flex;
   flex-wrap: wrap;
@@ -252,4 +252,94 @@ fieldset.choice {
   flex-wrap: wrap;
   gap: 0.25rem 0.75rem;
   border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+/* Document type editor, General tab: labels on the left, large full-width inputs. */
+.editor-body .form-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.form-rows > label {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  align-items: start;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+.form-rows > label > input:not([type='checkbox']),
+.form-rows > label > select,
+.form-rows > label > textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  font-size: 1rem;
+}
+.form-rows > label > select {
+  max-width: 16rem;
+}
+.form-rows > label > input[type='checkbox'] {
+  justify-self: start;
+}
+@media (max-width: 700px) {
+  .form-rows > label {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+/* Sections, fields, table columns: one item per row under column headings. */
+.row-table table {
+  table-layout: fixed;
+  margin-bottom: 0.5rem;
+}
+.row-table th,
+.row-table td {
+  padding: 0.25rem 0.4rem;
+  vertical-align: middle;
+}
+.row-table td input:not([type='checkbox']),
+.row-table td select {
+  width: 100%;
+  box-sizing: border-box;
+}
+.row-table td.index {
+  opacity: 0.6;
+}
+input.code {
+  font-family: ui-monospace, monospace;
+}
+
+/* Pipeline extract step: settings on the left; context + instructions fill the panel height. */
+.extract-step {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.editor-body .step-settings {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-content: start;
+}
+.step-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 24rem;
+}
+.step-prompts > label {
+  flex: 3;
+}
+.step-prompts > label.context {
+  flex: 1;
+}
+.step-prompts textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 4rem;
+}
+@media (max-width: 900px) {
+  .extract-step {
+    grid-template-columns: 1fr;
+  }
 }
