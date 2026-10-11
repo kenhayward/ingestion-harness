@@ -78,7 +78,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Spec format (incl. `document.ocr`, `copies`, chunking, `checks`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
 | Template format (fields, tables, steps, review) | `packages/shared/src/template.ts` | `worker/src/ingest_worker/template.py` |
 | Object keys | `packages/shared/src/storage-keys.ts` | `worker/src/ingest_worker/storage.py` |
-| Job statuses | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
+| Job statuses (incl. `cancelled`, migration 0006) | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
 | Models table | `ModelInfo` in `packages/shared/src/models.ts`, `PgRepo.listModels` | `PgJobQueue.upsert_models` |
 
 ## Rules of the road
@@ -114,6 +114,8 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 - **Error routing in the worker:** `DocumentError` (missing sections, page count, schema never
   satisfied, refusal) → `needs_review`, not retried. Anything else → `fail()` → re-queued with
   backoff until `max_attempts`, then `failed`.
+  `JobCancelled` (operator cancel, ADR 0005) → no status write; worker status writes are guarded
+  `AND status='running'` so a cancel always wins.
 - **Never call real LLM APIs from tests or CI.** No API keys in the repo; secrets live in
   `deploy/.env` locally (git-ignored) and `/etc/ingestion-harness/<env>.env` on deploy hosts.
 - TypeScript: ESM with `.js` import suffixes, Zod at every boundary (env, request bodies,
