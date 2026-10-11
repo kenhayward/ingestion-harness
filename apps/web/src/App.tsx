@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api } from './api/client.js';
+import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
 import { ResultDetailView } from './results/ResultDetail.js';
@@ -89,6 +90,7 @@ function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
       <UploadForm api={api} onUploaded={refresh} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <JobsTable api={api} jobs={jobs} onChanged={refresh} />
+      <JobCleanup api={api} onChanged={refresh} />
     </>
   );
 }

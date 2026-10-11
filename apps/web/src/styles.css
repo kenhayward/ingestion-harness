@@ -383,3 +383,18 @@ input.code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Jobs: bulk clean-up of finished jobs */
+.job-cleanup {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+.job-cleanup input {
+  width: 5rem;
+}
+.job-cleanup p {
+  margin: 0;
+}
