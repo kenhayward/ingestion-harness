@@ -15,6 +15,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
   return {
     job: j,
     target: { bucket: 'ingest-published', prefix: 'pvp/' },
+    publishedAt: '2026-10-02T08:00:01.000Z',
     outputs: [
       {
         outputId: 'document',
@@ -41,6 +42,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         approved: { value: true },
         extra: { value: { lot: 7 } },
         missing: { value: null },
+        lots: { value: [{ lot: 1 }, { lot: 2 }] },
       },
       tables: {
         results: [
@@ -79,6 +81,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         { id: 'approved', type: 'boolean' },
         { id: 'extra', type: 'text' },
         { id: 'missing', name: 'Missing value', type: 'text' },
+        { id: 'lots', type: 'list' },
       ],
       tables: [
         {

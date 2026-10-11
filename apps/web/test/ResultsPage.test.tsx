@@ -80,6 +80,7 @@ describe('ResultsPage', () => {
     expect(listResults).toHaveBeenLastCalledWith({
       templateId: undefined,
       before: page1[49]!.publishedAt,
+      beforeId: page1[49]!.jobId,
     });
     expect(await screen.findByRole('link', { name: 'p2.pdf' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'p1-0.pdf' })).toBeInTheDocument();
@@ -137,5 +138,22 @@ describe('ResultsPage', () => {
     expect(listResults).toHaveBeenCalledTimes(2);
     await act(async () => resolveMore([result({ filename: 'p2.pdf' })]));
     expect(screen.getAllByRole('link', { name: 'p2.pdf' })).toHaveLength(1);
+  });
+
+  it('says when the selected document type has no results', async () => {
+    const listResults = vi.fn(async (query?: { templateId?: string }) =>
+      query?.templateId ? [] : [result()],
+    );
+    const api = fakeApi({
+      listResults,
+      listSpecs: vi.fn(async () => [{ id: 'pvp', version: 3, title: 'PVP' }]),
+    });
+    render(<ResultsPage api={api} />);
+    await screen.findByRole('option', { name: 'PVP' });
+    await userEvent.selectOptions(screen.getByLabelText('Document type'), 'pvp');
+    expect(
+      await screen.findByText('No published results for this document type.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No published results yet/)).not.toBeInTheDocument();
   });
 });

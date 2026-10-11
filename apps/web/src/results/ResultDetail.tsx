@@ -23,11 +23,19 @@ type TableCols = { id: string; name?: string; columns: Col[] };
 
 const label = (c: { id: string; name?: string }) => c.name ?? c.id;
 
+const isObject = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
 function format(value: unknown): string {
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    return JSON.stringify(value);
+  if (isObject(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return display(value.map((item) => (isObject(item) ? JSON.stringify(item) : item)));
   }
   return display(value);
+}
+
+/** Every key present in any row, in first-seen order (rows need not share a shape). */
+function columnsOf(rows: Record<string, unknown>[]): string[] {
+  return [...new Set(rows.flatMap((r) => Object.keys(r)))];
 }
 
 export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
@@ -47,13 +55,12 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
       </section>
     );
   }
-  if (!result) return <p>Loading…</p>;
+  if (!result) return <p role="status">Loading…</p>;
 
   const { job, target, outputs, document, documentError, definition } = result;
   const review = job.reviewedAt
     ? `Approved by ${job.reviewer ?? 'unnamed reviewer'}${job.reviewNote ? ` — ${job.reviewNote}` : ''}`
     : 'Published without review';
-  const published = document?.published_at ?? job.updatedAt;
 
   return (
     <section className="result-detail">
@@ -66,7 +73,7 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
       </h2>
       <dl className="result-meta">
         <dt>Published</dt>
-        <dd>{new Date(published).toLocaleString()}</dd>
+        <dd>{new Date(result.publishedAt).toLocaleString()}</dd>
         <dt>Review</dt>
         <dd>{review}</dd>
         <dt>Target</dt>
@@ -112,7 +119,7 @@ function DocumentView({
       ? definition.tables
       : Object.entries(document.tables).map(([id, rows]) => ({
           id,
-          columns: Object.keys(rows[0] ?? {}).map((c) => ({ id: c })),
+          columns: columnsOf(rows).map((c) => ({ id: c })),
         }));
   const checks = Object.entries(document.checks);
   const issueColumns = ['step', 'target', 'row', 'column', 'raw', 'message'];
@@ -182,7 +189,7 @@ function DocumentView({
       <details>
         <summary>Checks ({checks.length})</summary>
         {checks.map(([id, check]) => {
-          const header = Object.keys(check.rows[0] ?? {});
+          const header = columnsOf(check.rows);
           return (
             <SimpleTable
               key={id}
@@ -268,7 +275,7 @@ function OutputPreview({ api, jobId, output }: { api: Api; jobId: string; output
   }, [api, jobId, output.outputId]);
 
   if (failed) return <p className="hint">{`${name}: ${failed}`}</p>;
-  if (text === null) return <p>Loading {name}…</p>;
+  if (text === null) return <p role="status">Loading {name}…</p>;
   if (output.format === 'json') {
     let pretty = text;
     try {

@@ -89,11 +89,47 @@ describe('GET /api/results', () => {
     expect(page2.map((r: { filename: string }) => r.filename)).toEqual(['b.pdf']);
   });
 
+  it('pages through results published in the same millisecond with a (time, id) cursor', async () => {
+    const ctx = await testApp();
+    const jobs = [
+      await upload(ctx, 'tdemo', 'one.pdf'),
+      await upload(ctx, 'tdemo', 'two.pdf'),
+      await upload(ctx, 'tdemo', 'three.pdf'),
+    ];
+    for (const j of jobs) {
+      publish(ctx, j.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
+    }
+    const seen: string[] = [];
+    let cursor = '';
+    for (let page = 0; page < 3; page++) {
+      const rows = (await ctx.app.inject(`/api/results?limit=1${cursor}`)).json();
+      expect(rows).toHaveLength(1);
+      seen.push(rows[0].jobId);
+      cursor = `&before=${encodeURIComponent(rows[0].publishedAt)}&beforeId=${rows[0].jobId}`;
+    }
+    expect(new Set(seen).size).toBe(3);
+    expect((await ctx.app.inject(`/api/results?limit=1${cursor}`)).json()).toEqual([]);
+  });
+
+  it('compares the before cursor as a time, not text (timezone offsets)', async () => {
+    const ctx = await testApp();
+    const early = await upload(ctx, 'tdemo', 'early.pdf');
+    const late = await upload(ctx, 'tdemo', 'late.pdf');
+    publish(ctx, early.id, '2026-10-02T00:30:00.000Z', [out('document', 'published', null)]);
+    publish(ctx, late.id, '2026-10-02T01:30:00.000Z', [out('document', 'published', null)]);
+    // 01:00+01:00 is 00:00Z: both results are later, so nothing is before it.
+    const rows = (
+      await ctx.app.inject(`/api/results?before=${encodeURIComponent('2026-10-02T01:00:00+01:00')}`)
+    ).json();
+    expect(rows).toEqual([]);
+  });
+
   it('validates the query', async () => {
     const { app } = await testApp();
     expect((await app.inject('/api/results?limit=0')).statusCode).toBe(400);
     expect((await app.inject('/api/results?limit=500')).statusCode).toBe(400);
     expect((await app.inject('/api/results?before=yesterday')).statusCode).toBe(400);
+    expect((await app.inject('/api/results?beforeId=nope')).statusCode).toBe(400);
   });
 });
 
@@ -146,6 +182,7 @@ describe('GET /api/results/:jobId', () => {
     expect(body.job).toMatchObject({ id: job.id, filename: 'a.pdf' });
     expect(body.job.outputs).toBeUndefined();
     expect(body.target).toEqual({ bucket: 'published', prefix: 'pub/' });
+    expect(body.publishedAt).toBe('2026-10-02T00:00:01.000Z');
     expect(body.outputs.map((o: JobOutput) => `${o.outputId}:${o.stage}`)).toEqual([
       'document:published',
       'results:published',

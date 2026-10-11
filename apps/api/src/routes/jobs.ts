@@ -58,10 +58,17 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     }
     if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
     const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
-    return reply
-      .header('content-type', output.format === 'csv' ? 'text/csv' : 'application/json')
-      .header('content-disposition', `${inline ? 'inline' : 'attachment'}; filename="${filename}"`)
-      .send(body);
+    return (
+      reply
+        .header('content-type', output.format === 'csv' ? 'text/csv' : 'application/json')
+        .header(
+          'content-disposition',
+          `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,
+        )
+        // Output bodies are LLM-derived: never let a browser sniff them into another type.
+        .header('x-content-type-options', 'nosniff')
+        .send(body)
+    );
   });
 
   /** JPEG page preview rendered by the worker (review screen). */

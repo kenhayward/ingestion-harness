@@ -80,13 +80,25 @@ export class MemoryRepo implements IngestionRepo {
     return job ? { ...job, outputs: this.outputs.get(id) ?? [] } : null;
   }
 
-  async listPublished({ limit, templateId, before }: ListPublishedQuery): Promise<ResultSummary[]> {
+  async listPublished({
+    limit,
+    templateId,
+    before,
+    beforeId,
+  }: ListPublishedQuery): Promise<ResultSummary[]> {
+    // Compare as times (cursors may carry an offset); ties break on job id, like PgRepo.
+    const cursor = before === undefined ? undefined : Date.parse(before);
+    const isBefore = (at: string, jobId: string) => {
+      if (cursor === undefined) return true;
+      const t = Date.parse(at);
+      return t < cursor || (t === cursor && beforeId !== undefined && jobId < beforeId);
+    };
     return [...this.jobs.values()]
       .filter((j) => !j.test && (!templateId || j.specId === templateId))
       .flatMap((j): ResultSummary[] => {
         const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
         const at = this.publishedAt.get(j.id) ?? j.updatedAt;
-        if (published.length === 0 || (before && at >= before)) return [];
+        if (published.length === 0 || !isBefore(at, j.id)) return [];
         return [
           {
             jobId: j.id,
@@ -102,8 +114,19 @@ export class MemoryRepo implements IngestionRepo {
           },
         ];
       })
-      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+      .sort(
+        (a, b) =>
+          Date.parse(b.publishedAt) - Date.parse(a.publishedAt) ||
+          (a.jobId < b.jobId ? 1 : a.jobId > b.jobId ? -1 : 0),
+      )
       .slice(0, limit);
+  }
+
+  async getPublishedAt(jobId: string): Promise<string | null> {
+    const job = this.jobs.get(jobId);
+    const published = (this.outputs.get(jobId) ?? []).some((o) => o.stage === 'published');
+    if (!job || !published) return null;
+    return this.publishedAt.get(jobId) ?? job.updatedAt;
   }
 
   async retryJob(id: string): Promise<JobSummary | null> {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultDetailView } from '../src/results/ResultDetail.js';
 import { fakeApi } from './fake-api.js';
@@ -176,5 +176,81 @@ describe('ResultDetailView', () => {
     render(<ResultDetailView api={fakeApi({ getResult })} jobId="j1" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('result not found');
     expect(screen.getByRole('link', { name: '← Results' })).toHaveAttribute('href', '#/results');
+  });
+
+  it('shows the recorded publish time, not the document or job timestamps', async () => {
+    const detail = resultDetail();
+    detail.document!.published_at = '2026-01-01T00:00:00Z';
+    render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
+    await screen.findByText('Published', { selector: 'dt' });
+    expect(valueOf('Published')).toHaveTextContent(
+      new Date('2026-10-02T08:00:01.000Z').toLocaleString(),
+    );
+  });
+
+  it('renders lists of objects as JSON items', async () => {
+    render(
+      <ResultDetailView
+        api={fakeApi({ getResult: vi.fn(async () => resultDetail()) })}
+        jobId="j1"
+      />,
+    );
+    await screen.findByText('lots', { selector: 'dt' });
+    expect(valueOf('lots')).toHaveTextContent('{"lot":1}, {"lot":2}');
+  });
+
+  it('shows every column present in any row when the template is unknown', async () => {
+    const detail = resultDetail({ definition: { kind: 'unknown' } });
+    detail.document!.tables = { results: [{ batch: 'B1' }, { batch: 'B2', value: 2 }] };
+    detail.document!.checks = {
+      batch_check: { rows: [{ value: 'B1' }, { value: 'B2', status: 'ok' }] },
+    };
+    render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
+    const table = await screen.findByRole('table', { name: 'results' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['#', 'batch', 'value']);
+    const checks = screen.getByRole('table', { name: 'batch_check' });
+    expect(
+      within(checks)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['value', 'status']);
+  });
+
+  it('announces loading states', async () => {
+    render(
+      <ResultDetailView
+        api={fakeApi({ getResult: vi.fn(() => new Promise<never>(() => {})) })}
+        jobId="j1"
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Loading');
+  });
+
+  it('announces a preview that is still loading', async () => {
+    const detail = resultDetail({
+      document: null,
+      definition: { kind: 'spec' },
+      outputs: [
+        {
+          outputId: 'lines',
+          stage: 'published',
+          format: 'csv',
+          bucket: 'b',
+          key: 'k/lines.csv',
+          rowCount: 1,
+        },
+      ],
+    });
+    const api = fakeApi({
+      getResult: vi.fn(async () => detail),
+      getOutputText: vi.fn(() => new Promise<string>(() => {})),
+    });
+    render(<ResultDetailView api={api} jobId="j1" />);
+    // The page-level "Loading…" status comes first; wait for the preview's own.
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Loading lines.csv'));
   });
 });

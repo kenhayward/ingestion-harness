@@ -32,6 +32,8 @@ export interface ListPublishedQuery {
   templateId?: string;
   /** ISO timestamp: only results published strictly before it (millisecond precision). */
   before?: string;
+  /** Tie-breaker for `before`: results at exactly `before` with a job id lower than this. */
+  beforeId?: string;
 }
 
 export interface NewEdit {
@@ -58,6 +60,8 @@ export interface IngestionRepo {
   getJob(id: string): Promise<JobDetail | null>;
   /** Non-test jobs with at least one published output, newest publish first. */
   listPublished(query: ListPublishedQuery): Promise<ResultSummary[]>;
+  /** Latest publish time of a job's published outputs (ISO, ms precision); null if none. */
+  getPublishedAt(jobId: string): Promise<string | null>;
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */
   retryJob(id: string): Promise<JobSummary | null>;
   listModels(): Promise<ModelInfo[]>;
