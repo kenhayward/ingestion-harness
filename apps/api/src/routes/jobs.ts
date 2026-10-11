@@ -18,6 +18,12 @@ const RetryBody = z.object({ model: z.string().min(1).nullable().optional() });
 const CleanupBody = z.object({
   olderThanDays: z.number().int().min(1).max(3650),
   dryRun: z.boolean(),
+  /** Regression runs feed scores and metrics: kept unless explicitly included. */
+  includeRegression: z.boolean().default(false),
+  /** The preview's cutoff, so the delete matches what was previewed (not "now - N days"). */
+  cutoff: z.string().datetime().optional(),
+  /** Jobs deleted per request; the client repeats while `remaining` > 0. */
+  limit: z.number().int().min(1).max(500).default(100),
 });
 
 export const jobRoutes: FastifyPluginAsync = async (app) => {
@@ -91,17 +97,19 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       const error = body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
       return reply.code(400).send({ error });
     }
-    const cutoff = new Date(Date.now() - body.data.olderThanDays * 86_400_000).toISOString();
-    const ids = await app.deps.repo.finishedJobIdsBefore(cutoff);
-    if (body.data.dryRun) return { count: ids.length };
+    const { olderThanDays, dryRun, includeRegression, limit } = body.data;
+    const cutoff =
+      body.data.cutoff ?? new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
+    const ids = await app.deps.repo.finishedJobIdsBefore(cutoff, includeRegression);
+    if (dryRun) return { count: ids.length, cutoff };
     let deleted = 0;
-    for (const id of ids) {
+    for (const id of ids.slice(0, limit)) {
       const res = await app.deps.repo.deleteJob(id);
       if (res.result !== 'deleted') continue; // status changed meanwhile: skip it
       deleted++;
       await removeJobFiles(app.deps, res.removed, req.log);
     }
-    return { deleted };
+    return { deleted, remaining: Math.max(0, ids.length - limit), cutoff };
   });
 
   app.get<{

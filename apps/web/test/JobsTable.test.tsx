@@ -37,10 +37,12 @@ describe('JobsTable actions', () => {
     expect(within(row('a.pdf')).getByText(/Delete a\.pdf\?/)).toHaveTextContent(
       'Published copies in the target are kept.',
     );
-    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep' }));
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
     expect(api.deleteJob).not.toHaveBeenCalled();
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Delete' }));
-    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Confirm' }));
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Confirm delete a.pdf' }),
+    );
     expect(api.deleteJob).toHaveBeenCalledWith(j.id);
     expect(onChanged).toHaveBeenCalled();
   });
@@ -51,7 +53,9 @@ describe('JobsTable actions', () => {
     render(<JobsTable api={api} jobs={[j]} onChanged={vi.fn()} />);
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Cancel' }));
     expect(within(row('a.pdf')).getByText('Cancel job?')).toBeInTheDocument();
-    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Confirm' }));
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Confirm cancel a.pdf' }),
+    );
     expect(api.cancelJob).toHaveBeenCalledWith(j.id);
   });
 
@@ -69,7 +73,9 @@ describe('JobsTable actions', () => {
       />,
     );
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Delete' }));
-    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Confirm' }));
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Confirm delete a.pdf' }),
+    );
     expect(await within(row('a.pdf')).findByRole('alert')).toHaveTextContent(
       'a running job cannot be deleted',
     );
@@ -110,5 +116,18 @@ describe('JobsTable actions', () => {
       within(row('a.pdf')).getByRole('button', { name: 'Retry with spec default' }),
     );
     expect(api.retryJob).toHaveBeenCalledWith(j.id, null);
+  });
+
+  it('moves focus into the confirmation and back, and describes it for screen readers', async () => {
+    const j = job({ filename: 'a.pdf', status: 'succeeded' });
+    render(<JobsTable api={fakeApi()} jobs={[j]} onChanged={vi.fn()} />);
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Delete' }));
+    const confirm = within(row('a.pdf')).getByRole('button', { name: 'Confirm delete a.pdf' });
+    expect(confirm).toHaveFocus();
+    expect(confirm).toHaveAccessibleDescription(
+      'Delete a.pdf? Published copies in the target are kept.',
+    );
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
+    expect(within(row('a.pdf')).getByRole('button', { name: 'Delete' })).toHaveFocus();
   });
 });

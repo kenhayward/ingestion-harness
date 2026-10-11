@@ -528,3 +528,19 @@ def test_ocr_cache_can_be_turned_off(setup) -> None:  # type: ignore[no-untyped-
 
     assert queue.completed, queue.reviewed or queue.failed
     assert len(ocr.vision_calls) == 4
+
+
+def test_a_cancel_stops_ocr_between_pages(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)  # concurrency 1: pages run one after another
+    deps.extract_text = lambda _pdf: ["", "   "]
+
+    queue = FakeQueue(jobs=[job()], cancel_when=lambda: len(ocr.vision_calls) >= 1)
+    run_once(queue, deps, "w1")
+
+    assert len(ocr.vision_calls) == 1  # page 2 was never sent to the OCR model
+    assert provider.calls == []
+    assert ("job-1", "warn", "cancelled") in queue.events
+    assert not (queue.completed or queue.failed or queue.reviewed)

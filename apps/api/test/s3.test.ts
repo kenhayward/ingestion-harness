@@ -58,4 +58,15 @@ describe('S3ObjectStore deletes', () => {
     const lists = cmds.filter((c) => c instanceof ListObjectsV2Command) as ListObjectsV2Command[];
     expect(lists[0]!.input).toMatchObject({ Bucket: 'runs', Prefix: 'j1/' });
   });
+
+  it('reports keys S3 refused to delete (DeleteObjects errors arrive in a 200 response)', async () => {
+    const send = vi.fn(async (cmd: unknown) =>
+      cmd instanceof ListObjectsV2Command
+        ? { Contents: [{ Key: 'j1/a' }, { Key: 'j1/b' }], IsTruncated: false }
+        : { Errors: [{ Key: 'j1/b', Code: 'AccessDenied', Message: 'Access Denied' }] },
+    );
+    await expect(
+      new S3ObjectStore(opts, { send } as never).deletePrefix('runs', 'j1/'),
+    ).rejects.toThrow(/1 of 2 objects under runs\/j1\/ not deleted.*j1\/b.*AccessDenied/);
+  });
 });

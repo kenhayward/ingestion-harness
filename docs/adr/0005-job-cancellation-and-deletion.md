@@ -24,6 +24,11 @@ their files. The worker owns status transitions while a job runs.
 - Retry of a cancelled job keeps its task (`publish`, `rerun`), so an approval or a re-run
   request survives Cancel → Retry; failed jobs still re-run processing.
 
+- Bulk clean-up leaves regression runs out unless asked (they feed regression scores and
+  metrics), deletes against the cutoff its preview returned, and works in batches the client
+  repeats, so a large first clean-up can't time out mid-way. A cancel also stops a long OCR pass
+  at the next page.
+
 ## Consequences
 - **Publishing cannot be undone by a cancel.** The last cancel check is just before publishing;
   a cancel that lands while files are being written to the final target only changes the status

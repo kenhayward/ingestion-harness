@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JobStatus, JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
@@ -88,6 +88,18 @@ function JobActions({
 }) {
   const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Keyboard/screen-reader users: focus the confirmation when it opens, and the button that
+  // opened it when they keep the job.
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [returnFocus, setReturnFocus] = useState(false);
+  useEffect(() => {
+    if (confirm) confirmRef.current?.focus();
+    else if (returnFocus) {
+      triggerRef.current?.focus();
+      setReturnFocus(false);
+    }
+  }, [confirm, returnFocus]);
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -106,22 +118,33 @@ function JobActions({
   );
 
   if (confirm) {
+    const promptId = `confirm-${job.id}`;
     return (
       <>
-        <span>
+        <span id={promptId}>
           {confirm === 'delete'
             ? `Delete ${job.filename}? Published copies in the target are kept.`
             : 'Cancel job?'}
         </span>{' '}
         <button
+          ref={confirmRef}
           type="button"
+          aria-label={`Confirm ${confirm} ${job.filename}`}
+          aria-describedby={promptId}
           onClick={() =>
             void run(() => (confirm === 'delete' ? api.deleteJob(job.id) : api.cancelJob(job.id)))
           }
         >
           Confirm
         </button>
-        <button type="button" onClick={() => setConfirm(null)}>
+        <button
+          type="button"
+          aria-label={`Keep ${job.filename}`}
+          onClick={() => {
+            setConfirm(null);
+            setReturnFocus(true);
+          }}
+        >
           Keep
         </button>
         {alert}
@@ -140,12 +163,17 @@ function JobActions({
         </button>
       )}
       {(job.status === 'queued' || job.status === 'running') && (
-        <button type="button" onClick={() => setConfirm('cancel')}>
+        <button ref={triggerRef} type="button" onClick={() => setConfirm('cancel')}>
           Cancel
         </button>
       )}
       {DELETABLE.has(job.status) && (
-        <button type="button" className="danger" onClick={() => setConfirm('delete')}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="danger"
+          onClick={() => setConfirm('delete')}
+        >
           Delete
         </button>
       )}

@@ -1,6 +1,11 @@
 import { vi } from 'vitest';
 import type { JobSummary } from '@ih/shared';
-import { outputPath, type Api, type TemplateRecordView } from '../src/api/client.js';
+import {
+  outputPath,
+  type Api,
+  type CleanupRequest,
+  type TemplateRecordView,
+} from '../src/api/client.js';
 
 export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   return {
@@ -56,8 +61,8 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     retryJob: vi.fn(async () => job()),
     cancelJob: vi.fn(async (id: string) => job({ id, status: 'cancelled' })),
     deleteJob: vi.fn(async () => undefined),
-    cleanupJobs: vi.fn(async (_days: number, dryRun: boolean) =>
-      dryRun ? { count: 0 } : { deleted: 0 },
+    cleanupJobs: vi.fn(async (req: CleanupRequest) =>
+      req.dryRun ? { count: 0, cutoff: '' } : { deleted: 0, remaining: 0, cutoff: '' },
     ),
     upload: vi.fn(async () => job()),
     outputUrl: (jobId, outputId, opts) => outputPath('/api', jobId, outputId, opts),

@@ -286,6 +286,7 @@ def _ocr_pages(
     todo = [i for i in targets if i not in cached]
 
     def run(index: int) -> OcrPage:
+        check_cancelled(job, queue)  # a long OCR pass stops at the next page
         try:
             page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
