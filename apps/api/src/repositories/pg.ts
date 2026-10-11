@@ -20,6 +20,7 @@ import {
   type IngestionRepo,
   type ListJobsQuery,
   type ListPublishedQuery,
+  type RetryOptions,
   type NewDocument,
   type NewEdit,
   type StoredObject,
@@ -281,15 +282,22 @@ export class PgRepo implements IngestionRepo {
     return rows[0]?.published_at?.toISOString() ?? null;
   }
 
-  async retryJob(id: string, model?: string | null): Promise<JobSummary | null> {
+  async retryJob(
+    id: string,
+    { model, specVersion }: RetryOptions = {},
+  ): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
       // A cancelled publish/rerun resumes as that task; failures re-run processing.
-      `UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
-              status = 'queued', attempts = 0, error = NULL, run_after = now(),
-              locked_by = NULL, locked_at = NULL, updated_at = now(),
-              model_override = CASE WHEN $2 THEN $3 ELSE model_override END
-        WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')`,
-      [id, model !== undefined, model ?? null],
+      `WITH retried AS (
+         UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
+                status = 'queued', attempts = 0, error = NULL, run_after = now(),
+                locked_by = NULL, locked_at = NULL, updated_at = now(),
+                model_override = CASE WHEN $2 THEN $3 ELSE model_override END
+          WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')
+          RETURNING document_id)
+       UPDATE documents d SET spec_version = COALESCE($4::int, d.spec_version)
+         FROM retried WHERE d.id = retried.document_id`,
+      [id, model !== undefined, model ?? null, specVersion ?? null],
     );
     return rowCount ? await this.getJob(id) : null;
   }
