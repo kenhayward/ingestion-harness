@@ -4,6 +4,8 @@ export type Route =
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
+  | { name: 'results' }
+  | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number };
 
 export function parseHash(hash: string): Route {
@@ -17,11 +19,17 @@ export function parseHash(hash: string): Route {
       version: Number(template[2]),
     };
   }
+  const result = /^#\/results\/([^/]+)$/.exec(hash);
+  if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
+  if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
   return { name: 'jobs' };
 }
 
-/** Minimal hash routing: #/ (jobs), #/review/<jobId>, #/templates, #/templates/<id>/<version>. */
+/**
+ * Minimal hash routing: #/ (jobs), #/review/<jobId>, #/results, #/results/<jobId>,
+ * #/templates, #/templates/<id>/<version>.
+ */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));
   useEffect(() => {
