@@ -110,6 +110,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   Claude models reject them. OpenAI-compatible providers take an optional `temperature` option;
   the local provider and OCR run at 0 so regression scores measure the template, not sampling noise.
 - **Review:** template jobs needing review stop in `awaiting_review` (drafts in the outputs bucket); approve → publish task applies `review_edits` (`worker/src/ingest_worker/review.py`) and writes to the final target (`Target`, `TARGET_S3_*`); reject is final. `needs_review` is different: a processing problem for an operator.
+- **Results:** `apps/web/src/results/` + `apps/api/src/routes/results.ts` read published outputs from the target store (`AppDeps.targetStore`, `storeFor(stage)`); the API reads `TARGET_S3_*` via `targetConfig` (same fallback as the worker).
 - **Error routing in the worker:** `DocumentError` (missing sections, page count, schema never
   satisfied, refusal) → `needs_review`, not retried. Anything else → `fail()` → re-queued with
   backoff until `max_attempts`, then `failed`.
