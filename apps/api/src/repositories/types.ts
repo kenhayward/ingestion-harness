@@ -40,6 +40,11 @@ export type DeleteJobResult =
   | { result: 'not_found' }
   | { result: 'conflict'; status: JobStatus };
 
+export interface RetryOptions {
+  model?: string | null;
+  specVersion?: number;
+}
+
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
@@ -83,9 +88,10 @@ export interface IngestionRepo {
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */
   /**
    * Re-queue a job in a terminal failure state. `model`: a ref sets the override, null clears
-   * it (spec default), undefined keeps it. Returns null if not found or not retryable.
+   * it (spec default), undefined keeps it. `specVersion`: move the job's document to that
+   * version (undefined keeps it). Returns null if not found or not retryable.
    */
-  retryJob(id: string, model?: string | null): Promise<JobSummary | null>;
+  retryJob(id: string, opts?: RetryOptions): Promise<JobSummary | null>;
   /** queued/running -> cancelled (+ event). Null if unknown or not cancellable. */
   cancelJob(id: string): Promise<JobSummary | null>;
   /** Delete a finished job (+ its document unless still needed). Storage is the caller's job. */

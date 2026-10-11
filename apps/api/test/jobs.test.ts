@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UnreachableStore, fakePdf, multipart, testApp } from './helpers.js';
+import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 
 async function seedJob() {
   const ctx = await testApp();
@@ -342,5 +342,56 @@ describe('models used', () => {
   it('is empty before any step ran', async () => {
     const { app } = await seedJob();
     expect((await app.inject('/api/jobs')).json()[0].modelsUsed).toEqual([]);
+  });
+});
+
+describe('retry moves to the latest version', () => {
+  async function failed(specId: string, overrides: Record<string, unknown> = {}) {
+    const ctx = await testApp();
+    const job = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId, specVersion: '1' }, { filename: 'a.pdf', content: fakePdf }),
+      })
+    ).json();
+    ctx.repo.jobs.set(job.id, { ...ctx.repo.jobs.get(job.id)!, status: 'failed', ...overrides });
+    return { ...ctx, job };
+  }
+  const publishV2 = (ctx: Awaited<ReturnType<typeof testApp>>) =>
+    ctx.templates.create('tdemo', 2, { ...demoTemplate, version: 2 }, 'published');
+  const retry = (ctx: Awaited<ReturnType<typeof testApp>>, id: string) =>
+    ctx.app.inject({ method: 'POST', url: `/api/jobs/${id}/retry` });
+
+  it('re-runs a failed job on the latest published template version', async () => {
+    const ctx = await failed('tdemo');
+    expect(ctx.job.specVersion).toBe(1);
+    await publishV2(ctx);
+    const res = await retry(ctx, ctx.job.id);
+    expect(res.json()).toMatchObject({ status: 'queued', specVersion: 2 });
+    expect(ctx.repo.documents.get(ctx.job.documentId)!.specVersion).toBe(2);
+  });
+
+  it('moves a legacy spec job to the newest spec file', async () => {
+    const ctx = await failed('demo');
+    expect(ctx.job.specVersion).toBe(1);
+    expect((await retry(ctx, ctx.job.id)).json()).toMatchObject({ specVersion: 2 });
+  });
+
+  it('stays on the version it has when that is already the latest', async () => {
+    const ctx = await failed('tdemo');
+    expect((await retry(ctx, ctx.job.id)).json()).toMatchObject({ specVersion: 1 });
+  });
+
+  it.each([
+    ['a draft test run', { test: true }],
+    ['a regression run', { referenceId: 'ref-1' }],
+    ['a cancelled publish', { status: 'cancelled', task: 'publish' }],
+  ])('keeps the version for %s', async (_name, overrides) => {
+    const ctx = await failed('tdemo', overrides);
+    await publishV2(ctx);
+    const res = await retry(ctx, ctx.job.id);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ specVersion: 1 });
   });
 });

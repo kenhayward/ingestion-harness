@@ -18,6 +18,7 @@ import {
   type IngestionRepo,
   type ListJobsQuery,
   type ListPublishedQuery,
+  type RetryOptions,
   type NewDocument,
   type NewEdit,
   type StoredObject,
@@ -187,14 +188,27 @@ export class MemoryRepo implements IngestionRepo {
       .map((j) => j.id);
   }
 
-  async retryJob(id: string, model?: string | null): Promise<JobSummary | null> {
+  async retryJob(
+    id: string,
+    { model, specVersion }: RetryOptions = {},
+  ): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
     if (!job || !['failed', 'needs_review', 'cancelled'].includes(job.status)) return null;
     // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
     // failures re-run processing.
     const task = job.status === 'cancelled' ? job.task : 'process';
     const override = model === undefined ? {} : { modelOverride: model };
-    return this.update(id, { status: 'queued', task, attempts: 0, error: null, ...override });
+    const doc = this.documents.get(job.documentId);
+    if (specVersion !== undefined && doc) this.documents.set(doc.id, { ...doc, specVersion });
+    const version = specVersion === undefined ? {} : { specVersion };
+    return this.update(id, {
+      status: 'queued',
+      task,
+      attempts: 0,
+      error: null,
+      ...override,
+      ...version,
+    });
   }
 
   async listModels(): Promise<ModelInfo[]> {
