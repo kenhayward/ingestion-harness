@@ -46,6 +46,8 @@ export const JobSummarySchema = z.object({
   specVersion: z.number().int(),
   status: JobStatusSchema,
   modelOverride: z.string().nullable(),
+  /** Distinct resolved models the job's steps ran on (step_runs), oldest first. */
+  modelsUsed: z.array(z.string()),
   attempts: z.number().int(),
   error: z.string().nullable(),
   /** process: extraction; publish: apply review edits and deliver to the final target. */

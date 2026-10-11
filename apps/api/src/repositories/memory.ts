@@ -57,6 +57,7 @@ export class MemoryRepo implements IngestionRepo {
       specVersion: doc.specVersion,
       status: 'queued',
       modelOverride,
+      modelsUsed: [],
       attempts: 0,
       error: null,
       task: 'process',
@@ -77,12 +78,22 @@ export class MemoryRepo implements IngestionRepo {
     return [...this.jobs.values()]
       .filter((j) => !status || j.status === status)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((j) => this.withModels(j));
+  }
+
+  /** modelsUsed derived from step runs, like PgRepo's subquery. */
+  private withModels(job: JobSummary): JobSummary {
+    const runs = [...(this.stepRuns.get(job.id) ?? [])].sort((a, b) =>
+      a.startedAt.localeCompare(b.startedAt),
+    );
+    const models = runs.flatMap((r) => (r.model ? [r.model] : []));
+    return { ...job, modelsUsed: [...new Set(models)] };
   }
 
   async getJob(id: string): Promise<JobDetail | null> {
     const job = this.jobs.get(id);
-    return job ? { ...job, outputs: this.outputs.get(id) ?? [] } : null;
+    return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
   }
 
   async listPublished({
@@ -176,13 +187,14 @@ export class MemoryRepo implements IngestionRepo {
       .map((j) => j.id);
   }
 
-  async retryJob(id: string): Promise<JobSummary | null> {
+  async retryJob(id: string, model?: string | null): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
     if (!job || !['failed', 'needs_review', 'cancelled'].includes(job.status)) return null;
     // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
     // failures re-run processing.
     const task = job.status === 'cancelled' ? job.task : 'process';
-    return this.update(id, { status: 'queued', task, attempts: 0, error: null });
+    const override = model === undefined ? {} : { modelOverride: model };
+    return this.update(id, { status: 'queued', task, attempts: 0, error: null, ...override });
   }
 
   async listModels(): Promise<ModelInfo[]> {

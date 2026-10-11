@@ -16,9 +16,9 @@ describe('JobsTable actions', () => {
     ['queued', ['Cancel']],
     ['running', ['Cancel']],
     ['succeeded', ['Delete']],
-    ['failed', ['Retry', 'Delete']],
-    ['needs_review', ['Retry', 'Delete']],
-    ['cancelled', ['Retry', 'Delete']],
+    ['failed', ['Retry with spec default', 'Delete']],
+    ['needs_review', ['Retry with spec default', 'Delete']],
+    ['cancelled', ['Retry with spec default', 'Delete']],
     ['rejected', ['Delete']],
     ['awaiting_review', []],
   ])('%s jobs offer %j', (status, expected) => {
@@ -73,5 +73,42 @@ describe('JobsTable actions', () => {
     expect(await within(row('a.pdf')).findByRole('alert')).toHaveTextContent(
       'a running job cannot be deleted',
     );
+  });
+
+  it.each([
+    [{ modelsUsed: ['local/qwen', 'anthropic/haiku'] }, 'local/qwen, anthropic/haiku'],
+    [{ modelsUsed: [], modelOverride: 'anthropic/opus' }, 'anthropic/opus'],
+    [{ modelsUsed: [], modelOverride: null }, 'Spec default'],
+  ])('shows the model column: %j', (fields, shown) => {
+    render(
+      <JobsTable
+        api={fakeApi()}
+        jobs={[job({ filename: 'a.pdf', ...fields })]}
+        onChanged={vi.fn()}
+      />,
+    );
+    const header = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    const cells = within(row('a.pdf')).getAllByRole('cell');
+    expect(cells[header.indexOf('Model')]).toHaveTextContent(shown);
+  });
+
+  it('retries with the currently selected model', async () => {
+    const api = fakeApi();
+    const j = job({ filename: 'a.pdf', status: 'failed', modelOverride: 'anthropic/old' });
+    render(<JobsTable api={api} jobs={[j]} onChanged={vi.fn()} retryModel="anthropic/new" />);
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Retry with anthropic/new' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'anthropic/new');
+  });
+
+  it('retries with the spec default (clearing the override) when no model is selected', async () => {
+    const api = fakeApi();
+    const j = job({ filename: 'a.pdf', status: 'failed', modelOverride: 'anthropic/old' });
+    render(<JobsTable api={api} jobs={[j]} onChanged={vi.fn()} />);
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Retry with spec default' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith(j.id, null);
   });
 });

@@ -2,7 +2,16 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { ModelInfo, SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
-export function UploadForm({ api, onUploaded }: { api: Api; onUploaded: () => void }) {
+export function UploadForm({
+  api,
+  onUploaded,
+  onModelChange,
+}: {
+  api: Api;
+  onUploaded: () => void;
+  /** Reports the Model selection ('' = spec default), e.g. so Retry can use it. */
+  onModelChange?: (model: string) => void;
+}) {
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [spec, setSpec] = useState('');
@@ -58,7 +67,13 @@ export function UploadForm({ api, onUploaded }: { api: Api; onUploaded: () => vo
       </label>
       <label>
         Model
-        <select value={model} onChange={(e) => setModel(e.target.value)}>
+        <select
+          value={model}
+          onChange={(e) => {
+            setModel(e.target.value);
+            onModelChange?.(e.target.value);
+          }}
+        >
           <option value="">Spec default</option>
           {models.map((m) => (
             <option key={m.ref} value={m.ref}>

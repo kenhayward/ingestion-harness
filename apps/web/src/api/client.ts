@@ -166,7 +166,8 @@ export interface Api {
   listModels(): Promise<ModelInfo[]>;
   listJobs(): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
-  retryJob(id: string): Promise<JobSummary>;
+  /** model: a ref to retry with, or null for the spec default (clears the override). */
+  retryJob(id: string, model?: string | null): Promise<JobSummary>;
   cancelJob(id: string): Promise<JobSummary>;
   deleteJob(id: string): Promise<void>;
   /** Finished jobs older than N days: dryRun -> { count }, else { deleted }. */
@@ -237,7 +238,8 @@ export function createHttpApi(base = '/api'): Api {
     listModels: () => fetch(`${base}/models`).then(json<ModelInfo[]>),
     listJobs: () => fetch(`${base}/jobs`).then(json<JobSummary[]>),
     getJob: (id) => fetch(`${base}/jobs/${id}`).then(json<JobDetail>),
-    retryJob: (id) => fetch(`${base}/jobs/${id}/retry`, { method: 'POST' }).then(json<JobSummary>),
+    retryJob: (id, model) =>
+      post<JobSummary>(`${base}/jobs/${id}/retry`, model === undefined ? {} : { model }),
     cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
     deleteJob: async (id) => {
       const res = await fetch(`${base}/jobs/${id}`, { method: 'DELETE' });

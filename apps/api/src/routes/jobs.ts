@@ -11,6 +11,9 @@ const ListQuery = z.object({
 
 const UUID = z.string().uuid();
 
+/** model: a ref sets the job's override, null clears it (spec default), absent keeps it. */
+const RetryBody = z.object({ model: z.string().min(1).nullable().optional() });
+
 const CleanupBody = z.object({
   olderThanDays: z.number().int().min(1).max(3650),
   dryRun: z.boolean(),
@@ -31,7 +34,14 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string } }>('/jobs/:id/retry', async (req, reply) => {
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const job = await app.deps.repo.retryJob(req.params.id);
+    const body = RetryBody.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: 'model must be a model ref or null' });
+    const { model } = body.data;
+    if (model) {
+      const known = (await app.deps.repo.listModels()).some((m) => m.enabled && m.ref === model);
+      if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
+    }
+    const job = await app.deps.repo.retryJob(req.params.id, model);
     return job ?? reply.code(409).send({ error: 'job not found or not in a retryable state' });
   });
 

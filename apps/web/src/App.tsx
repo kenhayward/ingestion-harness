@@ -68,6 +68,8 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
 function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The upload form's Model selection; Retry uses it too. */
+  const [retryModel, setRetryModel] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -87,9 +89,9 @@ function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
 
   return (
     <>
-      <UploadForm api={api} onUploaded={refresh} />
+      <UploadForm api={api} onUploaded={refresh} onModelChange={setRetryModel} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
-      <JobsTable api={api} jobs={jobs} onChanged={refresh} />
+      <JobsTable api={api} jobs={jobs} onChanged={refresh} retryModel={retryModel} />
       <JobCleanup api={api} onChanged={refresh} />
     </>
   );
