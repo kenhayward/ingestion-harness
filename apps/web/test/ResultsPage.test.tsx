@@ -55,11 +55,11 @@ describe('ResultsPage', () => {
     render(<ResultsPage api={api} />);
     const select = await screen.findByLabelText('Document type');
     await screen.findByRole('option', { name: 'Invoice' });
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'All',
-      'Invoice',
-      'Process Validation Protocol',
-    ]);
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['All', 'Invoice', 'Process Validation Protocol']);
     await userEvent.selectOptions(select, 'pvp');
     expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', before: undefined });
   });
