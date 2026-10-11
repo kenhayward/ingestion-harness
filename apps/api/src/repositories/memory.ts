@@ -24,6 +24,8 @@ import {
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   readonly outputs = new Map<string, JobOutput[]>();
+  /** job_events (only what the API writes itself, e.g. cancellations). */
+  readonly events = new Map<string, { level: string; message: string }[]>();
   /** jobId -> ISO publish time (job_outputs.created_at in Postgres); defaults to updatedAt. */
   readonly publishedAt = new Map<string, string>();
   readonly documents = new Map<string, NewDocument>();
@@ -129,9 +131,16 @@ export class MemoryRepo implements IngestionRepo {
     return this.publishedAt.get(jobId) ?? job.updatedAt;
   }
 
+  async cancelJob(id: string): Promise<JobSummary | null> {
+    const job = this.jobs.get(id);
+    if (!job || (job.status !== 'queued' && job.status !== 'running')) return null;
+    this.events.set(id, [...(this.events.get(id) ?? []), { level: 'warn', message: 'cancelled' }]);
+    return this.update(id, { status: 'cancelled' });
+  }
+
   async retryJob(id: string): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
-    if (!job || (job.status !== 'failed' && job.status !== 'needs_review')) return null;
+    if (!job || !['failed', 'needs_review', 'cancelled'].includes(job.status)) return null;
     return this.update(id, { status: 'queued', task: 'process', attempts: 0, error: null });
   }
 

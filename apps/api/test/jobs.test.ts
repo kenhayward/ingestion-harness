@@ -189,3 +189,55 @@ describe('GET /api/jobs/:id/pages/:n', () => {
     expect((await app.inject(`/api/jobs/${job.id}/pages/x`)).statusCode).toBe(400);
   });
 });
+
+describe('job cancellation', () => {
+  it('cancels queued and running jobs and records an event', async () => {
+    const { app, repo, job } = await seedJob();
+    const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: job.id, status: 'cancelled' });
+    expect(repo.events.get(job.id)?.at(-1)).toMatchObject({ level: 'warn', message: 'cancelled' });
+
+    const running = await seedJob();
+    running.repo.jobs.set(running.job.id, {
+      ...running.repo.jobs.get(running.job.id)!,
+      status: 'running',
+    });
+    const res2 = await running.app.inject({
+      method: 'POST',
+      url: `/api/jobs/${running.job.id}/cancel`,
+    });
+    expect(res2.json()).toMatchObject({ status: 'cancelled' });
+  });
+
+  it.each([
+    'succeeded',
+    'failed',
+    'needs_review',
+    'awaiting_review',
+    'rejected',
+    'cancelled',
+  ] as const)('refuses to cancel a %s job', async (status) => {
+    const { app, repo, job } = await seedJob();
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status });
+    const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel` });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('404s for unknown jobs', async () => {
+    const { app } = await testApp();
+    const unknown = `/api/jobs/${crypto.randomUUID()}/cancel`;
+    expect((await app.inject({ method: 'POST', url: unknown })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'POST', url: '/api/jobs/nope/cancel' })).statusCode).toBe(
+      404,
+    );
+  });
+
+  it('retries a cancelled job', async () => {
+    const { app, job } = await seedJob();
+    await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel` });
+    const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'queued', task: 'process', attempts: 0 });
+  });
+});

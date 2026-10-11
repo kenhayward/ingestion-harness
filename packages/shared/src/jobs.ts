@@ -13,9 +13,19 @@ export const JOB_STATUSES = [
   'needs_review',
   'awaiting_review',
   'rejected',
+  'cancelled',
 ] as const;
 export const JobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
+
+/** Finished jobs: these can be deleted (queued/running must be cancelled, review decided). */
+export const DELETABLE_STATUSES: readonly JobStatus[] = [
+  'succeeded',
+  'failed',
+  'needs_review',
+  'rejected',
+  'cancelled',
+];
 
 export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = new Set([
   'succeeded',

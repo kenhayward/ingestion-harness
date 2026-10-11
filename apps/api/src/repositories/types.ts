@@ -64,6 +64,8 @@ export interface IngestionRepo {
   getPublishedAt(jobId: string): Promise<string | null>;
   /** Re-queue a job in a terminal failure state. Returns null if not found or not retryable. */
   retryJob(id: string): Promise<JobSummary | null>;
+  /** queued/running -> cancelled (+ event). Null if unknown or not cancellable. */
+  cancelJob(id: string): Promise<JobSummary | null>;
   listModels(): Promise<ModelInfo[]>;
 
   // --- references and regression runs ---

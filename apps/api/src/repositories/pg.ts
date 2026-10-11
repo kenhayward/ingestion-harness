@@ -278,7 +278,19 @@ export class PgRepo implements IngestionRepo {
     const { rowCount } = await this.pool.query(
       `UPDATE jobs SET status = 'queued', task = 'process', attempts = 0, error = NULL, run_after = now(),
               locked_by = NULL, locked_at = NULL, updated_at = now()
-        WHERE id = $1 AND status IN ('failed', 'needs_review')`,
+        WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')`,
+      [id],
+    );
+    return rowCount ? await this.getJob(id) : null;
+  }
+
+  async cancelJob(id: string): Promise<JobSummary | null> {
+    const { rowCount } = await this.pool.query(
+      `WITH cancelled AS (
+         UPDATE jobs SET status = 'cancelled', locked_by = NULL, locked_at = NULL, updated_at = now()
+          WHERE id = $1 AND status IN ('queued', 'running')
+          RETURNING id)
+       INSERT INTO job_events (job_id, level, message) SELECT id, 'warn', 'cancelled' FROM cancelled`,
       [id],
     );
     return rowCount ? await this.getJob(id) : null;

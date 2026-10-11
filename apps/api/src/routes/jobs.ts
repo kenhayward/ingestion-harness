@@ -29,6 +29,15 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     return job ?? reply.code(409).send({ error: 'job not found or not in a retryable state' });
   });
 
+  app.post<{ Params: { id: string } }>('/jobs/:id/cancel', async (req, reply) => {
+    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    if (!(await app.deps.repo.getJob(req.params.id))) {
+      return reply.code(404).send({ error: 'not found' });
+    }
+    const job = await app.deps.repo.cancelJob(req.params.id);
+    return job ?? reply.code(409).send({ error: 'only queued or running jobs can be cancelled' });
+  });
+
   app.get<{
     Params: { id: string; outputId: string };
     Querystring: { stage?: string; inline?: string };
