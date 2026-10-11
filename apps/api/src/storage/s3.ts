@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  type DeleteObjectsCommandOutput,
   GetObjectCommand,
   HeadBucketCommand,
   ListObjectsV2Command,
@@ -48,6 +49,8 @@ export class S3ObjectStore implements ObjectStore {
 
   async deletePrefix(bucket: string, prefix: string): Promise<number> {
     let deleted = 0;
+    let listed = 0;
+    const failures: string[] = [];
     let token: string | undefined;
     do {
       const page: ListObjectsV2CommandOutput = await this.client.send(
@@ -55,13 +58,23 @@ export class S3ObjectStore implements ObjectStore {
       );
       const keys = (page.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
       if (keys.length) {
-        await this.client.send(
+        listed += keys.length;
+        const res: DeleteObjectsCommandOutput = await this.client.send(
           new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } }),
         );
-        deleted += keys.length;
+        // Per-key failures come back in a 200 response; Quiet mode lists only those.
+        const errors = res.Errors ?? [];
+        failures.push(...errors.map((e) => `${e.Key} (${e.Code ?? e.Message ?? 'error'})`));
+        deleted += keys.length - errors.length;
       }
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);
+    if (failures.length) {
+      throw new Error(
+        `${failures.length} of ${listed} objects under ${bucket}/${prefix} not deleted: ` +
+          failures.slice(0, 5).join(', '),
+      );
+    }
     return deleted;
   }
 
