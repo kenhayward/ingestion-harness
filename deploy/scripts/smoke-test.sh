@@ -23,3 +23,4 @@ check /healthz
 check /readyz
 check /api/specs
 check /api/models
+check /api/results

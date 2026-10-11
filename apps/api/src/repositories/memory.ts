@@ -7,6 +7,7 @@ import type {
   ModelInfo,
   RerunRequest,
   Reference,
+  ResultSummary,
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
@@ -14,6 +15,7 @@ import {
   ReferenceConflictError,
   type IngestionRepo,
   type ListJobsQuery,
+  type ListPublishedQuery,
   type NewDocument,
   type NewEdit,
 } from './types.js';
@@ -22,6 +24,8 @@ import {
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   readonly outputs = new Map<string, JobOutput[]>();
+  /** jobId -> ISO publish time (job_outputs.created_at in Postgres); defaults to updatedAt. */
+  readonly publishedAt = new Map<string, string>();
   readonly documents = new Map<string, NewDocument>();
   readonly edits = new Map<string, ReviewEdit[]>();
   readonly stepRuns = new Map<string, StepRun[]>();
@@ -74,6 +78,32 @@ export class MemoryRepo implements IngestionRepo {
   async getJob(id: string): Promise<JobDetail | null> {
     const job = this.jobs.get(id);
     return job ? { ...job, outputs: this.outputs.get(id) ?? [] } : null;
+  }
+
+  async listPublished({ limit, templateId, before }: ListPublishedQuery): Promise<ResultSummary[]> {
+    return [...this.jobs.values()]
+      .filter((j) => !j.test && (!templateId || j.specId === templateId))
+      .flatMap((j): ResultSummary[] => {
+        const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
+        const at = this.publishedAt.get(j.id) ?? j.updatedAt;
+        if (published.length === 0 || (before && at >= before)) return [];
+        return [
+          {
+            jobId: j.id,
+            documentId: j.documentId,
+            filename: j.filename,
+            specId: j.specId,
+            specVersion: j.specVersion,
+            publishedAt: at,
+            reviewer: j.reviewer,
+            reviewedAt: j.reviewedAt,
+            outputCount: published.length,
+            issueCount: published.find((o) => o.outputId === 'issues')?.rowCount ?? null,
+          },
+        ];
+      })
+      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+      .slice(0, limit);
   }
 
   async retryJob(id: string): Promise<JobSummary | null> {
