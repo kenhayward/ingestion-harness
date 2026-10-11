@@ -18,7 +18,12 @@ upload ─► queued ─► running ─┬─► succeeded ......... published t
               │              │    (data review)   └─ reject ──► rejected (final, with reason)
               │              ├─► needs_review      (processing problem: document/spec/config; Retry)
               └── backoff ◄──┴─► failed            (transient errors, after max_attempts)
+
+queued / running ─ operator Cancel ─► cancelled   (worker stops at the next safe point; Retry)
+finished jobs ─ operator Delete ─► removed         (job, history, internal files; published copies kept)
 ```
+
+Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md).
 
 Review (template documents): the review policy (`always` / `on_warnings` / `never`) decides
 whether a processed document waits in `awaiting_review`. Drafts stay in the outputs bucket.

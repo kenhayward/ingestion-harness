@@ -4,6 +4,7 @@ import logging
 import signal
 import threading
 import time
+from collections.abc import Callable
 
 from .config import Settings
 from .llm.registry import build_registry, load_llm_config
@@ -13,8 +14,10 @@ from .pdf import extract_pages
 from .pipeline import (
     Buckets,
     DocumentError,
+    JobCancelled,
     PipelineDeps,
     Target,
+    check_cancelled,
     load_definition,
     process_job,
     publish_outputs,
@@ -35,6 +38,7 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     log.info("claimed %s job %s (attempt %d/%d)", job.task, job.id, job.attempts, job.max_attempts)
     try:
         if job.task == "publish":
+            check_cancelled(job, queue)
             published = publish_job(job, deps, queue)
             if deps.target is not None:
                 queue.record_published(job, published, deps.target.bucket)
@@ -46,19 +50,14 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             if not isinstance(loaded, LoadedTemplate):
                 raise DocumentError("only template documents can re-run steps")
             rerun = rerun_template_job(job, deps, queue, loaded)
+            queue.record_drafts(job, rerun.outputs, deps.buckets.outputs)
+            check_cancelled(job, queue)
             queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
             log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
             return True
         result = process_job(job, deps, queue)
-    except DocumentError as exc:
-        log.warning("job %s needs review: %s", job.id, exc)
-        queue.event(job.id, "warn", "needs review", {"reason": str(exc)})
-        queue.needs_review(job, str(exc))
-    except Exception as exc:
-        log.exception("job %s failed", job.id)
-        queue.event(job.id, "error", "failed", {"error": repr(exc)})
-        queue.fail(job, f"{type(exc).__name__}: {exc}")
-    else:
+        queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
+        check_cancelled(job, queue)
         if result.review_reasons:
             queue.await_review(job, result.outputs, deps.buckets.outputs, result.review_reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(result.review_reasons))
@@ -68,7 +67,29 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, result.outputs, deps.buckets.outputs)
             log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
+    except JobCancelled:
+        log.info("job %s cancelled, deleted or re-queued: stopping", job.id)
+        _quietly(job, lambda: queue.event(job.id, "warn", "cancelled"))
+    except DocumentError as exc:
+        reason = str(exc)
+        log.warning("job %s needs review: %s", job.id, reason)
+        _quietly(job, lambda: queue.event(job.id, "warn", "needs review", {"reason": reason}))
+        _quietly(job, lambda: queue.needs_review(job, reason))
+    except Exception as exc:
+        log.exception("job %s failed", job.id)
+        detail, error = repr(exc), f"{type(exc).__name__}: {exc}"
+        _quietly(job, lambda: queue.event(job.id, "error", "failed", {"error": detail}))
+        _quietly(job, lambda: queue.fail(job, error))
     return True
+
+
+def _quietly(job: ClaimedJob, write: Callable[[], None]) -> None:
+    """Record an outcome without letting it kill the worker: the job row may have been deleted
+    mid-run (operator Delete), which makes every write for it fail."""
+    try:
+        write()
+    except Exception:
+        log.exception("could not record the outcome of job %s (deleted?)", job.id)
 
 
 def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:

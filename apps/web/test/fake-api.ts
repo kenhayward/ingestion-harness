@@ -53,6 +53,11 @@ export function fakeApi(overrides: Partial<Api> = {}): Api {
     listJobs: vi.fn(async () => []),
     getJob: vi.fn(),
     retryJob: vi.fn(async () => job()),
+    cancelJob: vi.fn(async (id: string) => job({ id, status: 'cancelled' })),
+    deleteJob: vi.fn(async () => undefined),
+    cleanupJobs: vi.fn(async (_days: number, dryRun: boolean) =>
+      dryRun ? { count: 0 } : { deleted: 0 },
+    ),
     upload: vi.fn(async () => job()),
     outputUrl: (jobId, outputId, opts) => outputPath('/api', jobId, outputId, opts),
     getOutputText: vi.fn(async () => ''),

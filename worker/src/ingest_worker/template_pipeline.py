@@ -27,6 +27,7 @@ from .pipeline import (
     PipelineDeps,
     Prepared,
     ProcessResult,
+    check_cancelled,
     page_images,
     prepare_document,
     publish_outputs,
@@ -60,6 +61,7 @@ def process_template_job(
     models_used: dict[str, str] = {}
 
     for step in template.pipeline:
+        check_cancelled(job, queue)
         if isinstance(step, CheckStep):
             check = template.compile_check(step)
             checks[step.id] = step_results[step.id] = run_check_with_event(

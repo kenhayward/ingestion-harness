@@ -167,6 +167,13 @@ export interface Api {
   listJobs(): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
   retryJob(id: string): Promise<JobSummary>;
+  cancelJob(id: string): Promise<JobSummary>;
+  deleteJob(id: string): Promise<void>;
+  /** Finished jobs older than N days: dryRun -> { count }, else { deleted }. */
+  cleanupJobs(
+    olderThanDays: number,
+    dryRun: boolean,
+  ): Promise<{ count?: number; deleted?: number }>;
   upload(req: UploadRequest): Promise<JobSummary>;
   outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
   /** Published or draft output body as text (Results previews). Rejects with the API error. */
@@ -231,6 +238,16 @@ export function createHttpApi(base = '/api'): Api {
     listJobs: () => fetch(`${base}/jobs`).then(json<JobSummary[]>),
     getJob: (id) => fetch(`${base}/jobs/${id}`).then(json<JobDetail>),
     retryJob: (id) => fetch(`${base}/jobs/${id}/retry`, { method: 'POST' }).then(json<JobSummary>),
+    cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
+    deleteJob: async (id) => {
+      const res = await fetch(`${base}/jobs/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
+      }
+    },
+    cleanupJobs: (olderThanDays, dryRun) =>
+      post<{ count?: number; deleted?: number }>(`${base}/jobs/cleanup`, { olderThanDays, dryRun }),
     upload: ({ file, specId, specVersion, model }) => {
       // Fields must precede the file part — the API reads them from the file's preamble.
       const form = new FormData();

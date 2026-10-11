@@ -1,4 +1,5 @@
-import type { JobSummary } from '@ih/shared';
+import { useState } from 'react';
+import type { JobStatus, JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
 export function JobsTable({
@@ -44,14 +45,87 @@ export function JobsTable({
             <td>{job.attempts}</td>
             <td>{new Date(job.createdAt).toLocaleString()}</td>
             <td>
-              {job.status === 'awaiting_review' && <a href={`#/review/${job.id}`}>Review</a>}
-              {(job.status === 'failed' || job.status === 'needs_review') && (
-                <button onClick={() => api.retryJob(job.id).then(onChanged)}>Retry</button>
-              )}
+              <JobActions api={api} job={job} onChanged={onChanged} />
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+const DELETABLE = new Set<JobStatus>([
+  'succeeded',
+  'failed',
+  'needs_review',
+  'rejected',
+  'cancelled',
+]);
+const RETRYABLE = new Set<JobStatus>(['failed', 'needs_review', 'cancelled']);
+
+/** Row actions; Cancel and Delete ask for an inline confirmation first. */
+function JobActions({ api, job, onChanged }: { api: Api; job: JobSummary; onChanged: () => void }) {
+  const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (action: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await action();
+      setConfirm(null);
+      onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const alert = error && (
+    <div role="alert" className="error">
+      {error}
+    </div>
+  );
+
+  if (confirm) {
+    return (
+      <>
+        <span>
+          {confirm === 'delete'
+            ? `Delete ${job.filename}? Published copies in the target are kept.`
+            : 'Cancel job?'}
+        </span>{' '}
+        <button
+          type="button"
+          onClick={() =>
+            void run(() => (confirm === 'delete' ? api.deleteJob(job.id) : api.cancelJob(job.id)))
+          }
+        >
+          Confirm
+        </button>
+        <button type="button" onClick={() => setConfirm(null)}>
+          Keep
+        </button>
+        {alert}
+      </>
+    );
+  }
+  return (
+    <>
+      {job.status === 'awaiting_review' && <a href={`#/review/${job.id}`}>Review</a>}
+      {RETRYABLE.has(job.status) && (
+        <button type="button" onClick={() => void run(() => api.retryJob(job.id))}>
+          Retry
+        </button>
+      )}
+      {(job.status === 'queued' || job.status === 'running') && (
+        <button type="button" onClick={() => setConfirm('cancel')}>
+          Cancel
+        </button>
+      )}
+      {DELETABLE.has(job.status) && (
+        <button type="button" className="danger" onClick={() => setConfirm('delete')}>
+          Delete
+        </button>
+      )}
+      {alert}
+    </>
   );
 }

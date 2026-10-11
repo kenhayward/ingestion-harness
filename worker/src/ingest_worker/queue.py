@@ -1,10 +1,15 @@
 """Postgres-backed job queue (jobs table, see db/migrations). Claims use FOR UPDATE SKIP LOCKED
-so any number of worker replicas can poll concurrently."""
+so any number of worker replicas can poll concurrently.
+
+Statuses: queued, running, succeeded, failed, needs_review, awaiting_review, rejected, cancelled.
+`cancelled` is set by an operator (API); every worker status write is guarded with
+`AND status = 'running'`, so the worker never overwrites a cancel."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol
 
 from .llm.base import ModelDescriptor
@@ -30,10 +35,18 @@ class ClaimedJob:
     test: bool = False
     #: task="rerun": {"step": id, "model"?: ref, "instructions"?: text}
     rerun: dict[str, Any] | None = None
+    #: jobs.locked_at of this claim: identifies *this* run. A cancel, delete, retry or stale-lock
+    #: reap changes or removes it, after which the run must stop and write nothing.
+    claimed_at: datetime | None = None
 
 
 class JobQueue(Protocol):
     def claim(self, worker_id: str) -> ClaimedJob | None: ...
+
+    def is_cancelled(self, job: ClaimedJob) -> bool:
+        """True once the job is no longer this run's claim: cancelled, deleted, re-queued
+        (Retry, stale-lock reap) or claimed again by another run."""
+        ...
 
     def complete(
         self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str
@@ -47,6 +60,11 @@ class JobQueue(Protocol):
         reasons: list[str],
     ) -> None:
         """Record draft outputs and park the job until a reviewer approves or rejects it."""
+        ...
+
+    def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        """Record draft outputs as soon as they are written, whatever happens to the run next,
+        so deleting the job can find and remove them."""
         ...
 
     def record_published(
@@ -97,9 +115,13 @@ WITH next AS (
   RETURNING j.*
 )
 SELECT c.id::text, c.document_id::text, d.spec_id, d.spec_version, d.bucket, d.object_key,
-       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun
+       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at
   FROM claimed c JOIN documents d ON d.id = c.document_id
 """
+
+
+#: Guard for every worker status write: the row is still running under *this* claim.
+_MINE = "id = %(id)s AND status = 'running' AND locked_at IS NOT DISTINCT FROM %(claimed)s"
 
 
 def backoff_seconds(attempts: int) -> int:
@@ -120,10 +142,17 @@ class PgJobQueue:
         row = self._conn.execute(CLAIM_SQL, {"worker": worker_id}).fetchone()
         return ClaimedJob(*row) if row else None
 
+    def is_cancelled(self, job: ClaimedJob) -> bool:
+        row = self._conn.execute(
+            f"SELECT 1 FROM jobs WHERE {_MINE}", {"id": job.id, "claimed": job.claimed_at}
+        ).fetchone()
+        return row is None
+
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
         with self._conn.transaction():
+            if not self._finish(job, "succeeded", None):
+                return  # cancelled meanwhile: record nothing
             self._record_outputs(job, outputs, outputs_bucket, "draft")
-            self._finish(job.id, "succeeded", None)
 
     def _record_outputs(
         self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str, stage: str
@@ -146,12 +175,18 @@ class PgJobQueue:
         reasons: list[str],
     ) -> None:
         with self._conn.transaction():
-            self._record_outputs(job, outputs, outputs_bucket, "draft")
-            self._conn.execute(
-                """UPDATE jobs SET status = 'awaiting_review', review_reasons = %s, error = NULL,
-                          locked_by = NULL, locked_at = NULL, updated_at = now() WHERE id = %s""",
-                (json.dumps(reasons), job.id),
+            cur = self._conn.execute(
+                f"""UPDATE jobs SET status = 'awaiting_review', review_reasons = %(reasons)s,
+                           error = NULL, locked_by = NULL, locked_at = NULL, updated_at = now()
+                     WHERE {_MINE}""",
+                {"reasons": json.dumps(reasons), "id": job.id, "claimed": job.claimed_at},
             )
+            if cur.rowcount == 0:
+                return  # cancelled meanwhile: record nothing
+            self._record_outputs(job, outputs, outputs_bucket, "draft")
+
+    def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
+        self._record_outputs(job, outputs, bucket, "draft")
 
     def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self._record_outputs(job, outputs, bucket, "published")
@@ -202,25 +237,33 @@ class PgJobQueue:
         )
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
-        self._finish(job.id, "needs_review", reason)
+        self._finish(job, "needs_review", reason)
 
     def fail(self, job: ClaimedJob, error: str) -> None:
         if job.attempts < job.max_attempts:
             self._conn.execute(
-                """UPDATE jobs SET status = 'queued', error = %s, locked_by = NULL, locked_at = NULL,
-                          run_after = now() + make_interval(secs => %s), updated_at = now()
-                    WHERE id = %s""",
-                (error, backoff_seconds(job.attempts), job.id),
+                f"""UPDATE jobs SET status = 'queued', error = %(error)s, locked_by = NULL,
+                           locked_at = NULL, updated_at = now(),
+                           run_after = now() + make_interval(secs => %(backoff)s)
+                     WHERE {_MINE}""",
+                {
+                    "error": error,
+                    "backoff": backoff_seconds(job.attempts),
+                    "id": job.id,
+                    "claimed": job.claimed_at,
+                },
             )
         else:
-            self._finish(job.id, "failed", error)
+            self._finish(job, "failed", error)
 
-    def _finish(self, job_id: str, status: str, error: str | None) -> None:
-        self._conn.execute(
-            """UPDATE jobs SET status = %s, error = %s, locked_by = NULL, locked_at = NULL,
-                      updated_at = now() WHERE id = %s""",
-            (status, error, job_id),
+    def _finish(self, job: ClaimedJob, status: str, error: str | None) -> bool:
+        """Final status for this run. False when the job is no longer its claim (cancelled)."""
+        cur = self._conn.execute(
+            f"""UPDATE jobs SET status = %(status)s, error = %(error)s, locked_by = NULL,
+                       locked_at = NULL, updated_at = now() WHERE {_MINE}""",
+            {"status": status, "error": error, "id": job.id, "claimed": job.claimed_at},
         )
+        return cur.rowcount > 0
 
     def event(
         self, job_id: str, level: Level, message: str, data: dict[str, Any] | None = None
