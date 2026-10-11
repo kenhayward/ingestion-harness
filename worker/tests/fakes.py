@@ -76,7 +76,7 @@ class FakeQueue:
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
 
-    def is_cancelled(self, job_id: str) -> bool:
+    def is_cancelled(self, job: ClaimedJob) -> bool:
         return bool(self.cancel_when and self.cancel_when())
 
     def claim(self, worker_id: str) -> ClaimedJob | None:

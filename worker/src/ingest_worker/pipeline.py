@@ -45,7 +45,7 @@ class JobCancelled(Exception):
 
 def check_cancelled(job: ClaimedJob, queue: JobQueue) -> None:
     """Safe point between LLM calls / before side effects (publishing, recording results)."""
-    if queue.is_cancelled(job.id):
+    if queue.is_cancelled(job):
         raise JobCancelled(job.id)
 
 

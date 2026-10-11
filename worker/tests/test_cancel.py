@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ingest_worker.main import run_once
 
@@ -44,3 +45,19 @@ def test_jobs_that_are_not_cancelled_run_normally(tmp_path: Path) -> None:
     queue = FakeQueue(jobs=[JOB], templates={("demo", 1): TEMPLATE}, cancel_when=lambda: False)
     run_once(queue, deps, "w1")
     assert queue.awaiting
+
+
+class EventsFail(FakeQueue):
+    """The job row was deleted mid-run: every write for it raises (FK violation)."""
+
+    def event(
+        self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+    ) -> None:
+        raise RuntimeError("insert or update on table job_events violates foreign key")
+
+
+def test_the_worker_survives_writes_failing_for_a_deleted_job(tmp_path: Path) -> None:
+    deps, provider, _ = make(tmp_path)
+    provider.responses = [RuntimeError("LLM down")] * 10
+    queue = EventsFail(jobs=[JOB], templates={("demo", 1): TEMPLATE})
+    assert run_once(queue, deps, "w1") is True  # no exception escapes the poll loop
