@@ -27,7 +27,15 @@ permissions:
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Automatic deploys only for CI runs on pushes to main in this repo (never fork PRs, whose
+    # head branch may also be called "main"), and only once a staging runner exists
+    # (repository variable AUTO_DEPLOY_STAGING=true).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.AUTO_DEPLOY_STAGING == 'true' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     # One runner per environment, installed ON the deploy host with Docker access.
     # Labels: deploy-staging / deploy-production (see docs/runners.md).
     runs-on: [self-hosted, linux, "deploy-${{ inputs.environment || 'staging' }}"]

@@ -3,6 +3,7 @@ name = "ingest-worker"
 version = "0.1.0"
 description = "PDF ingestion worker: segments documents per spec and coordinates LLM extraction."
 requires-python = ">=3.13"
+license = "Apache-2.0"
 dependencies = [
   "anthropic>=0.70",
   "openai>=1.100",

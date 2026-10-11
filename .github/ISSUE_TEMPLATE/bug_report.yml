@@ -1,0 +1,48 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issue? Don't file it here. See [SECURITY.md](../blob/main/SECURITY.md).
+        Please don't attach documents you aren't allowed to share publicly.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [web UI, api, worker, specs / templates, deploy / docker, docs, not sure]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Document type / template version ...
+        2. Upload ...
+        3. Job ends in `needs_review` with ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: e.g. main @ abc1234
+  - type: input
+    id: model
+    attributes:
+      label: LLM / OCR provider and model (if relevant)
+      placeholder: e.g. local/qwen3.8-27b-mtp via LM Studio

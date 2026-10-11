@@ -1,5 +1,8 @@
 # Ingestion Harness
 
+[![CI](https://github.com/kenhayward/ingestion-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kenhayward/ingestion-harness/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 Ingest PDF documents with a known structure, extract their contents through a spec-driven LLM
 prompt harness, and land validated **CSV / JSON** in S3-compatible storage (SeaweedFS).
 
@@ -60,6 +63,17 @@ See [specs/README.md](specs/README.md) for the format.
 
 - [CLAUDE.md](CLAUDE.md) — working agreement, TDD workflow, commands
 - [docs/architecture.md](docs/architecture.md) — components, data flow, failure handling
-- [docs/runners.md](docs/runners.md) — self-hosted GitHub runner setup
+- [docs/runners.md](docs/runners.md) — CI (GitHub-hosted) and self-hosted deploy runners
 - [deploy/README.md](deploy/README.md) — deployment and operations
 - [docs/adr/](docs/adr/) — architecture decision records
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the test-first
+workflow and the PR process. Please follow the [code of conduct](CODE_OF_CONDUCT.md), and report
+security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution,
+including the public sample documents in `docs/samples/`.
