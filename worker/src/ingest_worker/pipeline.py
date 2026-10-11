@@ -39,6 +39,16 @@ class DocumentError(Exception):
     """The document (or spec) can't be processed as-is. Not retried; job goes to needs_review."""
 
 
+class JobCancelled(Exception):
+    """An operator cancelled the job: stop at the next safe point, write no status."""
+
+
+def check_cancelled(job: ClaimedJob, queue: JobQueue) -> None:
+    """Safe point between LLM calls / before side effects (publishing, recording results)."""
+    if queue.is_cancelled(job.id):
+        raise JobCancelled(job.id)
+
+
 @dataclass
 class Buckets:
     inbox: str
@@ -199,6 +209,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
     results: dict[str, dict[str, Any]] = {}
     models_used: dict[str, str] = {}
     for ex in spec.extractions:
+        check_cancelled(job, queue)
         provider, model_id = resolved[ex.id]
         images = page_images(job, deps, queue, doc.pdf, ex.page_images, doc.total_pages)
         result = run_step_extraction(

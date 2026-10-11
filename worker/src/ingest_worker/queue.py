@@ -1,5 +1,9 @@
 """Postgres-backed job queue (jobs table, see db/migrations). Claims use FOR UPDATE SKIP LOCKED
-so any number of worker replicas can poll concurrently."""
+so any number of worker replicas can poll concurrently.
+
+Statuses: queued, running, succeeded, failed, needs_review, awaiting_review, rejected, cancelled.
+`cancelled` is set by an operator (API); every worker status write is guarded with
+`AND status = 'running'`, so the worker never overwrites a cancel."""
 
 from __future__ import annotations
 
@@ -34,6 +38,10 @@ class ClaimedJob:
 
 class JobQueue(Protocol):
     def claim(self, worker_id: str) -> ClaimedJob | None: ...
+
+    def is_cancelled(self, job_id: str) -> bool:
+        """True once an operator cancelled the job (status 'cancelled')."""
+        ...
 
     def complete(
         self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str
@@ -120,10 +128,15 @@ class PgJobQueue:
         row = self._conn.execute(CLAIM_SQL, {"worker": worker_id}).fetchone()
         return ClaimedJob(*row) if row else None
 
+    def is_cancelled(self, job_id: str) -> bool:
+        row = self._conn.execute("SELECT status FROM jobs WHERE id = %s", (job_id,)).fetchone()
+        return row is not None and row[0] == "cancelled"
+
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
         with self._conn.transaction():
+            if not self._finish(job.id, "succeeded", None):
+                return  # cancelled meanwhile: record nothing
             self._record_outputs(job, outputs, outputs_bucket, "draft")
-            self._finish(job.id, "succeeded", None)
 
     def _record_outputs(
         self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str, stage: str
@@ -146,12 +159,15 @@ class PgJobQueue:
         reasons: list[str],
     ) -> None:
         with self._conn.transaction():
-            self._record_outputs(job, outputs, outputs_bucket, "draft")
-            self._conn.execute(
+            cur = self._conn.execute(
                 """UPDATE jobs SET status = 'awaiting_review', review_reasons = %s, error = NULL,
-                          locked_by = NULL, locked_at = NULL, updated_at = now() WHERE id = %s""",
+                          locked_by = NULL, locked_at = NULL, updated_at = now()
+                    WHERE id = %s AND status = 'running'""",
                 (json.dumps(reasons), job.id),
             )
+            if cur.rowcount == 0:
+                return  # cancelled meanwhile: record nothing
+            self._record_outputs(job, outputs, outputs_bucket, "draft")
 
     def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self._record_outputs(job, outputs, bucket, "published")
@@ -209,18 +225,20 @@ class PgJobQueue:
             self._conn.execute(
                 """UPDATE jobs SET status = 'queued', error = %s, locked_by = NULL, locked_at = NULL,
                           run_after = now() + make_interval(secs => %s), updated_at = now()
-                    WHERE id = %s""",
+                    WHERE id = %s AND status = 'running'""",
                 (error, backoff_seconds(job.attempts), job.id),
             )
         else:
             self._finish(job.id, "failed", error)
 
-    def _finish(self, job_id: str, status: str, error: str | None) -> None:
-        self._conn.execute(
+    def _finish(self, job_id: str, status: str, error: str | None) -> bool:
+        """Final status for a running job. False when it is no longer running (cancelled)."""
+        cur = self._conn.execute(
             """UPDATE jobs SET status = %s, error = %s, locked_by = NULL, locked_at = NULL,
-                      updated_at = now() WHERE id = %s""",
+                      updated_at = now() WHERE id = %s AND status = 'running'""",
             (status, error, job_id),
         )
+        return cur.rowcount > 0
 
     def event(
         self, job_id: str, level: Level, message: str, data: dict[str, Any] | None = None

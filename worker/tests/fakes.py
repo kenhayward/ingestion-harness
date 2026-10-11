@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,6 +73,11 @@ class FakeQueue:
     #: Templates stored in the database, keyed by (id, version).
     templates: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
     step_runs: list[dict[str, Any]] = field(default_factory=list)
+    #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
+    cancel_when: Callable[[], bool] | None = None
+
+    def is_cancelled(self, job_id: str) -> bool:
+        return bool(self.cancel_when and self.cancel_when())
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
