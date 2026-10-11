@@ -6,10 +6,13 @@ export function JobsTable({
   api,
   jobs,
   onChanged,
+  retryModel = '',
 }: {
   api: Api;
   jobs: JobSummary[];
   onChanged: () => void;
+  /** Model selected in the upload form ('' = spec default); Retry runs with it. */
+  retryModel?: string;
 }) {
   if (jobs.length === 0) return <p>No jobs yet.</p>;
 
@@ -19,6 +22,7 @@ export function JobsTable({
         <tr>
           <th>File</th>
           <th>Spec</th>
+          <th>Model</th>
           <th>Status</th>
           <th>Attempts</th>
           <th>Created</th>
@@ -32,6 +36,7 @@ export function JobsTable({
             <td>
               {job.specId} v{job.specVersion}
             </td>
+            <td>{modelLabel(job)}</td>
             <td>
               <span className={`status status-${job.status}`}>{job.status}</span>
               {job.error && <div className="error">{job.error}</div>}
@@ -45,13 +50,19 @@ export function JobsTable({
             <td>{job.attempts}</td>
             <td>{new Date(job.createdAt).toLocaleString()}</td>
             <td>
-              <JobActions api={api} job={job} onChanged={onChanged} />
+              <JobActions api={api} job={job} onChanged={onChanged} retryModel={retryModel} />
             </td>
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+/** What ran (step runs), else what was requested (override), else the spec default. */
+function modelLabel(job: JobSummary): string {
+  if (job.modelsUsed.length) return job.modelsUsed.join(', ');
+  return job.modelOverride ?? 'Spec default';
 }
 
 const DELETABLE = new Set<JobStatus>([
@@ -64,7 +75,17 @@ const DELETABLE = new Set<JobStatus>([
 const RETRYABLE = new Set<JobStatus>(['failed', 'needs_review', 'cancelled']);
 
 /** Row actions; Cancel and Delete ask for an inline confirmation first. */
-function JobActions({ api, job, onChanged }: { api: Api; job: JobSummary; onChanged: () => void }) {
+function JobActions({
+  api,
+  job,
+  onChanged,
+  retryModel,
+}: {
+  api: Api;
+  job: JobSummary;
+  onChanged: () => void;
+  retryModel: string;
+}) {
   const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,8 +132,11 @@ function JobActions({ api, job, onChanged }: { api: Api; job: JobSummary; onChan
     <>
       {job.status === 'awaiting_review' && <a href={`#/review/${job.id}`}>Review</a>}
       {RETRYABLE.has(job.status) && (
-        <button type="button" onClick={() => void run(() => api.retryJob(job.id))}>
-          Retry
+        <button
+          type="button"
+          onClick={() => void run(() => api.retryJob(job.id, retryModel || null))}
+        >
+          Retry with {retryModel || 'spec default'}
         </button>
       )}
       {(job.status === 'queued' || job.status === 'running') && (

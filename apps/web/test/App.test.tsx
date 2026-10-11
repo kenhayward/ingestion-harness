@@ -21,11 +21,11 @@ describe('App', () => {
 
     expect(await screen.findByText('bad.pdf')).toBeInTheDocument();
     expect(screen.getByText('schema mismatch')).toBeInTheDocument();
-    const retry = screen.getAllByRole('button', { name: 'Retry' });
+    const retry = screen.getAllByRole('button', { name: /^Retry/ });
     expect(retry).toHaveLength(1);
 
     await userEvent.click(retry[0]!);
-    expect(api.retryJob).toHaveBeenCalledWith('f');
+    expect(api.retryJob).toHaveBeenCalledWith('f', null); // no model selected: spec default
   });
 
   it('surfaces API errors', async () => {
@@ -76,5 +76,29 @@ describe('review routing', () => {
     expect(link).toHaveAttribute('href', '#/results');
     expect(link).toHaveAttribute('aria-current', 'page');
     window.location.hash = '';
+  });
+
+  it('retries with the model selected in the upload form', async () => {
+    const api = fakeApi({
+      listModels: async () => [
+        {
+          ref: 'anthropic/claude-haiku-5-5',
+          provider: 'anthropic',
+          providerKind: 'anthropic',
+          modelId: 'claude-haiku-5-5',
+          displayName: 'Claude Haiku 5.5',
+          enabled: true,
+          discoveredAt: '',
+        },
+      ],
+      listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByRole('option', { name: /Claude Haiku 5.5/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-haiku-5-5');
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith('f', 'anthropic/claude-haiku-5-5');
   });
 });

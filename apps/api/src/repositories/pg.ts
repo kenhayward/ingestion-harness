@@ -28,7 +28,10 @@ import {
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.review_reasons, j.reviewer,
-         j.review_note, j.reviewed_at, j.created_at, j.updated_at
+         j.review_note, j.reviewed_at, j.created_at, j.updated_at,
+         array(SELECT model FROM step_runs
+                WHERE job_id = j.id AND model IS NOT NULL
+                GROUP BY model ORDER BY min(started_at)) AS models_used
     FROM jobs j JOIN documents d ON d.id = j.document_id`;
 
 interface JobRow {
@@ -39,6 +42,7 @@ interface JobRow {
   spec_version: number;
   status: JobStatus;
   model_override: string | null;
+  models_used: string[];
   attempts: number;
   error: string | null;
   task: 'process' | 'publish';
@@ -61,6 +65,7 @@ function toSummary(r: JobRow): JobSummary {
     specVersion: r.spec_version,
     status: r.status,
     modelOverride: r.model_override,
+    modelsUsed: r.models_used,
     attempts: r.attempts,
     error: r.error,
     task: r.task,
@@ -276,14 +281,15 @@ export class PgRepo implements IngestionRepo {
     return rows[0]?.published_at?.toISOString() ?? null;
   }
 
-  async retryJob(id: string): Promise<JobSummary | null> {
+  async retryJob(id: string, model?: string | null): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
       // A cancelled publish/rerun resumes as that task; failures re-run processing.
       `UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
               status = 'queued', attempts = 0, error = NULL, run_after = now(),
-              locked_by = NULL, locked_at = NULL, updated_at = now()
+              locked_by = NULL, locked_at = NULL, updated_at = now(),
+              model_override = CASE WHEN $2 THEN $3 ELSE model_override END
         WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')`,
-      [id],
+      [id, model !== undefined, model ?? null],
     );
     return rowCount ? await this.getJob(id) : null;
   }

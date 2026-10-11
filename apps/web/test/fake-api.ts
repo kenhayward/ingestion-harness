@@ -11,6 +11,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     specVersion: 1,
     status: 'queued',
     modelOverride: null,
+    modelsUsed: [],
     attempts: 0,
     error: null,
     task: 'process',

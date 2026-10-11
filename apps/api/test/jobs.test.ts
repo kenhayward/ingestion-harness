@@ -259,3 +259,88 @@ describe('job cancellation', () => {
     expect(res.json()).toMatchObject({ status: 'queued', task: 'process', attempts: 0 });
   });
 });
+
+describe('retry with a model', () => {
+  const model = (ref: string, enabled = true) => ({
+    ref,
+    provider: ref.split('/')[0]!,
+    providerKind: 'anthropic' as const,
+    modelId: ref.split('/')[1]!,
+    displayName: null,
+    enabled,
+    discoveredAt: '',
+  });
+
+  async function failedJob(modelOverride: string | null = 'anthropic/old') {
+    const ctx = await seedJob();
+    ctx.repo.models = [model('anthropic/new'), model('anthropic/off', false)];
+    ctx.repo.jobs.set(ctx.job.id, {
+      ...ctx.repo.jobs.get(ctx.job.id)!,
+      status: 'failed',
+      modelOverride,
+    });
+    return ctx;
+  }
+  const retry = (ctx: Awaited<ReturnType<typeof seedJob>>, payload?: object) =>
+    ctx.app.inject({ method: 'POST', url: `/api/jobs/${ctx.job.id}/retry`, payload });
+
+  it('uses the model sent with the retry', async () => {
+    const ctx = await failedJob();
+    const res = await retry(ctx, { model: 'anthropic/new' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'queued', modelOverride: 'anthropic/new' });
+  });
+
+  it('clears the override with null (spec default)', async () => {
+    const ctx = await failedJob();
+    expect((await retry(ctx, { model: null })).json()).toMatchObject({ modelOverride: null });
+  });
+
+  it('keeps the old override when no model is sent', async () => {
+    const ctx = await failedJob();
+    expect((await retry(ctx)).json()).toMatchObject({ modelOverride: 'anthropic/old' });
+  });
+
+  it.each(['anthropic/unknown', 'anthropic/off'])('rejects %s', async (ref) => {
+    const ctx = await failedJob();
+    const res = await retry(ctx, { model: ref });
+    expect(res.statusCode).toBe(400);
+    expect(ctx.repo.jobs.get(ctx.job.id)!.status).toBe('failed');
+  });
+});
+
+describe('models used', () => {
+  it('lists the distinct models a job ran on, oldest first', async () => {
+    const { app, repo, job } = await seedJob();
+    const run = (model: string | null, startedAt: string) => ({
+      id: 1,
+      stepId: 's',
+      trigger: 'process' as const,
+      model,
+      attempts: 1,
+      inputTokens: null,
+      outputTokens: null,
+      status: 'succeeded' as const,
+      error: null,
+      startedAt,
+      finishedAt: startedAt,
+    });
+    repo.stepRuns.set(job.id, [
+      run('local/qwen', '2026-10-01T00:00:00Z'),
+      run('anthropic/haiku', '2026-10-02T00:00:00Z'),
+      run('local/qwen', '2026-10-03T00:00:00Z'),
+      run(null, '2026-10-04T00:00:00Z'),
+    ]);
+    const listed = (await app.inject('/api/jobs')).json()[0];
+    expect(listed.modelsUsed).toEqual(['local/qwen', 'anthropic/haiku']);
+    expect((await app.inject(`/api/jobs/${job.id}`)).json().modelsUsed).toEqual([
+      'local/qwen',
+      'anthropic/haiku',
+    ]);
+  });
+
+  it('is empty before any step ran', async () => {
+    const { app } = await seedJob();
+    expect((await app.inject('/api/jobs')).json()[0].modelsUsed).toEqual([]);
+  });
+});
