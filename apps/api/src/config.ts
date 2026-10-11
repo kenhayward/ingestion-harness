@@ -3,6 +3,10 @@ import { z } from 'zod';
 
 const defaultSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url));
 
+/** docker-compose passes unset optional variables as ''. */
+const blank = (v: unknown) => (v === '' ? undefined : v);
+const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blank, schema.optional());
+
 const EnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().default(3000),
@@ -15,6 +19,14 @@ const EnvSchema = z.object({
   S3_BUCKET_INBOX: z.string().default('ingest-inbox'),
   S3_BUCKET_OUTPUTS: z.string().default('ingest-outputs'),
   S3_BUCKET_RUNS: z.string().default('ingest-runs'),
+  // Final target for published outputs (read back by the Results page). Mirrors the worker:
+  // any unset value falls back to the S3_* connection above.
+  TARGET_S3_ENDPOINT: optional(z.string().url()),
+  TARGET_S3_REGION: optional(z.string()),
+  TARGET_S3_ACCESS_KEY: optional(z.string()),
+  TARGET_S3_SECRET_KEY: optional(z.string()),
+  TARGET_S3_BUCKET: z.preprocess(blank, z.string().default('ingest-published')),
+  TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
   SPECS_DIR: z.string().default(defaultSpecsDir),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
 });
@@ -28,4 +40,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Invalid API configuration:\n  ${issues.join('\n  ')}`);
   }
   return parsed.data;
+}
+
+export interface TargetConfig {
+  endpoint: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  prefix: string;
+}
+
+/** The publish target, resolved exactly like worker/src/ingest_worker/config.py. */
+export function targetConfig(c: Config): TargetConfig {
+  return {
+    endpoint: c.TARGET_S3_ENDPOINT ?? c.S3_ENDPOINT,
+    region: c.TARGET_S3_REGION ?? c.S3_REGION,
+    accessKeyId: c.TARGET_S3_ACCESS_KEY ?? c.S3_ACCESS_KEY,
+    secretAccessKey: c.TARGET_S3_SECRET_KEY ?? c.S3_SECRET_KEY,
+    bucket: c.TARGET_S3_BUCKET,
+    prefix: c.TARGET_S3_PREFIX,
+  };
 }
