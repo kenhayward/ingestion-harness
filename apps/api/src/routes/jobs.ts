@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { JobStatusSchema, pagePreviewKey } from '@ih/shared';
 import { z } from 'zod';
+import { removeJobFiles } from '../jobs/delete.js';
 import { storeFor } from '../storage/stage.js';
 
 const ListQuery = z.object({
@@ -9,6 +10,11 @@ const ListQuery = z.object({
 });
 
 const UUID = z.string().uuid();
+
+const CleanupBody = z.object({
+  olderThanDays: z.number().int().min(1).max(3650),
+  dryRun: z.boolean(),
+});
 
 export const jobRoutes: FastifyPluginAsync = async (app) => {
   app.get('/jobs', async (req, reply) => {
@@ -36,6 +42,39 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     }
     const job = await app.deps.repo.cancelJob(req.params.id);
     return job ?? reply.code(409).send({ error: 'only queued or running jobs can be cancelled' });
+  });
+
+  app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
+    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    const res = await app.deps.repo.deleteJob(req.params.id);
+    if (res.result === 'not_found') return reply.code(404).send({ error: 'not found' });
+    if (res.result === 'conflict') {
+      return reply
+        .code(409)
+        .send({ error: `a ${res.status} job cannot be deleted: cancel or review it first` });
+    }
+    await removeJobFiles(app.deps, res.removed, req.log);
+    return reply.code(204).send();
+  });
+
+  /** Bulk delete of finished jobs older than N days (dryRun: count only). */
+  app.post('/jobs/cleanup', async (req, reply) => {
+    const body = CleanupBody.safeParse(req.body);
+    if (!body.success) {
+      const error = body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+      return reply.code(400).send({ error });
+    }
+    const cutoff = new Date(Date.now() - body.data.olderThanDays * 86_400_000).toISOString();
+    const ids = await app.deps.repo.finishedJobIdsBefore(cutoff);
+    if (body.data.dryRun) return { count: ids.length };
+    let deleted = 0;
+    for (const id of ids) {
+      const res = await app.deps.repo.deleteJob(id);
+      if (res.result !== 'deleted') continue; // status changed meanwhile: skip it
+      deleted++;
+      await removeJobFiles(app.deps, res.removed, req.log);
+    }
+    return { deleted };
   });
 
   app.get<{

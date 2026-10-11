@@ -11,13 +11,16 @@ import type {
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
+import { DELETABLE_STATUSES } from '@ih/shared';
 import {
   ReferenceConflictError,
+  type DeleteJobResult,
   type IngestionRepo,
   type ListJobsQuery,
   type ListPublishedQuery,
   type NewDocument,
   type NewEdit,
+  type StoredObject,
 } from './types.js';
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
@@ -136,6 +139,41 @@ export class MemoryRepo implements IngestionRepo {
     if (!job || (job.status !== 'queued' && job.status !== 'running')) return null;
     this.events.set(id, [...(this.events.get(id) ?? []), { level: 'warn', message: 'cancelled' }]);
     return this.update(id, { status: 'cancelled' });
+  }
+
+  async deleteJob(id: string): Promise<DeleteJobResult> {
+    const job = this.jobs.get(id);
+    if (!job) return { result: 'not_found' };
+    if (!DELETABLE_STATUSES.includes(job.status)) return { result: 'conflict', status: job.status };
+    const draftObjects = (this.outputs.get(id) ?? [])
+      .filter((o) => o.stage === 'draft')
+      .map((o) => ({ bucket: o.bucket, key: o.key }));
+    this.jobs.delete(id);
+    this.outputs.delete(id);
+    this.edits.delete(id);
+    this.stepRuns.delete(id);
+    this.events.delete(id);
+    this.publishedAt.delete(id);
+    const doc = this.documents.get(job.documentId);
+    const stillUsed =
+      [...this.jobs.values()].some((j) => j.documentId === job.documentId) ||
+      [...this.references.values()].some((r) => r.documentId === job.documentId);
+    let inboxObject: StoredObject | null = null;
+    if (doc && !stillUsed) {
+      this.documents.delete(job.documentId);
+      const shared = [...this.documents.values()].some(
+        (d) => d.bucket === doc.bucket && d.objectKey === doc.objectKey,
+      );
+      if (!shared) inboxObject = { bucket: doc.bucket, key: doc.objectKey };
+    }
+    return { result: 'deleted', removed: { jobId: id, draftObjects, inboxObject } };
+  }
+
+  async finishedJobIdsBefore(cutoffIso: string): Promise<string[]> {
+    const cutoff = Date.parse(cutoffIso);
+    return [...this.jobs.values()]
+      .filter((j) => DELETABLE_STATUSES.includes(j.status) && Date.parse(j.updatedAt) < cutoff)
+      .map((j) => j.id);
   }
 
   async retryJob(id: string): Promise<JobSummary | null> {

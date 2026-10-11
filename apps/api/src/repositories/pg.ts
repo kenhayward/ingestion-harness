@@ -13,14 +13,16 @@ import type {
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
-import { modelRef } from '@ih/shared';
+import { DELETABLE_STATUSES, modelRef } from '@ih/shared';
 import {
   ReferenceConflictError,
+  type DeleteJobResult,
   type IngestionRepo,
   type ListJobsQuery,
   type ListPublishedQuery,
   type NewDocument,
   type NewEdit,
+  type StoredObject,
 } from './types.js';
 
 const JOB_SELECT = `
@@ -294,6 +296,75 @@ export class PgRepo implements IngestionRepo {
       [id],
     );
     return rowCount ? await this.getJob(id) : null;
+  }
+
+  async deleteJob(id: string): Promise<DeleteJobResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query<{
+        status: JobStatus;
+        document_id: string;
+        bucket: string;
+        object_key: string;
+      }>(
+        `SELECT j.status, j.document_id, d.bucket, d.object_key
+           FROM jobs j JOIN documents d ON d.id = j.document_id
+          WHERE j.id = $1 FOR UPDATE OF j`,
+        [id],
+      );
+      const row = found.rows[0];
+      if (!row) {
+        await client.query('ROLLBACK');
+        return { result: 'not_found' };
+      }
+      if (!DELETABLE_STATUSES.includes(row.status)) {
+        await client.query('ROLLBACK');
+        return { result: 'conflict', status: row.status };
+      }
+      const drafts = await client.query<{ bucket: string; object_key: string }>(
+        `SELECT bucket, object_key FROM job_outputs WHERE job_id = $1 AND stage = 'draft'`,
+        [id],
+      );
+      await client.query('DELETE FROM jobs WHERE id = $1', [id]);
+      const doc = await client.query(
+        `DELETE FROM documents d WHERE d.id = $1
+            AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)`,
+        [row.document_id],
+      );
+      let inboxObject: StoredObject | null = null;
+      if (doc.rowCount) {
+        const shared = await client.query(
+          'SELECT 1 FROM documents WHERE bucket = $1 AND object_key = $2 LIMIT 1',
+          [row.bucket, row.object_key],
+        );
+        if (!shared.rowCount) inboxObject = { bucket: row.bucket, key: row.object_key };
+      }
+      await client.query('COMMIT');
+      return {
+        result: 'deleted',
+        removed: {
+          jobId: id,
+          draftObjects: drafts.rows.map((d) => ({ bucket: d.bucket, key: d.object_key })),
+          inboxObject,
+        },
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async finishedJobIdsBefore(cutoffIso: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `SELECT id FROM jobs
+        WHERE status = ANY($1::job_status[]) AND updated_at < $2 ORDER BY updated_at`,
+      [DELETABLE_STATUSES, cutoffIso],
+    );
+    return rows.map((r) => r.id);
   }
 
   async listEdits(jobId: string): Promise<ReviewEdit[]> {

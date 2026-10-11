@@ -22,6 +22,24 @@ export interface NewDocument {
   objectKey: string;
 }
 
+export interface StoredObject {
+  bucket: string;
+  key: string;
+}
+
+/** What a deleted job leaves to clean up in the internal store. */
+export interface RemovedJob {
+  jobId: string;
+  draftObjects: StoredObject[];
+  /** The inbox PDF, when no remaining document row or reference needs it. */
+  inboxObject: StoredObject | null;
+}
+
+export type DeleteJobResult =
+  | { result: 'deleted'; removed: RemovedJob }
+  | { result: 'not_found' }
+  | { result: 'conflict'; status: JobStatus };
+
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
@@ -66,6 +84,10 @@ export interface IngestionRepo {
   retryJob(id: string): Promise<JobSummary | null>;
   /** queued/running -> cancelled (+ event). Null if unknown or not cancellable. */
   cancelJob(id: string): Promise<JobSummary | null>;
+  /** Delete a finished job (+ its document unless still needed). Storage is the caller's job. */
+  deleteJob(id: string): Promise<DeleteJobResult>;
+  /** Ids of finished jobs whose updated_at is before `cutoffIso`. */
+  finishedJobIdsBefore(cutoffIso: string): Promise<string[]>;
   listModels(): Promise<ModelInfo[]>;
 
   // --- references and regression runs ---
