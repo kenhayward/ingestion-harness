@@ -138,7 +138,10 @@ export function AccessPage({
           </div>
         </aside>
       </div>
-      {created && <NewToken {...created} onDone={() => setCreated(null)} />}
+      {created && (
+        // Keyed per token: a second token starts uncopied (each is shown only once).
+        <NewToken key={created.token} {...created} onDone={() => setCreated(null)} />
+      )}
       {error && <p role="alert">{error}</p>}
       <FilterChips
         label="Filter tokens by status"
@@ -308,7 +311,7 @@ function NewToken({ label, token, onDone }: { label: string; token: string; onDo
             navigator.clipboard.writeText(token).then(
               () => {
                 setCopied(true);
-                setNote(null);
+                setNote('Copied.');
               },
               () => {
                 setCopied(false);

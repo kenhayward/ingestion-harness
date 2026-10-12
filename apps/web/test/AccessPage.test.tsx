@@ -149,6 +149,28 @@ describe('AccessPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Copy' }));
     expect(writeText).toHaveBeenCalledWith('ih_secret');
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Copied.');
+  });
+
+  it('starts each new token uncopied (a second token is not "Copied")', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: { writeText: vi.fn(async () => undefined) },
+    });
+    const createToken = vi
+      .fn()
+      .mockResolvedValueOnce({ token: 'ih_first', record: token() })
+      .mockResolvedValueOnce({ token: 'ih_second', record: token() });
+    render(<AccessPage api={fakeApi({ createToken })} me={ADMIN} />);
+    await userEvent.type(screen.getByLabelText('Label'), 'A');
+    await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy' }));
+    await screen.findByRole('button', { name: 'Copied' });
+    await userEvent.type(screen.getByLabelText('Label'), 'B');
+    await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
+    expect(await screen.findByDisplayValue('ih_second')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('explains a failed copy and never claims it copied', async () => {
