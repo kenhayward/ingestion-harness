@@ -5,6 +5,7 @@
  *   outputs bucket: {specId}/v{version}/{outputId}/{documentId}.{csv|json}
  *   runs bucket:    {jobId}/{extractionId}/attempt-{n}.json   (prompt + raw response audit)
  *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
+ *   runs bucket:    segmentation/{projectId}/{jobId}.json   (workbench segment task)
  */
 export function inboxKey(specId: string, version: number, documentId: string): string {
   return `${specId}/v${version}/${documentId}.pdf`;
@@ -33,4 +34,9 @@ export function preparedTextKey(sha256: string): string {
 /** Page count, OCR'd pages and size of a prepared PDF (runs bucket). */
 export function preparedTriageKey(sha256: string): string {
   return `prepared/${sha256}/triage.json`;
+}
+
+/** Section-anchor preview grid of a workbench project (runs bucket, worker segment task). */
+export function segmentationKey(projectId: string, jobId: string): string {
+  return `segmentation/${projectId}/${jobId}.json`;
 }

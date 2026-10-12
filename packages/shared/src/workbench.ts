@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { CopySelectionSchema, SectionSchema } from './spec.js';
+import type { JobStatus } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
 export const SAMPLE_ROLES = ['dev', 'holdout'] as const;
@@ -93,4 +95,55 @@ export interface SampleView {
   prepareJobId: string | null;
   error: string | null;
   triage: PreparedTriage | null;
+}
+
+/** The part of a template's `document` block the segmentation preview applies. */
+export const SegmentDocumentSchema = z
+  .object({
+    sections: z.array(SectionSchema).min(1),
+    copies: CopySelectionSchema.optional(),
+    pageMarkers: z.boolean().default(true),
+  })
+  .strict();
+export type SegmentDocument = z.infer<typeof SegmentDocumentSchema>;
+
+/** One sample × section cell of the preview grid. */
+export const SectionCellSchema = z.object({
+  id: z.string(),
+  found: z.boolean(),
+  /** 1-based PDF page where the section starts (null when not found). */
+  page: z.number().int().positive().nullable(),
+  /** The line the anchor matched, trimmed to 200 characters. */
+  line: z.string().nullable(),
+  /** Characters of section text (0 when not found or empty). */
+  chars: z.number().int().nonnegative(),
+});
+export type SectionCell = z.infer<typeof SectionCellSchema>;
+
+export const SegmentedSampleSchema = z.object({
+  sampleId: z.string(),
+  /** 1-based first page of the kept copy (copy selection). */
+  firstPage: z.number().int().positive(),
+  pageCount: z.number().int().nonnegative(),
+  /** e.g. "not prepared" or a copies-anchor problem; sections are empty when set. */
+  error: z.string().nullable(),
+  missingRequired: z.array(z.string()),
+  sections: z.array(SectionCellSchema),
+});
+export type SegmentedSample = z.infer<typeof SegmentedSampleSchema>;
+
+/** Written by the worker's segment task (runs bucket, segmentationKey). */
+export const SegmentationResultSchema = z.object({
+  /** Invalid regexes: section id (or "copies") -> message. Those anchors are skipped. */
+  anchorErrors: z.record(z.string(), z.string()),
+  samples: z.array(SegmentedSampleSchema),
+});
+export type SegmentationResult = z.infer<typeof SegmentationResultSchema>;
+
+export interface SegmentationView {
+  jobId: string;
+  status: JobStatus;
+  error: string | null;
+  /** Present once the job succeeded. */
+  result: SegmentationResult | null;
 }
