@@ -9,8 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from jsonschema import Draft202012Validator
+
 from .checks import run_check
-from .extract import ExtractionFailedError, ExtractionResult, run_extraction
+from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import LLMProvider, RefusalError
 from .llm.registry import ModelRegistry, ModelResolutionError
 from .ocr import (
@@ -29,6 +31,7 @@ from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
 from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
+from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, ocr_cache_key, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
@@ -363,9 +366,15 @@ def run_step_extraction(
     model_id: str,
     sections: dict[str, str],
     images: tuple[bytes, ...],
+    *,
+    cache: StepCache | None = None,
 ) -> ExtractionResult:
     """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
-    (keeps each call's output well inside the model's output token limit)."""
+    (keeps each call's output well inside the model's output token limit).
+
+    With a `cache`, an unchanged step input (every rendered prompt, schema, images, step id,
+    model and provider fingerprint) returns the stored output without calling the model, if it
+    still satisfies the schema; a miss stores the result."""
     plan: list[tuple[str, dict[str, str], dict[str, Any] | None]]
     if ex.chunk_pages is None:
         plan = [(ex.id, sections, None)]
@@ -383,11 +392,37 @@ def run_step_extraction(
             for n, text in enumerate(groups, start=1)
         ]
 
-    merged: ExtractionResult | None = None
-    for audit_id, chunk_sections, chunk in plan:
-        prompt = render_prompt(
-            directory, ex.prompt, chunk_sections, ex.sections, chunk, ex.prompt_context
+    rendered = [
+        (
+            audit_id,
+            render_prompt(
+                directory, ex.prompt, chunk_sections, ex.sections, chunk, ex.prompt_context
+            ),
+            chunk,
         )
+        for audit_id, chunk_sections, chunk in plan
+    ]
+
+    key: str | None = None
+    if cache is not None:
+        key = step_cache_key(
+            model_ref=f"{provider.name}/{model_id}",
+            provider=deps.models.cache_fingerprint(provider.name),
+            step_id=ex.id,
+            system=SYSTEM_PROMPT,
+            schema=ex.schema_,
+            prompts=[prompt for _, prompt, _ in rendered],
+            images=images,
+            max_tokens=ex.max_tokens,
+            max_attempts=ex.max_attempts,
+        )
+        hit = cache.get(key)
+        if hit is not None and Draft202012Validator(ex.schema_).is_valid(hit.data):
+            return ExtractionResult(hit.data, hit.model_ref, [], cached=True)
+        # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
+
+    merged: ExtractionResult | None = None
+    for audit_id, prompt, chunk in rendered:
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
         try:
             result = run_extraction(
@@ -413,7 +448,22 @@ def run_step_extraction(
             merged.data[ex.merge_path].extend(result.data[ex.merge_path])
             merged.attempts.extend(result.attempts)
     assert merged is not None
+    if cache is not None and key is not None:
+        cache.put(
+            key,
+            CachedStep(
+                merged.data,
+                merged.model_ref,
+                _token_total(merged.attempts, "input_tokens"),
+                _token_total(merged.attempts, "output_tokens"),
+            ),
+        )
     return merged
+
+
+def _token_total(attempts: list[Any], name: str) -> int | None:
+    values = [getattr(a, name) for a in attempts if getattr(a, name) is not None]
+    return sum(values) if values else None
 
 
 def page_images(

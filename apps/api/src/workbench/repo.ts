@@ -74,12 +74,20 @@ export interface IterationRecord {
   set: 'dev';
   model: EvaluationModel | null;
   jobIds: string[];
+  /** Shared by the iterations of one model comparison. */
+  groupId: string | null;
+  /** The jobs were told not to read the step cache. */
+  uncached: boolean;
   /** Cached summary once every job has finished; null while running. */
   scores: { score: number | null; completed: number; total: number } | null;
   createdAt: string;
 }
 
-export type NewIteration = Omit<IterationRecord, 'id' | 'scores' | 'createdAt'>;
+export type NewIteration = Omit<
+  IterationRecord,
+  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached'
+> &
+  Partial<Pick<IterationRecord, 'groupId' | 'uncached'>>;
 
 export class WorkbenchConflictError extends Error {}
 
@@ -125,6 +133,8 @@ export interface WorkbenchRepo {
   /** Newest first. */
   listIterations(projectId: string): Promise<IterationRecord[]>;
   getIteration(projectId: string, id: string): Promise<IterationRecord | null>;
+  /** The iterations of one model comparison, oldest first. */
+  listGroup(projectId: string, groupId: string): Promise<IterationRecord[]>;
   setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>): Promise<void>;
 }
 
@@ -303,6 +313,8 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async createIteration(input: NewIteration) {
     const record: IterationRecord = {
       ...input,
+      groupId: input.groupId ?? null,
+      uncached: input.uncached ?? false,
       id: randomUUID(),
       scores: null,
       createdAt: this.now(),
@@ -317,6 +329,10 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
 
   async getIteration(projectId: string, id: string) {
     return this.iterations.find((i) => i.projectId === projectId && i.id === id) ?? null;
+  }
+
+  async listGroup(projectId: string, groupId: string) {
+    return this.iterations.filter((i) => i.projectId === projectId && i.groupId === groupId);
   }
 
   async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
@@ -400,6 +416,8 @@ interface IterationRow {
   eval_set: 'dev';
   model: EvaluationModel | null;
   job_ids: string[];
+  group_id: string | null;
+  uncached: boolean;
   scores: IterationRecord['scores'];
   created_at: Date;
 }
@@ -413,6 +431,8 @@ const toIteration = (r: IterationRow): IterationRecord => ({
   set: r.eval_set,
   model: r.model,
   jobIds: r.job_ids,
+  groupId: r.group_id,
+  uncached: r.uncached,
   scores: r.scores,
   createdAt: r.created_at.toISOString(),
 });
@@ -648,8 +668,9 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
   async createIteration(i: NewIteration) {
     const { rows } = await this.pool.query<IterationRow>(
       `INSERT INTO workbench_iterations
-         (project_id, template_version, definition, brief_version, eval_set, model, job_ids)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+         (project_id, template_version, definition, brief_version, eval_set, model, job_ids,
+          group_id, uncached)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         i.projectId,
         i.templateVersion,
@@ -658,6 +679,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         i.set,
         i.model,
         i.jobIds,
+        i.groupId ?? null,
+        i.uncached ?? false,
       ],
     );
     return toIteration(rows[0]!);
@@ -677,6 +700,15 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId, id],
     );
     return rows[0] ? toIteration(rows[0]) : null;
+  }
+
+  async listGroup(projectId: string, groupId: string) {
+    const { rows } = await this.pool.query<IterationRow>(
+      `SELECT * FROM workbench_iterations WHERE project_id = $1 AND group_id = $2
+        ORDER BY created_at, id`,
+      [projectId, groupId],
+    );
+    return rows.map(toIteration);
   }
 
   async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {

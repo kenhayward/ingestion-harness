@@ -141,6 +141,8 @@ export interface StepRun {
   inputTokens: number | null;
   outputTokens: number | null;
   status: 'succeeded' | 'failed';
+  /** Served from the workbench step cache (no model call). */
+  cached: boolean;
   error: string | null;
   startedAt: string;
   finishedAt: string;

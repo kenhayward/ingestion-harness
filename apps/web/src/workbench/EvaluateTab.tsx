@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   EVALUATION_MODELS,
+  comparisonRows,
+  type ComparisonView,
   type DataPolicy,
   type EvaluationModel,
   type IterationSummary,
@@ -40,6 +42,8 @@ export function EvaluateTab({
   const [current, setCurrent] = useState<IterationView | null>(null);
   const [model, setModel] = useState<EvaluationModel | ''>('');
   const [open, setOpen] = useState<string | null>(null);
+  const [uncached, setUncached] = useState(false);
+  const [comparison, setComparison] = useState<ComparisonView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +94,39 @@ export function EvaluateTab({
     };
   }, [running, currentId, pollMs, api, projectId, load]);
 
+  const comparisonId = comparison?.groupId;
+  const comparing = comparison?.iterations.some((i) => i.status === 'running') ?? false;
+  useEffect(() => {
+    if (!comparing || !comparisonId) return;
+    let stopped = false;
+    const timer = setInterval(() => {
+      api.getComparison(projectId, comparisonId).then(
+        (next) => {
+          if (stopped) return;
+          setComparison(next);
+          setError(null);
+          if (!next.iterations.some((i) => i.status === 'running')) {
+            api.listIterations(projectId).then(
+              (list) => {
+                if (!stopped) setHistory(list);
+              },
+              (err: Error) => {
+                if (!stopped) setError(`could not refresh the history: ${err.message}`);
+              },
+            );
+          }
+        },
+        (err: Error) => {
+          if (!stopped) setError(err.message);
+        },
+      );
+    }, pollMs);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [comparing, comparisonId, pollMs, api, projectId]);
+
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -105,10 +142,14 @@ export function EvaluateTab({
 
   const evaluate = () =>
     act(async () => {
-      const started = await api.startEvaluation(projectId, model || null);
+      const started = await api.startEvaluation(projectId, model || null, { uncached });
       setCurrent(started);
       setOpen(null);
       setHistory((h) => [started, ...(h ?? [])]);
+    });
+  const compare = () =>
+    act(async () => {
+      setComparison(await api.startComparison(projectId, { uncached }));
     });
   const restore = (id: string) =>
     act(async () => {
@@ -135,16 +176,56 @@ export function EvaluateTab({
             ))}
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={uncached}
+            onChange={(e) => setUncached(e.target.checked)}
+          />{' '}
+          Fresh model calls (skip the step cache)
+        </label>
         <button
           type="button"
           className="primary"
-          disabled={!hasDraft || busy || running}
+          disabled={!hasDraft || busy || running || comparing}
           onClick={() => void evaluate()}
         >
           Evaluate the draft
         </button>
+        <button
+          type="button"
+          disabled={!hasDraft || busy || running || comparing}
+          onClick={() => void compare()}
+        >
+          Compare models
+        </button>
       </div>
       {error && <p role="alert">{error}</p>}
+      {comparison && (
+        <table aria-label="Model comparison">
+          <thead>
+            <tr>
+              <th>Measure</th>
+              {comparison.iterations.map((i) => (
+                <th key={i.id}>
+                  {i.model ?? 'template'}
+                  {i.status === 'running' && ' (running)'}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {comparisonRows(comparison.iterations).map((row) => (
+              <tr key={row.id}>
+                <td>{row.id}</td>
+                {comparison.iterations.map((i) => (
+                  <td key={i.id}>{pct(row.byModel[i.model ?? 'template'] ?? null)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {current && (
         <section aria-label="Latest evaluation">
           <h3>Score {pct(current.score)}</h3>
@@ -152,6 +233,11 @@ export function EvaluateTab({
             v{current.templateVersion} {DOT} {current.model ?? "template's models"} {DOT}{' '}
             {current.completed} of {current.total} compared {DOT} {current.status}
           </p>
+          {current.cache.total > 0 && (
+            <p className="muted">
+              Reused {current.cache.reused} of {current.cache.total} steps from the cache
+            </p>
+          )}
           <table aria-label="Samples">
             <thead>
               <tr>
@@ -255,7 +341,11 @@ export function EvaluateTab({
             {history.map((h) => (
               <tr key={h.id}>
                 <td>v{h.templateVersion}</td>
-                <td>{h.model ?? "template's"}</td>
+                <td>
+                  {h.model ?? "template's"}
+                  {h.uncached && ` ${DOT} fresh`}
+                  {h.groupId && ` ${DOT} compare`}
+                </td>
                 <td>{h.status === 'complete' ? pct(h.score) : 'running'}</td>
                 <td>{new Date(h.createdAt).toLocaleString()}</td>
                 <td>

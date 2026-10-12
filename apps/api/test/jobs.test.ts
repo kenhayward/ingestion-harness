@@ -321,6 +321,7 @@ describe('models used', () => {
       inputTokens: null,
       outputTokens: null,
       status: 'succeeded' as const,
+      cached: false,
       error: null,
       startedAt,
       finishedAt: startedAt,

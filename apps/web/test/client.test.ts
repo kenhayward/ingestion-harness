@@ -228,3 +228,24 @@ describe('http api: S3 keys (ADR 0008)', () => {
     });
   });
 });
+
+describe('http api: comparison', () => {
+  it('sends the uncached flag and starts and opens comparisons', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.startEvaluation('letter', null, { uncached: true });
+    await api.startComparison('letter', { uncached: true });
+    await api.getComparison('letter', 'g1');
+    const calls = fetchMock.mock.calls.map(([url, init]) => [
+      init?.method ?? 'GET',
+      url,
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ['POST', '/api/workbench/projects/letter/evaluations', { uncached: true }],
+      ['POST', '/api/workbench/projects/letter/evaluations/compare', { uncached: true }],
+      ['GET', '/api/workbench/projects/letter/comparisons/g1', undefined],
+    ]);
+  });
+});

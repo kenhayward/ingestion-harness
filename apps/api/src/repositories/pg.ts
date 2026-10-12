@@ -727,6 +727,7 @@ export class PgRepo implements IngestionRepo {
       input_tokens: number | null;
       output_tokens: number | null;
       status: 'succeeded' | 'failed';
+      cached: boolean;
       error: string | null;
       started_at: Date;
       finished_at: Date;
@@ -754,6 +755,7 @@ export class PgRepo implements IngestionRepo {
         inputTokens: r.input_tokens,
         outputTokens: r.output_tokens,
         status: r.status,
+        cached: r.cached,
         error: r.error,
         startedAt: r.started_at.toISOString(),
         finishedAt: r.finished_at.toISOString(),
@@ -771,6 +773,7 @@ export class PgRepo implements IngestionRepo {
       input_tokens: number | null;
       output_tokens: number | null;
       status: 'succeeded' | 'failed';
+      cached: boolean;
       error: string | null;
       started_at: Date;
       finished_at: Date;
@@ -784,6 +787,7 @@ export class PgRepo implements IngestionRepo {
       inputTokens: r.input_tokens,
       outputTokens: r.output_tokens,
       status: r.status,
+      cached: r.cached,
       error: r.error,
       startedAt: r.started_at.toISOString(),
       finishedAt: r.finished_at.toISOString(),

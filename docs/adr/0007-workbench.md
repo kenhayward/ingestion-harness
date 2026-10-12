@@ -53,7 +53,8 @@ documents may be confidential, and the default models are local for that reason.
   scores only after a person verifies them in the Review screen.
 - **Step cache** for Workbench test runs only. The key is the sha256 of the step's full input:
   rendered prompt (preamble, instructions, schema), section text, page image hashes, resolved
-  model and provider options, and upstream `context` values. "Re-run uncached" bypasses it.
+  model and provider kind, endpoint and options, step id, and upstream `context` values.
+  "Re-run uncached" and reference runs bypass the lookup (they still write).
   Production and regression jobs never use it.
 - **Publish gate:** a per-project holdout threshold (default 0.9). Publishing below it needs an
   override reason, recorded on the iteration.

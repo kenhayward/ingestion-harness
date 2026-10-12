@@ -214,15 +214,18 @@ The key is the sha256 of the step's **full input**:
 - the compiled step: the rendered prompt including preamble, instructions and output schema;
 - the section text it receives;
 - the page image hashes;
-- the resolved model reference and its provider options (temperature etc.);
+- the step id;
+- the resolved model reference and its provider's kind, endpoint (`baseUrl`) and options
+  (temperature etc.);
 - the values of `context` paths from earlier steps.
 
-A hit reuses the stored output and records a `step_runs` row marked cached. Changing the preamble
+A hit that still satisfies the step's schema reuses the stored output and records a `step_runs` row marked cached. Changing the preamble
 or an upstream step invalidates exactly the steps whose input changed.
 
 Rules:
 - Only test jobs started from the Workbench use the cache. Production and regression jobs never do.
-- "Re-run uncached" forces fresh calls, for checking variance.
+- "Re-run uncached" forces fresh calls, for checking variance. Reference runs always call the
+  models too. Both still write the cache.
 - The cache is keyed by content, not by project, so identical inputs share an entry.
 
 ### Scorecard
@@ -342,8 +345,8 @@ Each phase is usable on its own.
    - **3b (done):** the outputs, sections and steps stages; per-change accept; skip; stale.
 4. **Evaluation loop**, split in three:
    - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
-   - **4b (next):** step cache, model comparison and re-run uncached.
-   - **4c:** feedback and `revise`.
+   - **4b (done):** step cache, re-run uncached ("Fresh model calls"), model comparison.
+   - **4c (next):** feedback and `revise`.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**
 
@@ -366,8 +369,9 @@ fast, users will go back to editing YAML by hand.
   snapshots the draft definition when it is clicked, but each queued job loads the draft as it
   is when a worker claims it. Editing the draft while an evaluation runs therefore scores a mix
   of versions against a snapshot that matches none of them exactly; Restore brings back the
-  snapshot, not what ran. Until phase 4b's step cache snapshots the definition per job, leave
-  the draft alone while an evaluation is running.
+  snapshot, not what ran. Phase 4b's step cache does not remove this: jobs still load the draft
+  when a worker claims them, and the cache only avoids repeating identical step calls. Leave the
+  draft alone while an evaluation is running.
 - Decided in phase 2, on design grounds (real timings are still to be measured): the worker
   wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
 - **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).

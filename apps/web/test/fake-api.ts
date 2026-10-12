@@ -34,11 +34,14 @@ export function iterationView(overrides: Partial<IterationView> = {}): Iteration
     briefVersion: 1,
     set: 'dev',
     model: null,
+    groupId: null,
+    uncached: false,
     createdAt: '2026-10-12T10:00:00.000Z',
     status: 'complete',
     score: 0.75,
     completed: 2,
     total: 2,
+    cache: { reused: 0, total: 0 },
     scorecard: {
       score: 0.75,
       completed: 2,
@@ -255,6 +258,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     startEvaluation: vi.fn(async () => {
       throw new Error('startEvaluation not stubbed');
+    }),
+    startComparison: vi.fn(async () => {
+      throw new Error('startComparison not stubbed');
+    }),
+    getComparison: vi.fn(async () => {
+      throw new Error('getComparison not stubbed');
     }),
     listIterations: vi.fn(async () => []),
     getIteration: vi.fn(async () => {

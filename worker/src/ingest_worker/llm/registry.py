@@ -151,6 +151,10 @@ DEFAULT_FACTORIES: dict[str, ProviderFactory] = {
 }
 
 
+#: Provider options that never change what a model answers (excluded from step cache keys).
+OPERATIONAL_OPTIONS = frozenset({"timeoutS", "maxRetries"})
+
+
 class ModelRegistry:
     def __init__(
         self,
@@ -191,6 +195,23 @@ class ModelRegistry:
         """Data-policy location of a configured provider; unknown names count as external."""
         cfg = self._configs.get(provider_name)
         return cfg.location if cfg else "external"
+
+    def options(self, provider_name: str) -> dict[str, Any]:
+        """The provider's output-affecting options (operational settings dropped); {} if unknown."""
+        cfg = self._configs.get(provider_name)
+        if cfg is None:
+            return {}
+        return {k: v for k, v in cfg.options.items() if k not in OPERATIONAL_OPTIONS}
+
+    def cache_fingerprint(self, provider_name: str) -> dict[str, Any]:
+        """What about a provider can change a step's answer: its kind, endpoint and
+        output-affecting options (step cache keys)."""
+        cfg = self._configs.get(provider_name)
+        return {
+            "kind": cfg.kind if cfg else None,
+            "baseUrl": cfg.base_url if cfg else None,
+            "options": self.options(provider_name),
+        }
 
     def resolve_ocr(self, ref: str) -> tuple[LLMProvider, str]:
         """Like resolve(), but uses the provider's OCR endpoint/key when configured. The

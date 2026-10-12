@@ -47,6 +47,7 @@ const run = (stepId: string, extra: Record<string, unknown> = {}) => ({
   inputTokens: 1000,
   outputTokens: 200,
   status: 'succeeded' as const,
+  cached: false,
   error: null,
   startedAt: '2026-10-09T10:00:00Z',
   finishedAt: '2026-10-09T10:00:30Z',
@@ -127,6 +128,37 @@ describe('GET /api/templates/:id/metrics', () => {
     expect(m.topEdited).toEqual([
       { target: 'batches.batch_number', edits: 2 },
       { target: 'conclusion_date', edits: 1 },
+    ]);
+  });
+
+  it('leaves cached step runs out of the step statistics (no model was called)', async () => {
+    const ctx = await testApp();
+    const a = await job(ctx, 1, 'succeeded', { test: true });
+    const b = await job(ctx, 1, 'succeeded', { test: true });
+    ctx.repo.stepRuns.set(a, [
+      run('header', { attempts: 3, outputTokens: 300, finishedAt: '2026-10-09T10:01:00Z' }),
+    ]);
+    ctx.repo.stepRuns.set(b, [
+      run('header', {
+        cached: true,
+        attempts: 0,
+        inputTokens: null,
+        outputTokens: null,
+        finishedAt: '2026-10-09T10:00:00Z',
+      }),
+      run('only_cached', { cached: true, attempts: 0 }),
+    ]);
+    const m = (await ctx.app.inject('/api/templates/pvp/metrics')).json();
+    expect(m.steps).toEqual([
+      {
+        stepId: 'header',
+        runs: 1,
+        reruns: 0,
+        failures: 0,
+        avgAttempts: 3,
+        avgOutputTokens: 300,
+        avgSeconds: 60,
+      },
     ]);
   });
 

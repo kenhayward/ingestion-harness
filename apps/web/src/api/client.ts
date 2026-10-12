@@ -6,6 +6,7 @@ import type {
   EditRequest,
   EvaluationModel,
   IterationSummary,
+  ComparisonView,
   IterationView,
   JobDetail,
   JobSummary,
@@ -314,7 +315,15 @@ export interface Api {
   listReferenceRows(projectId: string): Promise<ReferenceRow[]>;
   /** Queue draft-model runs on unverified dev samples. */
   proposeReferences(projectId: string): Promise<JobSummary[]>;
-  startEvaluation(projectId: string, model: EvaluationModel | null): Promise<IterationView>;
+  /** `uncached` makes every step call its model (the step cache is not read). */
+  startEvaluation(
+    projectId: string,
+    model: EvaluationModel | null,
+    options?: { uncached?: boolean },
+  ): Promise<IterationView>;
+  /** Evaluate the draft on every comparison model at once. */
+  startComparison(projectId: string, options?: { uncached?: boolean }): Promise<ComparisonView>;
+  getComparison(projectId: string, groupId: string): Promise<ComparisonView>;
   listIterations(projectId: string): Promise<IterationSummary[]>;
   getIteration(projectId: string, iterationId: string): Promise<IterationView>;
   restoreIteration(projectId: string, iterationId: string): Promise<ProjectView>;
@@ -532,8 +541,20 @@ export function createHttpApi(base = '/api'): Api {
       post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/stages/references`, {}).then(
         (r) => r.jobs,
       ),
-    startEvaluation: (id, model) =>
-      post<IterationView>(`${base}/workbench/projects/${id}/evaluations`, model ? { model } : {}),
+    startEvaluation: (id, model, options) =>
+      post<IterationView>(`${base}/workbench/projects/${id}/evaluations`, {
+        ...(model ? { model } : {}),
+        ...(options?.uncached ? { uncached: true } : {}),
+      }),
+    startComparison: (id, options) =>
+      post<ComparisonView>(
+        `${base}/workbench/projects/${id}/evaluations/compare`,
+        options?.uncached ? { uncached: true } : {},
+      ),
+    getComparison: (id, groupId) =>
+      apiFetch(`${base}/workbench/projects/${id}/comparisons/${groupId}`).then(
+        json<ComparisonView>,
+      ),
     listIterations: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/iterations`).then(json<IterationSummary[]>),
     getIteration: (id, iid) =>

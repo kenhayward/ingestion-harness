@@ -39,10 +39,22 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue
 from .review import apply_edits, run_checks
 from .specs import Extraction, LoadedTemplate
+from .step_cache import StepCache
 from .storage import output_key, page_preview_key, reviewed_document_key
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
+
+
+def workbench_step_cache(job: ClaimedJob, deps: PipelineDeps) -> StepCache | None:
+    """Only workbench test runs use the step cache: never production, regression or re-runs.
+    `params.uncached` and reference runs (`params.forceReview`) force fresh calls but still
+    store their results, so re-running references always asks the model again."""
+    if job.project_id is None or not job.test or job.task != "process":
+        return None
+    params = job.params or {}
+    fresh = bool(params.get("uncached")) or bool(params.get("forceReview"))
+    return StepCache(deps.store, deps.buckets.runs, read=not fresh)
 
 
 def process_template_job(
@@ -52,6 +64,7 @@ def process_template_job(
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
     resolved = resolve_models(job, deps, list(compiled.values()))
     doc = prepare_document(job, deps, queue, template.document)
+    cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
     fields: dict[str, dict[str, Any]] = {}
@@ -81,6 +94,7 @@ def process_template_job(
             fields,
             tables,
             trigger="process",
+            cache=cache,
         )
         models_used[step.id] = result.model_ref
         step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
@@ -195,6 +209,7 @@ def _run_step(
     *,
     trigger: str,
     extra_instructions: str | None = None,
+    cache: StepCache | None = None,
 ) -> ExtractionResult:
     """Run one extract step with context from earlier steps; record it in step_runs."""
     provider, model_id = model
@@ -217,7 +232,7 @@ def _run_step(
     }
     try:
         result = run_step_extraction(
-            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images
+            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images, cache=cache
         )
     except Exception as exc:
         attempts = getattr(exc.__cause__, "attempts", [])
@@ -226,6 +241,7 @@ def _run_step(
             {
                 **run,
                 "attempts": len(attempts),
+                "cached": False,
                 "status": "failed",
                 "error": str(exc)[:2000],
                 "finished_at": datetime.now(UTC).isoformat(),
@@ -245,6 +261,7 @@ def _run_step(
             "attempts": len(result.attempts),
             "input_tokens": total("input_tokens"),
             "output_tokens": total("output_tokens"),
+            "cached": result.cached,
             "status": "succeeded",
             "finished_at": datetime.now(UTC).isoformat(),
         },
@@ -252,7 +269,11 @@ def _run_step(
     queue.event(
         job.id,
         "info",
-        f"extracted {step.id}" if trigger == "process" else f"re-ran {step.id}",
+        f"reused cached {step.id}"
+        if result.cached
+        else f"extracted {step.id}"
+        if trigger == "process"
+        else f"re-ran {step.id}",
         {"model": result.model_ref, "attempts": len(result.attempts)},
     )
     return result

@@ -22,6 +22,7 @@ export interface TemplateMetrics {
     /** Upload to finish, for succeeded documents. */
     avgProcessingSeconds: number | null;
   }[];
+  /** Model calls per step; cached step runs are left out. */
   steps: {
     stepId: string;
     runs: number;
@@ -76,7 +77,10 @@ export function computeMetrics(templateId: string, data: MetricsData): TemplateM
       };
     });
 
-  const steps = [...groupBy(data.stepRuns, (r) => r.stepId).entries()]
+  // Cached step runs (workbench step cache) called no model: leaving them in would drag
+  // attempts and durations towards zero and inflate run counts.
+  const modelRuns = data.stepRuns.filter((r) => !r.cached);
+  const steps = [...groupBy(modelRuns, (r) => r.stepId).entries()]
     .map(([stepId, runs]) => ({
       stepId,
       runs: runs.length,
