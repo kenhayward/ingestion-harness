@@ -318,3 +318,73 @@ describe('GET /api/results/:jobId', () => {
     expect((await ctx.app.inject(`/api/results/${test.id}`)).statusCode).toBe(404);
   });
 });
+
+describe('GET /api/results/:jobId/archive', () => {
+  const unzip = async (body: Buffer) => {
+    const { unzipSync, strFromU8 } = await import('fflate');
+    return Object.fromEntries(
+      Object.entries(unzipSync(new Uint8Array(body))).map(([name, data]) => [
+        name,
+        strFromU8(data),
+      ]),
+    );
+  };
+
+  it('zips every published output, one entry per output', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'Batch 7 – final.pdf');
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [
+      out('document', 'published', null),
+      out('issues', 'published', 2),
+      out('issues', 'draft', 2),
+    ]);
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/issues/doc.csv', 'a,b\n1,2\n');
+
+    const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['content-disposition']).toMatch(
+      /^attachment; filename="Batch 7 _ final\.zip"/,
+    );
+    expect(res.headers['content-disposition']).toContain(
+      "filename*=UTF-8''Batch%207%20%E2%80%93%20final.zip",
+    );
+    expect(await unzip(res.rawPayload)).toEqual({
+      'document.json': '{"fields":{}}',
+      'issues.csv': 'a,b\n1,2\n',
+    });
+  });
+
+  it('is 404 for test runs, unpublished jobs and unknown ids', async () => {
+    const ctx = await testApp();
+    const draft = await upload(ctx, 'tdemo', 'draft.pdf');
+    ctx.repo.outputs.set(draft.id, [out('document', 'draft', null)]);
+    const test = await upload(ctx, 'tdemo', 'test.pdf');
+    ctx.repo.jobs.set(test.id, { ...ctx.repo.jobs.get(test.id)!, test: true });
+    publish(ctx, test.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
+    for (const id of [draft.id, test.id, '00000000-0000-4000-8000-000000000000', 'nope']) {
+      expect((await ctx.app.inject(`/api/results/${id}/archive`)).statusCode).toBe(404);
+    }
+  });
+
+  it('fails rather than sending a partial archive', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [
+      out('document', 'published', null),
+      out('issues', 'published', 2),
+    ]);
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
+    const missing = await ctx.app.inject(`/api/results/${job.id}/archive`);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toBe('output object missing from target');
+
+    const down = await testApp({ targetStore: new UnreachableStore() });
+    const other = await upload(down, 'tdemo', 'a.pdf');
+    publish(down, other.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
+    const res = await down.app.inject(`/api/results/${other.id}/archive`);
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('target storage unavailable');
+  });
+});
