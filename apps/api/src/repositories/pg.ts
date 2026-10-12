@@ -192,6 +192,21 @@ export class PgRepo implements IngestionRepo {
     return rows.map(toSummary);
   }
 
+  async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
+    const { rows } = await this.pool.query<{
+      bucket: string;
+      object_key: string;
+      filename: string;
+    }>(
+      `SELECT d.bucket, d.object_key, d.filename
+         FROM jobs j JOIN documents d ON d.id = j.document_id
+        WHERE j.id = $1`,
+      [jobId],
+    );
+    const row = rows[0];
+    return row ? { bucket: row.bucket, key: row.object_key, filename: row.filename } : null;
+  }
+
   async getJob(id: string): Promise<JobDetail | null> {
     const { rows } = await this.pool.query<JobRow>(`${JOB_SELECT} WHERE j.id = $1`, [id]);
     if (!rows[0]) return null;

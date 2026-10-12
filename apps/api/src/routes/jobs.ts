@@ -157,6 +157,23 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     );
   });
 
+  /** The uploaded PDF (Jobs "Open PDF"), served inline from the inbox bucket. */
+  app.get<{ Params: { id: string } }>('/jobs/:id/document', async (req, reply) => {
+    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
+    const doc = await app.deps.repo.getDocumentObject(req.params.id);
+    if (!doc) return reply.code(404).send({ error: 'not found' });
+    const body = await app.deps.store.get(doc.bucket, doc.key);
+    if (!body) return reply.code(404).send({ error: 'document missing from storage' });
+    // The name is user-supplied: keep it from breaking out of the quoted header value.
+    const safeName = doc.filename.replace(/["\\\r\n]/g, '_');
+    return reply
+      .header('content-type', 'application/pdf')
+      .header('content-disposition', `inline; filename="${safeName}"`)
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, max-age=300')
+      .send(body);
+  });
+
   /** JPEG page preview rendered by the worker (review screen). */
   app.get<{ Params: { id: string; n: string } }>('/jobs/:id/pages/:n', async (req, reply) => {
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });

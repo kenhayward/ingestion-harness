@@ -220,6 +220,8 @@ export interface Api {
   approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
   pageUrl(jobId: string, page: number): string;
+  /** The job's uploaded PDF, served inline (Open PDF). */
+  documentUrl(jobId: string): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   getMetrics(templateId: string): Promise<TemplateMetrics>;
@@ -397,6 +399,7 @@ export function createHttpApi(base = '/api'): Api {
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
+    documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,
     getStepRuns: (jobId) => apiFetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),

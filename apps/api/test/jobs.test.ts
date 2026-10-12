@@ -451,3 +451,34 @@ describe('re-running a succeeded job', () => {
     expect(res.json()).toMatchObject({ status: 'queued', reviewer: 'Ken' });
   });
 });
+
+describe('GET /api/jobs/:id/document', () => {
+  it('serves the uploaded PDF inline', async () => {
+    const { app, job } = await seedJob();
+    const res = await app.inject({ method: 'GET', url: `/api/jobs/${job.id}/document` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe('inline; filename="a.pdf"');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('keeps quotes and line breaks in the file name from breaking the header', async () => {
+    const { app, job, repo } = await seedJob();
+    // Multipart can't carry these names, but the filename column is user data: set it directly.
+    const doc = repo.documents.get(job.documentId)!;
+    repo.documents.set(doc.id, { ...doc, filename: 'a"b\r\nX-Evil: 1.pdf' });
+    const res = await app.inject({ url: `/api/jobs/${job.id}/document` });
+    expect(res.headers['content-disposition']).toBe('inline; filename="a_b__X-Evil: 1.pdf"');
+    expect(res.headers['x-evil']).toBeUndefined();
+  });
+
+  it('404s for bad ids, unknown jobs and a missing inbox object', async () => {
+    const { app, job, store } = await seedJob();
+    expect((await app.inject({ url: '/api/jobs/not-a-uuid/document' })).statusCode).toBe(404);
+    const unknown = await app.inject({ url: `/api/jobs/${crypto.randomUUID()}/document` });
+    expect(unknown.statusCode).toBe(404);
+    store.objects.clear();
+    expect((await app.inject({ url: `/api/jobs/${job.id}/document` })).statusCode).toBe(404);
+  });
+});

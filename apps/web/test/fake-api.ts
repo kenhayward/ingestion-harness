@@ -96,6 +96,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     approve: vi.fn(async () => job({ status: 'queued' })),
     reject: vi.fn(async () => job({ status: 'rejected' })),
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
+    documentUrl: (jobId) => `/api/jobs/${jobId}/document`,
     listTemplates: vi.fn(async () => []),
     getStepRuns: vi.fn(async () => []),
     listReferences: vi.fn(async () => []),
