@@ -2,7 +2,7 @@ import type { JobStatus, JobSummary } from '@ih/shared';
 import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
-export type Section = 'jobs' | 'results' | 'templates' | 'access';
+export type Section = 'jobs' | 'results' | 'templates' | 'workbench' | 'access';
 
 const SECTION: Record<Route['name'], Section> = {
   jobs: 'jobs',
@@ -11,6 +11,8 @@ const SECTION: Record<Route['name'], Section> = {
   result: 'results',
   templates: 'templates',
   template: 'templates',
+  workbench: 'workbench',
+  project: 'workbench',
   access: 'access',
 };
 

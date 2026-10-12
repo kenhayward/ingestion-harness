@@ -68,6 +68,10 @@ describe('app shell', () => {
       'page',
     );
     expect(within(nav).getByRole('link', { name: /^Jobs/ })).not.toHaveAttribute('aria-current');
+    expect(within(nav).getByRole('link', { name: 'Workbench' })).toHaveAttribute(
+      'href',
+      '#/workbench',
+    );
   });
 
   it('focuses search on Ctrl+K, not on a plain k, and Escape clears it', async () => {

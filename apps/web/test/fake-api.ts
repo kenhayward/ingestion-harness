@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { JobSummary } from '@ih/shared';
+import type { JobSummary, ProjectView, SampleView } from '@ih/shared';
 import {
   outputPath,
   type Api,
@@ -143,6 +143,56 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
     testRun: vi.fn(async () => job({ test: true })),
+    listProjects: vi.fn(async () => []),
+    createProject: vi.fn(async () => {
+      throw new Error('createProject not stubbed');
+    }),
+    getProject: vi.fn(async () => {
+      throw new Error('getProject not stubbed');
+    }),
+    listSamples: vi.fn(async () => []),
+    uploadSample: vi.fn(async () => {
+      throw new Error('uploadSample not stubbed');
+    }),
+    setSampleRole: vi.fn(async () => {
+      throw new Error('setSampleRole not stubbed');
+    }),
+    removeSample: vi.fn(async () => undefined),
+    getSampleText: vi.fn(async () => ({ sha256: '', pages: [] })),
+    saveBrief: vi.fn(async () => {
+      throw new Error('saveBrief not stubbed');
+    }),
+    runDevTests: vi.fn(async () => ({ jobs: [] })),
+    listTestRuns: vi.fn(async () => []),
+    ...overrides,
+  };
+}
+
+export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
+  return {
+    project: { id: 'letter', name: 'Letter', createdAt: '2026-10-12T00:00:00.000Z' },
+    draft: 1,
+    published: null,
+    brief: null,
+    ...overrides,
+  };
+}
+
+export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
+  return {
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    documentId: crypto.randomUUID(),
+    filename: 'sample.pdf',
+    sizeBytes: 1000,
+    sha256: 'abc',
+    role: 'dev',
+    addedForVersion: 1,
+    createdAt: '2026-10-12T00:00:00.000Z',
+    state: 'ready',
+    prepareJobId: crypto.randomUUID(),
+    error: null,
+    triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
     ...overrides,
   };
 }
