@@ -1765,6 +1765,47 @@ input.danger-border {
   }
 }
 
+/* Workbench */
+.workbench .muted {
+  color: var(--ih-muted);
+}
+.workbench-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--ih-border);
+  margin: 12px 0 16px;
+}
+.workbench-tabs a {
+  padding: 8px 12px;
+  color: var(--ih-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.workbench-tabs a[aria-current='page'] {
+  color: var(--ih-accent);
+  border-bottom-color: var(--ih-accent);
+}
+.sample-text section {
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-md);
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: var(--ih-surface);
+}
+.sample-text pre {
+  white-space: pre-wrap;
+  font-family: var(--ih-font-mono);
+  margin: 0;
+}
+.brief-form label {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+}
+.brief-form textarea {
+  width: 100%;
+}
+
 /* Results (UI handoff §3): chips + filter, list + preview */
 .toolbar {
   justify-content: space-between;

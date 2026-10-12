@@ -50,12 +50,17 @@ export const JobSummarySchema = z.object({
   modelsUsed: z.array(z.string()),
   attempts: z.number().int(),
   error: z.string().nullable(),
-  /** process: extraction; publish: apply review edits and deliver to the final target. */
-  task: z.enum(['process', 'publish', 'rerun']),
+  /**
+   * process: extraction; publish: apply review edits and deliver to the final target;
+   * rerun: one step again; prepare: workbench sample text + OCR only (ADR 0007).
+   */
+  task: z.enum(['process', 'publish', 'rerun', 'prepare']),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
   /** Regression run: the reference document this test job re-runs. */
   referenceId: z.string().nullable(),
+  /** Workbench project the job belongs to (prepare jobs and dev test runs). */
+  projectId: z.string().nullable(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 
+export const PROJECT_TABS = ['samples', 'brief', 'template', 'runs'] as const;
+export type ProjectTab = (typeof PROJECT_TABS)[number];
+
 export type Route =
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
@@ -7,7 +10,9 @@ export type Route =
   | { name: 'access' }
   | { name: 'results' }
   | { name: 'result'; jobId: string }
-  | { name: 'template'; templateId: string; version: number };
+  | { name: 'template'; templateId: string; version: number }
+  | { name: 'workbench' }
+  | { name: 'project'; projectId: string; tab: ProjectTab };
 
 export function parseHash(hash: string): Route {
   const review = /^#\/review\/([^/]+)$/.exec(hash);
@@ -22,6 +27,12 @@ export function parseHash(hash: string): Route {
   }
   const result = /^#\/results\/([^/]+)$/.exec(hash);
   if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
+  const project = /^#\/workbench\/([^/]+)(?:\/([a-z]+))?$/.exec(hash);
+  if (project) {
+    const tab = PROJECT_TABS.find((t) => t === project[2]) ?? 'samples';
+    return { name: 'project', projectId: decodeURIComponent(project[1]!), tab };
+  }
+  if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
@@ -30,7 +41,7 @@ export function parseHash(hash: string): Route {
 
 /**
  * Minimal hash routing: #/ (jobs), #/review/<jobId>, #/results, #/results/<jobId>,
- * #/templates, #/templates/<id>/<version>.
+ * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>].
  */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));

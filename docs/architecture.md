@@ -67,6 +67,16 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    `outputs/{specId}/v{version}/{outputId}/{documentId}.{csv|json}`; rows recorded in
    `job_outputs`.
 
+## Workbench
+
+The Workbench ([design](design/workbench.md), [ADR 0007](adr/0007-workbench.md)) is a per-document-type
+workspace for developing a template: one project per type (`workbench_projects.id` is the template id).
+Samples are ordinary documents; uploading one queues a `prepare` job (text extraction and OCR only,
+no LLM extraction) that writes `prepared/{sha256}/text.json|triage.json` to the runs bucket, and the
+sample's state is derived from that job. Workbench jobs (prepare and test runs) run at `priority = -10` against production's 0.
+Prepare jobs never appear on the Jobs page and are never bulk-deleted, dev test runs are ordinary test jobs, and a sample's
+document is never deleted along with a job.
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an access token. The

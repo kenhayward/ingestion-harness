@@ -4,3 +4,4 @@ export * from './models.js';
 export * from './storage-keys.js';
 export * from './template.js';
 export * from './results.js';
+export * from './workbench.js';

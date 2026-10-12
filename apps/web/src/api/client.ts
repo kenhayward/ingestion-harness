@@ -1,13 +1,20 @@
 import type {
+  Brief,
+  BriefBody,
   EditRequest,
   JobDetail,
   JobSummary,
   ModelInfo,
+  PreparedText,
+  ProjectSummary,
+  ProjectView,
   Reference,
   RerunRequest,
   ResultDetail,
   ResultSummary,
   ReviewEdit,
+  SampleRole,
+  SampleView,
   SpecSummary,
   StepRun,
   Template,
@@ -263,6 +270,21 @@ export interface Api {
   exportUrl(id: string, version: number): string;
   /** Upload a sample against a (draft) version as a test run (never published). */
   testRun(file: File, id: string, version: number): Promise<JobSummary>;
+  // --- workbench (ADR 0007) ---
+  listProjects(): Promise<ProjectSummary[]>;
+  /** New project; omit `name` to open an existing document type. */
+  createProject(id: string, name?: string): Promise<ProjectView>;
+  /** Rejects with an ApiError (404 when there is no project yet). */
+  getProject(id: string): Promise<ProjectView>;
+  listSamples(projectId: string): Promise<SampleView[]>;
+  uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
+  setSampleRole(projectId: string, sampleId: string, role: SampleRole): Promise<SampleView>;
+  removeSample(projectId: string, sampleId: string): Promise<void>;
+  getSampleText(projectId: string, sampleId: string): Promise<PreparedText>;
+  saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
+  /** Test-run the open draft on every prepared dev sample. */
+  runDevTests(projectId: string): Promise<{ jobs: JobSummary[] }>;
+  listTestRuns(projectId: string): Promise<JobSummary[]>;
 }
 
 /** An access token as listed to admins (never the token itself). */
@@ -393,6 +415,36 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
+    listProjects: () => apiFetch(`${base}/workbench/projects`).then(json<ProjectSummary[]>),
+    createProject: (id, name) =>
+      post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
+    getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),
+    listSamples: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/samples`).then(json<SampleView[]>),
+    uploadSample: (id, file, role) => {
+      const form = new FormData();
+      form.append('role', role); // fields before the file part
+      form.append('file', file);
+      return apiFetch(`${base}/workbench/projects/${id}/samples`, {
+        method: 'POST',
+        body: form,
+      }).then(json<SampleView>);
+    },
+    setSampleRole: (id, sampleId, role) =>
+      post<SampleView>(`${base}/workbench/projects/${id}/samples/${sampleId}`, { role }, 'PATCH'),
+    removeSample: (id, sampleId) =>
+      noContent(
+        apiFetch(`${base}/workbench/projects/${id}/samples/${sampleId}`, { method: 'DELETE' }),
+      ),
+    getSampleText: (id, sampleId) =>
+      apiFetch(`${base}/workbench/projects/${id}/samples/${sampleId}/text`).then(
+        json<PreparedText>,
+      ),
+    saveBrief: (id, body) => post<Brief>(`${base}/workbench/projects/${id}/brief`, body, 'PUT'),
+    runDevTests: (id) =>
+      post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {}),
+    listTestRuns: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<JobSummary[]>),
     outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
     getOutputText: async (jobId, outputId, stage) => {
       const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));

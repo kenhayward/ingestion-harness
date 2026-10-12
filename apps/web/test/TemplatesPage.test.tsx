@@ -115,6 +115,21 @@ describe('TemplatesPage cards', () => {
     );
   });
 
+  it('links each document type to its workbench project', async () => {
+    const api = fakeApi({ listTemplates: vi.fn(async () => list) });
+    render(<TemplatesPage api={api} onNavigate={vi.fn()} />);
+    await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    for (const [name, id] of [
+      ['Process Validation Protocol', 'pvp'],
+      ['Certificate of analysis', 'coa'],
+    ] as const) {
+      expect(within(card(name)).getByRole('link', { name: 'Open in workbench' })).toHaveAttribute(
+        'href',
+        `#/workbench/${id}`,
+      );
+    }
+  });
+
   it('filters cards with the top-bar search', async () => {
     const api = fakeApi({ listTemplates: vi.fn(async () => list) });
     render(<TemplatesPage api={api} onNavigate={vi.fn()} query="certificate" />);

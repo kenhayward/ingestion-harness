@@ -3,6 +3,7 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
 import { regressionFinished, regressionReport } from '../regression/report.js';
 import { validateTemplate } from '../templates/definitions.js';
+import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import { TemplateConflictError, type TemplateRecord } from '../templates/repo.js';
 
 const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
@@ -16,13 +17,6 @@ type Params = { id: string; version: string };
 const withIssues = (record: TemplateRecord) => ({
   record,
   issues: validateTemplate(record.definition),
-});
-
-/** Definition with id/version pinned to the record it is stored under. */
-const pinned = (definition: Record<string, unknown>, id: string, version: number) => ({
-  ...definition,
-  id,
-  version,
 });
 
 const count = (value: unknown) => (Array.isArray(value) ? value.length : 0);
@@ -119,16 +113,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     if ((await repo().list()).some((r) => r.id === body.data.id)) {
       return reply.code(409).send({ error: `document type ${body.data.id} already exists` });
     }
-    const skeleton = {
-      id: body.data.id,
-      version: 1,
-      name: body.data.name,
-      document: { ocr: 'auto', sections: [{ id: 'all', anchor: '\\A' }] },
-      outputs: { fields: [], tables: [] },
-      pipeline: [],
-      review: { required: 'on_warnings' },
-    };
-    const record = await repo().create(body.data.id, 1, skeleton, 'draft');
+    const record = await repo().create(
+      body.data.id,
+      1,
+      skeleton(body.data.id, body.data.name),
+      'draft',
+    );
     return reply.code(201).send(withIssues(record));
   });
 
@@ -169,23 +159,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string } }>('/templates/:id/drafts', async (req, reply) => {
     const body = DraftBody.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const versions = (await repo().list()).filter((r) => r.id === req.params.id);
-    if (!versions.length) return notFound(reply);
-    if (versions.some((v) => v.status === 'draft')) {
+    const created = await createNextDraft(repo(), req.params.id, body.data.from);
+    if (created === 'not-found') return notFound(reply);
+    if (created === 'draft-exists') {
       return reply.code(409).send({ error: 'a draft already exists; edit or delete it first' });
     }
-    const source = body.data.from
-      ? versions.find((v) => v.version === body.data.from)
-      : versions.at(-1);
-    if (!source) return notFound(reply);
-    const next = versions.at(-1)!.version + 1;
-    const record = await repo().create(
-      req.params.id,
-      next,
-      pinned(source.definition, req.params.id, next),
-      'draft',
-    );
-    return reply.code(201).send(withIssues(record));
+    return reply.code(201).send(withIssues(created));
   });
 
   app.delete<{ Params: Params }>('/templates/:id/versions/:version', async (req, reply) => {

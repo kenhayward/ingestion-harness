@@ -52,6 +52,13 @@ const PATHS = {
       <path d="M10 13h6M10 17h4" />
     </>
   ),
+  workbench: (
+    <>
+      <path d="M3 20h18" />
+      <path d="M5 20v-8h14v8" />
+      <path d="M9 12V7h6v5" />
+    </>
+  ),
   key: (
     <>
       <circle cx="8" cy="15" r="4" />

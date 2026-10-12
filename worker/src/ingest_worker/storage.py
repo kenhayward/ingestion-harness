@@ -38,6 +38,16 @@ def page_preview_key(job_id: str, page_number: int) -> str:
     return f"{job_id}/pages/page-{page_number}.jpg"
 
 
+def prepared_text_key(pdf_sha256: str) -> str:
+    """Page text of a PDF after extraction + OCR (workbench prepare task, runs bucket)."""
+    return f"prepared/{pdf_sha256}/text.json"
+
+
+def prepared_triage_key(pdf_sha256: str) -> str:
+    """Page count, OCR'd pages and size of a prepared PDF (runs bucket)."""
+    return f"prepared/{pdf_sha256}/triage.json"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 
