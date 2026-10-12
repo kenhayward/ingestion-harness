@@ -346,8 +346,8 @@ Each phase is usable on its own.
 4. **Evaluation loop**, split in three:
    - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
    - **4b (done):** step cache, re-run uncached ("Fresh model calls"), model comparison.
-   - **4c (next):** feedback and `revise`.
-5. **Holdout and publish:** holdout runs, publish gate, references across versions.
+   - **4c (done):** feedback, `revise`, commenting from the scorecard drill-down. Phase 4 is complete.
+5. **Holdout and publish (next):** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**
 
 The most important phases are 2 and 4. If the segmentation preview and the scored loop aren't
