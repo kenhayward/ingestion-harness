@@ -290,7 +290,9 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 "Propose the full set of changes again.",
                 "draft-sections-anchors",
             )
-            grid, _ = anchor_check(samples, draft, body)
+            grid, final_misses = anchor_check(samples, draft, body)
+            if grid is None:
+                raise DocumentError(final_misses[0])
         body = {**body, "anchorCheck": grid}
 
     last = result.attempts[-1]
@@ -327,11 +329,11 @@ def anchor_check(
     names = {s.sample_id: s.filename for s in samples}
     rows = [row for row in grid["samples"] if not row.get("error")]
     misses: list[str] = []
-    for change in body["changes"]:
-        if change["op"] != "putSection":
-            continue
-        section = change["section"]
+    put_ids = {c["section"]["id"] for c in body["changes"] if c["op"] == "putSection"}
+    for section in block["sections"]:
         sid = section["id"]
+        if sid not in put_ids:
+            continue
         if sid in grid["anchorErrors"]:
             misses.append(f'section "{sid}": {grid["anchorErrors"][sid]}')
             continue
