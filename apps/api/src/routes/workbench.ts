@@ -373,7 +373,10 @@ async function sampleComparison(app: FastifyInstance, job: JobDetail, reference:
   }
 }
 
-/** The scorecard of an iteration, computed from its jobs; caches the summary once complete. */
+/**
+ * The scorecard of an iteration, computed from its jobs; caches the summary once complete, and
+ * updates the cache when it changed since (a job retried or re-reviewed after completion).
+ */
 async function iterationView(
   app: FastifyInstance,
   iteration: IterationRecord,
@@ -404,7 +407,13 @@ async function iterationView(
   const scorecard = buildScorecard(results);
   const status = results.every((r) => finishedJob(r.status)) ? 'complete' : 'running';
   const scores = { score: scorecard.score, completed: scorecard.completed, total: scorecard.total };
-  if (status === 'complete' && iteration.scores === null) {
+  const cached = iteration.scores;
+  const changed =
+    cached === null ||
+    cached.score !== scores.score ||
+    cached.completed !== scores.completed ||
+    cached.total !== scores.total;
+  if (status === 'complete' && changed) {
     await app.deps.workbench.setIterationScores(iteration.id, scores);
   }
   return { ...summaryOf(iteration), status, ...scores, scorecard, samples: results };

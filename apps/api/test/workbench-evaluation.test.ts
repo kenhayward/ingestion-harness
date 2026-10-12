@@ -221,4 +221,65 @@ describe('evaluations', () => {
       comparison: null,
     });
   });
+
+  it('completes when a job was rejected in review', async () => {
+    const { add, verify, evaluate, view, repo } = await project();
+    await verify(await add(1), 'Acme');
+    const it = (await evaluate()).json() as IterationView;
+    const [jobId] = (await repo.listProjectRuns('letter')).map((r) => r.job.id);
+    repo.jobs.set(jobId!, { ...repo.jobs.get(jobId!)!, status: 'rejected' });
+    expect(await view(it.id)).toMatchObject({ status: 'complete', completed: 0, total: 1 });
+  });
+
+  it('updates the cached summary when a finished job changes (retried, re-reviewed)', async () => {
+    const { app, add, verify, finish, evaluate, view, repo, workbench } = await project();
+    await verify(await add(1), 'Acme');
+    const it = (await evaluate()).json() as IterationView;
+    const [jobId] = (await repo.listProjectRuns('letter'))
+      .filter((r) => r.job.referenceId)
+      .map((r) => r.job.id);
+    repo.jobs.set(jobId!, { ...repo.jobs.get(jobId!)!, status: 'failed', error: 'boom' });
+    expect(await view(it.id)).toMatchObject({ status: 'complete', score: null, completed: 0 });
+    expect((await workbench.getIteration('letter', it.id))!.scores).toEqual({
+      score: null,
+      completed: 0,
+      total: 1,
+    });
+
+    await finish(jobId!, 'Acme'); // retried and succeeded
+    expect(await view(it.id)).toMatchObject({ status: 'complete', score: 1, completed: 1 });
+    const [summary] = (
+      await app.inject('/api/workbench/projects/letter/iterations')
+    ).json() as IterationSummary[];
+    expect(summary).toMatchObject({ id: it.id, status: 'complete', score: 1, completed: 1 });
+  });
+
+  it('refuses to evaluate without an open draft, or with an invalid one', async () => {
+    const { add, verify, evaluate, templates } = await project();
+    await verify(await add(1), 'Acme');
+    await templates.updateDraft('letter', 1, { ...letter(1), pipeline: [] });
+    const invalid = await evaluate();
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error).toBe('the draft is not valid');
+    expect(invalid.json().issues.length).toBeGreaterThan(0);
+
+    await templates.updateDraft('letter', 1, letter(1));
+    await templates.publish('letter', 1);
+    const closed = await evaluate();
+    expect(closed.statusCode).toBe(409);
+    expect(closed.json().error).toBe('no open draft; start the next version on the Template tab');
+  });
+
+  it('refuses to restore without an open draft', async () => {
+    const { app, add, verify, evaluate, templates } = await project();
+    await verify(await add(1), 'Acme');
+    const it = (await evaluate()).json() as IterationView;
+    await templates.publish('letter', 1);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/workbench/projects/letter/iterations/${it.id}/restore`,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('no open draft; start the next version on the Template tab');
+  });
 });

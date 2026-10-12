@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildScorecard, finishedJob, type Comparison, type SampleResult } from '../src/index.js';
+import {
+  buildScorecard,
+  finishedJob,
+  JOB_STATUSES,
+  type Comparison,
+  type JobStatus,
+  type SampleResult,
+} from '../src/index.js';
 
 const comparison = (
   score: number,
@@ -37,15 +44,23 @@ const sample = (over: Partial<SampleResult>): SampleResult => ({
 });
 
 describe('finishedJob', () => {
-  it.each([
-    ['succeeded', true],
-    ['awaiting_review', true],
-    ['failed', true],
-    ['needs_review', true],
-    ['cancelled', true],
-    ['queued', false],
-    ['running', false],
-  ] as const)('%s → %s', (status, finished) => {
+  // Every status, so a new one fails here (and in the type checker) until it is classified.
+  const expected: Record<JobStatus, boolean> = {
+    queued: false,
+    running: false,
+    succeeded: true,
+    failed: true,
+    needs_review: true,
+    awaiting_review: true,
+    rejected: true,
+    cancelled: true,
+  };
+
+  it('classifies every job status', () => {
+    expect(Object.keys(expected).sort()).toEqual([...JOB_STATUSES].sort());
+  });
+
+  it.each(JOB_STATUSES.map((s) => [s, expected[s]] as const))('%s → %s', (status, finished) => {
     expect(finishedJob(status)).toBe(finished);
   });
 

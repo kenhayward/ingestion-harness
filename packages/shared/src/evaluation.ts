@@ -47,6 +47,7 @@ const FINISHED: readonly JobStatus[] = [
   'awaiting_review',
   'failed',
   'needs_review',
+  'rejected',
   'cancelled',
 ];
 /** A job that will not change its result any more (a missing job counts as finished). */
