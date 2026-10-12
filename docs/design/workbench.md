@@ -339,8 +339,10 @@ Each phase is usable on its own.
    - **3a (done):** provider `location`, per-project data policy, `draft` alias, document-less
      `draft` jobs, context assembly (dev samples only), the `survey` stage, proposals.
    - **3b (done):** the outputs, sections and steps stages; per-change accept; skip; stale.
-4. **Evaluation loop:** the references stage (reference proposals and verification), step cache, scorecard, feedback,
-   `revise`, iterations.
+4. **Evaluation loop**, split in three:
+   - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
+   - **4b (next):** step cache, model comparison and re-run uncached.
+   - **4c:** feedback and `revise`.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**
 
