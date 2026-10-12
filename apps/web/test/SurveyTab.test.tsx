@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { EMPTY_BRIEF } from '@ih/shared';
+import { EMPTY_BRIEF, surveyBodyOf, type SurveyBody } from '@ih/shared';
 import { SurveyTab } from '../src/workbench/SurveyTab.js';
 import { fakeApi, proposalView } from './fake-api.js';
 
@@ -87,7 +87,7 @@ describe('SurveyTab', () => {
 
   it('keeps rows whose names or strings repeat', async () => {
     const base = proposalView();
-    const body = base.body!;
+    const body = surveyBodyOf(base) as SurveyBody;
     tab({
       listProposals: vi.fn(async () => [
         {
@@ -185,5 +185,29 @@ describe('SurveyTab', () => {
       ...brief.body,
       answers: [{ question: 'Is page 1 a cover?', answer: 'Yes' }],
     });
+  });
+
+  it('cannot skip while the survey is running', async () => {
+    tab({ listProposals: vi.fn(async () => [proposalView({ status: 'running', body: null })]) });
+    expect(await screen.findByRole('button', { name: 'Skip this stage' })).toBeDisabled();
+  });
+
+  it('skips the survey and reports the change', async () => {
+    const onChanged = vi.fn();
+    const api = fakeApi({ skipStage: vi.fn(async () => []) });
+    render(
+      <SurveyTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        brief={brief}
+        onBriefSaved={vi.fn()}
+        pollMs={1}
+        onChanged={onChanged}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Skip this stage' }));
+    expect(api.skipStage).toHaveBeenCalledWith('letter', 'survey');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 });

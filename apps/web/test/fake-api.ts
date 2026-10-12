@@ -173,6 +173,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     decideProposal: vi.fn(async () => {
       throw new Error('decideProposal not stubbed');
     }),
+    skipStage: vi.fn(async () => {
+      throw new Error('skipStage not stubbed');
+    }),
+    listStages: vi.fn(async () => []),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
@@ -240,6 +244,25 @@ export function segmentationView(overrides: Partial<SegmentationView> = {}): Seg
   return { jobId: 'seg-1', status: 'succeeded', error: null, result: null, ...overrides };
 }
 
+export function changeProposalView(overrides: Partial<ProposalView> = {}): ProposalView {
+  return proposalView({
+    stage: 'outputs',
+    body: {
+      notes: 'Dates are DMY in every sample.',
+      changes: [
+        {
+          op: 'putField',
+          field: { id: 'protocol_number', type: 'text', description: 'Protocol id' },
+          reason: 'header',
+        },
+        { op: 'putField', field: { id: 'approved_on', type: 'date' }, reason: 'approval page' },
+      ],
+    },
+    acceptedChanges: null,
+    ...overrides,
+  });
+}
+
 export function proposalView(overrides: Partial<ProposalView> = {}): ProposalView {
   return {
     id: crypto.randomUUID(),
@@ -247,6 +270,7 @@ export function proposalView(overrides: Partial<ProposalView> = {}): ProposalVie
     status: 'ready',
     error: null,
     briefVersion: 1,
+    acceptedChanges: null,
     model: 'local/qwen',
     body: {
       summary: 'Process validation protocols, blank and executed.',

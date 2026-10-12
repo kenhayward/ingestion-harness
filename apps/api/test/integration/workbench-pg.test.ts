@@ -115,6 +115,56 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await workbench.decideProposal('other-project', b.id, 'rejected')).toBeNull();
   });
 
+  it('round-trips a partial decision with its base draft, and defaults for survey proposals', async () => {
+    const projectId = await newProject();
+    const a = await repo.createDraftJob(projectId, { stage: 'outputs' });
+    const b = await repo.createDraftJob(projectId, { stage: 'survey' });
+    const base = { id: projectId, version: 1, outputs: { fields: [] } };
+    await workbench.createProposal({
+      id: a.id,
+      projectId,
+      stage: 'outputs',
+      briefVersion: null,
+      baseVersion: 1,
+      baseDefinition: base,
+    });
+    const decided = await workbench.decideProposal(projectId, a.id, 'partially_accepted', [0, 2]);
+    expect(decided).toMatchObject({
+      decision: 'partially_accepted',
+      acceptedChanges: [0, 2],
+      baseVersion: 1,
+      baseDefinition: base,
+    });
+    expect(await workbench.decideProposal(projectId, a.id, 'rejected')).toBeNull();
+
+    const survey = await workbench.createProposal({
+      id: b.id,
+      projectId,
+      stage: 'survey',
+      briefVersion: null,
+    });
+    expect(survey).toMatchObject({
+      acceptedChanges: null,
+      baseVersion: null,
+      baseDefinition: null,
+    });
+    expect(await workbench.decideProposal(projectId, b.id, 'accepted')).toMatchObject({
+      acceptedChanges: null,
+    });
+  });
+
+  it('records stage skips newest first', async () => {
+    const projectId = await newProject();
+    const first = await workbench.addSkip(projectId, 'survey');
+    const second = await workbench.addSkip(projectId, 'outputs');
+    expect(second.skippedAt >= first.skippedAt).toBe(true);
+    expect((await workbench.listSkips(projectId)).map((s) => s.stage)).toEqual([
+      'outputs',
+      'survey',
+    ]);
+    expect(await workbench.listSkips('no-such-project')).toEqual([]);
+  });
+
   it('revoking to local downgrades existing project jobs; allowing never upgrades', async () => {
     const projectId = await newProject();
     const other = await newProject();

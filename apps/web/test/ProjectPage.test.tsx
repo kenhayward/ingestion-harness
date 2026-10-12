@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
@@ -94,5 +94,50 @@ describe('ProjectPage', () => {
     );
     expect(await screen.findByText('Local models only')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /external models/i })).toBeNull();
+  });
+
+  it('shows each drafting stage state in the tab bar', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listStages: vi.fn(async () => [
+        {
+          stage: 'survey' as const,
+          state: 'accepted' as const,
+          completedAt: '2026-10-12T10:00:00.000Z',
+        },
+        {
+          stage: 'outputs' as const,
+          state: 'stale' as const,
+          completedAt: '2026-10-12T09:00:00.000Z',
+        },
+        { stage: 'sections' as const, state: 'pending' as const, completedAt: null },
+        { stage: 'steps' as const, state: 'pending' as const, completedAt: null },
+      ]),
+    });
+    render(
+      <ProjectPage api={api} projectId="letter" tab="outputs" onNavigate={vi.fn()} role="admin" />,
+    );
+    const tabs = await screen.findByRole('navigation', { name: 'Project' });
+    expect(
+      await within(tabs).findByRole('link', { name: /Outputs \u00b7 stale/ }),
+    ).toBeInTheDocument();
+    expect(within(tabs).getByRole('link', { name: /Survey \u00b7 accepted/ })).toBeInTheDocument();
+    expect(within(tabs).getByRole('link', { name: /^Sections$/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Propose outputs' })).toBeInTheDocument();
+  });
+
+  it('shows the anchor proposals above the Sections editor', async () => {
+    render(
+      <ProjectPage
+        api={fakeApi({ getProject: vi.fn(async () => projectView()) })}
+        projectId="letter"
+        tab="sections"
+        onNavigate={vi.fn()}
+        role="admin"
+      />,
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Propose section anchors' }),
+    ).toBeInTheDocument();
   });
 });

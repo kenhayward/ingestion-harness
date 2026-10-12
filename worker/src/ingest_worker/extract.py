@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -81,9 +82,11 @@ def run_extraction(
     images: tuple[bytes, ...] = (),
     max_tokens: int = 64000,
     system: str = SYSTEM_PROMPT,
+    check: Callable[[dict[str, Any]], list[str]] | None = None,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
-    fed back until the output is valid or attempts run out."""
+    fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
+    cannot express; its errors are fed back the same way."""
     validator = Draft202012Validator(schema)
     attempts: list[Attempt] = []
     current_prompt = prompt
@@ -112,6 +115,10 @@ def run_extraction(
             )
             raise OutputTruncatedError(extraction_id, attempts, max_tokens)
         data, errors = validate(result.text, validator)
+        if data is not None and check is not None:
+            errors = check(data)
+            if errors:
+                data = None
         attempts.append(
             Attempt(
                 n, current_prompt, result.text, errors, result.input_tokens, result.output_tokens

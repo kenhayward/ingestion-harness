@@ -13,15 +13,17 @@ from ingest_worker.drafting import (
     MAX_SAMPLE_CHARS,
     SURVEY,
     DraftSample,
+    anchor_check,
     build_context,
 )
 from ingest_worker.llm.base import LLMError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
-from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, drafting_key, prepared_text_key
+from ingest_worker.workbench import segment_with_timeout as real_segment
 
 from .fakes import FakeProvider, FakeQueue
 
@@ -213,7 +215,7 @@ def test_transient_provider_errors_retry_the_job(fixture_specs_dir: Path) -> Non
 
 def test_unknown_stage_needs_review(fixture_specs_dir: Path) -> None:
     provider, _, deps = make(fixture_specs_dir)
-    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    queue = FakeQueue(jobs=[draft_job(stage="references")])
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert "stage" in reason and provider.calls == []
@@ -244,3 +246,202 @@ def test_missing_prepared_text_needs_review_without_a_call(fixture_specs_dir: Pa
     [(_, reason)] = queue.reviewed
     assert "prepared text" in reason
     assert provider.calls == []
+
+
+OUTPUTS_BODY = {
+    "notes": "",
+    "changes": [
+        {
+            "op": "putField",
+            "id": "protocol_number",
+            "name": None,
+            "type": "text",
+            "description": "Protocol id, e.g. PVP/23/003",
+            "enum": None,
+            "columns": None,
+            "reason": "header of every sample",
+        }
+    ],
+}
+
+
+def test_outputs_job_writes_typed_changes_and_sees_the_accepted_survey(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [OUTPUTS_BODY]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs", survey=SURVEY_BODY)])
+    run_once(queue, deps, "w1")
+    result = json.loads(store.get("runs", drafting_key("letter", "job-d")))
+    assert result["body"]["changes"] == [
+        {
+            "op": "putField",
+            "field": {"id": "protocol_number", "description": "Protocol id, e.g. PVP/23/003"},
+            "reason": "header of every sample",
+        }
+    ]
+    [(_, request)] = provider.calls
+    assert "<survey>" in request.prompt and "Process validation protocols." in request.prompt
+
+
+def test_steps_errors_are_fed_back_then_need_review(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    bad = {
+        "notes": "",
+        "changes": [
+            {
+                "op": "putStep",
+                "id": "head",
+                "type": "extract",
+                "fields": ["missing"],
+                "table": None,
+                "sections": ["all"],
+                "instructions": None,
+                "pageImages": None,
+                "chunkPages": None,
+                "context": None,
+                "description": None,
+                "values": None,
+                "reference": None,
+                "aliases": None,
+                "preamble": None,
+                "reason": "r",
+            }
+        ],
+    }
+    provider.responses = [bad, bad]
+    queue = FakeQueue(jobs=[draft_job(stage="steps")])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 2
+    assert "unknown field" in provider.calls[1][1].prompt
+    [(_, reason)] = queue.reviewed
+    assert "unknown field" in reason
+
+
+def test_change_stage_without_a_draft_needs_review(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    queue = FakeQueue(jobs=[draft_job(stage="outputs", draft=None)])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "needs the current draft" in reason and provider.calls == []
+
+
+def sections_body(anchor: str) -> dict[str, Any]:
+    return {
+        "notes": "",
+        "changes": [
+            {
+                "op": "putSection",
+                "id": "approval",
+                "anchor": anchor,
+                "required": None,
+                "description": None,
+                "copiesSelect": None,
+                "reason": "r",
+            }
+        ],
+    }
+
+
+def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^SIGNATURES"), sections_body("^PROTOCOL APPROVAL")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 2
+    assert "matched none of the dev samples" in provider.calls[1][1].prompt
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    [row] = body["anchorCheck"]["samples"]
+    assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
+    assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+
+
+TIMEOUT = "preview took longer than 10s; an anchor may backtrack catastrophically"
+
+
+def test_sections_timeout_in_both_rounds_needs_review(
+    fixture_specs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def stub(*_a: Any, **_k: Any) -> dict[str, Any]:
+        raise DocumentError(TIMEOUT)
+
+    monkeypatch.setattr("ingest_worker.drafting.segment_with_timeout", stub)
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^A"), sections_body("^B")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 2
+    assert "backtrack" in provider.calls[1][1].prompt
+    [(_, reason)] = queue.reviewed
+    assert "backtrack" in reason
+    assert store.get_optional("runs", drafting_key("letter", "job-d")) is None
+
+
+def test_sections_timeout_then_success_completes_with_the_grid(
+    fixture_specs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"n": 0}
+
+    def stub(*a: Any, **k: Any) -> dict[str, Any]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise DocumentError(TIMEOUT)
+        return real_segment(*a, **k)
+
+    monkeypatch.setattr("ingest_worker.drafting.segment_with_timeout", stub)
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^A"), sections_body("^PROTOCOL APPROVAL")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 2
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert body["anchorCheck"]["samples"]
+
+
+def put(sid: str, anchor: str, **section: Any) -> dict[str, Any]:
+    return {
+        "op": "putSection",
+        "section": {"id": sid, "anchor": anchor, **section},
+        "reason": "r",
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        ([put("a", "^ONLYA")], ["section \"a\" is required but anchor '^ONLYA' missed: b.pdf"]),
+        ([put("a", "^ONLYA", required=False)], []),
+        ([put("a", "^NOWHERE")], ["section \"a\": anchor '^NOWHERE' matched none"]),
+        (
+            [put("a", "^NOWHERE"), {"op": "removeSection", "id": "a", "reason": "r"}],
+            [],
+        ),
+        (
+            [put("a", "^NOWHERE"), put("a", "^NOWHERE")],
+            ["section \"a\": anchor '^NOWHERE' matched none"],
+        ),
+    ],
+)
+def test_anchor_check_misses(changes: list[dict[str, Any]], expected: list[str]) -> None:
+    samples = [
+        DraftSample("s1", "a.pdf", "dev", ["ONLYA here"]),
+        DraftSample("s2", "b.pdf", "dev", ["nothing"]),
+    ]
+    draft = {"document": {"sections": [{"id": "all", "anchor": "\\A"}]}}
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    assert len(misses) == len(expected)
+    assert all(e in m for m, e in zip(misses, expected, strict=True))
+
+
+def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 2
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    [row] = body["anchorCheck"]["samples"]
+    assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is False

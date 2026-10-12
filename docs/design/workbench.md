@@ -266,7 +266,7 @@ GET/POST          /projects/:id/brief             current / new version
 POST              /projects/:id/stages/:stage     propose (enqueue draft)
 POST              /projects/:id/stages/:stage/skip
 GET               /projects/:id/proposals[/:pid]
-POST              /projects/:id/proposals/:pid/decision   accept/reject per change
+POST              /projects/:id/proposals/:pid/decision   { decision, changes? } accept/reject, optionally per change
 POST              /projects/:id/feedback          comment on field/step/section
 POST              /projects/:id/revise            enqueue revise from open feedback
 POST              /projects/:id/evaluate          { set: dev|holdout, model?, uncached? }
@@ -338,8 +338,8 @@ Each phase is usable on its own.
 3. **Drafting**, split in two:
    - **3a (done):** provider `location`, per-project data policy, `draft` alias, document-less
      `draft` jobs, context assembly (dev samples only), the `survey` stage, proposals.
-   - **3b (next):** the outputs, sections, steps and references stages.
-4. **Evaluation loop:** reference proposals and verification, step cache, scorecard, feedback,
+   - **3b (done):** the outputs, sections and steps stages; per-change accept; skip; stale.
+4. **Evaluation loop:** the references stage (reference proposals and verification), step cache, scorecard, feedback,
    `revise`, iterations.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**

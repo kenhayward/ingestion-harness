@@ -74,3 +74,33 @@ def test_truncated_output_raises_without_retrying() -> None:
     with pytest.raises(OutputTruncatedError, match="max tokens"):
         extract(provider, max_attempts=3)
     assert len(provider.calls) == 1  # a longer retry prompt can only make it worse
+
+
+def test_check_errors_are_fed_back_like_schema_errors() -> None:
+    provider = FakeProvider("p", responses=[{"n": 1}, {"n": 2}])
+    result = run_extraction(
+        extraction_id="x",
+        provider=provider,
+        model_id="m",
+        prompt="P",
+        schema={"type": "object"},
+        max_attempts=2,
+        check=lambda data: [] if data["n"] == 2 else ["n must be 2"],
+    )
+    assert result.data == {"n": 2}
+    assert result.attempts[0].errors == ["n must be 2"]
+    assert "n must be 2" in provider.calls[1][1].prompt
+
+
+def test_check_failing_every_attempt_raises() -> None:
+    provider = FakeProvider("p", responses=[{"n": 1}, {"n": 1}])
+    with pytest.raises(ExtractionFailedError, match="n must be 2"):
+        run_extraction(
+            extraction_id="x",
+            provider=provider,
+            model_id="m",
+            prompt="P",
+            schema={"type": "object"},
+            max_attempts=2,
+            check=lambda data: ["n must be 2"],
+        )
