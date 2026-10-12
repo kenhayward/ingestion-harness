@@ -26,7 +26,8 @@ export function SurveyTab({
   pollMs: number;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  /** Answers typed in this session, by question; unedited questions show the brief's answer. */
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -42,6 +43,11 @@ export function SurveyTab({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const proposalId = proposal?.id;
+  useEffect(() => {
+    setTyped({});
+  }, [proposalId]);
 
   const running = proposal?.status === 'running';
   useEffect(() => {
@@ -71,19 +77,24 @@ export function SurveyTab({
       setProposal(await api.decideProposal(projectId, proposal.id, decision));
     });
 
+  const briefAnswers = brief?.body.answers ?? [];
+  const briefAnswer = (question: string) =>
+    briefAnswers.find((qa) => qa.question === question)?.answer ?? '';
+  // Only the displayed questions whose typed answer is non-empty and differs from the brief's.
+  const given = (proposal?.body?.questions ?? [])
+    .map((q) => [q.question, (typed[q.question] ?? '').trim()] as const)
+    .filter(([q, a]) => a !== '' && a !== briefAnswer(q));
+
   const saveAnswers = () =>
     act(async () => {
       const body = brief?.body ?? EMPTY_BRIEF;
-      const given = Object.entries(answers).filter(([, a]) => a.trim());
       const kept = body.answers.filter((qa) => !given.some(([q]) => q === qa.question));
       const saved = await api.saveBrief(projectId, {
         ...body,
-        answers: [
-          ...kept,
-          ...given.map(([question, answer]) => ({ question, answer: answer.trim() })),
-        ],
+        answers: [...kept, ...given.map(([question, answer]) => ({ question, answer }))],
       });
       onBriefSaved(saved);
+      setTyped({});
       setMessage(`Answers saved to brief version ${saved.version}`);
     });
 
@@ -155,14 +166,14 @@ export function SurveyTab({
                   <textarea
                     aria-label={q.question}
                     rows={2}
-                    value={answers[q.question] ?? ''}
-                    onChange={(e) => setAnswers({ ...answers, [q.question]: e.target.value })}
+                    value={typed[q.question] ?? briefAnswer(q.question)}
+                    onChange={(e) => setTyped({ ...typed, [q.question]: e.target.value })}
                   />
                 </div>
               ))}
               <button
                 type="button"
-                disabled={!Object.values(answers).some((a) => a.trim())}
+                disabled={given.length === 0}
                 onClick={() => void saveAnswers()}
               >
                 Save answers to brief

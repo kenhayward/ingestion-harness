@@ -123,4 +123,56 @@ describe('SurveyTab', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull());
     expect(screen.getByText(/accepted/i)).toBeInTheDocument();
   });
+
+  it('prefills a question the brief already answers', async () => {
+    const answered = {
+      ...brief,
+      body: {
+        ...brief.body,
+        answers: [{ question: 'Which copy should be extracted?', answer: 'Blank' }],
+      },
+    };
+    const api = fakeApi({ listProposals: vi.fn(async () => [proposalView()]) });
+    render(
+      <SurveyTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        brief={answered}
+        onBriefSaved={vi.fn()}
+        pollMs={1}
+      />,
+    );
+    expect(await screen.findByLabelText('Which copy should be extracted?')).toHaveValue('Blank');
+    expect(screen.getByRole('button', { name: 'Save answers to brief' })).toBeDisabled();
+  });
+
+  it('does not re-save answers to questions that are no longer shown', async () => {
+    const second = proposalView({
+      body: {
+        ...proposalView().body!,
+        questions: [{ question: 'Is page 1 a cover?', why: 'Layout' }],
+      },
+    });
+    const listProposals = vi
+      .fn()
+      .mockResolvedValueOnce([proposalView()])
+      .mockResolvedValue([second]);
+    const { api } = tab({
+      listProposals,
+      saveBrief: vi.fn(async () => ({ ...brief, version: 3 })),
+      startStage: vi.fn(async () => second),
+    });
+    await userEvent.type(await screen.findByLabelText('Which copy should be extracted?'), 'Exec');
+    await userEvent.click(screen.getByRole('button', { name: 'Save answers to brief' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Run survey again' }));
+    const next = await screen.findByLabelText('Is page 1 a cover?');
+    expect(screen.getByRole('button', { name: 'Save answers to brief' })).toBeDisabled();
+    await userEvent.type(next, 'Yes');
+    await userEvent.click(screen.getByRole('button', { name: 'Save answers to brief' }));
+    expect(api.saveBrief).toHaveBeenLastCalledWith('letter', {
+      ...brief.body,
+      answers: [{ question: 'Is page 1 a cover?', answer: 'Yes' }],
+    });
+  });
 });
