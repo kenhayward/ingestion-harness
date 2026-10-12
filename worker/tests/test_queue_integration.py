@@ -149,3 +149,32 @@ def test_a_document_less_project_job_is_claimed_with_its_params(
     finally:
         q._conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
         q._conn.execute("DELETE FROM workbench_projects WHERE id = %s", (project,))
+
+
+def test_wait_for_work_returns_as_soon_as_a_job_is_queued() -> None:
+    import time
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        pytest.skip("DATABASE_URL not set")
+    listener, writer = PgJobQueue(url), PgJobQueue(url)
+    doc = str(uuid.uuid4())
+    try:
+        listener.wait_for_work(0.01)  # starts LISTEN
+        writer._conn.execute(
+            """INSERT INTO documents (id, filename, sha256, size_bytes, spec_id, spec_version,
+                                      bucket, object_key)
+               VALUES (%s, 'n.pdf', 'z', 1, 'demo', 1, 'inbox', %s)""",
+            (doc, f"demo/v1/{doc}.pdf"),
+        )
+        writer._conn.execute(
+            "INSERT INTO jobs (document_id, run_after) VALUES (%s, now() + interval '1 day')",
+            (doc,),
+        )
+        started = time.monotonic()
+        listener.wait_for_work(10.0)
+        assert time.monotonic() - started < 2.0
+    finally:
+        writer._conn.execute("DELETE FROM documents WHERE id = %s", (doc,))
+        listener.close()
+        writer.close()

@@ -4,7 +4,9 @@ so any number of worker replicas can poll concurrently.
 Statuses: queued, running, succeeded, failed, needs_review, awaiting_review, rejected, cancelled.
 `cancelled` is set by an operator (API); every worker status write is guarded with
 `AND status = 'running'`, so the worker never overwrites a cancel.
-Claims take higher jobs.priority first (production 0, workbench -10; ADR 0007)."""
+Claims take higher jobs.priority first (production 0, workbench -10; ADR 0007).
+Idle workers LISTEN on ih_jobs (trigger jobs_notify_queued, migration 0009) and wake as soon as a
+job is queued; the poll interval is only a fallback."""
 
 from __future__ import annotations
 
@@ -48,6 +50,10 @@ class ClaimedJob:
 
 class JobQueue(Protocol):
     def claim(self, worker_id: str) -> ClaimedJob | None: ...
+
+    def wait_for_work(self, timeout_s: float) -> None:
+        """Block until a job is queued (NOTIFY ih_jobs) or `timeout_s` passes."""
+        ...
 
     def is_cancelled(self, job: ClaimedJob) -> bool:
         """True once the job is no longer this run's claim: cancelled, deleted, re-queued
@@ -143,6 +149,14 @@ class PgJobQueue:
         import psycopg
 
         self._conn = psycopg.connect(database_url, autocommit=True)
+        self._listening = False
+
+    def wait_for_work(self, timeout_s: float) -> None:
+        if not self._listening:
+            self._conn.execute("LISTEN ih_jobs")
+            self._listening = True
+        for _ in self._conn.notifies(timeout=timeout_s, stop_after=1):
+            pass
 
     def close(self) -> None:
         self._conn.close()

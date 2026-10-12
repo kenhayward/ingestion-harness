@@ -112,6 +112,12 @@ def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     return publish_template_job(job, deps, queue, loaded)
 
 
+def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
+    """Nothing to claim: wait for a NOTIFY (or the poll interval), unless shutting down."""
+    if not stop.is_set():
+        queue.wait_for_work(timeout_s)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings.from_env()
@@ -178,7 +184,7 @@ def main() -> None:
                 log.warning("re-queued %d stale jobs", reaped)
             next_reap = now + 60
         if not run_once(queue, deps, settings.worker_id):
-            stop.wait(settings.poll_interval_s)
+            idle(queue, stop, settings.poll_interval_s)
 
     queue.close()
     log.info("worker stopped")
