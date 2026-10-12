@@ -5,7 +5,7 @@ import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
-import { UploadForm } from './components/UploadForm.js';
+import { UploadStrip } from './jobs/UploadStrip.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
@@ -182,7 +182,7 @@ function JobsView({
 
   return (
     <>
-      <UploadForm
+      <UploadStrip
         api={api}
         onUploaded={refresh}
         onModelChange={setRetryModel}

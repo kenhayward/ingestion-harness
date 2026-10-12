@@ -189,16 +189,16 @@ describe('Upload PDF', () => {
       click.mock.contexts.filter((c) => c instanceof HTMLInputElement && c.type === 'file').length;
     render(<App api={fakeApi()} pollMs={0} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Upload PDF' }));
-    const input = await screen.findByLabelText('PDF');
+    const input = await screen.findByLabelText('PDF files');
     await vi.waitFor(() => expect(click.mock.contexts).toContain(input));
     expect(window.location.hash).toBe('#/');
     expect(pickerOpens()).toBe(1);
     // leaving and returning to Jobs must not reopen the picker
     window.location.hash = '#/results';
     await screen.findByRole('heading', { name: 'Results' });
-    await vi.waitFor(() => expect(screen.queryByLabelText('PDF')).not.toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.queryByLabelText('PDF files')).not.toBeInTheDocument());
     window.location.hash = '#/';
-    await screen.findByLabelText('PDF');
+    await screen.findByLabelText('PDF files');
     expect(pickerOpens()).toBe(1);
     click.mockRestore();
   });

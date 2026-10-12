@@ -1,0 +1,191 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { UploadRequest } from '../src/api/client.js';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { UploadStrip } from '../src/jobs/UploadStrip.js';
+import { fakeApi, job } from './fake-api.js';
+
+describe('UploadStrip', () => {
+  it('disables upload until a file is chosen', async () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={() => {}} />);
+    expect(
+      await screen.findByRole('option', { name: /Process Validation Protocol/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
+  });
+
+  it('uploads with the selected spec and model, then notifies the parent', async () => {
+    const api = fakeApi({
+      listModels: async () => [
+        {
+          ref: 'anthropic/claude-opus-5-5',
+          provider: 'anthropic',
+          providerKind: 'anthropic',
+          modelId: 'claude-opus-5-5',
+          displayName: 'Claude Opus 5.5',
+          enabled: true,
+          discoveredAt: '',
+        },
+      ],
+    });
+    const onUploaded = vi.fn();
+    render(<UploadStrip api={api} onUploaded={onUploaded} />);
+
+    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-opus-5-5');
+    const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText('PDF files'), file);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+
+    expect(api.upload).toHaveBeenCalledWith({
+      file,
+      specId: 'process-validation-protocol',
+      specVersion: 1,
+      model: 'anthropic/claude-opus-5-5',
+    });
+    expect(onUploaded).toHaveBeenCalled();
+    const uploads = await screen.findByRole('list', { name: 'Uploads' });
+    expect(await within(uploads).findByText('Queued')).toBeInTheDocument();
+  });
+});
+
+describe('UploadStrip remembers the model', () => {
+  const opus = {
+    ref: 'anthropic/claude-opus-5-5',
+    provider: 'anthropic',
+    providerKind: 'anthropic' as const,
+    modelId: 'claude-opus-5-5',
+    displayName: 'Claude Opus 5.5',
+    enabled: true,
+    discoveredAt: '',
+  };
+  const api = () => fakeApi({ listModels: async () => [opus] });
+
+  it('saves the selection, and forgets it for spec default', async () => {
+    render(<UploadStrip api={api()} onUploaded={() => {}} />);
+    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
+    expect(localStorage.getItem('ih.uploadModel')).toBe(opus.ref);
+    await userEvent.selectOptions(screen.getByLabelText('Model'), '');
+    expect(localStorage.getItem('ih.uploadModel')).toBeNull();
+  });
+
+  it('restores it on the next visit and reports it (for Retry)', async () => {
+    localStorage.setItem('ih.uploadModel', opus.ref);
+    const onModelChange = vi.fn();
+    render(<UploadStrip api={api()} onUploaded={() => {}} onModelChange={onModelChange} />);
+    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
+    expect(onModelChange).toHaveBeenCalledWith(opus.ref);
+  });
+
+  it('keeps it across uploads', async () => {
+    const a = api();
+    render(<UploadStrip api={a} onUploaded={() => {}} />);
+    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
+    const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText('PDF files'), file);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    expect(await screen.findByText('Queued')).toBeInTheDocument();
+    expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
+  });
+
+  it('falls back to spec default when the saved model is gone or disabled', async () => {
+    localStorage.setItem('ih.uploadModel', 'anthropic/retired');
+    const onModelChange = vi.fn();
+    render(
+      <UploadStrip
+        api={fakeApi({ listModels: async () => [{ ...opus, ref: 'local/x', enabled: false }] })}
+        onUploaded={() => {}}
+        onModelChange={onModelChange}
+      />,
+    );
+    await waitFor(() => expect(localStorage.getItem('ih.uploadModel')).toBeNull());
+    expect(screen.getByLabelText('Model')).toHaveValue('');
+    expect(onModelChange).not.toHaveBeenCalledWith('anthropic/retired');
+  });
+
+  it('works when storage is unavailable', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    try {
+      render(<UploadStrip api={api()} onUploaded={() => {}} />);
+      await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+      await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
+      expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
+  });
+});
+
+describe('UploadStrip with several files', () => {
+  const pdf = (name: string) => new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+  const ready = () => screen.findByRole('option', { name: /Process Validation Protocol/ });
+
+  it('uploads several files, one job each, in order, with a status per file', async () => {
+    const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
+    const onUploaded = vi.fn();
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={onUploaded} />);
+    await ready();
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf'), pdf('b.pdf')]);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 2 files' }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(upload.mock.calls.map((c) => c[0].file.name)).toEqual(['a.pdf', 'b.pdf']);
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(within(list).getByText('a.pdf')).toBeInTheDocument();
+    await waitFor(() => expect(within(list).getAllByText('Queued')).toHaveLength(2));
+    expect(onUploaded).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps going when one file fails and keeps the failed file to retry', async () => {
+    const upload = vi.fn(async (req: UploadRequest) => {
+      if (req.file.name === 'bad.pdf') throw new Error('413 Payload Too Large');
+      return job({ filename: req.file.name });
+    });
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('bad.pdf'), pdf('ok.pdf')]);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 2 files' }));
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(
+      await within(list).findByText('Upload failed: 413 Payload Too Large'),
+    ).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Upload 1 file' })).toBeEnabled();
+  });
+
+  it('skips dropped files that are not PDFs', async () => {
+    const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    const notes = new File(['x'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.drop(screen.getByText('Drop PDFs here'), {
+      dataTransfer: { files: [pdf('a.pdf'), notes], types: ['Files'] },
+    });
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(within(list).getByText('notes.txt')).toBeInTheDocument();
+    expect(within(list).getByText('Not a PDF')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(upload.mock.calls[0]![0].file.name).toBe('a.pdf');
+  });
+
+  it('starts a fresh selection after a finished batch', async () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
+    await ready();
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf')]);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    await screen.findByText('Queued');
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('b.pdf')]);
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(within(list).queryByText('a.pdf')).not.toBeInTheDocument();
+    expect(within(list).getByText('b.pdf')).toBeInTheDocument();
+  });
+});
