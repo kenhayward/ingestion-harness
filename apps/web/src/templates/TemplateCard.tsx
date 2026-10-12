@@ -91,6 +91,9 @@ export function TemplateCard({
             New draft from v{item.published}
           </button>
         ) : null}
+        <a className="button" href={`#/workbench/${item.id}`}>
+          Open in workbench
+        </a>
         {shown !== null && (
           <>
             <label className="button" htmlFor={fileId}>

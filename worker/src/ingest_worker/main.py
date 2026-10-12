@@ -26,12 +26,13 @@ from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
 from .template_pipeline import publish_template_job, rerun_template_job
+from .workbench import prepare_sample
 
 log = logging.getLogger("ingest_worker")
 
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
-    """Claim and run one job (process or publish). Returns False when the queue is empty."""
+    """Claim and run one job (process, publish, rerun or prepare). Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
@@ -54,6 +55,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             check_cancelled(job, queue)
             queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
             log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
+            return True
+        if job.task == "prepare":
+            triage = prepare_sample(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s prepared %d pages", job.id, triage["pageCount"])
             return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete

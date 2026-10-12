@@ -24,11 +24,13 @@ import {
   type NewDocument,
   type NewEdit,
   type StoredObject,
+  WORKBENCH_PRIORITY,
+  type WorkbenchJobOptions,
 } from './types.js';
 
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
          array(SELECT model FROM step_runs
                 WHERE job_id = j.id AND model IS NOT NULL
@@ -46,9 +48,10 @@ interface JobRow {
   models_used: string[];
   attempts: number;
   error: string | null;
-  task: 'process' | 'publish';
+  task: JobSummary['task'];
   test: boolean;
   reference_id: string | null;
+  project_id: string | null;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -72,6 +75,7 @@ function toSummary(r: JobRow): JobSummary {
     task: r.task,
     test: r.test,
     referenceId: r.reference_id,
+    projectId: r.project_id,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,
@@ -151,6 +155,46 @@ export class PgRepo implements IngestionRepo {
     test = false,
     referenceId: string | null = null,
   ): Promise<JobSummary> {
+    return this.insertDocumentAndJob(doc, {
+      modelOverride,
+      test,
+      referenceId,
+      projectId: null,
+      task: 'process',
+      priority: 0,
+    });
+  }
+
+  async createWorkbenchJob(doc: NewDocument, { projectId, task }: WorkbenchJobOptions) {
+    return this.insertDocumentAndJob(doc, {
+      modelOverride: null,
+      test: true,
+      referenceId: null,
+      projectId,
+      task,
+      priority: WORKBENCH_PRIORITY,
+    });
+  }
+
+  async listProjectJobs(projectId: string): Promise<JobSummary[]> {
+    const { rows } = await this.pool.query<JobRow>(
+      `${JOB_SELECT} WHERE j.project_id = $1 ORDER BY j.created_at DESC`,
+      [projectId],
+    );
+    return rows.map(toSummary);
+  }
+
+  private async insertDocumentAndJob(
+    doc: NewDocument,
+    job: {
+      modelOverride: string | null;
+      test: boolean;
+      referenceId: string | null;
+      projectId: string | null;
+      task: 'process' | 'prepare';
+      priority: number;
+    },
+  ): Promise<JobSummary> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -169,13 +213,20 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override, test, reference_id)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [doc.id, modelOverride, test, referenceId],
+        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [
+          doc.id,
+          job.modelOverride,
+          job.test,
+          job.referenceId,
+          job.projectId,
+          job.task,
+          job.priority,
+        ],
       );
       await client.query('COMMIT');
-      const job = await this.getJob(rows[0]!.id);
-      return job!;
+      return (await this.getJob(rows[0]!.id))!;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -186,7 +237,7 @@ export class PgRepo implements IngestionRepo {
 
   async listJobs({ limit, status }: ListJobsQuery): Promise<JobSummary[]> {
     const { rows } = await this.pool.query<JobRow>(
-      `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) ORDER BY j.created_at DESC LIMIT $2`,
+      `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare' ORDER BY j.created_at DESC LIMIT $2`,
       [status ?? null, limit],
     );
     return rows.map(toSummary);
@@ -321,12 +372,13 @@ export class PgRepo implements IngestionRepo {
     { model, specVersion }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
-      // A cancelled publish/rerun resumes as that task; failures re-run processing. A succeeded
+      // A cancelled publish/rerun resumes as that task; a preparation stays a preparation; other
+      // failures re-run processing. A succeeded
       // job re-runs from scratch: its review (decision, reasons, edits) belonged to the old
       // extraction. CASE/WHERE read the pre-update row; all CTEs share one snapshot.
       `WITH prev AS (SELECT status FROM jobs WHERE id = $1),
        retried AS (
-         UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
+         UPDATE jobs SET task = CASE WHEN status = 'cancelled' OR task = 'prepare' THEN task ELSE 'process' END,
                 reviewer = CASE WHEN status = 'succeeded' THEN NULL ELSE reviewer END,
                 review_note = CASE WHEN status = 'succeeded' THEN NULL ELSE review_note END,
                 reviewed_at = CASE WHEN status = 'succeeded' THEN NULL ELSE reviewed_at END,
@@ -391,7 +443,8 @@ export class PgRepo implements IngestionRepo {
       const doc = await client.query(
         `DELETE FROM documents d WHERE d.id = $1
             AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
-            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)`,
+            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM workbench_samples WHERE document_id = d.id)`,
         [row.document_id],
       );
       let inboxObject: StoredObject | null = null;
@@ -423,7 +476,7 @@ export class PgRepo implements IngestionRepo {
     const { rows } = await this.pool.query<{ id: string }>(
       `SELECT id FROM jobs
         WHERE status = ANY($1::job_status[]) AND updated_at < $2
-          AND ($3 OR reference_id IS NULL)
+          AND ($3 OR reference_id IS NULL) AND task <> 'prepare'
         ORDER BY updated_at`,
       [DELETABLE_STATUSES, cutoffIso, includeRegression],
     );
@@ -542,9 +595,10 @@ export class PgRepo implements IngestionRepo {
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {
-    const { rows: jobRows } = await this.pool.query<JobRow>(`${JOB_SELECT} WHERE d.spec_id = $1`, [
-      templateId,
-    ]);
+    const { rows: jobRows } = await this.pool.query<JobRow>(
+      `${JOB_SELECT} WHERE d.spec_id = $1 AND j.task <> 'prepare'`,
+      [templateId],
+    );
     const { rows: edits } = await this.pool.query<{
       job_id: string;
       field_id: string | null;

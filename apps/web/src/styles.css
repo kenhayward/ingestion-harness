@@ -579,7 +579,7 @@ th {
     margin-left: 0;
   }
   /* Wide tables scroll inside their own box, never the page (pages get card layouts later). */
-  .page table:not(.job-list):not(.result-list) {
+  .page table:not(.job-list):not(.result-list):not(.token-list) {
     display: block;
     overflow-x: auto;
   }
@@ -680,6 +680,8 @@ td.edited-cell,
   color: var(--ih-muted);
 }
 .editor-body {
+  /* A fieldset sizes to its content by default: let it shrink with the column. */
+  min-width: 0;
   border: none;
   padding: 0;
   margin: 0;
@@ -705,22 +707,43 @@ td.edited-cell,
 .table-def {
   width: 100%;
 }
-.step {
-  margin-bottom: 1rem;
-  border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-lg);
-  background: var(--ih-surface);
-}
 .step-tools {
   display: flex;
-  gap: 0.25rem;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
+/* Checklists (fields a step fills, sections it reads): checkbox chips */
 fieldset.choice {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+fieldset.choice legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+  color: var(--ih-muted);
+}
+fieldset.choice label.inline {
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-md);
+  border-radius: var(--ih-radius-pill);
+  font-family: var(--ih-font-mono);
+  font-size: var(--ih-text-md);
+  cursor: pointer;
+}
+fieldset.choice label.inline:has(input:checked) {
+  border-color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
 }
 
 /* Document type editor, General tab: labels on the left, large full-width inputs. */
@@ -1765,6 +1788,47 @@ input.danger-border {
   }
 }
 
+/* Workbench */
+.workbench .muted {
+  color: var(--ih-muted);
+}
+.workbench-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--ih-border);
+  margin: 12px 0 16px;
+}
+.workbench-tabs a {
+  padding: 8px 12px;
+  color: var(--ih-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.workbench-tabs a[aria-current='page'] {
+  color: var(--ih-accent);
+  border-bottom-color: var(--ih-accent);
+}
+.sample-text section {
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-md);
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: var(--ih-surface);
+}
+.sample-text pre {
+  white-space: pre-wrap;
+  font-family: var(--ih-font-mono);
+  margin: 0;
+}
+.brief-form label {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+}
+.brief-form textarea {
+  width: 100%;
+}
+
 /* Results (UI handoff §3): chips + filter, list + preview */
 .toolbar {
   justify-content: space-between;
@@ -2083,4 +2147,400 @@ a.button.icon.bordered {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Document type editor (UI handoff §5): header, tabs, step cards, test rail */
+.template-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.editor-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+.editor-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.editor-title h1 {
+  margin: 0;
+}
+.editor-title .pill::before {
+  display: none;
+}
+.editor-title .muted {
+  font-size: var(--ih-text-md);
+}
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.unsaved {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-md);
+}
+.unsaved .live-dot {
+  background: var(--ih-warn-fg);
+}
+.publish-reason {
+  flex: 1 1 100%;
+  margin: 0;
+  text-align: right;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-alert-fg);
+}
+.menu-anchor {
+  position: relative;
+}
+.menu.menu-down {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 180px;
+}
+.delete-confirm {
+  flex: 1 1 100%;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-danger-bg);
+  color: var(--ih-danger-fg);
+}
+.template-editor [role='tablist'] {
+  margin: 0;
+}
+.template-editor [role='tab'] {
+  min-height: 44px;
+  padding: 0 14px;
+}
+.template-editor .tab-count {
+  margin-left: 6px;
+}
+.editor-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+.editor-main {
+  flex: 999 1 640px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.pipeline > .step-card {
+  flex: 1 1 100%;
+  /* A long one-line summary must truncate, not widen the card. */
+  min-width: 0;
+}
+.step-card {
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.step-card.open {
+  border-color: var(--ih-accent);
+}
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.step-card.open .step-head {
+  border-bottom: 1px solid var(--ih-border);
+}
+.step-toggle {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.step-toggle:hover:not(:disabled) {
+  background: none;
+}
+.step-num {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--ih-border);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ih-text-sm);
+}
+.kind-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.step-id {
+  flex: none;
+  font-weight: 500;
+}
+.step-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ih-text-md);
+  font-weight: 400;
+}
+.step-body {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+}
+button.icon.bordered.danger {
+  color: var(--ih-danger-fg);
+}
+button.add {
+  border-style: dashed;
+  border-color: var(--ih-border-strong);
+}
+.field-label {
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+  color: var(--ih-muted);
+}
+.extract-step .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.extract-step .segmented {
+  width: fit-content;
+}
+.test-rail {
+  flex: 1 1 280px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.test-rail h2 {
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.test-rail h3 {
+  margin: 4px 0 0;
+}
+.rail-drop {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  border: 1.5px dashed var(--ih-border-strong);
+  text-align: center;
+}
+.rail-drop small {
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.test-rail:has(input:focus-visible) .rail-drop {
+  outline: 2px solid var(--ih-accent);
+}
+.test-rail > p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.recent-runs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.recent-runs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.recent-runs li > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.recent-runs a {
+  color: var(--ih-text);
+  font-weight: 500;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .test-rail {
+    max-width: none;
+  }
+}
+
+/* Access (UI handoff §6): issue form + note, new-token panel, token list */
+.access-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.access-page .page-header {
+  margin-bottom: 0;
+}
+.access-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.card-form {
+  flex: 3 1 520px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.card-form h2 {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.card-form > label {
+  flex: 1 1 200px;
+}
+.card-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.note-card {
+  flex: 1 1 260px;
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  color: var(--ih-text);
+}
+.note-card > .icon {
+  color: var(--ih-info-fg);
+}
+.note-card p {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.token-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1.5px solid var(--ih-ok-fg);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-ok-bg);
+}
+.token-panel strong {
+  color: var(--ih-ok-fg);
+}
+.token-panel p {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+}
+.token-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.token-copy input {
+  flex: 1 1 280px;
+  min-width: 0;
+  background: var(--ih-surface);
+}
+.token-list {
+  min-width: 860px;
+  background: transparent;
+}
+.token-list th,
+.token-list td {
+  padding: 12px 16px;
+}
+.token-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+.token-label {
+  display: block;
+  font-weight: 500;
+}
+.confirm-text {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-danger-fg);
+}
+.tag {
+  padding: 2px 8px;
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+}
+.expiry span,
+.expiry small {
+  display: block;
+}
+.expiry small {
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.expiry.soon small {
+  color: var(--ih-warn-fg);
+  font-weight: 600;
+}
+tr.muted-row td {
+  background: var(--ih-surface2);
+}
+tr.confirming td {
+  background: var(--ih-danger-bg);
+}
+.token-list .actions-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+.token-list .row-actions > button {
+  min-height: 34px;
 }

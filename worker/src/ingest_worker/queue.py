@@ -3,7 +3,8 @@ so any number of worker replicas can poll concurrently.
 
 Statuses: queued, running, succeeded, failed, needs_review, awaiting_review, rejected, cancelled.
 `cancelled` is set by an operator (API); every worker status write is guarded with
-`AND status = 'running'`, so the worker never overwrites a cancel."""
+`AND status = 'running'`, so the worker never overwrites a cancel.
+Claims take higher jobs.priority first (production 0, workbench -10; ADR 0007)."""
 
 from __future__ import annotations
 
@@ -29,7 +30,8 @@ class ClaimedJob:
     model_override: str | None
     attempts: int
     max_attempts: int
-    #: "process" (extract) or "publish" (apply review edits and deliver to the final target).
+    #: "process" (extract), "publish" (apply review edits, deliver), "rerun" (one step) or
+    #: "prepare" (workbench: text + OCR only).
     task: str = "process"
     #: Test run of a (draft) template: processed and reviewable, never published.
     test: bool = False
@@ -104,7 +106,7 @@ CLAIM_SQL = """
 WITH next AS (
   SELECT id FROM jobs
    WHERE status = 'queued' AND run_after <= now()
-   ORDER BY run_after, created_at
+   ORDER BY priority DESC, run_after, created_at
    FOR UPDATE SKIP LOCKED
    LIMIT 1
 ), claimed AS (

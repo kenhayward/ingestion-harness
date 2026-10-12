@@ -2,8 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { inboxKey } from '@ih/shared';
 import { resolveDefinition } from '../templates/definitions.js';
-
-const PDF_MAGIC = Buffer.from('%PDF-');
+import { isPdf, multipartField } from '../uploads.js';
 
 /**
  * POST /api/documents (multipart/form-data)
@@ -19,16 +18,10 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: 'file part is required' });
 
-    const field = (name: string): string | undefined => {
-      const f = file.fields[name];
-      const one = Array.isArray(f) ? f[0] : f;
-      return one && one.type === 'field' ? String(one.value) : undefined;
-    };
-
-    const specId = field('specId');
+    const specId = multipartField(file, 'specId');
     if (!specId) return reply.code(400).send({ error: 'specId field is required' });
-    const versionField = field('specVersion');
-    const test = field('test') === 'true';
+    const versionField = multipartField(file, 'specVersion');
+    const test = multipartField(file, 'test') === 'true';
     const resolved = await resolveDefinition(
       app.deps,
       specId,
@@ -43,14 +36,14 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     }
     const spec = resolved.definition;
 
-    const model = field('model') || null;
+    const model = multipartField(file, 'model') || null;
     if (model) {
       const known = (await repo.listModels()).some((m) => m.enabled && m.ref === model);
       if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
     }
 
     const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
-    if (!body.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
+    if (!isPdf(body)) {
       return reply.code(415).send({ error: 'file is not a PDF' });
     }
 

@@ -131,7 +131,7 @@ def prepare_document(
             f"{document.pages.min}-{document.pages.max}"
         )
 
-    pages = _ocr_pages(job, deps, queue, pdf, pages, document.ocr)
+    pages = ocr_pages(job, deps, queue, pdf, pages, document.ocr)
     first = 0
     if document.copies:
         first, pages = select_copy(pages, document.copies)
@@ -241,7 +241,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
     return ProcessResult(outputs)
 
 
-def _ocr_pages(
+def ocr_pages(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,

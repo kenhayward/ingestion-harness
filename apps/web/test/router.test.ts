@@ -8,6 +8,10 @@ describe('parseHash', () => {
     ['#/results/abc-123', { name: 'result', jobId: 'abc-123' }],
     ['#/templates', { name: 'templates' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
+    ['#/workbench', { name: 'workbench' }],
+    ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'samples' }],
+    ['#/workbench/letter/brief', { name: 'project', projectId: 'letter', tab: 'brief' }],
+    ['#/workbench/letter/bogus', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['', { name: 'jobs' }],
   ])('%s', (hash, route) => {
     expect(parseHash(hash)).toEqual(route);
