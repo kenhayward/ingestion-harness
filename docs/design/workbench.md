@@ -214,15 +214,18 @@ The key is the sha256 of the step's **full input**:
 - the compiled step: the rendered prompt including preamble, instructions and output schema;
 - the section text it receives;
 - the page image hashes;
-- the resolved model reference and its provider options (temperature etc.);
+- the step id;
+- the resolved model reference and its provider's kind, endpoint (`baseUrl`) and options
+  (temperature etc.);
 - the values of `context` paths from earlier steps.
 
-A hit reuses the stored output and records a `step_runs` row marked cached. Changing the preamble
+A hit that still satisfies the step's schema reuses the stored output and records a `step_runs` row marked cached. Changing the preamble
 or an upstream step invalidates exactly the steps whose input changed.
 
 Rules:
 - Only test jobs started from the Workbench use the cache. Production and regression jobs never do.
-- "Re-run uncached" forces fresh calls, for checking variance.
+- "Re-run uncached" forces fresh calls, for checking variance. Reference runs always call the
+  models too. Both still write the cache.
 - The cache is keyed by content, not by project, so identical inputs share an entry.
 
 ### Scorecard
