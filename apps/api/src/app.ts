@@ -7,6 +7,7 @@ import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
 import type { TemplateRepo } from './templates/repo.js';
+import type { WorkbenchRepo } from './workbench/repo.js';
 import { templateRoutes } from './routes/templates.js';
 import { referenceRoutes } from './routes/references.js';
 import { healthRoutes } from './routes/health.js';
@@ -25,6 +26,8 @@ export interface AppDeps {
   target: { bucket: string; prefix: string };
   specs: SpecRegistry;
   templates: TemplateRepo;
+  /** Workbench projects, samples and briefs (ADR 0007). */
+  workbench: WorkbenchRepo;
   buckets: { inbox: string; outputs: string; runs: string };
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */

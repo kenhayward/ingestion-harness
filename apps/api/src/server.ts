@@ -7,6 +7,7 @@ import { SpecRegistry } from './specs/spec-registry.js';
 import { S3ObjectStore } from './storage/s3.js';
 import { PgTemplateRepo } from './templates/repo.js';
 import { seedTemplates } from './templates/seed.js';
+import { PgWorkbenchRepo } from './workbench/repo.js';
 
 const config = loadConfig();
 const target = targetConfig(config);
@@ -14,12 +15,16 @@ const repo = PgRepo.fromUrl(config.DATABASE_URL);
 const templates = new PgTemplateRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 }),
 );
+const workbench = new PgWorkbenchRepo(
+  new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }),
+);
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
 const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
 
 const app = await buildApp({
   repo,
   templates,
+  workbench,
   store: new S3ObjectStore({
     endpoint: config.S3_ENDPOINT,
     region: config.S3_REGION,

@@ -4,6 +4,7 @@ import { MemoryRepo } from '../src/repositories/memory.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
+import { MemoryWorkbenchRepo } from '../src/workbench/repo.js';
 
 export const demoSpec = DocumentSpecSchema.parse({
   id: 'demo',
@@ -48,12 +49,14 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const store = new MemoryObjectStore();
   const targetStore = new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
+  const workbench = new MemoryWorkbenchRepo(repo);
   const app = await buildApp({
     repo,
     store,
     targetStore,
     target: { bucket: 'published', prefix: 'pub/' },
     templates,
+    workbench,
     specs: SpecRegistry.fromDefinitions([
       { kind: 'spec', id: 'demo', version: 1, spec: demoSpec },
       { kind: 'spec', id: 'demo', version: 2, spec: { ...demoSpec, version: 2, title: 'Demo v2' } },
@@ -64,7 +67,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     access: null, // access enforcement is covered by access.test.ts
     ...overrides,
   });
-  return { app, repo, store, targetStore, templates };
+  return { app, repo, store, targetStore, templates, workbench };
 }
 
 /** An object store whose reads fail like an unreachable S3 endpoint. */
