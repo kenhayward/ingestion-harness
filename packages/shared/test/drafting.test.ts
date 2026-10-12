@@ -282,3 +282,19 @@ describe('references stage', () => {
     });
   });
 });
+
+describe('revise stage', () => {
+  it('accepts every op and never blocks or is blocked', () => {
+    const body = {
+      notes: '',
+      changes: [
+        { op: 'putField', field: { id: 'a', type: 'text' }, reason: 'r' },
+        { op: 'removeSection', id: 'sig', reason: 'r' },
+        { op: 'setPreamble', preamble: 'x', reason: 'r' },
+      ],
+    };
+    expect(parseChangeBody('revise', body)?.changes).toHaveLength(3);
+    expect(blockingStage(stageStates([], []), 'revise')).toBeNull();
+    expect(stageStates([], []).map((s) => s.stage)).not.toContain('revise');
+  });
+});

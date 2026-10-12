@@ -13,6 +13,7 @@ const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
   sections: 'Propose section anchors',
   steps: 'Propose extraction steps',
+  revise: 'Propose a revision',
 };
 
 const POLICY_NOTE: Record<DataPolicy, string> = {

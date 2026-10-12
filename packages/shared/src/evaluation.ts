@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { JobStatus } from './jobs.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
@@ -184,4 +185,78 @@ export interface ReferenceRow {
     error: string | null;
     modelOverride: string | null;
   } | null;
+}
+
+export const FEEDBACK_TARGETS = ['field', 'table', 'step', 'section'] as const;
+export type FeedbackTarget = (typeof FEEDBACK_TARGETS)[number];
+
+export const FeedbackBodySchema = z
+  .object({
+    target: z.enum(FEEDBACK_TARGETS),
+    targetId: z.string().regex(/^[a-z][a-z0-9_-]*$/),
+    body: z.string().trim().min(1).max(2000),
+    sampleId: z.string().uuid().optional(),
+    iterationId: z.string().uuid().optional(),
+  })
+  .strict();
+
+export interface FeedbackItem {
+  id: string;
+  projectId: string;
+  target: FeedbackTarget;
+  targetId: string;
+  sampleId: string | null;
+  iterationId: string | null;
+  body: string;
+  createdAt: string;
+  /** The revise proposal that answered it (accepted or partly accepted); null while open. */
+  resolvedBy: string | null;
+}
+
+export const MAX_FIELD_DIFFS = 20;
+export const MAX_ROW_DIFFS = 5;
+
+export interface FailureDiff {
+  sample: string;
+  score: number;
+  fields: { id: string; expected: unknown; actual: unknown }[];
+  tables: {
+    id: string;
+    missing: number;
+    extra: number;
+    changed: {
+      expected: Record<string, unknown>;
+      actual: Record<string, unknown>;
+      columns: string[];
+    }[];
+  }[];
+}
+
+/** What a revise call sees of an evaluation: dev samples that scored below 1, trimmed. */
+export function failureDiffs(
+  samples: SampleResult[],
+  devSampleIds: ReadonlySet<string>,
+): FailureDiff[] {
+  return samples.flatMap((s) => {
+    const c = s.comparison;
+    if (!c || c.score >= 1 || s.sampleId === null || !devSampleIds.has(s.sampleId)) return [];
+    return [
+      {
+        sample: s.filename,
+        score: c.score,
+        fields: c.fields
+          .filter((f) => !f.match)
+          .slice(0, MAX_FIELD_DIFFS)
+          .map(({ id, expected, actual }) => ({ id, expected, actual })),
+        tables: c.tables
+          .filter((t) => t.missing.length || t.extra.length || t.changed.length)
+          .map((t) => ({
+            id: t.id,
+            missing: t.missing.length,
+            extra: t.extra.length,
+            changed: t.changed.slice(0, MAX_ROW_DIFFS),
+          })),
+      },
+    ];
+  });
 }

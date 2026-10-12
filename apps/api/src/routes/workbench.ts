@@ -952,6 +952,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
     async (req, reply) => {
+      if (req.params.stage === 'revise') {
+        return reply.code(400).send({ error: 'stage revise cannot be skipped' });
+      }
       const params = SkipParams.safeParse(req.params);
       if (
         !params.success ||

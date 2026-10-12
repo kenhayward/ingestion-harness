@@ -174,10 +174,23 @@ export interface SegmentationView {
   result: SegmentationResult | null;
 }
 
-export const DRAFT_STAGES = ['survey', 'outputs', 'sections', 'steps', 'references'] as const;
+export const DRAFT_STAGES = [
+  'survey',
+  'outputs',
+  'sections',
+  'steps',
+  'references',
+  'revise',
+] as const;
 export type DraftStage = (typeof DRAFT_STAGES)[number];
 /** Stages that can be run in this release (3b); `references` comes with phase 4. */
-export const AVAILABLE_STAGES: readonly DraftStage[] = ['survey', 'outputs', 'sections', 'steps'];
+export const AVAILABLE_STAGES: readonly DraftStage[] = [
+  'survey',
+  'outputs',
+  'sections',
+  'steps',
+  'revise',
+];
 
 /** Body of a `survey` proposal. Mirrors worker drafting.SURVEY_SCHEMA. */
 export const SurveyBodySchema = z

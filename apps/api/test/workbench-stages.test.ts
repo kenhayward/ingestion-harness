@@ -76,6 +76,9 @@ describe('stage order', () => {
     const blocked = await start('outputs');
     expect(blocked.statusCode).toBe(409);
     expect(blocked.json().error).toBe('finish the survey stage first (accept or skip it)');
+    const revise = await skip('revise');
+    expect(revise.statusCode).toBe(400);
+    expect(revise.json().error).toBe('stage revise cannot be skipped');
     expect((await skip('survey')).statusCode).toBe(201);
     expect((await start('outputs')).statusCode).toBe(202);
     expect(await stages()).toEqual([
