@@ -1,9 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor } from '../src/templates/TemplateEditor.js';
-import { fakeApi } from './fake-api.js';
+import { fakeApi, job } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
 
 const skeleton = {
@@ -395,11 +395,56 @@ describe('TemplateEditor', () => {
 
   it('test-runs a draft on a sample document', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    const rail = await screen.findByRole('complementary', { name: 'Test this draft' });
+    expect(within(rail).getByRole('button', { name: 'Run test' })).toBeDisabled();
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
-    await userEvent.upload(await screen.findByLabelText('Sample PDF'), file);
-    await userEvent.click(screen.getByRole('button', { name: 'Test run' }));
+    await userEvent.upload(within(rail).getByLabelText('Sample PDF'), file);
+    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.pdf' }));
     expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
-    expect(await screen.findByRole('status')).toHaveTextContent('Test run queued');
+    expect(await within(rail).findByRole('status')).toHaveTextContent('Test run queued');
+  });
+
+  it('does not take a non-PDF as the sample', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    const rail = await screen.findByRole('complementary', { name: 'Test this draft' });
+    fireEvent.change(within(rail).getByLabelText('Sample PDF'), {
+      target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] },
+    });
+    expect(within(rail).getByRole('button', { name: 'Run test' })).toBeDisabled();
+    expect(within(rail).getByText('Choose a PDF')).toBeInTheDocument();
+  });
+
+  it('lists recent test runs of this document type', async () => {
+    const onNavigate = vi.fn();
+    const api = fakeApi({
+      getTemplate: vi.fn(async () => view({ ...validDefinition(), version: 1 })),
+    });
+    render(
+      <TemplateEditor
+        api={api}
+        templateId="letter"
+        version={1}
+        onNavigate={onNavigate}
+        jobs={[
+          job({
+            id: 't1',
+            filename: 'a.pdf',
+            specId: 'letter',
+            test: true,
+            status: 'awaiting_review',
+          }),
+          job({ id: 't2', filename: 'b.pdf', specId: 'letter', test: true, status: 'succeeded' }),
+          job({ id: 'x', filename: 'c.pdf', specId: 'other', test: true }),
+        ]}
+      />,
+    );
+    const list = await screen.findByRole('list', { name: 'Recent test runs' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getByRole('link', { name: 'a.pdf' })).toHaveAttribute(
+      'href',
+      '#/review/t1',
+    );
+    expect(within(list).getByText('Awaiting review')).toBeInTheDocument();
   });
 });
 

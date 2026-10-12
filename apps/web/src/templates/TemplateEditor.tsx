@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
-import { VALUE_TYPES, type ModelInfo } from '@ih/shared';
+import { VALUE_TYPES, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
 import { Segmented } from '../ui/Segmented.js';
 import { EditorHeader } from './EditorHeader.js';
 import { tabCounts } from './editor-derive.js';
 import { StepCard } from './StepCard.js';
+import { TestRail } from './TestRail.js';
 import { QualityPanel } from './QualityPanel.js';
 import {
   checkPathOptions,
@@ -49,11 +50,14 @@ export function TemplateEditor({
   templateId,
   version,
   onNavigate,
+  jobs = [],
 }: {
   api: Api;
   templateId: string;
   version: number;
   onNavigate: (hash: string) => void;
+  /** The polled job list: the Test this draft rail shows recent test runs from it. */
+  jobs?: readonly JobSummary[];
 }) {
   const [view, setView] = useState<TemplateRecordView | null>(null);
   const [def, setDef] = useState<Definition>({});
@@ -63,7 +67,6 @@ export function TemplateEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [sample, setSample] = useState<File | null>(null);
   /** The one pipeline step whose card is open (null: all collapsed). */
   const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
@@ -123,12 +126,6 @@ export function TemplateEditor({
       await api.deleteDraft(templateId, version);
       onNavigate('#/templates');
     });
-  const testRun = () =>
-    act(async () => {
-      if (!sample) return;
-      const job = await api.testRun(sample, templateId, version);
-      setMessage(`Test run queued: job ${job.id}. It will appear in the jobs list for review.`);
-    });
   const openTab = (t: Tab) => {
     if (t === 'yaml') setYamlText(toYaml(def, { lineWidth: 100 }));
     setTab(t);
@@ -175,19 +172,6 @@ export function TemplateEditor({
         onNewDraft={() => void newDraft()}
         onDeleteDraft={() => void removeDraft()}
       />
-      <div className="toolbar">
-        <label>
-          Sample PDF
-          <input
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => setSample(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <button type="button" onClick={testRun} disabled={!sample}>
-          Test run
-        </button>
-      </div>
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
       {issues.length > 0 && (
@@ -198,252 +182,267 @@ export function TemplateEditor({
         </ul>
       )}
 
-      <div role="tablist" aria-label="Template sections">
-        {TABS.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
-            {label}
-            {tabCount(id) && <span className="tab-count">{tabCount(id)}</span>}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'quality' && <QualityPanel api={api} templateId={templateId} version={version} />}
-
-      <fieldset disabled={!editable} className="editor-body">
-        {tab === 'general' && (
-          <div className="form-rows">
-            <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
-            <Area
-              label="Description"
-              rows={3}
-              value={def.description}
-              onChange={(v) => update(['description'], opt(v))}
-            />
-            <Area
-              label="Preamble"
-              rows={14}
-              hint="Domain guidance placed at the top of every prompt."
-              value={def.preamble}
-              onChange={(v) => update(['preamble'], opt(v))}
-            />
-            <Select
-              label="Review"
-              value={getIn(def, ['review', 'required']) ?? 'on_warnings'}
-              options={['on_warnings', 'always', 'never']}
-              onChange={(v) => update(['review', 'required'], v)}
-            />
-            <Select
-              label="OCR"
-              value={getIn(def, ['document', 'ocr']) ?? 'auto'}
-              options={['auto', 'always', 'never']}
-              onChange={(v) => update(['document', 'ocr'], v)}
-            />
-            <Select
-              label="Date order"
-              value={getIn(def, ['document', 'dateOrder']) ?? 'DMY'}
-              options={['DMY', 'MDY']}
-              onChange={(v) => update(['document', 'dateOrder'], v)}
-            />
-            <label>
-              Page markers
-              <input
-                type="checkbox"
-                checked={getIn(def, ['document', 'pageMarkers']) ?? true}
-                onChange={(e) => update(['document', 'pageMarkers'], e.target.checked)}
-              />
-            </label>
-            <Text
-              label="Copy anchor"
-              hint="Regex marking the start of each copy in multi-copy PDFs (keeps one copy)."
-              value={getIn(def, ['document', 'copies', 'anchor'])}
-              onChange={(v) =>
-                update(
-                  ['document', 'copies'],
-                  opt(v)
-                    ? { select: 'last', ...(getIn(def, ['document', 'copies']) ?? {}), anchor: v }
-                    : undefined,
-                )
-              }
-            />
-          </div>
-        )}
-
-        {tab === 'sections' && (
-          <RowTable
-            label="Sections"
-            noun="section"
-            columns={[
-              ['Section ID', '16rem'],
-              ['Anchor', undefined],
-              ['Required', '6rem'],
-            ]}
-            items={sections}
-            onChange={(items) => update(['document', 'sections'], items)}
-            create={() => ({ id: '', anchor: '' })}
-            cells={(s, i) => [
-              <Text
-                key="id"
-                bare
-                label={`Section ${i + 1} id`}
-                value={s.id}
-                onChange={(v) => update(['document', 'sections', i, 'id'], v)}
-              />,
-              <Text
-                key="anchor"
-                bare
-                className="code"
-                label={`Section ${i + 1} anchor`}
-                hint="Multiline regex where the section starts"
-                value={getIn(s, ['anchor'])}
-                onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
-              />,
-              <input
-                key="required"
-                type="checkbox"
-                aria-label={`Section ${i + 1} required`}
-                checked={getIn(s, ['required']) ?? true}
-                onChange={(e) => update(['document', 'sections', i, 'required'], e.target.checked)}
-              />,
-            ]}
-          />
-        )}
-
-        {tab === 'outputs' && (
-          <>
-            <h3>Fields</h3>
-            <ValueList
-              label="Field"
-              heading="Field"
-              tableLabel="Fields"
-              addLabel="Add field"
-              items={fields}
-              onChange={(items) => update(['outputs', 'fields'], items)}
-              update={(i, key, v) => update(['outputs', 'fields', i, key], v)}
-            />
-            <h3>Tables</h3>
-            <ListEditor
-              label="table"
-              items={tables}
-              onChange={(items) => update(['outputs', 'tables'], items)}
-              create={() => ({ id: '', columns: [] })}
-              render={(t, ti) => (
-                <div className="table-def">
-                  <Text
-                    label={`Table ${ti + 1} id`}
-                    value={t.id}
-                    onChange={(v) => update(['outputs', 'tables', ti, 'id'], v)}
-                  />
-                  <Text
-                    label={`Table ${ti + 1} name`}
-                    value={getIn(t, ['name'])}
-                    onChange={(v) => update(['outputs', 'tables', ti, 'name'], opt(v))}
-                  />
-                  <ValueList
-                    label={`Table ${ti + 1} column`}
-                    heading="Column"
-                    tableLabel={`Table ${ti + 1} columns`}
-                    addLabel={`Add column to table ${ti + 1}`}
-                    items={getIn(t, ['columns']) ?? []}
-                    onChange={(items) => update(['outputs', 'tables', ti, 'columns'], items)}
-                    update={(i, key, v) => update(['outputs', 'tables', ti, 'columns', i, key], v)}
-                  />
-                </div>
-              )}
-            />
-          </>
-        )}
-
-        {tab === 'pipeline' && (
-          <div className="pipeline">
-            <datalist id="model-options">
-              <option value="default" />
-              {models.map((m) => (
-                <option key={m.ref} value={m.ref} />
-              ))}
-            </datalist>
-            {pipeline.map((step, i) => (
-              <StepCard
-                key={i}
-                index={i}
-                step={step}
-                open={openStep === i}
-                onToggle={() => setOpenStep(openStep === i ? null : i)}
-                onMove={(delta) => {
-                  const to = i + delta;
-                  if (to < 0 || to >= pipeline.length) return;
-                  update(['pipeline'], moveItem(pipeline, i, delta));
-                  // The open card follows its step; a card swapped past it takes its old place.
-                  if (openStep === i) setOpenStep(to);
-                  else if (openStep === to) setOpenStep(i);
-                }}
-                onRemove={() => {
-                  update(['pipeline'], removeAt(pipeline, i));
-                  if (openStep === i) setOpenStep(null);
-                  else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
-                }}
-              >
-                {step.type === 'extract' ? (
-                  <ExtractStep
-                    step={step}
-                    fields={fields.map((f) => f.id)}
-                    tables={tables.map((t) => t.id)}
-                    sections={sections.map((s) => s.id)}
-                    set={(key, v) => update(['pipeline', i, key], v)}
-                    replace={(next) => update(['pipeline', i], next)}
-                  />
-                ) : (
-                  <CheckStep
-                    step={step}
-                    paths={paths}
-                    set={(key, v) => update(['pipeline', i, key], v)}
-                  />
-                )}
-              </StepCard>
+      <div className="editor-layout">
+        <div className="editor-main">
+          <div role="tablist" aria-label="Template sections">
+            {TABS.map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
+                {label}
+                {tabCount(id) && <span className="tab-count">{tabCount(id)}</span>}
+              </button>
             ))}
-            <button
-              type="button"
-              onClick={() => {
-                update(
-                  ['pipeline'],
-                  [...pipeline, { type: 'extract', id: '', fields: [], sections: [] }],
-                );
-                setOpenStep(pipeline.length);
-              }}
-            >
-              Add extract step
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                update(
-                  ['pipeline'],
-                  [...pipeline, { type: 'check', id: '', values: '', reference: '' }],
-                );
-                setOpenStep(pipeline.length);
-              }}
-            >
-              Add check step
-            </button>
           </div>
-        )}
 
-        {tab === 'yaml' && (
-          <div className="yaml">
-            <label>
-              Template YAML
-              <textarea
-                rows={30}
-                spellCheck={false}
-                value={yamlText}
-                onChange={(e) => setYamlText(e.target.value)}
+          {tab === 'quality' && (
+            <QualityPanel api={api} templateId={templateId} version={version} />
+          )}
+
+          <fieldset disabled={!editable} className="editor-body">
+            {tab === 'general' && (
+              <div className="form-rows">
+                <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
+                <Area
+                  label="Description"
+                  rows={3}
+                  value={def.description}
+                  onChange={(v) => update(['description'], opt(v))}
+                />
+                <Area
+                  label="Preamble"
+                  rows={14}
+                  hint="Domain guidance placed at the top of every prompt."
+                  value={def.preamble}
+                  onChange={(v) => update(['preamble'], opt(v))}
+                />
+                <Select
+                  label="Review"
+                  value={getIn(def, ['review', 'required']) ?? 'on_warnings'}
+                  options={['on_warnings', 'always', 'never']}
+                  onChange={(v) => update(['review', 'required'], v)}
+                />
+                <Select
+                  label="OCR"
+                  value={getIn(def, ['document', 'ocr']) ?? 'auto'}
+                  options={['auto', 'always', 'never']}
+                  onChange={(v) => update(['document', 'ocr'], v)}
+                />
+                <Select
+                  label="Date order"
+                  value={getIn(def, ['document', 'dateOrder']) ?? 'DMY'}
+                  options={['DMY', 'MDY']}
+                  onChange={(v) => update(['document', 'dateOrder'], v)}
+                />
+                <label>
+                  Page markers
+                  <input
+                    type="checkbox"
+                    checked={getIn(def, ['document', 'pageMarkers']) ?? true}
+                    onChange={(e) => update(['document', 'pageMarkers'], e.target.checked)}
+                  />
+                </label>
+                <Text
+                  label="Copy anchor"
+                  hint="Regex marking the start of each copy in multi-copy PDFs (keeps one copy)."
+                  value={getIn(def, ['document', 'copies', 'anchor'])}
+                  onChange={(v) =>
+                    update(
+                      ['document', 'copies'],
+                      opt(v)
+                        ? {
+                            select: 'last',
+                            ...(getIn(def, ['document', 'copies']) ?? {}),
+                            anchor: v,
+                          }
+                        : undefined,
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            {tab === 'sections' && (
+              <RowTable
+                label="Sections"
+                noun="section"
+                columns={[
+                  ['Section ID', '16rem'],
+                  ['Anchor', undefined],
+                  ['Required', '6rem'],
+                ]}
+                items={sections}
+                onChange={(items) => update(['document', 'sections'], items)}
+                create={() => ({ id: '', anchor: '' })}
+                cells={(s, i) => [
+                  <Text
+                    key="id"
+                    bare
+                    label={`Section ${i + 1} id`}
+                    value={s.id}
+                    onChange={(v) => update(['document', 'sections', i, 'id'], v)}
+                  />,
+                  <Text
+                    key="anchor"
+                    bare
+                    className="code"
+                    label={`Section ${i + 1} anchor`}
+                    hint="Multiline regex where the section starts"
+                    value={getIn(s, ['anchor'])}
+                    onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
+                  />,
+                  <input
+                    key="required"
+                    type="checkbox"
+                    aria-label={`Section ${i + 1} required`}
+                    checked={getIn(s, ['required']) ?? true}
+                    onChange={(e) =>
+                      update(['document', 'sections', i, 'required'], e.target.checked)
+                    }
+                  />,
+                ]}
               />
-            </label>
-            <button type="button" onClick={applyYaml}>
-              Apply YAML
-            </button>
-          </div>
-        )}
-      </fieldset>
+            )}
+
+            {tab === 'outputs' && (
+              <>
+                <h3>Fields</h3>
+                <ValueList
+                  label="Field"
+                  heading="Field"
+                  tableLabel="Fields"
+                  addLabel="Add field"
+                  items={fields}
+                  onChange={(items) => update(['outputs', 'fields'], items)}
+                  update={(i, key, v) => update(['outputs', 'fields', i, key], v)}
+                />
+                <h3>Tables</h3>
+                <ListEditor
+                  label="table"
+                  items={tables}
+                  onChange={(items) => update(['outputs', 'tables'], items)}
+                  create={() => ({ id: '', columns: [] })}
+                  render={(t, ti) => (
+                    <div className="table-def">
+                      <Text
+                        label={`Table ${ti + 1} id`}
+                        value={t.id}
+                        onChange={(v) => update(['outputs', 'tables', ti, 'id'], v)}
+                      />
+                      <Text
+                        label={`Table ${ti + 1} name`}
+                        value={getIn(t, ['name'])}
+                        onChange={(v) => update(['outputs', 'tables', ti, 'name'], opt(v))}
+                      />
+                      <ValueList
+                        label={`Table ${ti + 1} column`}
+                        heading="Column"
+                        tableLabel={`Table ${ti + 1} columns`}
+                        addLabel={`Add column to table ${ti + 1}`}
+                        items={getIn(t, ['columns']) ?? []}
+                        onChange={(items) => update(['outputs', 'tables', ti, 'columns'], items)}
+                        update={(i, key, v) =>
+                          update(['outputs', 'tables', ti, 'columns', i, key], v)
+                        }
+                      />
+                    </div>
+                  )}
+                />
+              </>
+            )}
+
+            {tab === 'pipeline' && (
+              <div className="pipeline">
+                <datalist id="model-options">
+                  <option value="default" />
+                  {models.map((m) => (
+                    <option key={m.ref} value={m.ref} />
+                  ))}
+                </datalist>
+                {pipeline.map((step, i) => (
+                  <StepCard
+                    key={i}
+                    index={i}
+                    step={step}
+                    open={openStep === i}
+                    onToggle={() => setOpenStep(openStep === i ? null : i)}
+                    onMove={(delta) => {
+                      const to = i + delta;
+                      if (to < 0 || to >= pipeline.length) return;
+                      update(['pipeline'], moveItem(pipeline, i, delta));
+                      // The open card follows its step; a card swapped past it takes its old place.
+                      if (openStep === i) setOpenStep(to);
+                      else if (openStep === to) setOpenStep(i);
+                    }}
+                    onRemove={() => {
+                      update(['pipeline'], removeAt(pipeline, i));
+                      if (openStep === i) setOpenStep(null);
+                      else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
+                    }}
+                  >
+                    {step.type === 'extract' ? (
+                      <ExtractStep
+                        step={step}
+                        fields={fields.map((f) => f.id)}
+                        tables={tables.map((t) => t.id)}
+                        sections={sections.map((s) => s.id)}
+                        set={(key, v) => update(['pipeline', i, key], v)}
+                        replace={(next) => update(['pipeline', i], next)}
+                      />
+                    ) : (
+                      <CheckStep
+                        step={step}
+                        paths={paths}
+                        set={(key, v) => update(['pipeline', i, key], v)}
+                      />
+                    )}
+                  </StepCard>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    update(
+                      ['pipeline'],
+                      [...pipeline, { type: 'extract', id: '', fields: [], sections: [] }],
+                    );
+                    setOpenStep(pipeline.length);
+                  }}
+                >
+                  Add extract step
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    update(
+                      ['pipeline'],
+                      [...pipeline, { type: 'check', id: '', values: '', reference: '' }],
+                    );
+                    setOpenStep(pipeline.length);
+                  }}
+                >
+                  Add check step
+                </button>
+              </div>
+            )}
+
+            {tab === 'yaml' && (
+              <div className="yaml">
+                <label>
+                  Template YAML
+                  <textarea
+                    rows={30}
+                    spellCheck={false}
+                    value={yamlText}
+                    onChange={(e) => setYamlText(e.target.value)}
+                  />
+                </label>
+                <button type="button" onClick={applyYaml}>
+                  Apply YAML
+                </button>
+              </div>
+            )}
+          </fieldset>
+        </div>
+        <TestRail api={api} templateId={templateId} version={version} jobs={jobs} />
+      </div>
     </section>
   );
 }
