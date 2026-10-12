@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, targetConfig } from '../src/config.js';
+import { loadConfig, s3KeysConfig, targetConfig } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://u:p@localhost:5432/ih',
@@ -74,5 +74,33 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, TARGET_S3_ENDPOINT: 'not a url' })).toThrow(
       /TARGET_S3_ENDPOINT/,
     );
+  });
+});
+
+describe('s3KeysConfig (ADR 0008)', () => {
+  it('issues keys for the publish bucket when the target is the local SeaweedFS', () => {
+    expect(s3KeysConfig(loadConfig(base))).toEqual({ bucket: 'ingest-published', endpoint: null });
+    expect(
+      s3KeysConfig(
+        loadConfig({
+          ...base,
+          TARGET_S3_ENDPOINT: 'http://localhost:8333',
+          TARGET_S3_BUCKET: 'published',
+          S3_PUBLIC_URL: 'https://lake-s3.example.com',
+        }),
+      ),
+    ).toEqual({ bucket: 'published', endpoint: 'https://lake-s3.example.com' });
+  });
+
+  it('is off when the publish target is another S3 service', () => {
+    expect(
+      s3KeysConfig(
+        loadConfig({ ...base, TARGET_S3_ENDPOINT: 'https://s3.eu-west-2.amazonaws.com' }),
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects a malformed public URL', () => {
+    expect(() => loadConfig({ ...base, S3_PUBLIC_URL: 'lake-s3' })).toThrow(/S3_PUBLIC_URL/);
   });
 });

@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
+import type { S3KeyService } from './s3keys/service.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
@@ -18,6 +19,7 @@ import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
 import { resultRoutes } from './routes/results.js';
 import { workbenchRoutes } from './routes/workbench.js';
+import { s3KeyRoutes } from './routes/s3-keys.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -33,6 +35,8 @@ export interface AppDeps {
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;
+  /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */
+  s3Keys: S3KeyService | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };
@@ -72,6 +76,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(referenceRoutes, { prefix: '/api' });
   await app.register(resultRoutes, { prefix: '/api' });
   await app.register(workbenchRoutes, { prefix: '/api' });
+  await app.register(s3KeyRoutes, { prefix: '/api' });
 
   return app;
 }

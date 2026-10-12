@@ -33,7 +33,8 @@ worker applies the edits to the draft `document.json` (re-normalised by type, is
 values replaced, checks re-run), renders the outputs with a `review` block and writes them to
 the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are never modified.
 
-The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`) reads published
+The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`, and
+`GET /api/results/:jobId/archive` for every published output as one ZIP) reads published
 outputs back from the target. The API resolves `TARGET_S3_*` like the worker
 ([ADR 0004](adr/0004-api-reads-publish-target.md)).
 
@@ -80,7 +81,7 @@ document is never deleted along with a job.
 
 Anchor previews are `segment` jobs (`priority = -5`, migration 0009): project-scoped with no document, one per project, running the production `segment.section_spans` over the project's prepared samples in a child process capped at 10 s and writing a segmentation result to the runs bucket. They never appear on the Jobs page and are not retryable or cancellable there. Idle workers wake on `NOTIFY ih_jobs` rather than waiting for the poll; the UI polls the preview every 300 ms (30 s deadline).
 
-Drafting (phase 3a) uses document-less `draft` jobs (migration 0010) that send the project's brief and
+Drafting (phase 3a) uses document-less `draft` jobs (migration 0011) that send the project's brief and
 **dev** samples to the `draft` model alias (`DRAFT_MODEL`) and write the model's proposal to
 `drafting/{project}/{job}.json` in the runs bucket; `workbench_proposals` holds its status, derived from the
 job. The first stage is `survey`: questions about the document type, whose answers go back into the brief.
@@ -95,6 +96,15 @@ the samples actually sent (at most 8).
 Every request to the API needs a session cookie, obtained by signing in with an access token. The
 admin token rotates on every API start and is printed in the log; admins issue user tokens on the
 **Access** page. See [ADR 0006](adr/0006-token-access.md).
+
+The same page issues **read-only S3 keys** for external consumers of the publish bucket (e.g. a data
+lake), when the publish target is the local SeaweedFS ([ADR 0008](adr/0008-s3-read-keys.md)). Each
+consumer is a SeaweedFS IAM user `lake-<id>` with one policy (get, list and bucket location on that
+bucket), created through SeaweedFS's embedded IAM API with the admin identity
+(`apps/api/src/s3keys/`). SeaweedFS holds the secrets; Postgres (`s3_consumers`, `s3_access_keys`,
+migration 0010) holds metadata only. Revocation deletes the key immediately; a reconciler in the
+API deletes expired keys and anything `lake-*` it has no record of, every minute. The proxy in
+front of the S3 port allows only GET/HEAD on the bucket (`deploy/README.md`).
 
 ## LLM provider layer
 

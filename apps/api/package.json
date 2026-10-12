@@ -13,11 +13,13 @@
     "migrate": "tsx src/db/migrate-cli.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-iam": "^3.1148.0",
     "@aws-sdk/client-s3": "^3.850.0",
     "@fastify/cookie": "^11.1.3",
     "@fastify/multipart": "^10.1.2",
     "@ih/shared": "*",
     "fastify": "^5.4.0",
+    "fflate": "^0.8.2",
     "pg": "^8.16.0",
     "yaml": "^2.8.0",
     "zod": "^3.25.0"

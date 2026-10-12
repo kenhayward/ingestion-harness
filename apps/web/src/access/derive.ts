@@ -1,5 +1,22 @@
 import type { AccessToken } from '../api/client.js';
 
+/** Anything with an expiry and an access-token-like status (user tokens, S3 keys). */
+type Expiring = Pick<AccessToken, 'status' | 'expiresAt'>;
+
+export type Expiry = '1' | '7' | '30' | '90' | '365' | 'never';
+
+/** Expiry presets for tokens and S3 keys (the API accepts exactly these). */
+export const EXPIRY_OPTIONS: readonly { value: Expiry; label: string }[] = [
+  { value: '1', label: '1 day' },
+  { value: '7', label: '7 days' },
+  { value: '30', label: '30 days' },
+  { value: '90', label: '90 days' },
+  { value: '365', label: '1 year' },
+  { value: 'never', label: 'Never' },
+];
+
+export const expiryDays = (e: Expiry): number | null => (e === 'never' ? null : Number(e));
+
 export type TokenGroup = 'active' | 'expired' | 'revoked';
 
 /** The current admin token counts as active (it signs people in until the next restart). */
@@ -15,7 +32,7 @@ export function tokenCounts(tokens: readonly AccessToken[]) {
 const DAY = 86_400_000;
 
 /** An active user token that stops working within `days` (the list shows it amber). */
-export function expiresSoon(token: AccessToken, now: number, days = 7): boolean {
+export function expiresSoon(token: Expiring, now: number, days = 7): boolean {
   if (token.status !== 'active' || !token.expiresAt) return false;
   const left = Date.parse(token.expiresAt) - now;
   return left > 0 && left <= days * DAY;
@@ -42,7 +59,7 @@ function relative(ms: number): string {
 
 /** The Expires cell: the date (null when there isn't one) and how far away it is. */
 export function expiryText(
-  token: AccessToken,
+  token: Expiring,
   now: number,
 ): { date: string | null; relative: string } {
   if (token.status === 'current-admin') return { date: null, relative: 'On restart' };

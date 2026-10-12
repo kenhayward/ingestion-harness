@@ -115,7 +115,8 @@ describe('AccessPage', () => {
       />,
     );
     await userEvent.type(screen.getByLabelText('Label'), 'Phone');
-    await userEvent.click(screen.getByRole('button', { name: '90 days' }));
+    const form = screen.getByRole('form', { name: 'Issue a token' });
+    await userEvent.click(within(form).getByRole('button', { name: '90 days' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
     expect(createToken).toHaveBeenCalledWith('Phone', 90);
     const panel = await screen.findByRole('region', { name: 'New token' });
@@ -134,7 +135,8 @@ describe('AccessPage', () => {
     const createToken = vi.fn(async () => ({ token: 'ih_x', record: token() }));
     render(<AccessPage api={fakeApi({ createToken })} me={ADMIN} />);
     await userEvent.type(screen.getByLabelText('Label'), 'Kiosk');
-    await userEvent.click(screen.getByRole('button', { name: 'Never' }));
+    const form = screen.getByRole('form', { name: 'Issue a token' });
+    await userEvent.click(within(form).getByRole('button', { name: 'Never' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
     expect(createToken).toHaveBeenCalledWith('Kiosk', null);
   });
@@ -230,6 +232,15 @@ describe('AccessPage', () => {
     expect(within(row('Phone')).getByText('Delete this token record?')).toBeInTheDocument();
     await userEvent.click(within(row('Phone')).getByRole('button', { name: 'Delete' }));
     expect(deleteToken).toHaveBeenCalledWith(t.id);
+  });
+
+  it('has the data-lake S3 keys section', async () => {
+    const api = fakeApi();
+    render(<AccessPage api={api} me={ADMIN} />);
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Data lake S3 keys' }),
+    ).toBeInTheDocument();
+    expect(api.listS3Keys).toHaveBeenCalled();
   });
 
   it('is for admins only', async () => {

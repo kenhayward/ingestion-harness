@@ -12,6 +12,13 @@ updates:
   - package-ecosystem: docker
     directory: /deploy/docker
     schedule: { interval: monthly }
+  # Compose images (SeaweedFS is pinned to an exact 4.x tag; majors are a deliberate change).
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule: { interval: weekly }
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }

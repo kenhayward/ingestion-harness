@@ -73,6 +73,15 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     revokeToken: vi.fn(async () => undefined),
     deleteToken: vi.fn(async () => undefined),
+    listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
+    createS3Key: vi.fn(async () => {
+      throw new Error('createS3Key not stubbed');
+    }),
+    rotateS3Key: vi.fn(async () => {
+      throw new Error('rotateS3Key not stubbed');
+    }),
+    revokeS3Key: vi.fn(async () => undefined),
+    deleteS3Consumer: vi.fn(async () => undefined),
     onUnauthorized: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -104,6 +113,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     reject: vi.fn(async () => job({ status: 'rejected' })),
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `/api/jobs/${jobId}/document`,
+    archiveUrl: (jobId) => `/api/results/${jobId}/archive`,
     listTemplates: vi.fn(async () => []),
     getStepRuns: vi.fn(async () => []),
     listReferences: vi.fn(async () => []),

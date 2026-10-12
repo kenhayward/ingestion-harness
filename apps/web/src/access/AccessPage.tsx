@@ -5,18 +5,17 @@ import { matchesQuery } from '../shell/derive.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
-import { expiresSoon, expiryText, tokenCounts, tokenGroup, type TokenGroup } from './derive.js';
-
-type Expiry = '1' | '7' | '30' | '90' | '365' | 'never';
-
-const EXPIRY_OPTIONS: readonly { value: Expiry; label: string }[] = [
-  { value: '1', label: '1 day' },
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-  { value: 'never', label: 'Never' },
-];
+import {
+  EXPIRY_OPTIONS,
+  expiresSoon,
+  expiryDays,
+  expiryText,
+  tokenCounts,
+  tokenGroup,
+  type Expiry,
+  type TokenGroup,
+} from './derive.js';
+import { S3KeysSection } from './S3KeysSection.js';
 
 const STATUS: Record<AccessToken['status'], { label: string; tone: string }> = {
   active: { label: 'Active', tone: 'ok' },
@@ -32,7 +31,10 @@ const shortDate = (iso: string) =>
     year: 'numeric',
   });
 
-/** Admin page (ADR 0006, UI handoff §6): issue user tokens (shown once), revoke and delete them. */
+/**
+ * Admin page (ADR 0006, UI handoff §6): issue user tokens (shown once), revoke and delete them;
+ * below, read-only S3 keys for the data lake (ADR 0008).
+ */
 export function AccessPage({
   api,
   me,
@@ -78,8 +80,7 @@ export function AccessPage({
   const create = (e: FormEvent) => {
     e.preventDefault();
     void act(async () => {
-      const days = expiry === 'never' ? null : Number(expiry);
-      const res = await api.createToken(label.trim(), days);
+      const res = await api.createToken(label.trim(), expiryDays(expiry));
       setCreated({ label: label.trim(), token: res.token });
       setLabel('');
     });
@@ -189,6 +190,7 @@ export function AccessPage({
           </tbody>
         </table>
       </div>
+      <S3KeysSection api={api} />
     </div>
   );
 }

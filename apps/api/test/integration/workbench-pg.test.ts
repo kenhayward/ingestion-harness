@@ -5,7 +5,7 @@
  * db/migrations and writes rows (under random project ids). Example:
  *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
- *     npx vitest run apps/api/test/integration
+ *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-pg
  *   docker rm -f ih-test-pg
  */
 import { randomUUID } from 'node:crypto';

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { FilterChips } from '../ui/FilterChips.js';
+import { Icon } from '../ui/Icon.js';
 import { shortWhen } from './format.js';
 import { ResultPreview } from './ResultPreview.js';
 
@@ -143,12 +144,14 @@ export function ResultsPage({
               <table className="result-list" aria-label="Published results">
                 <thead>
                   <tr>
-                    <th>Document</th>
-                    <th>Document type</th>
+                    <th className="doc-cell">Document</th>
+                    <th className="type-cell">Document type</th>
                     <th>Published</th>
                     <th>Reviewed by</th>
                     <th>Issues</th>
-                    <th>Download</th>
+                    <th className="actions-col">
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -165,26 +168,46 @@ export function ResultsPage({
                           {r.filename}
                         </button>
                       </td>
-                      <td>
-                        {titleOf(r.specId)} v{r.specVersion}
+                      <td className="type-cell">
+                        <span>
+                          {titleOf(r.specId)} v{r.specVersion}
+                        </span>
                       </td>
                       <td className="muted">{when(r.publishedAt)}</td>
                       <td>{reviewedBy(r)}</td>
                       <td className={r.issueCount ? 'issues-count' : 'muted'}>
                         {r.issueCount ? r.issueCount : '—'}
                       </td>
-                      <td className="downloads-cell">
-                        {r.outputs.map((o) => (
+                      <td className="actions-cell">
+                        <div className="row-actions">
                           <a
-                            key={o.outputId}
-                            className="dl"
-                            href={api.outputUrl(r.jobId, o.outputId, { stage: 'published' })}
-                            aria-label={`Download ${o.name} for ${r.filename}`}
-                            title={o.name}
+                            className="button icon bordered"
+                            href={`#/results/${r.jobId}`}
+                            aria-label={`Open full result for ${r.filename}`}
+                            title="Open full result"
                           >
-                            {o.format.toUpperCase()}
+                            <Icon name="open" />
                           </a>
-                        ))}
+                          <a
+                            className="button icon bordered"
+                            href={api.documentUrl(r.jobId)}
+                            target="_blank"
+                            rel="noopener"
+                            aria-label={`View PDF of ${r.filename}`}
+                            title="View PDF"
+                          >
+                            <Icon name="file" />
+                          </a>
+                          <a
+                            className="button dl"
+                            href={api.archiveUrl(r.jobId)}
+                            aria-label={`Download ${r.filename} results as ZIP`}
+                            title={`Download all ${r.outputs.length} files as one ZIP`}
+                          >
+                            <Icon name="download" />
+                            ZIP
+                          </a>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -222,6 +222,18 @@ export interface Api {
   ): Promise<{ token: string; record: AccessToken }>;
   revokeToken(id: string): Promise<void>;
   deleteToken(id: string): Promise<void>;
+  /** Read-only S3 keys for the data lake (ADR 0008). Rejects with a 404 ApiError when off. */
+  listS3Keys(): Promise<S3KeysOverview>;
+  /** A new consumer and key: `secretAccessKey` is only ever returned here and by rotate. */
+  createS3Key(label: string, expiresInDays: number | null): Promise<IssuedS3Key>;
+  /** Another key for the consumer; its other active keys expire within `graceDays`. */
+  rotateS3Key(
+    consumerId: string,
+    expiresInDays: number | null,
+    graceDays: number,
+  ): Promise<IssuedS3Key>;
+  revokeS3Key(keyId: string): Promise<void>;
+  deleteS3Consumer(consumerId: string): Promise<void>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
   listJobs(): Promise<JobSummary[]>;
@@ -251,6 +263,8 @@ export interface Api {
   pageUrl(jobId: string, page: number): string;
   /** The job's uploaded PDF, served inline (Open PDF). */
   documentUrl(jobId: string): string;
+  /** Every published output of a result as one ZIP download. */
+  archiveUrl(jobId: string): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   getMetrics(templateId: string): Promise<TemplateMetrics>;
@@ -313,6 +327,40 @@ export interface AccessToken {
   revokedAt: string | null;
   lastUsedAt: string | null;
   status: 'active' | 'expired' | 'revoked' | 'current-admin';
+}
+
+/** An S3 access key as listed to admins (never its secret). */
+export interface S3Key {
+  id: string;
+  accessKeyId: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+/** A data-lake consumer (one SeaweedFS user) and its keys, newest first. */
+export interface S3Consumer {
+  id: string;
+  label: string;
+  userName: string;
+  createdAt: string;
+  keys: S3Key[];
+}
+
+/** What the lake is configured with besides a key pair; `endpoint` null = not configured. */
+export interface S3KeysOverview {
+  bucket: string;
+  endpoint: string | null;
+  consumers: S3Consumer[];
+}
+
+export interface IssuedS3Key {
+  consumer: S3Consumer;
+  key: S3Key;
+  secretAccessKey: string;
+  bucket: string;
+  endpoint: string | null;
 }
 
 /** Signed-in identity (GET /api/auth/me). */
@@ -402,6 +450,20 @@ export function createHttpApi(base = '/api'): Api {
     },
     deleteToken: async (id) => {
       await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
+    },
+    listS3Keys: () => apiFetch(`${base}/access/s3-keys`).then(json<S3KeysOverview>),
+    createS3Key: (label, expiresInDays) =>
+      post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays }),
+    rotateS3Key: (consumerId, expiresInDays, graceDays) =>
+      post<IssuedS3Key>(`${base}/access/s3-keys/${consumerId}/rotate`, {
+        expiresInDays,
+        graceDays,
+      }),
+    revokeS3Key: async (keyId) => {
+      await noContent(apiFetch(`${base}/access/s3-keys/keys/${keyId}/revoke`, { method: 'POST' }));
+    },
+    deleteS3Consumer: async (consumerId) => {
+      await noContent(apiFetch(`${base}/access/s3-keys/${consumerId}`, { method: 'DELETE' }));
     },
     onUnauthorized: (listener) => {
       unauthorizedListeners.add(listener);
@@ -506,6 +568,7 @@ export function createHttpApi(base = '/api'): Api {
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,
+    archiveUrl: (jobId) => `${base}/results/${jobId}/archive`,
     getStepRuns: (jobId) => apiFetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),

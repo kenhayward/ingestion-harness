@@ -7,7 +7,9 @@ import {
   type ResultDefinition,
   type ResultDetail,
 } from '@ih/shared';
+import { zipSync } from 'fflate';
 import { z } from 'zod';
+import { contentDisposition } from './jobs.js';
 import { storeFor } from '../storage/stage.js';
 import { resolveDefinition } from '../templates/definitions.js';
 
@@ -95,5 +97,36 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
       definition,
     };
     return detail;
+  });
+
+  /** Every published output of one result as a single ZIP (`<outputId>.<format>` entries). */
+  app.get<{ Params: { jobId: string } }>('/results/:jobId/archive', async (req, reply) => {
+    if (!UUID.safeParse(req.params.jobId).success) {
+      return reply.code(404).send({ error: 'result not found' });
+    }
+    const job = await app.deps.repo.getJob(req.params.jobId);
+    const outputs = job?.outputs.filter((o) => o.stage === 'published') ?? [];
+    if (!job || job.test || outputs.length === 0) {
+      return reply.code(404).send({ error: 'result not found' });
+    }
+    const entries: Record<string, Uint8Array> = {};
+    for (const o of outputs) {
+      let body: Buffer | null;
+      try {
+        body = await storeFor(app.deps, 'published').get(o.bucket, o.key);
+      } catch (err) {
+        req.log.warn({ err, bucket: o.bucket }, 'output read failed');
+        return reply.code(502).send({ error: 'target storage unavailable' });
+      }
+      // A partial archive would look complete: fail instead.
+      if (!body) return reply.code(404).send({ error: 'output object missing from target' });
+      entries[`${o.outputId}.${o.format}`] = new Uint8Array(body);
+    }
+    const name = `${job.filename.replace(/\.pdf$/i, '')}.zip`;
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', contentDisposition(name, 'attachment'))
+      .header('x-content-type-options', 'nosniff')
+      .send(Buffer.from(zipSync(entries)));
   });
 };

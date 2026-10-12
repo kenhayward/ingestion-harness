@@ -3,6 +3,7 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { VALUE_TYPES, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { YamlEditor } from '../ui/YamlEditor.js';
 import { Segmented } from '../ui/Segmented.js';
 import { EditorHeader } from './EditorHeader.js';
 import { tabCounts } from './editor-derive.js';
@@ -25,8 +26,8 @@ type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
 const TABS: [Tab, string][] = [
   ['general', 'General'],
   ['sections', 'Sections'],
-  ['outputs', 'Outputs'],
   ['pipeline', 'Pipeline'],
+  ['outputs', 'Outputs'],
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
 ];
@@ -71,6 +72,9 @@ export function TemplateEditor({
   const [def, setDef] = useState<Definition>({});
   const [saved, setSaved] = useState('');
   const [tab, setTab] = useState<Tab>('general');
+  const [outputsTab, setOutputsTab] = useState<'fields' | 'tables'>('fields');
+  /** The table configured below the Tables list (clamped to the list). */
+  const [tableIndex, setTableIndex] = useState(0);
   const [yamlText, setYamlText] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -320,62 +324,80 @@ export function TemplateEditor({
 
             {tab === 'outputs' && (
               <>
-                <h3>Fields</h3>
-                <ValueList
-                  label="Field"
-                  heading="Field"
-                  tableLabel="Fields"
-                  addLabel="Add field"
-                  items={fields}
-                  onChange={(items) => update(['outputs', 'fields'], items)}
-                  update={(i, key, v) => update(['outputs', 'fields', i, key], v)}
-                />
-                <h3>Tables</h3>
-                <ListEditor
-                  label="table"
-                  items={tables}
-                  onChange={(items) => update(['outputs', 'tables'], items)}
-                  create={() => ({ id: '', columns: [] })}
-                  render={(t, ti) => (
-                    <div className="table-def">
-                      <Text
-                        label={`Table ${ti + 1} id`}
-                        value={t.id}
-                        onChange={(v) => update(['outputs', 'tables', ti, 'id'], v)}
-                      />
-                      <Text
-                        label={`Table ${ti + 1} name`}
-                        value={getIn(t, ['name'])}
-                        onChange={(v) => update(['outputs', 'tables', ti, 'name'], opt(v))}
-                      />
-                      <ValueList
-                        label={`Table ${ti + 1} column`}
-                        heading="Column"
-                        tableLabel={`Table ${ti + 1} columns`}
-                        addLabel={`Add column to table ${ti + 1}`}
-                        items={getIn(t, ['columns']) ?? []}
-                        onChange={(items) => update(['outputs', 'tables', ti, 'columns'], items)}
-                        update={(i, key, v) =>
-                          update(['outputs', 'tables', ti, 'columns', i, key], v)
-                        }
-                      />
-                    </div>
-                  )}
-                />
+                <div role="tablist" aria-label="Outputs" className="sub-tabs">
+                  {(
+                    [
+                      ['fields', 'Fields', counts.fields],
+                      ['tables', 'Tables', counts.tables],
+                    ] as const
+                  ).map(([id, label, count]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={outputsTab === id}
+                      onClick={() => setOutputsTab(id)}
+                    >
+                      {label} <span className="tab-count">{count}</span>
+                    </button>
+                  ))}
+                </div>
+                {outputsTab === 'fields' ? (
+                  <ValueList
+                    label="Field"
+                    heading="Field"
+                    tableLabel="Fields"
+                    addLabel="Add field"
+                    items={fields}
+                    onChange={(items) => update(['outputs', 'fields'], items)}
+                    update={(i, key, v) => update(['outputs', 'fields', i, key], v)}
+                  />
+                ) : (
+                  <TableOutputs
+                    tables={tables}
+                    selected={Math.min(tableIndex, tables.length - 1)}
+                    onSelect={setTableIndex}
+                    onChange={(items) => update(['outputs', 'tables'], items)}
+                    render={(t, ti) => (
+                      <div className="table-def">
+                        <div className="table-def-names">
+                          <Text
+                            label={`Table ${ti + 1} id`}
+                            value={t.id}
+                            onChange={(v) => update(['outputs', 'tables', ti, 'id'], v)}
+                          />
+                          <Text
+                            label={`Table ${ti + 1} name`}
+                            value={getIn(t, ['name'])}
+                            onChange={(v) => update(['outputs', 'tables', ti, 'name'], opt(v))}
+                          />
+                        </div>
+                        <ValueList
+                          label={`Table ${ti + 1} column`}
+                          heading="Column"
+                          tableLabel={`Table ${ti + 1} columns`}
+                          addLabel={`Add column to table ${ti + 1}`}
+                          items={getIn(t, ['columns']) ?? []}
+                          onChange={(items) => update(['outputs', 'tables', ti, 'columns'], items)}
+                          update={(i, key, v) =>
+                            update(['outputs', 'tables', ti, 'columns', i, key], v)
+                          }
+                        />
+                      </div>
+                    )}
+                  />
+                )}
               </>
             )}
 
             {tab === 'yaml' && (
               <div className="yaml">
-                <label>
-                  Template YAML
-                  <textarea
-                    rows={30}
-                    spellCheck={false}
-                    value={yamlText}
-                    onChange={(e) => setYamlText(e.target.value)}
-                  />
-                </label>
+                <YamlEditor
+                  label="Template YAML"
+                  value={yamlText}
+                  onChange={setYamlText}
+                  readOnly={!editable}
+                />
                 <button type="button" onClick={applyYaml}>
                   Apply YAML
                 </button>
@@ -832,55 +854,133 @@ function RowTable<T extends Definition>({
   );
 }
 
-function ListEditor<T extends Definition>({
-  label,
-  items,
+/**
+ * Output tables: a list to pick from (with order and remove), and the picked table's settings
+ * below it. Adding a table selects it.
+ */
+function TableOutputs({
+  tables,
+  selected,
+  onSelect,
   onChange,
-  create,
   render,
 }: {
-  label: string;
-  items: T[];
-  onChange: (items: T[]) => void;
-  create: () => T;
-  render: (item: T, index: number) => ReactNode;
+  tables: Definition[];
+  /** Index of the configured table; -1 when there are none. */
+  selected: number;
+  onSelect: (index: number) => void;
+  onChange: (tables: Definition[]) => void;
+  render: (table: Definition, index: number) => ReactNode;
 }) {
+  const name = (t: Definition, i: number) => (t.id ? `table ${t.id}` : `table ${i + 1}`);
+  const move = (i: number, by: -1 | 1) => {
+    const to = i + by;
+    onChange(moveItem(tables, i, by));
+    if (selected === i) onSelect(to);
+    else if (selected === to) onSelect(i);
+  };
+  const remove = (i: number) => {
+    onChange(removeAt(tables, i));
+    if (i < selected) onSelect(selected - 1);
+  };
+  const current = selected >= 0 ? tables[selected] : undefined;
   return (
-    <div className="list-editor">
-      {items.map((item, i) => (
-        <div key={i} className="list-item">
-          {render(item, i)}
-          <div className="step-tools">
-            <button
-              type="button"
-              className="icon bordered"
-              aria-label={`Move ${label} ${i + 1} up`}
-              onClick={() => onChange(moveItem(items, i, -1))}
-            >
-              <Icon name="chevronUp" />
-            </button>
-            <button
-              type="button"
-              className="icon bordered"
-              aria-label={`Move ${label} ${i + 1} down`}
-              onClick={() => onChange(moveItem(items, i, 1))}
-            >
-              <Icon name="chevronDown" />
-            </button>
-            <button
-              type="button"
-              className="icon bordered danger"
-              aria-label={`Remove ${label} ${i + 1}`}
-              onClick={() => onChange(removeAt(items, i))}
-            >
-              <Icon name="trash" />
-            </button>
-          </div>
+    <div className="table-outputs">
+      {tables.length === 0 ? (
+        <p className="muted">No tables yet.</p>
+      ) : (
+        <div className="row-table">
+          <table aria-label="Tables">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Table ID</th>
+                <th>Name</th>
+                <th>Columns</th>
+                <th>
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {tables.map((t, i) => {
+                const columns = Array.isArray(t.columns) ? t.columns.length : 0;
+                return (
+                  <tr key={i} className={i === selected ? 'selected' : undefined}>
+                    <td className="muted">{i + 1}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="doc-button mono"
+                        aria-pressed={i === selected}
+                        aria-label={`Configure ${name(t, i)}`}
+                        onClick={() => onSelect(i)}
+                      >
+                        {t.id || <em className="muted">no id yet</em>}
+                      </button>
+                    </td>
+                    <td>
+                      {typeof t.name === 'string' ? t.name : <span className="muted">—</span>}
+                    </td>
+                    <td className="muted">
+                      {columns} {columns === 1 ? 'column' : 'columns'}
+                    </td>
+                    <td>
+                      <div className="step-tools">
+                        <button
+                          type="button"
+                          className="icon bordered"
+                          aria-label={`Move table ${i + 1} up`}
+                          disabled={i === 0}
+                          onClick={() => move(i, -1)}
+                        >
+                          <Icon name="chevronUp" />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon bordered"
+                          aria-label={`Move table ${i + 1} down`}
+                          disabled={i === tables.length - 1}
+                          onClick={() => move(i, 1)}
+                        >
+                          <Icon name="chevronDown" />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon bordered danger"
+                          aria-label={`Remove table ${i + 1}`}
+                          onClick={() => remove(i)}
+                        >
+                          <Icon name="trash" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      ))}
-      <button type="button" className="add" onClick={() => onChange([...items, create()])}>
-        Add {label}
+      )}
+      <button
+        type="button"
+        className="add"
+        onClick={() => {
+          onChange([...tables, { id: '', columns: [] }]);
+          onSelect(tables.length);
+        }}
+      >
+        Add table
       </button>
+      {current && (
+        <section
+          className="table-config"
+          role="group"
+          aria-label={current.id ? `Table ${current.id}` : `Table ${selected + 1}`}
+        >
+          {render(current, selected)}
+        </section>
+      )}
     </div>
   );
 }

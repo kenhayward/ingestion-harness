@@ -13,7 +13,7 @@ deploy/
     deploy.sh | deploy.ps1         build → infra up → init-buckets → migrate → services → smoke test
     compose.sh                     docker compose with the right env/files (ps, logs, scale, down)
     dev-infra.sh | dev-infra.ps1   Postgres + SeaweedFS only, migrate + buckets from host
-    smoke-test.sh                  /healthz, /readyz, /api/specs, /api/models via nginx
+    smoke-test.sh                  health, token access and S3 keys via nginx + the S3 port
 ```
 
 ## Deploy / rollback
@@ -74,6 +74,43 @@ The browser session lasts until the token expires or is revoked (it survives bro
 and ends after 7 idle days. The admin token line is printed whatever `LOG_LEVEL` is.
 Session cookies are `Secure` over HTTPS and still work over plain HTTP on the LAN.
 
+## Data lake access to published outputs (S3 keys)
+
+An external system (e.g. a data lake feeding a semantic index) can read the publish bucket
+(`TARGET_S3_BUCKET`, default `ingest-published`) with its own **read-only** S3 key
+([ADR 0008](../docs/adr/0008-s3-read-keys.md)). This works when the publish target is the local
+SeaweedFS (`TARGET_S3_ENDPOINT` empty).
+
+1. **Proxy host** in NGINX Proxy Manager, e.g. `lake-s3.example.com`:
+   - forward to `http://<docker-host>:8335` (`S3_PUBLIC_PORT`; set `S3_PUBLIC_BIND` so NPM can reach
+     it, or put NPM on the stack's Docker network and forward to `http://seaweedfs:8333`);
+   - SSL: Let's Encrypt, Force SSL;
+   - don't add custom locations that rewrite the path: SigV4 signs the `Host` header and the
+     path, and NPM's default `proxy_set_header Host $host` keeps both intact. **Block common
+     exploits** filters query strings and user agents; if you turn it on, check the lake's first
+     sync gets through;
+   - **Advanced** (read-only at the proxy, whatever key is used — this also hides SeaweedFS's
+     IAM API, which listens on the same port as `POST /`):
+
+     ```nginx
+     if ($request_method !~ ^(GET|HEAD)$) { return 403; }
+     if ($uri !~ ^/(ingest-published(/.*)?)?$) { return 403; }
+     # Optional: only the lake's egress addresses.
+     # allow 203.0.113.0/24; deny all;
+     ```
+
+     Use your bucket name if `TARGET_S3_BUCKET` differs.
+2. **Show the URL in the app:** set `S3_PUBLIC_URL=https://lake-s3.example.com` in the env file
+   (optional; it's displayed with each new key).
+3. **Issue a key:** sign in as admin → **Access** → **Data lake S3 keys** → name the consumer,
+   choose an expiry, **Create key**. Copy the endpoint URL, bucket, access key ID and secret into
+   the lake now: the secret is shown once. The lake uses path-style addressing and any region
+   (`us-east-1` is fine).
+4. **Rotate:** **Rotate** issues a second key and makes the old one stop after a grace period
+   (1, 7 or 30 days). Update the lake, then revoke the old key early if you like.
+   **Revoke** stops a key within seconds; deleting the consumer removes its SeaweedFS user.
+   The API deletes expired keys every minute.
+
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
 
 Zscaler's PAC file returns `PROXY 127.0.0.1:8888; PROXY 127.0.0.1:9001`. Docker Desktop tries
@@ -89,7 +126,8 @@ errors, and the Zscaler root CA will need adding to the images.
 
 ## Notes
 
-- Pin `SEAWEEDFS_TAG` to a specific release in production `.env` files.
+- **SeaweedFS** is pinned to an exact 4.x tag in `docker-compose.yml`; Dependabot proposes
+  newer 4.x releases (CI's compose smoke test gates them). A 5.x upgrade is a deliberate change.
 - **Final target (`TARGET_S3_*`):** the worker writes published outputs there and the API reads
   them back for the Results page. Empty values fall back to the internal SeaweedFS (`S3_*`). For
   an external target, give the credentials write access for the worker and at least read access
