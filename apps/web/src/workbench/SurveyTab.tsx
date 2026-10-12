@@ -35,6 +35,7 @@ export function SurveyTab({
     try {
       const all = await api.listProposals(projectId);
       setProposal(all.find((p) => p.stage === 'survey') ?? null);
+      setError(null);
     } catch (err) {
       setError((err as Error).message);
     }

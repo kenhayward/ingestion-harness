@@ -74,6 +74,17 @@ describe('SurveyTab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('network down');
   });
 
+  it('clears a poll error once polling succeeds again', async () => {
+    const listProposals = vi
+      .fn()
+      .mockResolvedValueOnce([proposalView({ status: 'running', body: null })])
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue([proposalView({ status: 'running', body: null })]);
+    tab({ listProposals });
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    await waitFor(() => expect(screen.queryByText('network down')).not.toBeInTheDocument());
+  });
+
   it('keeps rows whose names or strings repeat', async () => {
     const base = proposalView();
     const body = base.body!;
