@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .draft_changes import apply_changes
-from .draft_stages import OUTPUTS, SECTIONS, STEPS, Stage
+from .draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
@@ -111,9 +111,9 @@ Return JSON only.""",
     SURVEY_SCHEMA,
 )
 
-STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS)}
+STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS, REVISE)}
 #: Stages that propose changes to the current draft (so they need it).
-CHANGE_STAGE_IDS = {"outputs", "sections", "steps"}
+CHANGE_STAGE_IDS = {"outputs", "sections", "steps", "revise"}
 
 _BRIEF_LABELS = [
     ("purpose", "Purpose"),
@@ -151,6 +151,8 @@ def build_context(
     samples: list[DraftSample],
     example_yaml: str | None,
     survey: dict[str, Any] | None = None,
+    feedback: list[dict[str, Any]] | None = None,
+    failures: list[dict[str, Any]] | None = None,
 ) -> str:
     """Everything a drafting model sees, in one string. Refuses holdout (non-dev) samples."""
     for s in samples:
@@ -161,6 +163,20 @@ def build_context(
     blocks = [f"<harness>\n{RULES}</harness>", f"<brief>\n{_brief_text(brief)}\n</brief>"]
     if survey:
         blocks.append(f"<survey>\n{json.dumps(survey, indent=1, ensure_ascii=False)}\n</survey>")
+    if feedback:
+        lines = [
+            f"- [{f.get('target')} {f.get('targetId')}]"
+            + (f" (sample {f['sample']})" if f.get("sample") else "")
+            + f": {f.get('body', '')}"
+            for f in feedback
+        ]
+        blocks.append("<feedback>\n" + "\n".join(lines) + "\n</feedback>")
+    if failures:
+        blocks.append(
+            "<evaluation_failures>\n"
+            f"{json.dumps(failures, indent=1, ensure_ascii=False)}\n"
+            "</evaluation_failures>"
+        )
     if example_yaml:
         blocks.append(f"<example_template>\n{example_yaml.strip()}\n</example_template>")
     if draft:
@@ -196,6 +212,9 @@ class DraftParams(BaseModel):
     survey: dict[str, Any] | None = None
     samples: list[DraftParamSample]
     model: str | None = None
+    feedback: list[dict[str, Any]] = Field(default_factory=list)
+    failures: list[dict[str, Any]] = Field(default_factory=list)
+    feedback_ids: list[str] = Field(default_factory=list, alias="feedbackIds")
 
 
 def _pages(deps: PipelineDeps, sha256: str) -> list[str]:
@@ -238,6 +257,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         samples=samples,
         example_yaml=deps.example_template,
         survey=params.survey,
+        feedback=params.feedback,
+        failures=params.failures,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":

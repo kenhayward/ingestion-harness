@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ingest_worker.draft_stages import OUTPUTS, SECTIONS, STEPS, Stage
+from ingest_worker.draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage
 
 DRAFT: dict[str, Any] = {
     "id": "letter",
@@ -244,3 +244,52 @@ def test_sections_remove_is_checked_against_the_draft_at_that_point() -> None:
     changes = [section_item(), section_item(op="removeSection", id="approval")]
     _, errors = run(SECTIONS, {"notes": "", "changes": changes})
     assert errors == []
+
+
+def nested(op: str, key: str, item: dict[str, Any]) -> dict[str, Any]:
+    payload = {k: v for k, v in item.items() if k not in ("op", "reason")}
+    change: dict[str, Any] = {
+        "op": op,
+        "field": None,
+        "table": None,
+        "section": None,
+        "step": None,
+        "reason": "r",
+    }
+    change[key] = payload
+    return change
+
+
+REVISE_DRAFT = {
+    **DRAFT,
+    "outputs": {"fields": [{"id": "sender"}], "tables": []},
+    "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+}
+
+
+def test_revise_converts_mixed_ops_in_order_and_validates_the_whole_template() -> None:
+    changes = [
+        nested("putField", "field", output_item(id="ref", description="Reference")),
+        nested("putStep", "step", step_item(id="tail", fields=["ref"])),
+        nested("putSection", "section", section_item(id="approval", anchor="^APPROVAL")),
+    ]
+    body, errors = run(REVISE, {"notes": "n", "changes": changes}, REVISE_DRAFT)
+    assert errors == []
+    assert [c["op"] for c in body["changes"]] == ["putField", "putStep", "putSection"]
+    assert body["changes"][0]["field"] == {"id": "ref", "description": "Reference"}
+
+
+def test_revise_reports_template_breakage_and_missing_payloads() -> None:
+    orphan = nested("putField", "field", output_item(id="orphan"))
+    _, errors = run(REVISE, {"notes": "", "changes": [orphan]}, REVISE_DRAFT)
+    assert any("not filled by any step" in e for e in errors)
+    missing = {
+        "op": "putField",
+        "field": None,
+        "table": None,
+        "section": None,
+        "step": None,
+        "reason": "r",
+    }
+    _, errors = run(REVISE, {"notes": "", "changes": [missing]}, REVISE_DRAFT)
+    assert any("changes[0]" in e and "field" in e for e in errors)

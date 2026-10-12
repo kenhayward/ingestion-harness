@@ -382,3 +382,93 @@ Return JSON only.""",
     convert_sections,
     check_sections,
 )
+
+
+def _item_schema(stage_schema: dict[str, Any]) -> dict[str, Any]:
+    """A stage's flat change item without op/reason, nullable: the revise payload."""
+    item = stage_schema["properties"]["changes"]["items"]
+    props = {k: v for k, v in item["properties"].items() if k not in ("op", "reason")}
+    return {
+        "type": ["object", "null"],
+        "additionalProperties": False,
+        "required": list(props),
+        "properties": props,
+    }
+
+
+_OUTPUT_ITEM = _item_schema(OUTPUTS_SCHEMA)
+_SECTION_ITEM = _item_schema(SECTIONS_SCHEMA)
+_STEP_ITEM = _item_schema(STEPS_SCHEMA)
+
+#: op -> (stage whose converter handles it, key of its payload in a revise change)
+_REVISE_GROUPS: dict[str, tuple[Stage, str]] = {
+    **{op: (OUTPUTS, "field") for op in ("putField", "removeOutput")},
+    "putTable": (OUTPUTS, "table"),
+    **{op: (SECTIONS, "section") for op in ("putSection", "removeSection", "setCopies")},
+    **{op: (STEPS, "step") for op in ("putStep", "removeStep", "setPreamble")},
+}
+
+REVISE_SCHEMA = _body(
+    _object(
+        {
+            "op": _ops(*_REVISE_GROUPS),
+            "field": _OUTPUT_ITEM,
+            "table": _OUTPUT_ITEM,
+            "section": _SECTION_ITEM,
+            "step": _STEP_ITEM,
+            "reason": _S,
+        }
+    )
+)
+
+
+def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    changes: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, c in enumerate(data["changes"]):
+        stage, key = _REVISE_GROUPS[c["op"]]
+        payload = c.get(key)
+        if not isinstance(payload, dict):
+            errors.append(f"changes[{i}]: {c['op']} needs its {key} object")
+            continue
+        assert stage.convert is not None
+        body, errs = stage.convert(
+            {"notes": "", "changes": [{**payload, "op": c["op"], "reason": c["reason"]}]}
+        )
+        errors += [e.replace("changes[0]", f"changes[{i}]", 1) for e in errs]
+        changes += body["changes"]
+    return {"notes": data["notes"], "changes": changes}, errors
+
+
+def check_revise(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
+    """Every op's checks over the whole revision (each check inspects only its own ops and
+    applies earlier changes in sequence), then the complete template."""
+    errors: list[str] = []
+    for check in (check_outputs, check_sections, check_steps):
+        errors += [e for e in check(body, draft) if e not in errors]
+    return errors
+
+
+REVISE = Stage(
+    "revise",
+    """\
+Task: revise the current draft so it answers the user's feedback and fixes the evaluation
+failures (expected vs actual values on the dev samples).
+- Propose only the changes needed; each change has op and exactly one payload object:
+  - field (putField, removeOutput): id, name, type, description, enum, columns as for outputs;
+  - table (putTable): id, name, description, columns;
+  - section (putSection, removeSection, setCopies): id, anchor, required, description,
+    copiesSelect;
+  - step (putStep, removeStep, setPreamble): id, type, fields, table, sections, instructions,
+    pageImages, chunkPages, context, description, values, reference, aliases, preamble.
+  Set the other payload objects to null, and null for keys that do not apply.
+- The template must stay valid: every field and table filled by exactly one step; steps only
+  use existing sections; context only from earlier steps.
+- Prefer clearer instructions, better anchors or more precise field descriptions over adding
+  outputs. reason: which feedback item or failure the change addresses.
+- notes: anything you could not fix and why.
+Return JSON only.""",
+    REVISE_SCHEMA,
+    convert_revise,
+    check_revise,
+)

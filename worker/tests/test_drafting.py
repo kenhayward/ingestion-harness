@@ -445,3 +445,78 @@ def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
     [row] = body["anchorCheck"]["samples"]
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is False
+
+
+def test_revise_job_sees_feedback_and_dev_failures(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    draft = {
+        **DRAFT,
+        "outputs": {"fields": [{"id": "sender"}], "tables": []},
+        "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+    }
+    step = {
+        "id": "head",
+        "type": "extract",
+        "fields": ["sender"],
+        "table": None,
+        "sections": ["all"],
+        "instructions": "Use the letterhead",
+        "pageImages": None,
+        "chunkPages": None,
+        "context": None,
+        "description": None,
+        "values": None,
+        "reference": None,
+        "aliases": None,
+        "preamble": None,
+    }
+    provider.responses = [
+        {
+            "notes": "",
+            "changes": [
+                {
+                    "op": "putStep",
+                    "field": None,
+                    "table": None,
+                    "section": None,
+                    "reason": "feedback",
+                    "step": step,
+                }
+            ],
+        }
+    ]
+    feedback = [
+        {
+            "target": "field",
+            "targetId": "sender",
+            "sample": "a.pdf",
+            "body": "Take the letterhead name",
+        }
+    ]
+    failures = [
+        {
+            "sample": "a.pdf",
+            "score": 0.5,
+            "fields": [{"id": "sender", "expected": "Acme", "actual": "Bob"}],
+            "tables": [],
+        }
+    ]
+    queue = FakeQueue(
+        jobs=[
+            draft_job(
+                stage="revise",
+                draft=draft,
+                feedback=feedback,
+                failures=failures,
+                feedbackIds=["f1"],
+            )
+        ]
+    )
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    [(_, request)] = provider.calls
+    assert "<feedback>" in request.prompt and "Take the letterhead name" in request.prompt
+    assert "<evaluation_failures>" in request.prompt and '"actual": "Bob"' in request.prompt
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert body["changes"][0]["step"]["instructions"] == "Use the letterhead"
+    assert "anchorCheck" not in body

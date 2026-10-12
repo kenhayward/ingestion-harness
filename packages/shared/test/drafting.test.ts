@@ -214,6 +214,22 @@ describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)
     };
     expect(parseChangeBody('sections', body)).not.toBeNull();
   });
+
+  it('a mixed revise body from the worker converter parses', () => {
+    const body = {
+      notes: '',
+      changes: [
+        { op: 'putField', field: { id: 'ref', description: 'Reference' }, reason: 'r' },
+        {
+          op: 'putStep',
+          step: { id: 'tail', type: 'extract', fields: ['ref'], sections: ['all'] },
+          reason: 'r',
+        },
+        { op: 'putSection', section: { id: 'approval', anchor: '^APPROVAL' }, reason: 'r' },
+      ],
+    };
+    expect(parseChangeBody('revise', body)?.changes).toHaveLength(3);
+  });
 });
 
 describe('references stage', () => {
