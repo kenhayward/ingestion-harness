@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ProjectView } from '@ih/shared';
+import type { ProjectView, StageView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import { PROJECT_TABS, type ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
@@ -7,13 +7,16 @@ import { BriefTab } from './BriefTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
+import { StagePanel } from './StagePanel.js';
 import { SurveyTab } from './SurveyTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
   brief: 'Brief',
   survey: 'Survey',
+  outputs: 'Outputs',
   sections: 'Sections',
+  steps: 'Steps',
   template: 'Template',
   runs: 'Test runs',
 };
@@ -38,6 +41,9 @@ export function ProjectPage({
   const [view, setView] = useState<ProjectView | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stages, setStages] = useState<StageView[]>([]);
+  /** Bumped when a stage changes the draft, to remount editors showing it. */
+  const [revision, setRevision] = useState(0);
 
   const load = useCallback(() => {
     api.getProject(projectId).then(
@@ -52,6 +58,17 @@ export function ProjectPage({
     );
   }, [api, projectId]);
   useEffect(load, [load]);
+
+  const loadStages = useCallback(() => {
+    api.listStages(projectId).then(setStages, () => setStages([]));
+  }, [api, projectId]);
+  useEffect(loadStages, [loadStages]);
+
+  const changed = () => {
+    loadStages();
+    load();
+    setRevision((r) => r + 1);
+  };
 
   const act = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -130,6 +147,10 @@ export function ProjectPage({
             aria-current={t === tab ? 'page' : undefined}
           >
             {TAB_LABEL[t]}
+            {(() => {
+              const s = stages.find((x) => x.stage === t);
+              return s && s.state !== 'pending' ? ` � ${s.state}` : '';
+            })()}
           </a>
         ))}
       </nav>
@@ -150,10 +171,42 @@ export function ProjectPage({
           brief={view.brief}
           onBriefSaved={(brief) => setView({ ...view, brief })}
           pollMs={pollMs}
+          onChanged={changed}
         />
       )}
+      {(tab === 'outputs' || tab === 'steps') && (
+        <>
+          <StagePanel
+            key={`${tab}-${revision}`}
+            api={api}
+            projectId={project.id}
+            stage={tab}
+            dataPolicy={project.dataPolicy}
+            hasDraft={draft !== null}
+            pollMs={pollMs}
+            onApplied={changed}
+            onSkipped={changed}
+          />
+          <p className="muted">
+            Edit by hand on the <a href={`#/workbench/${project.id}/template`}>Template</a> tab.
+          </p>
+        </>
+      )}
       {tab === 'sections' && (
-        <SectionsTab api={api} projectId={project.id} draft={draft} pollMs={300} />
+        <>
+          <StagePanel
+            key={`sections-${revision}`}
+            api={api}
+            projectId={project.id}
+            stage="sections"
+            dataPolicy={project.dataPolicy}
+            hasDraft={draft !== null}
+            pollMs={pollMs}
+            onApplied={changed}
+            onSkipped={changed}
+          />
+          <SectionsTab key={revision} api={api} projectId={project.id} draft={draft} pollMs={300} />
+        </>
       )}
       {tab === 'runs' && <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />}
       {tab === 'template' &&

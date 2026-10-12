@@ -186,4 +186,23 @@ describe('SurveyTab', () => {
       answers: [{ question: 'Is page 1 a cover?', answer: 'Yes' }],
     });
   });
+
+  it('skips the survey and reports the change', async () => {
+    const onChanged = vi.fn();
+    const api = fakeApi({ skipStage: vi.fn(async () => []) });
+    render(
+      <SurveyTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        brief={brief}
+        onBriefSaved={vi.fn()}
+        pollMs={1}
+        onChanged={onChanged}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Skip this stage' }));
+    expect(api.skipStage).toHaveBeenCalledWith('letter', 'survey');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
 });

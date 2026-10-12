@@ -17,6 +17,7 @@ export function SurveyTab({
   brief,
   onBriefSaved,
   pollMs,
+  onChanged,
 }: {
   api: Api;
   projectId: string;
@@ -24,6 +25,8 @@ export function SurveyTab({
   brief: Brief | null;
   onBriefSaved: (brief: Brief) => void;
   pollMs: number;
+  /** Called after a decision or a skip, so the page can reload stage states. */
+  onChanged?: () => void;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   /** Answers typed in this session, by question; unedited questions show the brief's answer. */
@@ -76,6 +79,14 @@ export function SurveyTab({
     act(async () => {
       if (!proposal) return;
       setProposal(await api.decideProposal(projectId, proposal.id, decision));
+      onChanged?.();
+    });
+
+  const skip = () =>
+    act(async () => {
+      await api.skipStage(projectId, 'survey');
+      setMessage('Survey skipped');
+      onChanged?.();
     });
 
   const briefAnswers = brief?.body.answers ?? [];
@@ -107,6 +118,9 @@ export function SurveyTab({
       <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
       <button type="button" className="primary" disabled={running} onClick={() => void run()}>
         {proposal ? 'Run survey again' : 'Run survey'}
+      </button>
+      <button type="button" onClick={() => void skip()}>
+        Skip this stage
       </button>
       {running && <span className="muted"> Surveying the dev samples…</span>}
       {error && <p role="alert">{error}</p>}
