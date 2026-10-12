@@ -141,3 +141,41 @@ describe('stage states', () => {
     expect(states.map((s) => s.state)).toEqual(['accepted', 'pending', 'pending', 'pending']);
   });
 });
+
+describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)', () => {
+  const dumps = [
+    { op: 'putField', field: { id: 'sender', description: 'Who wrote it' }, reason: 'r' },
+    { op: 'putTable', table: { id: 'items', columns: [{ id: 'name' }] }, reason: 'r' },
+    {
+      op: 'putStep',
+      step: {
+        type: 'extract',
+        id: 'head',
+        fields: ['sender'],
+        sections: ['all'],
+        instructions: 'Top of page 1',
+      },
+      reason: 'r',
+    },
+    {
+      op: 'putStep',
+      step: {
+        type: 'extract',
+        id: 'tail',
+        fields: ['ref'],
+        sections: ['all'],
+        context: { who: 'sender' },
+      },
+      reason: 'r',
+    },
+    {
+      op: 'putStep',
+      step: { type: 'check', id: 'same', values: 'ref', reference: 'sender' },
+      reason: 'r',
+    },
+    { op: 'setPreamble', preamble: 'Letters to QA.', reason: 'r' },
+  ];
+  it.each(dumps.map((d) => [d.op, d] as const))('%s parses', (_op, dump) => {
+    expect(DraftChangeSchema.safeParse(dump).success).toBe(true);
+  });
+});

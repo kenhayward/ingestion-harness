@@ -142,3 +142,40 @@ def test_steps_convert_context_checks_and_preamble() -> None:
         "reference": "sender",
     }
     assert body["changes"][3] == {"op": "setPreamble", "preamble": "Letters to QA.", "reason": "r"}
+
+
+def test_empty_strings_and_lists_are_treated_as_absent() -> None:
+    body, errors = run(
+        OUTPUTS, {"notes": "", "changes": [output_item(type="text", enum=[], description="")]}
+    )
+    assert errors == [] and body["changes"][0]["field"] == {"id": "sender"}
+    draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []}}
+    changes = [
+        step_item(instructions=""),
+        step_item(
+            id="same",
+            type="check",
+            fields=None,
+            sections=None,
+            values="ref",
+            reference="sender",
+            aliases="",
+        ),
+    ]
+    body, errors = run(STEPS, {"notes": "", "changes": changes}, draft)
+    assert "instructions" not in body["changes"][0]["step"]
+    assert "aliases" not in body["changes"][1]["step"]
+    _, errors = run(STEPS, {"notes": "", "changes": [step_item(sections=[])]}, draft)
+    assert any("sections" in e for e in errors)
+
+
+def test_removes_are_checked_against_the_draft_after_earlier_changes() -> None:
+    both = [output_item(), output_item(op="removeOutput")]
+    _, errors = run(OUTPUTS, {"notes": "", "changes": both})
+    assert not any("no such output" in e for e in errors)
+    _, errors = run(OUTPUTS, {"notes": "", "changes": [*both[::-1]]})
+    assert any("no such output" in e for e in errors)
+    draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}], "tables": []}}
+    steps = [step_item(), step_item(op="removeStep", id="head")]
+    _, errors = run(STEPS, {"notes": "", "changes": steps}, draft)
+    assert not any("no such step" in e for e in errors)

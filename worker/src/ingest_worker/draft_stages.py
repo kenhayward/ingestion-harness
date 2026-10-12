@@ -96,7 +96,8 @@ STEPS_SCHEMA = _body(
 
 
 def _clean(d: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in d.items() if v is not None}
+    """Drop null, empty strings and empty lists: the TS schemas reject them (min(1))."""
+    return {k: v for k, v in d.items() if v is not None and v != "" and v != []}
 
 
 def _dump(model: BaseModel) -> dict[str, Any]:
@@ -152,9 +153,10 @@ def _output_ids(definition: dict[str, Any]) -> set[str]:
 
 def check_outputs(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
     errors = [
-        f"changes[{i}]: removeOutput {c['id']!r}: no such output in the current draft"
+        f"changes[{i}]: removeOutput {c['id']!r}: no such output in the draft at that point"
         for i, c in enumerate(body["changes"])
-        if c["op"] == "removeOutput" and c["id"] not in _output_ids(draft)
+        if c["op"] == "removeOutput"
+        and c["id"] not in _output_ids(apply_changes(draft, body["changes"][:i]))
     ]
     applied = apply_changes(draft, body["changes"])
     errors += [
@@ -213,19 +215,24 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
 
 def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
-    step_ids = {s.get("id") for s in draft.get("pipeline") or []}
     errors = [
-        f"changes[{i}]: removeStep {c['id']!r}: no such step in the current draft"
+        f"changes[{i}]: removeStep {c['id']!r}: no such step in the draft at that point"
         for i, c in enumerate(body["changes"])
-        if c["op"] == "removeStep" and c["id"] not in step_ids
+        if c["op"] == "removeStep"
+        and c["id"]
+        not in {
+            s.get("id") for s in apply_changes(draft, body["changes"][:i]).get("pipeline") or []
+        }
     ]
     try:
         Template.model_validate(apply_changes(draft, body["changes"]))
     except ValidationError as exc:
         for e in exc.errors():
-            errors += [
-                part.strip() for part in str(e["msg"]).removeprefix("Value error, ").split(";")
-            ]
+            msg = str(e["msg"])
+            if msg.startswith("Value error, "):
+                errors += [part.strip() for part in msg.removeprefix("Value error, ").split(";")]
+            else:
+                errors.append(f"{'.'.join(str(p) for p in e['loc']) or 'template'}: {msg}")
     return errors
 
 
