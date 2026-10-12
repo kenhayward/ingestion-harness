@@ -2142,3 +2142,13 @@ a.button.icon.bordered {
   border-radius: var(--ih-radius-md);
   padding: 8px 12px 8px 28px;
 }
+
+.section-start {
+  color: var(--ih-accent);
+  font-weight: 600;
+}
+
+.sections-tab input.mono {
+  width: 100%;
+  font-family: var(--ih-font-mono);
+}

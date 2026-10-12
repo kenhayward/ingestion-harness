@@ -2,15 +2,45 @@ import { useEffect, useState } from 'react';
 import type { PreparedText } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
+export type TextMark = { page: number; line: string; label: string };
+
+function PageBody({ text, marks }: { text: string; marks: { line: string; label: string }[] }) {
+  if (!marks.length) return <pre>{text}</pre>;
+  const lines = text.split('\n');
+  const used = new Set<string>();
+  return (
+    <pre>
+      {lines.map((line, i) => {
+        const mark = marks.find((m) => !used.has(m.label) && line.trim() === m.line.trim());
+        if (mark) used.add(mark.label);
+        return (
+          <span key={i}>
+            {mark && (
+              <span role="note" aria-label={`${mark.label} starts here`} className="section-start">
+                {`▶ ${mark.label}\n`}
+              </span>
+            )}
+            {line}
+            {i < lines.length - 1 ? '\n' : ''}
+          </span>
+        );
+      })}
+    </pre>
+  );
+}
+
 /** A sample's prepared text (after extraction and OCR), one region per page. */
 export function SampleText({
   api,
   projectId,
   sampleId,
+  marks,
 }: {
   api: Api;
   projectId: string;
   sampleId: string;
+  /** Lines to flag with "<label> starts here" on the given page. */
+  marks?: TextMark[];
 }) {
   const [text, setText] = useState<PreparedText | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +59,7 @@ export function SampleText({
             Page {p.number}
             {p.ocr && <small className="badge"> OCR</small>}
           </h4>
-          <pre>{p.text}</pre>
+          <PageBody text={p.text} marks={(marks ?? []).filter((m) => m.page === p.number)} />
         </section>
       ))}
     </div>

@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { SampleText } from '../src/workbench/SampleText.js';
 import { SamplesTab } from '../src/workbench/SamplesTab.js';
 import { fakeApi, sampleView } from './fake-api.js';
 
@@ -87,5 +88,28 @@ describe('SamplesTab', () => {
     expect(page2).toHaveTextContent('Batch 1 results');
     expect(page2).toHaveTextContent('OCR');
     expect(screen.getByRole('region', { name: 'Page 1' })).not.toHaveTextContent('OCR');
+  });
+
+  it('marks where a section starts on its page', async () => {
+    const api = fakeApi({
+      getSampleText: vi.fn(async () => ({
+        sha256: 'abc',
+        pages: [
+          { number: 1, text: 'intro\nTOTALS\n13.00', ocr: false },
+          { number: 2, text: 'TOTALS again', ocr: false },
+        ],
+      })),
+    });
+    render(
+      <SampleText
+        api={api}
+        projectId="letter"
+        sampleId="s1"
+        marks={[{ page: 1, line: 'TOTALS', label: 'totals' }]}
+      />,
+    );
+    const note = await screen.findByRole('note', { name: 'totals starts here' });
+    expect(screen.getByRole('region', { name: 'Page 1' })).toContainElement(note);
+    expect(screen.getByRole('region', { name: 'Page 2' })).not.toContainElement(note);
   });
 });
