@@ -37,6 +37,7 @@ describe('step runs and re-runs', () => {
         inputTokens: 900,
         outputTokens: 300,
         status: 'succeeded',
+        cached: false,
         error: null,
         startedAt: '2026-10-09T10:00:00Z',
         finishedAt: '2026-10-09T10:01:00Z',

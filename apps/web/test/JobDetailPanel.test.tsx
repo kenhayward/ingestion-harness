@@ -13,6 +13,7 @@ const run = (o: Partial<StepRun> = {}): StepRun => ({
   inputTokens: 1,
   outputTokens: 1,
   status: 'succeeded',
+  cached: false,
   error: null,
   startedAt: '2026-10-12T10:00:00Z',
   finishedAt: '2026-10-12T10:00:05Z',

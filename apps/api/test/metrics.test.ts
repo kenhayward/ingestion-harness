@@ -47,6 +47,7 @@ const run = (stepId: string, extra: Record<string, unknown> = {}) => ({
   inputTokens: 1000,
   outputTokens: 200,
   status: 'succeeded' as const,
+  cached: false,
   error: null,
   startedAt: '2026-10-09T10:00:00Z',
   finishedAt: '2026-10-09T10:00:30Z',

@@ -122,6 +122,10 @@ export interface IterationSummary {
   set: 'dev';
   /** Alias every step was overridden with; null = the template's own models. */
   model: EvaluationModel | null;
+  /** Shared by the iterations of one model comparison. */
+  groupId: string | null;
+  /** Every step called its model (the step cache was not read). */
+  uncached: boolean;
   createdAt: string;
   status: 'running' | 'complete';
   score: number | null;
@@ -130,8 +134,41 @@ export interface IterationSummary {
 }
 
 export interface IterationView extends IterationSummary {
+  /** Succeeded step runs of the iteration's jobs; `reused` were served from the step cache. */
+  cache: { reused: number; total: number };
   scorecard: Scorecard;
   samples: SampleResult[];
+}
+
+export interface ComparisonView {
+  groupId: string;
+  iterations: IterationView[];
+}
+
+export interface ComparisonRow {
+  id: string;
+  byModel: Record<string, number | null>;
+}
+
+/** One row per measure (overall score, then each field / table.column), one column per model. */
+export function comparisonRows(iterations: IterationView[]): ComparisonRow[] {
+  const label = (it: IterationView) => it.model ?? 'template';
+  const ids = [
+    ...new Set(
+      iterations.flatMap((it) =>
+        [...it.scorecard.fields, ...it.scorecard.columns].map((a) => a.id),
+      ),
+    ),
+  ].sort();
+  const accuracy = (it: IterationView, id: string) =>
+    [...it.scorecard.fields, ...it.scorecard.columns].find((a) => a.id === id)?.accuracy ?? null;
+  return [
+    { id: 'score', byModel: Object.fromEntries(iterations.map((it) => [label(it), it.score])) },
+    ...ids.map((id) => ({
+      id,
+      byModel: Object.fromEntries(iterations.map((it) => [label(it), accuracy(it, id)])),
+    })),
+  ];
 }
 
 /** One dev sample on the References tab. */

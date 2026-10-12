@@ -416,7 +416,14 @@ async function iterationView(
   if (status === 'complete' && changed) {
     await app.deps.workbench.setIterationScores(iteration.id, scores);
   }
-  return { ...summaryOf(iteration), status, ...scores, scorecard, samples: results };
+  return {
+    ...summaryOf(iteration),
+    status,
+    ...scores,
+    cache: { reused: 0, total: 0 },
+    scorecard,
+    samples: results,
+  };
 }
 
 function summaryOf(
@@ -429,6 +436,8 @@ function summaryOf(
     briefVersion: iteration.briefVersion,
     set: iteration.set,
     model: iteration.model,
+    groupId: null,
+    uncached: false,
     createdAt: iteration.createdAt,
   };
 }

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildScorecard,
+  comparisonRows,
   finishedJob,
   JOB_STATUSES,
   type Comparison,
+  type IterationView,
   type JobStatus,
   type SampleResult,
 } from '../src/index.js';
@@ -112,5 +114,58 @@ describe('buildScorecard', () => {
       fields: [],
       columns: [],
     });
+  });
+});
+
+describe('comparisonRows', () => {
+  const view = (
+    model: 'default' | 'fast' | null,
+    score: number | null,
+    fields: [string, number][],
+  ): IterationView => ({
+    id: model ?? 'tmpl',
+    projectId: 'letter',
+    templateVersion: 2,
+    briefVersion: null,
+    set: 'dev',
+    model,
+    groupId: 'g1',
+    uncached: false,
+    createdAt: '2026-10-12T10:00:00.000Z',
+    status: 'complete',
+    score,
+    completed: 1,
+    total: 1,
+    cache: { reused: 0, total: 0 },
+    scorecard: {
+      score,
+      completed: 1,
+      total: 1,
+      fields: fields.map(([id, accuracy]) => ({ id, matched: 0, total: 1, accuracy })),
+      columns: [],
+    },
+    samples: [],
+  });
+
+  it('lines up overall and per-field accuracy by model', () => {
+    expect(
+      comparisonRows([
+        view('default', 0.5, [
+          ['sender', 1],
+          ['date', 0],
+        ]),
+        view('fast', null, [['sender', 0.5]]),
+      ]),
+    ).toEqual([
+      { id: 'score', byModel: { default: 0.5, fast: null } },
+      { id: 'date', byModel: { default: 0, fast: null } },
+      { id: 'sender', byModel: { default: 1, fast: 0.5 } },
+    ]);
+  });
+
+  it('labels the template-models iteration "template"', () => {
+    expect(comparisonRows([view(null, 1, [])])).toEqual([
+      { id: 'score', byModel: { template: 1 } },
+    ]);
   });
 });
