@@ -55,6 +55,8 @@ export interface WorkbenchProject {
   dataPolicyChangedAt: string | null;
   /** Label of the admin token that last changed the policy. */
   dataPolicyChangedBy: string | null;
+  /** Holdout score (0..1) a draft needs to publish without an override (ADR 0007). */
+  publishThreshold: number;
 }
 
 export interface ProjectSummary extends WorkbenchProject {
@@ -108,6 +110,8 @@ export interface SampleView {
   prepareJobId: string | null;
   error: string | null;
   triage: PreparedTriage | null;
+  /** Holdout evaluation runs that have used this sample (always 0 for dev samples). */
+  holdoutRuns: number;
 }
 
 /** The part of a template's `document` block the segmentation preview applies. */

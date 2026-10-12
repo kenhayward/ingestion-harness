@@ -115,12 +115,15 @@ export function buildScorecard(samples: SampleResult[]): Scorecard {
   };
 }
 
+export const EVALUATION_SETS = ['dev', 'holdout'] as const;
+export type EvaluationSet = (typeof EVALUATION_SETS)[number];
+
 export interface IterationSummary {
   id: string;
   projectId: string;
   templateVersion: number;
   briefVersion: number | null;
-  set: 'dev';
+  set: EvaluationSet;
   /** Alias every step was overridden with; null = the template's own models. */
   model: EvaluationModel | null;
   /** Shared by the iterations of one model comparison. */
@@ -261,4 +264,76 @@ export function failureDiffs(
       },
     ];
   });
+}
+
+export const PublishBodySchema = z
+  .object({ overrideReason: z.string().trim().min(10).max(1000).optional() })
+  .strict();
+export const ThresholdBodySchema = z
+  .object({ publishThreshold: z.number().min(0).max(1) })
+  .strict();
+
+export interface GateCandidate {
+  id: string;
+  status: 'running' | 'complete';
+  score: number | null;
+  /** The iteration ran the open draft as it is now (version and definition snapshot). */
+  matchesDraft: boolean;
+  createdAt: string;
+}
+
+export interface GateView {
+  threshold: number;
+  iterationId: string | null;
+  score: number | null;
+  passes: boolean;
+  reason: string;
+}
+
+const percent = (x: number) => `${Math.round(x * 100)}%`;
+
+/** The publish gate (ADR 0007): the newest complete holdout run of the current draft decides. */
+export function publishGate({
+  threshold,
+  candidates,
+}: {
+  threshold: number;
+  candidates: GateCandidate[];
+}): GateView {
+  const run = candidates
+    .filter((c) => c.status === 'complete' && c.matchesDraft)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (!run) {
+    return {
+      threshold,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    };
+  }
+  const passes = run.score !== null && run.score >= threshold;
+  const shown = run.score === null ? 'none' : percent(run.score);
+  return {
+    threshold,
+    iterationId: run.id,
+    score: run.score,
+    passes,
+    reason: passes
+      ? `holdout score ${shown} meets the threshold ${percent(threshold)}`
+      : `holdout score ${shown} is below the threshold ${percent(threshold)}`,
+  };
+}
+
+export interface Publication {
+  id: string;
+  projectId: string;
+  version: number;
+  iterationId: string | null;
+  score: number | null;
+  threshold: number;
+  overrideReason: string | null;
+  /** Label of the session's token. */
+  publishedBy: string | null;
+  publishedAt: string;
 }

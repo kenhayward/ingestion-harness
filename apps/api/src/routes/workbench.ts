@@ -257,6 +257,7 @@ async function toView(
     prepareJobId: job?.id ?? null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
+    holdoutRuns: 0,
   };
 }
 

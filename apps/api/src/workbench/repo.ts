@@ -185,6 +185,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       dataPolicy: 'local',
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
+      publishThreshold: 0.9,
     };
     this.projects.set(id, project);
     return project;
@@ -413,6 +414,7 @@ interface ProjectRow {
   data_policy: DataPolicy;
   data_policy_changed_at: Date | null;
   data_policy_changed_by: string | null;
+  publish_threshold: string;
 }
 
 interface SampleRow {
@@ -537,6 +539,7 @@ const toProject = (r: ProjectRow): WorkbenchProject => ({
   dataPolicy: r.data_policy,
   dataPolicyChangedAt: r.data_policy_changed_at?.toISOString() ?? null,
   dataPolicyChangedBy: r.data_policy_changed_by,
+  publishThreshold: Number(r.publish_threshold),
 });
 
 const toSample = (r: SampleRow): SampleRecord => ({

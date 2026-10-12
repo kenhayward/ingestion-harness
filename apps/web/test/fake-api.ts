@@ -331,6 +331,7 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
       dataPolicy: 'local',
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
+      publishThreshold: 0.9,
     },
     draft: 1,
     published: null,
@@ -354,6 +355,7 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     prepareJobId: crypto.randomUUID(),
     error: null,
     triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
+    holdoutRuns: 0,
     ...overrides,
   };
 }

@@ -4,6 +4,10 @@ import {
   comparisonRows,
   FeedbackBodySchema,
   MAX_FIELD_DIFFS,
+  PublishBodySchema,
+  ThresholdBodySchema,
+  publishGate,
+  type GateCandidate,
   failureDiffs,
   finishedJob,
   JOB_STATUSES,
@@ -265,5 +269,79 @@ describe('FeedbackBodySchema', () => {
     expect(
       FeedbackBodySchema.safeParse({ target: 'field', targetId: 'x', body: 'b', extra: 1 }).success,
     ).toBe(false);
+  });
+});
+
+describe('publishGate', () => {
+  const c = (over: Partial<GateCandidate>): GateCandidate => ({
+    id: 'i1',
+    status: 'complete',
+    score: 0.95,
+    matchesDraft: true,
+    createdAt: '2026-10-12T10:00:00.000Z',
+    ...over,
+  });
+
+  it('passes on the newest complete holdout run of the current draft', () => {
+    expect(
+      publishGate({
+        threshold: 0.9,
+        candidates: [
+          c({ id: 'old', score: 0.5, createdAt: '2026-10-12T09:00:00.000Z' }),
+          c({ id: 'new' }),
+        ],
+      }),
+    ).toEqual({
+      threshold: 0.9,
+      iterationId: 'new',
+      score: 0.95,
+      passes: true,
+      reason: 'holdout score 95% meets the threshold 90%',
+    });
+  });
+
+  it('fails below the threshold', () => {
+    expect(publishGate({ threshold: 0.9, candidates: [c({ score: 0.82 })] })).toMatchObject({
+      passes: false,
+      reason: 'holdout score 82% is below the threshold 90%',
+    });
+  });
+
+  it('ignores running runs and runs of an older draft', () => {
+    const gate = publishGate({
+      threshold: 0.9,
+      candidates: [
+        c({ id: 'running', status: 'running' }),
+        c({ id: 'stale', matchesDraft: false }),
+      ],
+    });
+    expect(gate).toEqual({
+      threshold: 0.9,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    });
+  });
+
+  it('handles the threshold edges', () => {
+    expect(publishGate({ threshold: 0, candidates: [c({ score: 0 })] }).passes).toBe(true);
+    expect(publishGate({ threshold: 1, candidates: [c({ score: 0.99 })] }).passes).toBe(false);
+    expect(publishGate({ threshold: 1, candidates: [c({ score: 1 })] }).passes).toBe(true);
+    expect(publishGate({ threshold: 0.5, candidates: [c({ score: null })] }).passes).toBe(false);
+  });
+});
+
+describe('publish bodies', () => {
+  it('validates override reasons and thresholds', () => {
+    expect(PublishBodySchema.safeParse({}).success).toBe(true);
+    expect(PublishBodySchema.safeParse({ overrideReason: 'too short' }).success).toBe(false);
+    expect(
+      PublishBodySchema.safeParse({ overrideReason: 'Holdout sample 3 is a known bad scan' })
+        .success,
+    ).toBe(true);
+    expect(ThresholdBodySchema.safeParse({ publishThreshold: 0.8 }).success).toBe(true);
+    expect(ThresholdBodySchema.safeParse({ publishThreshold: 1.2 }).success).toBe(false);
+    expect(ThresholdBodySchema.safeParse({ publishThreshold: -0.1 }).success).toBe(false);
   });
 });
