@@ -40,6 +40,9 @@ describe('http api: URLs', () => {
   it('links the uploaded PDF of a job', () => {
     expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');
   });
+  it('links the ZIP of a result', () => {
+    expect(createHttpApi('/api').archiveUrl('j1')).toBe('/api/results/j1/archive');
+  });
 });
 
 describe('http api: workbench', () => {

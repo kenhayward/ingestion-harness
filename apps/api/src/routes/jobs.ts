@@ -21,11 +21,11 @@ const UUID = z.string().uuid();
 const rfc5987 = (s: string) =>
   encodeURIComponent(s).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
-export function inlineDisposition(name: string): string {
+export function contentDisposition(name: string, type: 'inline' | 'attachment' = 'inline'): string {
   const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
   // eslint-disable-next-line no-control-regex -- detecting non-ASCII is the point
   const exact = /[^\x00-\x7f]/.test(name) ? `; filename*=UTF-8''${rfc5987(name)}` : '';
-  return `inline; filename="${ascii}"${exact}`;
+  return `${type}; filename="${ascii}"${exact}`;
 }
 
 /** model: a ref sets the job's override, null clears it (spec default), absent keeps it. */
@@ -188,7 +188,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     if (!body) return reply.code(404).send({ error: 'document missing from storage' });
     return reply
       .header('content-type', 'application/pdf')
-      .header('content-disposition', inlineDisposition(doc.filename))
+      .header('content-disposition', contentDisposition(doc.filename))
       .header('x-content-type-options', 'nosniff')
       .header('cache-control', 'private, max-age=300')
       .send(body);

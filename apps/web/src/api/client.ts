@@ -248,6 +248,8 @@ export interface Api {
   pageUrl(jobId: string, page: number): string;
   /** The job's uploaded PDF, served inline (Open PDF). */
   documentUrl(jobId: string): string;
+  /** Every published output of a result as one ZIP download. */
+  archiveUrl(jobId: string): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   getMetrics(templateId: string): Promise<TemplateMetrics>;
@@ -485,6 +487,7 @@ export function createHttpApi(base = '/api'): Api {
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,
+    archiveUrl: (jobId) => `${base}/results/${jobId}/archive`,
     getStepRuns: (jobId) => apiFetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),

@@ -33,7 +33,8 @@ worker applies the edits to the draft `document.json` (re-normalised by type, is
 values replaced, checks re-run), renders the outputs with a `review` block and writes them to
 the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are never modified.
 
-The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`) reads published
+The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`, and
+`GET /api/results/:jobId/archive` for every published output as one ZIP) reads published
 outputs back from the target. The API resolves `TARGET_S3_*` like the worker
 ([ADR 0004](adr/0004-api-reads-publish-target.md)).
 

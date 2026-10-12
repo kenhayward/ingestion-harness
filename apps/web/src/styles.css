@@ -289,6 +289,25 @@ th {
 }
 
 /* App shell: top bar + left nav + page */
+html {
+  /* Anchors and scrollIntoView land below the pinned top bar. */
+  scroll-padding-top: calc(var(--ih-topbar-h) + 8px);
+}
+:root {
+  --ih-topbar-h: 0px;
+}
+/* Pinned above phone width: the page scrolls under it. On a phone the bar wraps to four rows,
+   so it scrolls away with the page instead of covering a quarter of the screen. */
+@media (min-width: 641px) {
+  :root {
+    --ih-topbar-h: 69px;
+  }
+  .top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+}
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -1587,7 +1606,7 @@ button.danger-fill {
 @media (min-width: 1000px) {
   .page-viewer {
     position: sticky;
-    top: 8px;
+    top: calc(var(--ih-topbar-h) + 8px);
   }
 }
 .page-nav {
@@ -1882,24 +1901,37 @@ input.danger-border {
   color: var(--ih-warn-fg);
   font-weight: 600;
 }
-.downloads-cell {
+/* Name and type take the spare width; the rest shrink to their content. */
+.result-list .doc-cell {
+  width: 55%;
+}
+.result-list .type-cell {
+  width: 45%;
+}
+.result-list .doc-cell > *,
+.result-list .type-cell > * {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.result-list td:not(.doc-cell):not(.type-cell),
+.result-list th:not(.doc-cell):not(.type-cell) {
+  width: 1%;
   white-space: nowrap;
 }
-a.dl {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  margin-right: 6px;
-  padding: 0 8px;
-  border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-sm);
-  color: var(--ih-text);
+.result-list .row-actions > a.button {
+  min-height: 32px;
+}
+.result-list .row-actions > a.button.icon {
+  width: 32px;
+}
+.result-list a.dl {
+  gap: 6px;
+  padding: 0 10px;
   font-family: var(--ih-font-mono);
   font-size: var(--ih-text-xs);
-  text-decoration: none;
 }
-a.dl:hover {
-  border-color: var(--ih-border-strong);
+.table-outputs .doc-button {
+  font-size: var(--ih-text-md);
 }
 .result-preview {
   flex: 1 1 320px;
@@ -1979,8 +2011,11 @@ a.dl:hover {
     padding: 12px 16px;
     border-bottom: 1px solid var(--ih-border-soft);
   }
-  .result-list td {
+  .result-list td,
+  .result-list td:not(.doc-cell):not(.type-cell) {
     display: block;
+    width: auto;
+    max-width: none;
     padding: 0;
     border: 0;
     background: none;
@@ -2570,4 +2605,111 @@ tr.confirming td {
 }
 .token-list .row-actions > button {
   min-height: 34px;
+}
+
+/* Editor: Outputs sub-tabs (Fields / Tables) */
+.template-editor .sub-tabs {
+  margin: 0 0 12px;
+}
+.template-editor .sub-tabs [role='tab'] {
+  min-height: 36px;
+  font-size: var(--ih-text-md);
+}
+.table-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.table-outputs > .add {
+  align-self: flex-start;
+}
+.table-outputs tr.selected td {
+  background: var(--ih-sel-row);
+}
+.table-outputs .step-tools {
+  justify-content: flex-end;
+}
+.table-config {
+  padding: 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.table-def-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.table-def-names > * {
+  flex: 1 1 220px;
+}
+
+/* YAML editor (CodeMirror): colours come from the design tokens, so it follows the theme. */
+.yaml-editor {
+  border: 1px solid var(--ih-border-strong);
+  border-radius: var(--ih-radius-md);
+  overflow: hidden;
+  background: var(--ih-surface);
+}
+.yaml-editor .cm-editor {
+  max-height: 70vh;
+  font-size: var(--ih-text-sm);
+}
+.yaml-editor .cm-editor.cm-focused {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: -1px;
+}
+.yaml-editor .cm-scroller {
+  font-family: var(--ih-font-mono);
+  line-height: 1.55;
+}
+.yaml-editor .cm-content {
+  caret-color: var(--ih-text);
+}
+.yaml-editor .cm-cursor {
+  border-left-color: var(--ih-text);
+}
+.yaml-editor .cm-gutters {
+  border-right: 1px solid var(--ih-border);
+  background: var(--ih-surface2);
+  color: var(--ih-muted);
+}
+.yaml-editor .cm-activeLine,
+.yaml-editor .cm-activeLineGutter {
+  background: var(--ih-accent-soft);
+}
+.yaml-editor .cm-selectionBackground,
+.yaml-editor .cm-focused .cm-selectionBackground {
+  background: var(--ih-accent-soft) !important;
+}
+.yaml-editor .tok-propertyName {
+  color: var(--ih-accent-soft-text);
+  font-weight: 600;
+}
+.yaml-editor .tok-string {
+  color: var(--ih-ok-fg);
+}
+.yaml-editor .tok-number,
+.yaml-editor .tok-bool,
+.yaml-editor .tok-null,
+.yaml-editor .tok-atom {
+  color: var(--ih-warn-fg);
+}
+.yaml-editor .tok-comment {
+  color: var(--ih-muted);
+  font-style: italic;
+}
+.yaml-editor .tok-punctuation,
+.yaml-editor .tok-separator,
+.yaml-editor .tok-meta {
+  color: var(--ih-muted);
+}
+.yaml-editor .tok-keyword,
+.yaml-editor .tok-labelName,
+.yaml-editor .tok-typeName {
+  color: var(--ih-danger-fg);
+}
+.yaml-editor .cm-content[aria-readonly='true'] {
+  background: var(--ih-surface2);
 }

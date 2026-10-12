@@ -5,6 +5,7 @@ import type { TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor } from '../src/templates/TemplateEditor.js';
 import { fakeApi, job } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
+import { setYaml } from './yaml-editor.js';
 
 const skeleton = {
   id: 'letter',
@@ -285,13 +286,22 @@ describe('TemplateEditor', () => {
   it('edits as YAML', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/YAML/));
-    const editor = screen.getByLabelText('Template YAML');
-    expect((editor as HTMLTextAreaElement).value).toContain('name: Letter');
-    await userEvent.clear(editor);
-    await userEvent.type(editor, 'id: letter{enter}version: 1{enter}name: Memo');
+    const editor = screen.getByRole('textbox', { name: 'Template YAML' });
+    expect(editor).toHaveTextContent('name: Letter');
+    setYaml('Template YAML', 'id: letter\nversion: 1\nname: Memo');
     await userEvent.click(screen.getByRole('button', { name: 'Apply YAML' }));
     await userEvent.click(await tab(/General/));
     expect(screen.getByLabelText('Name')).toHaveValue('Memo');
+  });
+
+  it('shows a published version as read-only YAML', async () => {
+    setup(view({ ...validDefinition(), version: 1 }, 'published'));
+    await userEvent.click(await tab(/YAML/));
+    expect(screen.getByRole('textbox', { name: 'Template YAML' })).toHaveAttribute(
+      'aria-readonly',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Apply YAML' })).toBeDisabled();
   });
 
   it('compares the version with another one', async () => {
@@ -509,6 +519,73 @@ describe('TemplateEditor tabs and step cards', () => {
     expect(await screen.findByRole('tab', { name: 'Sections 1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Outputs 1 · 1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Pipeline 2' })).toBeInTheDocument();
+  });
+
+  it('orders the tabs General, Sections, Pipeline, Outputs, YAML, Quality', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    const tabs = await screen.findByRole('tablist', { name: 'Template sections' });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((t) => t.textContent?.replace(/[\d·\s]+$/, '')),
+    ).toEqual(['General', 'Sections', 'Pipeline', 'Outputs', 'YAML', 'Quality']);
+  });
+
+  it('splits Outputs into Fields and Tables sub-tabs', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Outputs/));
+    const sub = screen.getByRole('tablist', { name: 'Outputs' });
+    expect(within(sub).getByRole('tab', { name: 'Fields 1' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('table', { name: 'Fields' })).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Tables' })).not.toBeInTheDocument();
+    await userEvent.click(within(sub).getByRole('tab', { name: 'Tables 1' }));
+    expect(screen.queryByRole('table', { name: 'Fields' })).not.toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Tables' })).toBeInTheDocument();
+  });
+
+  it('lists the tables and configures the selected one below the list', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.click(screen.getByRole('tab', { name: /^Tables/ }));
+    const list = screen.getByRole('table', { name: 'Tables' });
+    expect(within(list).getByRole('button', { name: 'Configure table lines' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(list).getByText('2 columns')).toBeInTheDocument();
+    const config = screen.getByRole('group', { name: 'Table lines' });
+    expect(within(config).getByLabelText('Table 1 id')).toHaveValue('lines');
+    expect(within(config).getByRole('table', { name: 'Table 1 columns' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add table' }));
+    // The new table is selected at once, ready to name.
+    const added = screen.getByRole('group', { name: 'Table 2' });
+    await userEvent.type(within(added).getByLabelText('Table 2 id'), 'totals');
+    expect(within(list).getByRole('button', { name: 'Configure table totals' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(list).getByRole('button', { name: 'Configure table lines' }));
+    expect(screen.getByLabelText('Table 1 id')).toHaveValue('lines');
+    expect(screen.queryByLabelText('Table 2 id')).not.toBeInTheDocument();
+
+    await userEvent.click(within(list).getByRole('button', { name: 'Remove table 1' }));
+    expect(screen.getByLabelText('Table 1 id')).toHaveValue('totals');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      outputs: { tables: [{ id: 'totals', columns: [] }] },
+    });
+  });
+
+  it('says when there are no tables yet', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.click(screen.getByRole('tab', { name: /^Tables/ }));
+    expect(screen.getByText('No tables yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /^Table/ })).not.toBeInTheDocument();
   });
 
   it('shows steps as collapsed cards with a summary, one open at a time', async () => {
