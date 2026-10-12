@@ -55,7 +55,7 @@ describe('app shell', () => {
       />,
     );
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    await screen.findByText('invoice.pdf');
+    await screen.findByRole('button', { name: 'Show details for invoice.pdf' });
     expect(within(nav).queryByText(/need attention/)).not.toBeInTheDocument();
   });
 
@@ -126,11 +126,13 @@ describe('search', () => {
       ]),
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByText('coa-lot-7781.pdf');
+    const shown = (name: string) =>
+      screen.queryByRole('button', { name: `Show details for ${name}` });
+    await screen.findByRole('button', { name: 'Show details for coa-lot-7781.pdf' });
     const search = screen.getByRole('searchbox', { name: SEARCH });
     await userEvent.type(search, 'acme');
-    expect(screen.getByText('inv-0042-acme.pdf')).toBeInTheDocument();
-    expect(screen.queryByText('coa-lot-7781.pdf')).not.toBeInTheDocument();
+    expect(shown('inv-0042-acme.pdf')).toBeInTheDocument();
+    expect(shown('coa-lot-7781.pdf')).not.toBeInTheDocument();
     await userEvent.clear(search);
     await userEvent.type(search, 'globex');
     expect(screen.getByText('No jobs match “globex”.')).toBeInTheDocument();

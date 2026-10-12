@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { JobSummary } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
-import { JobCleanup } from './components/JobCleanup.js';
-import { JobList } from './jobs/JobList.js';
-import { UploadStrip } from './jobs/UploadStrip.js';
+import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
-import { matchesQuery, sectionOf } from './shell/derive.js';
+import { sectionOf } from './shell/derive.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
@@ -128,12 +125,13 @@ function SignedInApp({
     );
   } else {
     page = (
-      <JobsView
+      <JobsPage
         api={api}
         jobs={jobs}
         error={error}
         refresh={refresh}
         query={query}
+        pollMs={pollMs}
         pickPending={pickPending}
         onPicked={() => setPickPending(false)}
       />
@@ -154,58 +152,5 @@ function SignedInApp({
     >
       {page}
     </AppShell>
-  );
-}
-
-function JobsView({
-  api,
-  jobs,
-  error,
-  refresh,
-  query,
-  pickPending,
-  onPicked,
-}: {
-  api: Api;
-  jobs: JobSummary[];
-  error: string | null;
-  refresh: () => Promise<void>;
-  query: string;
-  pickPending: boolean;
-  onPicked: () => void;
-}) {
-  /** The upload form's Model selection; Retry uses it too. */
-  const [retryModel, setRetryModel] = useState('');
-  const shown = jobs.filter((j) =>
-    matchesQuery(query, j.filename, j.specId, j.modelOverride, j.status, ...j.modelsUsed),
-  );
-
-  return (
-    <>
-      <UploadStrip
-        api={api}
-        onUploaded={refresh}
-        onModelChange={setRetryModel}
-        pickPending={pickPending}
-        onPicked={onPicked}
-      />
-      {error && <p role="alert">Failed to load jobs: {error}</p>}
-      {jobs.length > 0 && shown.length === 0 ? (
-        <p>No jobs match “{query.trim()}”.</p>
-      ) : (
-        <JobList
-          api={api}
-          jobs={shown}
-          selectedId={null}
-          onSelect={() => {}}
-          onChanged={refresh}
-          retryModel={retryModel}
-          models={[]}
-          specTitles={new Map()}
-          now={Date.now()}
-        />
-      )}
-      <JobCleanup api={api} onChanged={refresh} />
-    </>
   );
 }
