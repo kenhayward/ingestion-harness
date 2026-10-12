@@ -158,7 +158,7 @@ export function ReviewPage({
     <div className="review">
       <ReviewHeader data={data} jobs={jobs} jobId={jobId} />
 
-      <div className="review-body">
+      <div className="review-panes">
         <PageViewer
           src={api.pageUrl(jobId, page)}
           page={page}
@@ -166,7 +166,7 @@ export function ReviewPage({
           onPage={setPage}
         />
 
-        <section className="review-data">
+        <section className="review-data" aria-label="Extracted data">
           <div className="data-tabs">
             <div role="tablist" aria-label="Extracted data">
               {tabButton('fields', 'Fields', template.outputs.fields.length, fieldsFlagged)}
@@ -428,7 +428,7 @@ export function ReviewPage({
         />
       ) : job.status === 'succeeded' ? (
         <form
-          className="decision"
+          className="decision-bar"
           aria-label="Save as reference"
           onSubmit={(e) => {
             e.preventDefault();
@@ -457,7 +457,7 @@ export function ReviewPage({
           {notice && <p role="status">{notice}</p>}
         </form>
       ) : (
-        <p className="decision">
+        <p className="decision-bar">
           {job.status === 'rejected'
             ? `Rejected by ${job.reviewer ?? 'unknown'}: ${job.reviewNote ?? ''}`
             : `This document is ${job.status}; review is closed.`}

@@ -586,42 +586,6 @@ th {
 }
 
 /* Existing page layouts (restyled per page in later PRs) */
-.review-header h2 {
-  margin: 4px 0;
-}
-.reasons {
-  margin: 4px 0;
-  color: var(--ih-warn-fg);
-}
-.review-body {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr);
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 900px) {
-  .review-body {
-    grid-template-columns: 1fr;
-  }
-}
-/* Pin the page beside the data only in the two-column layout; stacked, it would cover it. */
-@media (min-width: 901px) {
-  .page-viewer {
-    position: sticky;
-    top: 8px;
-  }
-}
-.page-viewer img {
-  width: 100%;
-  border: 1px solid var(--ih-border);
-  background: var(--ih-paper);
-}
-.page-nav {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
 [role='tablist'] {
   display: flex;
   flex-wrap: wrap;
@@ -671,15 +635,6 @@ td.edited-cell,
 }
 .edit-log li {
   margin-bottom: 0.25rem;
-}
-.decision {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: end;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--ih-border);
 }
 /* Compact data tables: one line per cell; the Edit control appears on hover/focus
    (always visible on touch screens, which have no hover). */
@@ -1525,5 +1480,287 @@ button.danger-fill {
   }
   .job-panel {
     max-width: none;
+  }
+}
+
+/* Review (UI handoff §2): header, reasons, source + data panes, sticky decision bar */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.review-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-md);
+  text-decoration: none;
+}
+.back-link:hover {
+  color: var(--ih-text);
+}
+.review-header h1 {
+  word-break: break-all;
+}
+.review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 4px 0 0;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-md);
+}
+.review-meta .mono {
+  font-size: var(--ih-text-sm);
+}
+.review-queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--ih-text-md);
+}
+.why {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  padding: 14px 16px;
+}
+.why ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.review-panes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+.page-viewer,
+.review-data {
+  min-width: 0;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  overflow: hidden;
+}
+.page-viewer {
+  flex: 1 1 420px;
+}
+.review-data {
+  flex: 1.3 1 480px;
+}
+/* Pin the page beside the data only side by side; stacked, it would cover it. */
+@media (min-width: 1000px) {
+  .page-viewer {
+    position: sticky;
+    top: 8px;
+  }
+}
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ih-border);
+  font-size: var(--ih-text-md);
+}
+.page-hint {
+  margin-left: auto;
+  font-size: var(--ih-text-sm);
+}
+button.icon.bordered {
+  width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--ih-border);
+  color: var(--ih-text);
+}
+.page-well {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ih-page-well);
+}
+.page-well img {
+  max-width: 100%;
+  background: var(--ih-paper);
+  box-shadow: var(--ih-shadow-card);
+}
+.data-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--ih-border);
+}
+.data-tabs [role='tablist'] {
+  margin: 0;
+  border-bottom: 0;
+}
+.data-tabs [role='tab'] {
+  min-height: 46px;
+  padding: 0 16px;
+}
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-neutral-bg);
+  color: var(--ih-neutral-fg);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+}
+.tab-count.tone-warn {
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.next-flagged {
+  min-height: 36px;
+  padding: 0 12px;
+  border-color: var(--ih-border);
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-md);
+}
+.review-data > :not(.data-tabs) {
+  margin: 12px 16px;
+}
+.review-data > table.fields-grid {
+  width: calc(100% - 32px);
+}
+.fields-grid th,
+.fields-grid td {
+  vertical-align: top;
+}
+.fields-grid tbody tr:focus,
+.fields-grid tr.selected {
+  outline: none;
+  background: var(--ih-sel-row);
+}
+.field-name {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  color: var(--ih-text);
+  font-weight: 500;
+  text-align: left;
+}
+.field-name:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+.fields-grid th[scope='row'] {
+  width: 30%;
+}
+.field-name small {
+  white-space: nowrap;
+  font-size: var(--ih-text-xs);
+  font-weight: 400;
+  color: var(--ih-muted);
+}
+.value.boxed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.value-box {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.value-box.flagged {
+  border: 1.5px solid var(--ih-warn-fg);
+}
+.value-box.edited {
+  border: 1.5px solid var(--ih-info-fg);
+}
+.flag-text,
+.edit-text {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--ih-text-sm);
+}
+.flag-text {
+  color: var(--ih-warn-fg);
+  font-weight: 500;
+}
+.edit-text {
+  color: var(--ih-info-fg);
+}
+.evidence {
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.evidence q {
+  font-style: italic;
+}
+td[id^='flag-']:focus {
+  outline: 2px solid var(--ih-warn-fg);
+  outline-offset: -2px;
+}
+.decision-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  box-shadow: var(--ih-shadow-bar);
+}
+.decision-bar .reviewer {
+  flex: 0 1 200px;
+}
+.decision-bar .grow {
+  flex: 1 1 260px;
+}
+.decision-bar input {
+  width: 100%;
+}
+.decision-bar p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+input.danger-border {
+  border: 1.5px solid var(--ih-danger-fg);
+}
+@media (max-width: 640px) {
+  /* On phones a pinned bar would cover a third of the screen: it ends the page instead. */
+  .decision-bar {
+    position: static;
   }
 }
