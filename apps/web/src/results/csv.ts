@@ -4,7 +4,8 @@ export function parseCsv(text: string): string[][] {
   let row: string[] = [];
   let field = '';
   let quoted = false;
-  for (let i = 0; i < text.length; i++) {
+  // Outputs carry a UTF-8 BOM for Excel; fetch().text() usually strips it, but not always.
+  for (let i = text.charCodeAt(0) === 0xfeff ? 1 : 0; i < text.length; i++) {
     const c = text[i]!;
     if (quoted) {
       if (c !== '"') field += c;

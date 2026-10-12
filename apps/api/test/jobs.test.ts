@@ -60,7 +60,7 @@ describe('jobs API', () => {
 
     const res = await app.inject(`/api/jobs/${job.id}/outputs/lines`);
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(res.body).toBe('a,b\n1,2\n');
   });
 });
