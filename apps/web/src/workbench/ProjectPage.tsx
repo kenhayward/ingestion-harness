@@ -119,6 +119,7 @@ export function ProjectPage({
             templateId={project.id}
             version={draft}
             onNavigate={onNavigate}
+            embedded={{ onChanged: load }}
           />
         ) : (
           <div className="card">

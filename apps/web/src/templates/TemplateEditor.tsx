@@ -40,11 +40,17 @@ export function TemplateEditor({
   templateId,
   version,
   onNavigate,
+  embedded,
 }: {
   api: Api;
   templateId: string;
   version: number;
   onNavigate: (hash: string) => void;
+  /**
+   * Set when hosted by the workbench: the Runs tab replaces the single-sample test run, and
+   * publish / new draft / delete draft report back instead of navigating to Document types.
+   */
+  embedded?: { onChanged: () => void };
 }) {
   const [view, setView] = useState<TemplateRecordView | null>(null);
   const [def, setDef] = useState<Definition>({});
@@ -95,15 +101,18 @@ export function TemplateEditor({
     act(async () => {
       accept(await api.publishTemplate(templateId, version));
       setMessage(`Published v${version}.`);
+      embedded?.onChanged();
     });
   const newDraft = () =>
     act(async () => {
       const { record: draft } = await api.newDraft(templateId, version);
+      if (embedded) return embedded.onChanged();
       onNavigate(`#/templates/${draft.id}/${draft.version}`);
     });
   const removeDraft = () =>
     act(async () => {
       await api.deleteDraft(templateId, version);
+      if (embedded) return embedded.onChanged();
       onNavigate('#/templates');
     });
   const testRun = () =>
@@ -160,17 +169,21 @@ export function TemplateEditor({
             </button>
           )}
           <a href={api.exportUrl(templateId, version)}>Export YAML</a>
-          <label>
-            Sample PDF
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => setSample(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <button type="button" onClick={testRun} disabled={!sample}>
-            Test run
-          </button>
+          {!embedded && (
+            <>
+              <label>
+                Sample PDF
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setSample(e.target.files?.[0] ?? null)}
+                />
+              </label>
+              <button type="button" onClick={testRun} disabled={!sample}>
+                Test run
+              </button>
+            </>
+          )}
         </div>
         {dirty && <p className="hint">Unsaved changes.</p>}
         {message && <p role="status">{message}</p>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_BRIEF, preparedTriageKey, type SampleView } from '@ih/shared';
+import { EMPTY_BRIEF, preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
 import { WORKBENCH_PRIORITY } from '../src/repositories/types.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -34,6 +34,17 @@ async function project() {
         'runs',
         preparedTriageKey(sample.sha256),
         Buffer.from(JSON.stringify(triage)),
+        'application/json',
+      );
+      await ctx.store.put(
+        'runs',
+        preparedTextKey(sample.sha256),
+        Buffer.from(
+          JSON.stringify({
+            sha256: sample.sha256,
+            pages: [{ number: 1, text: 'hello', ocr: false }],
+          }),
+        ),
         'application/json',
       );
     }
@@ -125,5 +136,47 @@ describe('workbench dev test runs', () => {
     }
     const listed = (await app.inject('/api/workbench/projects/letter/test-runs')).json();
     expect(listed.map((j: { id: string }) => j.id).sort()).toEqual(jobs.map((j) => j.id).sort());
+  });
+});
+
+describe('dev test run housekeeping', () => {
+  async function finishedRun() {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    const sample = await ctx.add(1);
+    const created = (await ctx.run()).json().jobs as { id: string }[];
+    const runId = created[0]!.id;
+    const job = ctx.repo.jobs.get(runId)!;
+    ctx.repo.jobs.set(runId, { ...job, status: 'succeeded' });
+    const doc = ctx.repo.documents.get(ctx.repo.documents.get(sample.documentId)!.id)!;
+    return { ...ctx, sample, runId, doc };
+  }
+  async function expectSampleIntact(c: Awaited<ReturnType<typeof finishedRun>>) {
+    expect(c.store.objects.has(`${c.doc.bucket}/${c.doc.objectKey}`)).toBe(true);
+    const listed = (await c.app.inject('/api/workbench/projects/letter/samples')).json();
+    expect(listed.find((s: SampleView) => s.id === c.sample.id).state).toBe('ready');
+    const text = await c.app.inject(`/api/workbench/projects/letter/samples/${c.sample.id}/text`);
+    expect(text.statusCode).toBe(200);
+  }
+
+  it('keeps the sample PDF when a run job is deleted', async () => {
+    const c = await finishedRun();
+    expect((await c.app.inject({ method: 'DELETE', url: `/api/jobs/${c.runId}` })).statusCode).toBe(
+      204,
+    );
+    expect(c.repo.jobs.has(c.runId)).toBe(false);
+    await expectSampleIntact(c);
+  });
+
+  it('keeps the sample PDF through bulk clean-up', async () => {
+    const c = await finishedRun();
+    const res = await c.app.inject({
+      method: 'POST',
+      url: '/api/jobs/cleanup',
+      payload: { olderThanDays: 1, dryRun: false, cutoff: '2999-01-01T00:00:00.000Z' },
+    });
+    expect(res.json().deleted).toBe(1);
+    expect(c.repo.jobs.has(c.runId)).toBe(false);
+    await expectSampleIntact(c);
   });
 });

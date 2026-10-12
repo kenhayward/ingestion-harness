@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
@@ -36,6 +36,25 @@ describe('RunsTab', () => {
     render(<RunsTab api={api} projectId="letter" draft={1} pollMs={60_000} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('no prepared dev samples to run');
+  });
+
+  it('disables the run button while the request is in flight', async () => {
+    let finish!: () => void;
+    const api = fakeApi({
+      runDevTests: vi.fn(
+        () =>
+          new Promise<{ jobs: never[] }>((resolve) => {
+            finish = () => resolve({ jobs: [] });
+          }),
+      ),
+    });
+    render(<RunsTab api={api} projectId="letter" draft={1} pollMs={60_000} />);
+    const button = await screen.findByRole('button', { name: 'Run on dev samples' });
+    await userEvent.click(button);
+    expect(button).toBeDisabled();
+    finish();
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(api.runDevTests).toHaveBeenCalledTimes(1);
   });
 
   it('cannot run without an open draft', async () => {

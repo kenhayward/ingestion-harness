@@ -292,7 +292,9 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {
-    const jobs = [...this.jobs.values()].filter((j) => j.specId === templateId);
+    const jobs = [...this.jobs.values()].filter(
+      (j) => j.specId === templateId && j.task !== 'prepare',
+    );
     const ids = new Set(jobs.map((j) => j.id));
     return {
       jobs,

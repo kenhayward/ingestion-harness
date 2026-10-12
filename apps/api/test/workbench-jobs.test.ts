@@ -53,12 +53,14 @@ describe('workbench jobs', () => {
   });
 
   it('never deletes a document a sample still uses', async () => {
-    const { app, repo } = await testApp();
+    const { app, repo, store } = await testApp();
+    await store.put('inbox', 'tdemo/v1/d1.pdf', Buffer.from('%PDF'), 'application/pdf');
     const job = await repo.createWorkbenchJob(doc('d1'), { projectId: 'tdemo', task: 'prepare' });
     repo.sampleDocuments.add('d1');
     repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'failed' });
     const res = await app.inject({ method: 'DELETE', url: `/api/jobs/${job.id}` });
     expect(res.statusCode).toBe(204);
     expect(repo.documents.has('d1')).toBe(true);
+    expect(store.objects.has('inbox/tdemo/v1/d1.pdf')).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ export function RunsTab({
 }) {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,10 +41,13 @@ export function RunsTab({
 
   const run = async () => {
     setError(null);
+    setStarting(true);
     try {
       await api.runDevTests(projectId);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setStarting(false);
     }
     await refresh();
   };
@@ -57,7 +61,7 @@ export function RunsTab({
       <button
         type="button"
         className="primary"
-        disabled={draft === null}
+        disabled={draft === null || starting}
         onClick={() => void run()}
       >
         Run on dev samples

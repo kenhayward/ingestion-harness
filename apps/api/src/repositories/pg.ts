@@ -575,9 +575,10 @@ export class PgRepo implements IngestionRepo {
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {
-    const { rows: jobRows } = await this.pool.query<JobRow>(`${JOB_SELECT} WHERE d.spec_id = $1`, [
-      templateId,
-    ]);
+    const { rows: jobRows } = await this.pool.query<JobRow>(
+      `${JOB_SELECT} WHERE d.spec_id = $1 AND j.task <> 'prepare'`,
+      [templateId],
+    );
     const { rows: edits } = await this.pool.query<{
       job_id: string;
       field_id: string | null;
