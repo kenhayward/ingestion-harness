@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .checks import run_check
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
@@ -106,6 +106,25 @@ def mark_pages(pages: list[str], first_page: int) -> list[str]:
     return [f"[page {first_page + i}]\n{text}" for i, text in enumerate(pages)]
 
 
+def job_data_policy(job: ClaimedJob) -> Literal["local", "external"] | None:
+    """The data policy governing a job (ADR 0007): None for production jobs; for project jobs,
+    params.dataPolicy, where anything but "external" (including a missing value) means local."""
+    if job.project_id is None:
+        return None
+    return "external" if (job.params or {}).get("dataPolicy") == "external" else "local"
+
+
+def enforce_data_policy(
+    job: ClaimedJob, deps: PipelineDeps, provider: LLMProvider, ref: str
+) -> None:
+    """Refuse, before any call, to send a local-only project's data to an external provider."""
+    if job_data_policy(job) == "local" and deps.models.location(provider.name) == "external":
+        raise DocumentError(
+            f"data policy: project is local-only but {ref} resolves to external provider "
+            f"{provider.name}"
+        )
+
+
 def resolve_models(
     job: ClaimedJob, deps: PipelineDeps, extractions: list[Extraction]
 ) -> dict[str, tuple[LLMProvider, str]]:
@@ -113,9 +132,11 @@ def resolve_models(
     resolved: dict[str, tuple[LLMProvider, str]] = {}
     for ex in extractions:
         try:
-            resolved[ex.id] = deps.models.resolve(job.model_override or ex.model)
+            ref = job.model_override or ex.model
+            resolved[ex.id] = deps.models.resolve(ref)
         except ModelResolutionError as exc:
             raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
+        enforce_data_policy(job, deps, resolved[ex.id][0], ref)
     return resolved
 
 
@@ -259,6 +280,7 @@ def ocr_pages(
         provider, model_id = deps.models.resolve_ocr(deps.ocr.model)
     except ModelResolutionError as exc:
         raise DocumentError(f"OCR model: {exc}") from exc
+    enforce_data_policy(job, deps, provider, deps.ocr.model)
 
     settings = deps.ocr
     pages = list(pages)

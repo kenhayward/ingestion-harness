@@ -275,3 +275,19 @@ def test_no_ocr_overrides_means_no_extra_client() -> None:
         factories=recording_keys(made),
     )
     assert len(made) == 2  # anthropic + local only
+
+
+def test_provider_location_defaults_to_external() -> None:
+    from ingest_worker.llm.registry import ProviderConfig
+
+    assert ProviderConfig(name="x", kind="openai-chat").location == "external"
+    assert ProviderConfig(name="x", kind="openai-chat", location="local").location == "local"
+
+
+def test_shipped_config_marks_local_provider_local_and_has_draft_alias(llm_config_path) -> None:  # type: ignore[no-untyped-def]
+    from ingest_worker.llm.registry import load_llm_config
+
+    cfg = load_llm_config(llm_config_path, env={})
+    locations = {p.name: p.location for p in cfg.providers}
+    assert locations == {"anthropic": "external", "openai": "external", "local": "local"}
+    assert cfg.aliases["draft"] == "local/qwen3.8-27b-mtp"

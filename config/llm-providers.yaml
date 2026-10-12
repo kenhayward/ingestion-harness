@@ -9,12 +9,14 @@
 # optional:    skip the provider with a warning when its API key is missing.
 # options:     per kind — effort/serverFallbacks (anthropic); responseFormat/strict/maxTokensParam/
 #              temperature (openai-*; Claude models reject sampling parameters); timeoutS (default 600) and maxRetries (SDK, default 2) for all.
+# location:    local | external — data policy (ADR 0007); omitted = external
 # aliases:     names specs can use in `extractions[].model`; values are provider/model-id.
 # ocr:         vision model that transcribes image-only / low-text pages before segmentation.
 
 providers:
   - name: anthropic
     kind: anthropic
+    location: external
     apiKeyEnv: ANTHROPIC_API_KEY
     optional: true
     discover: true
@@ -25,6 +27,7 @@ providers:
 
   - name: openai
     kind: openai-responses
+    location: external
     apiKeyEnv: OPENAI_API_KEY
     optional: true
     discover: true
@@ -32,6 +35,7 @@ providers:
 
   - name: local
     kind: openai-chat
+    location: local
     enabled: ${LOCAL_LLM_ENABLED:-true}
     baseUrl: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
     apiKeyEnv: LOCAL_LLM_API_KEY
@@ -50,6 +54,8 @@ providers:
 aliases:
   default: local/qwen3.8-27b-mtp
   fast: anthropic/claude-haiku-5-5
+  # Workbench drafting (ADR 0007). Point at a frontier model (external) or a large local one.
+  draft: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
 
 # OCR for image-only / low-text pages (spec `document.ocr`: auto | always | never).
 # The model must accept images; olmOCR's prompt and YAML front matter handling are built in.

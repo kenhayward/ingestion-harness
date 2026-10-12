@@ -28,6 +28,7 @@ from .pipeline import (
     Prepared,
     ProcessResult,
     check_cancelled,
+    enforce_data_policy,
     page_images,
     prepare_document,
     publish_outputs,
@@ -264,9 +265,11 @@ def rerun_template_job(
     if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
         ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
     try:
-        model = deps.models.resolve(params.get("model") or job.model_override or step.model)
+        ref = params.get("model") or job.model_override or step.model
+        model = deps.models.resolve(ref)
     except ModelResolutionError as exc:
         raise DocumentError(f"re-run of {step.id!r}: {exc}") from exc
+    enforce_data_policy(job, deps, model[0], ref)
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
