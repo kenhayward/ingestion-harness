@@ -1295,7 +1295,7 @@ button.danger-fill {
 .menu {
   position: fixed;
   z-index: 20;
-  min-width: 220px;
+  width: 220px;
   display: flex;
   flex-direction: column;
   padding: 4px;

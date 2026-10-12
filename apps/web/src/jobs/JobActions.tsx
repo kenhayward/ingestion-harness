@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
-import { primaryAction } from './derive.js';
+import { menuPosition, primaryAction } from './derive.js';
 
 type Action = 'cancel' | 'delete' | 're-process' | 'retry-model';
 
@@ -44,7 +44,7 @@ export function JobActions({
   const [confirm, setConfirm] = useState<Action | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   /** Fixed position under the ⋯ button: the list box scrolls, so an absolute menu would be clipped. */
-  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
+  const [menuAt, setMenuAt] = useState<ReturnType<typeof menuPosition> | null>(null);
   const [picked, setPicked] = useState('');
   const [error, setError] = useState<string | null>(null);
   const menuId = useId();
@@ -271,7 +271,9 @@ export function JobActions({
         aria-controls={menuOpen ? menuId : undefined}
         onClick={() => {
           const r = moreButton.current?.getBoundingClientRect();
-          setMenuAt(r ? { top: r.bottom + 4, right: window.innerWidth - r.right } : null);
+          setMenuAt(
+            r ? menuPosition(r, { width: window.innerWidth, height: window.innerHeight }) : null,
+          );
           setMenuOpen((o) => !o);
         }}
       >
@@ -283,7 +285,7 @@ export function JobActions({
           className="menu"
           role="group"
           aria-label={`Actions for ${file}`}
-          style={menuAt ? { top: menuAt.top, right: menuAt.right } : undefined}
+          style={menuAt ?? undefined}
         >
           {secondary}
         </div>

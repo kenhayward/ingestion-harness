@@ -121,7 +121,9 @@ export function progressSteps(
     case 'cancelled':
     case 'failed':
     case 'needs_review':
-      if (!ran) states = /section/i.test(job.error ?? '') ? upTo(1, 'fail') : upTo(0, 'fail');
+      // Without step runs nothing shows where it stopped (legacy specs record none; config
+      // errors stop before any call): claim no stage, the callout carries the message.
+      if (!ran) states = upTo(0, null);
       else states = extracted && job.status !== 'cancelled' ? upTo(3, 'fail') : upTo(2, 'fail');
       break;
   }
@@ -149,4 +151,23 @@ export function relativeTime(iso: string, now: number): string {
 export function modelLabel(job: JobSummary): string {
   if (job.modelsUsed.length) return job.modelsUsed.join(', ');
   return job.modelOverride ?? 'Spec default';
+}
+
+const MENU = { width: 220, height: 160, gap: 4, margin: 8 };
+
+/**
+ * Where a fixed-position menu opens for a button: right-aligned under it, clamped inside the
+ * viewport (phones put the button near the left edge), flipped above when there's no room below.
+ */
+export function menuPosition(
+  button: { left: number; right: number; top: number; bottom: number },
+  viewport: { width: number; height: number },
+): { left: number; top?: number; bottom?: number } {
+  const maxLeft = Math.max(MENU.margin, viewport.width - MENU.width - MENU.margin);
+  const left = Math.min(Math.max(button.right - MENU.width, MENU.margin), maxLeft);
+  const below = button.bottom + MENU.gap;
+  if (below + MENU.height > viewport.height - MENU.margin) {
+    return { left, bottom: viewport.height - button.top + MENU.gap };
+  }
+  return { left, top: below };
 }

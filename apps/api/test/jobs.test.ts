@@ -473,6 +473,31 @@ describe('GET /api/jobs/:id/document', () => {
     expect(res.headers['x-evil']).toBeUndefined();
   });
 
+  it('serves non-ASCII file names (RFC 5987) instead of failing', async () => {
+    const { app, job, repo } = await seedJob();
+    const doc = repo.documents.get(job.documentId)!;
+    repo.documents.set(doc.id, { ...doc, filename: "Invoice – März 請求書 (Ken's).pdf" });
+    const res = await app.inject({ url: `/api/jobs/${job.id}/document` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toBe(
+      `inline; filename="Invoice _ M_rz ___ (Ken's).pdf"; filename*=UTF-8''Invoice%20%E2%80%93%20M%C3%A4rz%20%E8%AB%8B%E6%B1%82%E6%9B%B8%20%28Ken%27s%29.pdf`,
+    );
+  });
+
+  it('reports an unreachable inbox store as 502', async () => {
+    const ctx = await testApp({ store: new UnreachableStore() });
+    const job = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'demo' }, { filename: 'a.pdf', content: fakePdf }),
+      })
+    ).json();
+    const res = await ctx.app.inject({ url: `/api/jobs/${job.id}/document` });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'storage unavailable' });
+  });
+
   it('404s for bad ids, unknown jobs and a missing inbox object', async () => {
     const { app, job, store } = await seedJob();
     expect((await app.inject({ url: '/api/jobs/not-a-uuid/document' })).statusCode).toBe(404);

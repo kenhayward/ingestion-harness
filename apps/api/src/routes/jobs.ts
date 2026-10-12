@@ -12,6 +12,22 @@ const ListQuery = z.object({
 
 const UUID = z.string().uuid();
 
+/**
+ * Content-Disposition for a user-supplied file name: an ASCII fallback that can't break out of
+ * the quoted value (Node rejects non-Latin-1 header bytes outright), plus the exact name as
+ * RFC 5987 `filename*` when it isn't plain ASCII.
+ */
+/** Percent-encode for RFC 5987 ext-value (encodeURIComponent leaves ' ( ) * as-is). */
+const rfc5987 = (s: string) =>
+  encodeURIComponent(s).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+export function inlineDisposition(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  // eslint-disable-next-line no-control-regex -- detecting non-ASCII is the point
+  const exact = /[^\x00-\x7f]/.test(name) ? `; filename*=UTF-8''${rfc5987(name)}` : '';
+  return `inline; filename="${ascii}"${exact}`;
+}
+
 /** model: a ref sets the job's override, null clears it (spec default), absent keeps it. */
 const RetryBody = z.object({ model: z.string().min(1).nullable().optional() });
 
@@ -162,13 +178,17 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
     const doc = await app.deps.repo.getDocumentObject(req.params.id);
     if (!doc) return reply.code(404).send({ error: 'not found' });
-    const body = await app.deps.store.get(doc.bucket, doc.key);
+    let body: Buffer | null;
+    try {
+      body = await app.deps.store.get(doc.bucket, doc.key);
+    } catch (err) {
+      req.log.warn({ err, bucket: doc.bucket }, 'document read failed');
+      return reply.code(502).send({ error: 'storage unavailable' });
+    }
     if (!body) return reply.code(404).send({ error: 'document missing from storage' });
-    // The name is user-supplied: keep it from breaking out of the quoted header value.
-    const safeName = doc.filename.replace(/["\\\r\n]/g, '_');
     return reply
       .header('content-type', 'application/pdf')
-      .header('content-disposition', `inline; filename="${safeName}"`)
+      .header('content-disposition', inlineDisposition(doc.filename))
       .header('x-content-type-options', 'nosniff')
       .header('cache-control', 'private, max-age=300')
       .send(body);

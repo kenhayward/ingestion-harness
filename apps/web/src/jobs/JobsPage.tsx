@@ -65,6 +65,12 @@ export function JobsPage({
     visible.find((j) => statusGroup(j.status) === 'attention') ??
     visible[0] ??
     null;
+  // Pin what the panel shows: a later poll (a newer job needing attention) must not swap the
+  // panel, and with it any confirm or model picker open there.
+  const shownId = selected?.id ?? null;
+  useEffect(() => {
+    if (shownId !== null && shownId !== selectedId) setSelectedId(shownId);
+  }, [shownId, selectedId]);
   const now = Date.now();
 
   return (

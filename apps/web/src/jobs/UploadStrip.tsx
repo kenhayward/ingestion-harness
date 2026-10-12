@@ -66,6 +66,8 @@ export function UploadStrip({
   const [over, setOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const nextKey = useRef(0);
+  /** A batch is uploading: rows added now must not drop its in-progress rows. */
+  const uploading = useRef(false);
 
   /** StrictMode re-runs effects before onPicked lands: open the picker once per request. */
   const picking = useRef(false);
@@ -120,7 +122,7 @@ export function UploadStrip({
       status: isPdf(file) ? 'ready' : 'skipped',
       message: isPdf(file) ? 'Ready' : 'Not a PDF',
     }));
-    setPicks((prev) => [...prev.filter(pending), ...added]);
+    setPicks((prev) => [...(uploading.current ? prev : prev.filter(pending)), ...added]);
   }
 
   const update = (key: string, status: Pick['status'], message: string) =>
@@ -132,6 +134,7 @@ export function UploadStrip({
     if (!todo.length || !spec) return;
     const [specId, version] = spec.split('@');
     setBusy(true);
+    uploading.current = true;
     let queued = 0;
     for (const p of todo) {
       update(p.key, 'uploading', 'Uploading…');
@@ -148,6 +151,7 @@ export function UploadStrip({
         update(p.key, 'error', `Upload failed: ${(err as Error).message}`);
       }
     }
+    uploading.current = false;
     setBusy(false);
     if (queued) onUploaded();
   }

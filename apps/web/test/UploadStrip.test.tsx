@@ -177,6 +177,28 @@ describe('UploadStrip with several files', () => {
     expect(upload.mock.calls[0]![0].file.name).toBe('a.pdf');
   });
 
+  it('keeps in-progress rows when files are added during an upload', async () => {
+    let finish!: () => void;
+    const upload = vi.fn(
+      (req: UploadRequest) =>
+        new Promise<ReturnType<typeof job>>((resolve) => {
+          finish = () => resolve(job({ filename: req.file.name }));
+        }),
+    );
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf')]);
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    await screen.findByText('Uploading…');
+    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('b.pdf')]);
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(within(list).getByText('a.pdf')).toBeInTheDocument();
+    expect(within(list).getByText('b.pdf')).toBeInTheDocument();
+    finish();
+    expect(await within(list).findByText('Queued')).toBeInTheDocument();
+    expect(within(list).getByText('a.pdf')).toBeInTheDocument();
+  });
+
   it('starts a fresh selection after a finished batch', async () => {
     render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
     await ready();

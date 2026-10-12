@@ -4,6 +4,7 @@ import {
   chipCounts,
   inChip,
   jobNote,
+  menuPosition,
   modelLabel,
   primaryAction,
   progressSteps,
@@ -127,16 +128,16 @@ describe('progressSteps', () => {
     ['succeeded', job({ status: 'succeeded' }), [run()], ['done', 'done', 'done', 'done', 'done']],
     ['rejected', job({ status: 'rejected' }), [run()], ['done', 'done', 'done', 'done', 'fail']],
     [
-      'needs_review, missing section',
+      'needs_review before any step run',
       job({ status: 'needs_review', error: 'Missing section: Deviations' }),
       [],
-      ['done', 'fail', 'todo', 'todo', 'todo'],
+      ['todo', 'todo', 'todo', 'todo', 'todo'],
     ],
     [
-      'failed before any step',
+      'failed before any step run',
       job({ status: 'failed', error: 'OCR provider unreachable' }),
       [],
-      ['fail', 'todo', 'todo', 'todo', 'todo'],
+      ['todo', 'todo', 'todo', 'todo', 'todo'],
     ],
     [
       'failed step',
@@ -155,6 +156,14 @@ describe('progressSteps', () => {
       job({ status: 'cancelled' }),
       [run()],
       ['done', 'done', 'fail', 'todo', 'todo'],
+    ],
+    [
+      // No step runs proves nothing about where it stopped (legacy specs record none, config
+      // errors stop before any call): claim no stage, the callout carries the message.
+      'stopped, runs failed to load',
+      job({ status: 'failed', error: 'boom' }),
+      null,
+      ['todo', 'todo', 'todo', 'todo', 'todo'],
     ],
     [
       'runs not loaded yet',
@@ -203,4 +212,20 @@ describe('modelLabel', () => {
     [job({ modelsUsed: [], modelOverride: 'a/x' }), 'a/x'],
     [job({ modelsUsed: [], modelOverride: null }), 'Spec default'],
   ])('%#', (j, text) => expect(modelLabel(j)).toBe(text));
+});
+
+describe('menuPosition', () => {
+  const viewport = { width: 1440, height: 900 };
+  const rect = (left: number, top: number) => ({ left, right: left + 34, top, bottom: top + 34 });
+  it.each([
+    ['right-aligned under the button', rect(1300, 300), viewport, { left: 1114, top: 338 }],
+    [
+      'clamped inside the left edge (phones)',
+      rect(100, 300),
+      { width: 390, height: 844 },
+      { left: 8, top: 338 },
+    ],
+    ['clamped inside the right edge', rect(1420, 300), viewport, { left: 1212, top: 338 }],
+    ['flipped above near the bottom', rect(1300, 820), viewport, { left: 1114, bottom: 84 }],
+  ])('%s', (_name, button, vp, expected) => expect(menuPosition(button, vp)).toEqual(expected));
 });

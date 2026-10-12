@@ -64,6 +64,18 @@ describe('JobsPage', () => {
     expect(within(panel()).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
   });
 
+  it('keeps the shown job (and an open picker) when a poll brings a newer job needing attention', async () => {
+    const a = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
+    const { rerender } = page([a]);
+    await userEvent.click(
+      within(panel()).getByRole('button', { name: 'Retry with another model…' }),
+    );
+    const b = job({ id: 'b', filename: 'b.pdf', status: 'failed' });
+    rerender(element([b, a]));
+    expect(within(panel()).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
+    expect(within(panel()).getByLabelText('Model for a.pdf')).toBeInTheDocument();
+  });
+
   it('falls back when a chip hides the selected job, and says when a view is empty', async () => {
     page([job({ id: 'a', filename: 'a.pdf', status: 'succeeded' })]);
     await userEvent.click(screen.getByRole('button', { name: 'Needs attention 0' }));
