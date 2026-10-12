@@ -252,11 +252,11 @@ class PgJobQueue:
     def record_step_run(self, job_id: str, run: dict[str, Any]) -> None:
         self._conn.execute(
             """INSERT INTO step_runs (job_id, step_id, trigger, model, attempts, input_tokens,
-                                      output_tokens, status, error, started_at, finished_at)
+                                      output_tokens, cached, status, error, started_at, finished_at)
                VALUES (%(job_id)s, %(step_id)s, %(trigger)s, %(model)s, %(attempts)s,
-                       %(input_tokens)s, %(output_tokens)s, %(status)s, %(error)s,
+                       %(input_tokens)s, %(output_tokens)s, %(cached)s, %(status)s, %(error)s,
                        %(started_at)s, %(finished_at)s)""",
-            {"job_id": job_id, "error": None, **run},
+            {"job_id": job_id, "error": None, "cached": False, **run},
         )
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:

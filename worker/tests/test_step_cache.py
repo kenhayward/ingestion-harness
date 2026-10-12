@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -10,13 +11,15 @@ import pytest
 
 from ingest_worker.extract import ExtractionResult
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
+from ingest_worker.main import run_once
 from ingest_worker.pipeline import run_step_extraction
 from ingest_worker.segment import PAGE_BREAK
 from ingest_worker.step_cache import CachedStep, StepCache, step_cache_key
 from ingest_worker.storage import MemoryObjectStore, step_cache_object_key
 from ingest_worker.template import Template, compile_step
 
-from .test_step_context import make
+from .fakes import FakeQueue
+from .test_step_context import CONTEXT_RESPONSES, CONTEXT_TEMPLATE, make
 from .test_template_pipeline import JOB, PAGES, RESPONSES, TEMPLATE
 
 BASE: dict[str, Any] = dict(
@@ -169,3 +172,75 @@ def test_a_corrupt_cache_entry_is_a_miss_and_is_overwritten(tmp_path: Path) -> N
     assert cache.get(cache_key) == CachedStep(
         data=expected, model_ref="local/qwen", input_tokens=20, output_tokens=10
     )
+
+
+# --- which jobs use the cache -----------------------------------------------------------------
+
+WORKBENCH = replace(JOB, test=True, project_id="demo", params={"dataPolicy": "external"})
+
+
+def run(deps, job, template):  # type: ignore[no-untyped-def]
+    queue = FakeQueue(jobs=[job], templates={("demo", 1): template})
+    run_once(queue, deps, "w1")
+    return queue
+
+
+def test_an_unchanged_workbench_run_reuses_every_step(tmp_path: Path) -> None:
+    deps, providers = make(tmp_path, RESPONSES)
+    run(deps, WORKBENCH, TEMPLATE)
+    calls = len(providers["local"].calls)
+    queue = run(deps, replace(WORKBENCH, id="job-2"), TEMPLATE)
+    assert len(providers["local"].calls) == calls
+    runs = {r["step_id"]: r for r in queue.step_runs}
+    assert set(runs) == {"header", "date", "data"}
+    assert all(r["cached"] and r["attempts"] == 0 for r in runs.values())
+    assert any(msg == "reused cached header" for _, _, msg in queue.events)
+
+
+def test_production_and_regression_jobs_never_use_the_cache(tmp_path: Path) -> None:
+    deps, providers = make(tmp_path, RESPONSES * 3)
+    regression = replace(JOB, id="job-3", test=True)  # a test run without a project
+    run(deps, JOB, TEMPLATE)
+    run(deps, replace(JOB, id="job-2"), TEMPLATE)
+    run(deps, regression, TEMPLATE)
+    assert len(providers["local"].calls) == 3 * 4  # header, date, two data chunks each
+    assert not cache_keys(deps.store)  # type: ignore[arg-type]
+
+
+def test_a_rerun_neither_reads_nor_writes_the_cache(tmp_path: Path) -> None:
+    deps, providers = make(tmp_path, RESPONSES)
+    run(deps, WORKBENCH, TEMPLATE)
+    stored = cache_keys(deps.store)  # type: ignore[arg-type]
+    assert stored
+    providers["local"].responses = [RESPONSES[0]]
+    before = len(providers["local"].calls)
+    queue = run(deps, replace(WORKBENCH, task="rerun", rerun={"step": "header"}), TEMPLATE)
+    assert len(providers["local"].calls) == before + 1  # called the model despite a cached entry
+    assert cache_keys(deps.store) == stored  # type: ignore[arg-type]
+    assert queue.step_runs[-1]["cached"] is False
+
+
+def test_uncached_calls_the_models_and_refreshes_the_cache(tmp_path: Path) -> None:
+    deps, providers = make(tmp_path, RESPONSES * 2)
+    run(deps, WORKBENCH, TEMPLATE)
+    uncached = {"dataPolicy": "external", "uncached": True}
+    queue = run(deps, replace(WORKBENCH, id="job-2", params=uncached), TEMPLATE)
+    assert len(providers["local"].calls) == 8
+    assert not any(r["cached"] for r in queue.step_runs)
+
+
+def test_changing_one_step_reruns_it_and_the_steps_that_use_its_values(tmp_path: Path) -> None:
+    # data (chunked) feeds the date step's context; header is independent.
+    changed_rows = [
+        {"rows": [{"batch": "G9", "value": "1.0", "aliases": []}]},
+        {"rows": [{"batch": "G8", "value": "2.0", "aliases": []}]},
+    ]
+    deps, providers = make(tmp_path, [*CONTEXT_RESPONSES, *changed_rows, CONTEXT_RESPONSES[3]])
+    run(deps, WORKBENCH, CONTEXT_TEMPLATE)
+    first = len(providers["local"].calls)
+    pipeline = [dict(s) for s in CONTEXT_TEMPLATE["pipeline"]]
+    pipeline[1] = {**pipeline[1], "instructions": "Results are numeric."}  # the data step
+    queue = run(deps, replace(WORKBENCH, id="job-2"), {**CONTEXT_TEMPLATE, "pipeline": pipeline})
+    cached = {r["step_id"]: r["cached"] for r in queue.step_runs}
+    assert cached == {"header": True, "data": False, "date": False}
+    assert len(providers["local"].calls) == first + 3  # two data chunks + date
