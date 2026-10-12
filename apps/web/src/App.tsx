@@ -132,6 +132,7 @@ function SignedInApp({
         templateId={route.templateId}
         version={route.version}
         onNavigate={navigate}
+        jobs={jobs}
       />
     );
   } else if (route.name === 'workbench') {
