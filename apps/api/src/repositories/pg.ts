@@ -287,14 +287,25 @@ export class PgRepo implements IngestionRepo {
     { model, specVersion }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
-      // A cancelled publish/rerun resumes as that task; failures re-run processing.
-      `WITH retried AS (
+      // A cancelled publish/rerun resumes as that task; failures re-run processing. A succeeded
+      // job re-runs from scratch: its review (decision, reasons, edits) belonged to the old
+      // extraction. CASE/WHERE read the pre-update row; all CTEs share one snapshot.
+      `WITH prev AS (SELECT status FROM jobs WHERE id = $1),
+       retried AS (
          UPDATE jobs SET task = CASE WHEN status = 'cancelled' THEN task ELSE 'process' END,
+                reviewer = CASE WHEN status = 'succeeded' THEN NULL ELSE reviewer END,
+                review_note = CASE WHEN status = 'succeeded' THEN NULL ELSE review_note END,
+                reviewed_at = CASE WHEN status = 'succeeded' THEN NULL ELSE reviewed_at END,
+                review_reasons = CASE WHEN status = 'succeeded' THEN NULL ELSE review_reasons END,
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
                 locked_by = NULL, locked_at = NULL, updated_at = now(),
                 model_override = CASE WHEN $2 THEN $3 ELSE model_override END
-          WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled')
-          RETURNING document_id)
+          WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled', 'succeeded')
+          RETURNING document_id),
+       cleared AS (
+         DELETE FROM review_edits
+          WHERE job_id = $1 AND EXISTS (SELECT 1 FROM retried)
+            AND (SELECT status FROM prev) = 'succeeded')
        UPDATE documents d SET spec_version = COALESCE($4::int, d.spec_version)
          FROM retried WHERE d.id = retried.document_id`,
       [id, model !== undefined, model ?? null, specVersion ?? null],

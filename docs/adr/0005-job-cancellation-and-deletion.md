@@ -29,6 +29,10 @@ their files. The worker owns status transitions while a job runs.
   repeats, so a large first clean-up can't time out mid-way. A cancel also stops a long OCR pass
   at the next page.
 
+- Succeeded jobs can be **re-run**: Retry re-processes them on the latest template version with
+  the selected model, and clears their review (decision, reasons, edits), which belonged to the
+  old extraction. Target files are overwritten when the new result is published (never deleted).
+
 ## Consequences
 - **Publishing cannot be undone by a cancel.** The last cancel check is just before publishing;
   a cancel that lands while files are being written to the final target only changes the status
