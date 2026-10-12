@@ -38,12 +38,24 @@ export function EditorHeader({
   const [confirming, setConfirming] = useState(false);
   const [returnFocus, setReturnFocus] = useState(false);
   const more = useRef<HTMLButtonElement>(null);
-  const confirmButton = useRef<HTMLButtonElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
   const draft = status === 'draft';
   const blocker = publishBlocker(dirty, issues);
 
+  // The menu closes on a click anywhere else (like the job row menus).
   useEffect(() => {
-    if (confirming) confirmButton.current?.focus();
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!anchor.current?.contains(e.target as Node)) setMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menu]);
+
+  // Deleting is irreversible: the confirm opens on Keep, so a stray Enter keeps the draft.
+  useEffect(() => {
+    if (confirming) keepButton.current?.focus();
     else if (returnFocus) {
       more.current?.focus();
       setReturnFocus(false);
@@ -86,7 +98,16 @@ export function EditorHeader({
         </a>
         {draft ? (
           <>
-            <div className="menu-anchor">
+            <div
+              className="menu-anchor"
+              ref={anchor}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && menu) {
+                  setMenu(false);
+                  more.current?.focus();
+                }
+              }}
+            >
               <button
                 ref={more}
                 type="button"
@@ -94,9 +115,6 @@ export function EditorHeader({
                 aria-label="More actions"
                 aria-expanded={menu}
                 onClick={() => setMenu((m) => !m)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setMenu(false);
-                }}
               >
                 <Icon name="more" />
               </button>
@@ -138,7 +156,6 @@ export function EditorHeader({
         <div className="inline-confirm delete-confirm" role="group" aria-label="Confirm delete">
           <span>Delete draft v{version}? This cannot be undone.</span>
           <button
-            ref={confirmButton}
             type="button"
             className="danger-fill"
             onClick={() => {
@@ -149,6 +166,7 @@ export function EditorHeader({
             Delete draft v{version}
           </button>
           <button
+            ref={keepButton}
             type="button"
             onClick={() => {
               setConfirming(false);

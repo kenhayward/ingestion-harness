@@ -355,82 +355,6 @@ export function TemplateEditor({
               </>
             )}
 
-            {tab === 'pipeline' && (
-              <div className="pipeline">
-                <datalist id="model-options">
-                  <option value="default" />
-                  {models.map((m) => (
-                    <option key={m.ref} value={m.ref} />
-                  ))}
-                </datalist>
-                {pipeline.map((step, i) => (
-                  <StepCard
-                    key={i}
-                    index={i}
-                    step={step}
-                    open={openStep === i}
-                    onToggle={() => setOpenStep(openStep === i ? null : i)}
-                    onMove={(delta) => {
-                      const to = i + delta;
-                      if (to < 0 || to >= pipeline.length) return;
-                      update(['pipeline'], moveItem(pipeline, i, delta));
-                      // The open card follows its step; a card swapped past it takes its old place.
-                      if (openStep === i) setOpenStep(to);
-                      else if (openStep === to) setOpenStep(i);
-                    }}
-                    onRemove={() => {
-                      update(['pipeline'], removeAt(pipeline, i));
-                      if (openStep === i) setOpenStep(null);
-                      else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
-                    }}
-                  >
-                    {step.type === 'extract' ? (
-                      <ExtractStep
-                        step={step}
-                        fields={fields.map((f) => f.id)}
-                        tables={tables.map((t) => t.id)}
-                        sections={sections.map((s) => s.id)}
-                        set={(key, v) => update(['pipeline', i, key], v)}
-                        replace={(next) => update(['pipeline', i], next)}
-                      />
-                    ) : (
-                      <CheckStep
-                        step={step}
-                        paths={paths}
-                        set={(key, v) => update(['pipeline', i, key], v)}
-                      />
-                    )}
-                  </StepCard>
-                ))}
-                <button
-                  type="button"
-                  className="add"
-                  onClick={() => {
-                    update(
-                      ['pipeline'],
-                      [...pipeline, { type: 'extract', id: '', fields: [], sections: [] }],
-                    );
-                    setOpenStep(pipeline.length);
-                  }}
-                >
-                  Add extract step
-                </button>
-                <button
-                  type="button"
-                  className="add"
-                  onClick={() => {
-                    update(
-                      ['pipeline'],
-                      [...pipeline, { type: 'check', id: '', values: '', reference: '' }],
-                    );
-                    setOpenStep(pipeline.length);
-                  }}
-                >
-                  Add check step
-                </button>
-              </div>
-            )}
-
             {tab === 'yaml' && (
               <div className="yaml">
                 <label>
@@ -448,6 +372,85 @@ export function TemplateEditor({
               </div>
             )}
           </fieldset>
+          {/* Outside the disabled fieldset: a published version's steps still open (read-only). */}
+          {tab === 'pipeline' && (
+            <div className="pipeline">
+              <datalist id="model-options">
+                <option value="default" />
+                {models.map((m) => (
+                  <option key={m.ref} value={m.ref} />
+                ))}
+              </datalist>
+              {pipeline.map((step, i) => (
+                <StepCard
+                  key={i}
+                  index={i}
+                  step={step}
+                  open={openStep === i}
+                  readOnly={!editable}
+                  onToggle={() => setOpenStep(openStep === i ? null : i)}
+                  onMove={(delta) => {
+                    const to = i + delta;
+                    if (to < 0 || to >= pipeline.length) return;
+                    update(['pipeline'], moveItem(pipeline, i, delta));
+                    // The open card follows its step; a card swapped past it takes its old place.
+                    if (openStep === i) setOpenStep(to);
+                    else if (openStep === to) setOpenStep(i);
+                  }}
+                  onRemove={() => {
+                    update(['pipeline'], removeAt(pipeline, i));
+                    if (openStep === i) setOpenStep(null);
+                    else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
+                  }}
+                >
+                  {step.type === 'extract' ? (
+                    <ExtractStep
+                      step={step}
+                      fields={fields.map((f) => f.id)}
+                      tables={tables.map((t) => t.id)}
+                      sections={sections.map((s) => s.id)}
+                      set={(key, v) => update(['pipeline', i, key], v)}
+                      replace={(next) => update(['pipeline', i], next)}
+                    />
+                  ) : (
+                    <CheckStep
+                      step={step}
+                      paths={paths}
+                      set={(key, v) => update(['pipeline', i, key], v)}
+                    />
+                  )}
+                </StepCard>
+              ))}
+              <button
+                type="button"
+                className="add"
+                disabled={!editable}
+                onClick={() => {
+                  update(
+                    ['pipeline'],
+                    [...pipeline, { type: 'extract', id: '', fields: [], sections: [] }],
+                  );
+                  setOpenStep(pipeline.length);
+                }}
+              >
+                Add extract step
+              </button>
+              <button
+                type="button"
+                className="add"
+                disabled={!editable}
+                onClick={() => {
+                  update(
+                    ['pipeline'],
+                    [...pipeline, { type: 'check', id: '', values: '', reference: '' }],
+                  );
+                  setOpenStep(pipeline.length);
+                }}
+              >
+                Add check step
+              </button>
+            </div>
+          )}
         </div>
         <TestRail api={api} templateId={templateId} version={version} jobs={jobs} />
       </div>

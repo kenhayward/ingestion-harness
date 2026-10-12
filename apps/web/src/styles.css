@@ -710,6 +710,10 @@ td.edited-cell,
 .step-tools {
   display: flex;
   gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 /* Checklists (fields a step fills, sections it reads): checkbox chips */
 fieldset.choice {

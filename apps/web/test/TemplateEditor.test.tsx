@@ -515,3 +515,39 @@ describe('TemplateEditor tabs and step cards', () => {
     });
   });
 });
+
+describe('TemplateEditor review fixes', () => {
+  it('lets a published version open its steps read-only', async () => {
+    setup(view({ ...validDefinition(), version: 1 }, 'published'));
+    await userEvent.click(await tab(/Pipeline/));
+    const head = screen.getByRole('button', { name: /^1 EXTRACT head/ });
+    expect(head).toBeEnabled();
+    await userEvent.click(head);
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    expect(within(step).getByLabelText('Step id')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move step 1 down' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove step 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add extract step' })).toBeDisabled();
+  });
+
+  it('closes More actions on an outside click and on Escape from inside it', async () => {
+    setup(view({ ...validDefinition(), version: 2 }));
+    const more = await screen.findByRole('button', { name: 'More actions' });
+    await userEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(screen.getByRole('heading', { level: 1, name: 'Letter' }));
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(more);
+    screen.getByRole('button', { name: 'Delete draft' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(more).toHaveFocus();
+  });
+
+  it('focuses Keep (not the destructive button) when the delete confirm opens', async () => {
+    setup(view({ ...validDefinition(), version: 2 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }));
+    expect(screen.getByRole('button', { name: 'Keep' })).toHaveFocus();
+  });
+});

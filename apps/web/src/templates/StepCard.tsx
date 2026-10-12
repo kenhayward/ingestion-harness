@@ -10,6 +10,7 @@ export function StepCard({
   index,
   step,
   open,
+  readOnly = false,
   onToggle,
   onMove,
   onRemove,
@@ -19,6 +20,8 @@ export function StepCard({
   index: number;
   step: Record<string, unknown>;
   open: boolean;
+  /** Published version: the card opens, but nothing in it (or its tools) can change. */
+  readOnly?: boolean;
   onToggle: () => void;
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
@@ -38,7 +41,7 @@ export function StepCard({
           <span className="mono step-id">{id}</span>{' '}
           <span className="step-summary muted">{stepSummary(step)}</span>
         </button>
-        <div className="step-tools">
+        <fieldset className="step-tools" disabled={readOnly}>
           <button
             type="button"
             className="icon bordered"
@@ -63,10 +66,10 @@ export function StepCard({
           >
             <Icon name="trash" />
           </button>
-        </div>
+        </fieldset>
       </div>
       {open && (
-        <fieldset className="step-body" aria-label={`Step ${n}`}>
+        <fieldset className="step-body" aria-label={`Step ${n}`} disabled={readOnly}>
           {children}
         </fieldset>
       )}
