@@ -7,6 +7,7 @@ import {
   DRAFT_STAGES,
   DataPolicySchema,
   EVALUATION_MODELS,
+  EVALUATION_SETS,
   DraftResultSchema,
   EMPTY_BRIEF,
   FeedbackBodySchema,
@@ -37,6 +38,7 @@ import {
   type ComparisonView,
   type DraftStage,
   type EvaluationModel,
+  type EvaluationSet,
   type FailureDiff,
   type FeedbackItem,
   type IterationSummary,
@@ -224,6 +226,15 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
     (j) => j.task === 'prepare',
   );
   const records = await app.deps.workbench.listSamples(projectId);
+  // Holdout history: the holdout iterations whose jobs ran this sample's PDF.
+  const holdoutIterations = (await app.deps.workbench.listIterations(projectId)).filter(
+    (i) => i.set === 'holdout',
+  );
+  const shaByJob = new Map(
+    (await app.deps.repo.listProjectRuns(projectId)).map((r) => [r.job.id, r.sha256]),
+  );
+  const holdoutRuns = (sha256: string) =>
+    holdoutIterations.filter((i) => i.jobIds.some((id) => shaByJob.get(id) === sha256)).length;
   return Promise.all(
     records.map(async (record) => ({
       record,
@@ -231,6 +242,7 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         app,
         record,
         prepares.find((j) => j.documentId === record.documentId) ?? null,
+        holdoutRuns(record.sha256),
       ),
     })),
   );
@@ -240,6 +252,7 @@ async function toView(
   app: FastifyInstance,
   s: SampleRecord,
   job: JobSummary | null,
+  holdoutRuns: number,
 ): Promise<SampleView> {
   const state = stateOf(job);
   const triage = state === 'ready' ? await readJson(app, preparedTriageKey(s.sha256)) : null;
@@ -257,7 +270,7 @@ async function toView(
     prepareJobId: job?.id ?? null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
-    holdoutRuns: 0,
+    holdoutRuns,
   };
 }
 
@@ -283,17 +296,25 @@ interface ReferenceEntry {
   draftRun: JobSummary | null;
 }
 
-/** Ready dev samples with their newest reference (by PDF sha256) and newest non-evaluation run. */
-async function referenceRows(app: FastifyInstance, projectId: string): Promise<ReferenceRow[]> {
-  return (await referenceEntries(app, projectId)).map((e) => e.row);
+/**
+ * Ready samples of one set with their newest reference (by PDF sha256) and newest
+ * non-evaluation run.
+ */
+async function referenceRows(
+  app: FastifyInstance,
+  projectId: string,
+  set: EvaluationSet = 'dev',
+): Promise<ReferenceRow[]> {
+  return (await referenceEntries(app, projectId, set)).map((e) => e.row);
 }
 
 async function referenceEntries(
   app: FastifyInstance,
   projectId: string,
+  set: EvaluationSet = 'dev',
 ): Promise<ReferenceEntry[]> {
   const samples = (await sampleViews(app, projectId))
-    .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+    .filter((s) => s.view.role === set && s.view.state === 'ready')
     .map((s) => s.record)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const references = await app.deps.repo.listReferencesWithSha(projectId);
@@ -332,7 +353,7 @@ async function referencesView(
   projectId: string,
   earlier: StageView[],
 ): Promise<StageView> {
-  const entries = await referenceEntries(app, projectId);
+  const entries = await referenceEntries(app, projectId, 'dev');
   const rows = entries.map((e) => e.row);
   const verified = rows.filter((r) => r.reference !== null);
   // Only reference runs (draft model) of samples still without a reference count: a 3a test
@@ -362,8 +383,13 @@ async function allStages(app: FastifyInstance, projectId: string): Promise<Stage
 }
 
 const EvaluateBody = z
-  .object({ model: z.enum(EVALUATION_MODELS).optional(), uncached: z.boolean().optional() })
+  .object({
+    model: z.enum(EVALUATION_MODELS).optional(),
+    uncached: z.boolean().optional(),
+    set: z.enum(EVALUATION_SETS).optional(),
+  })
   .strict();
+const ReferencesQuery = z.object({ set: z.enum(EVALUATION_SETS).optional() });
 const CompareBody = z.object({ uncached: z.boolean().optional() }).strict();
 const IterationParams = z.object({ id: Id, iid: z.string().uuid() });
 const ComparisonParams = z.object({ id: Id, groupId: z.string().uuid() });
@@ -467,13 +493,14 @@ interface EvaluationInputs {
 }
 
 /**
- * Checks that the project, its open draft and the verified dev references are ready for an
- * evaluation. Sends the error reply and returns null when they are not.
+ * Checks that the project, its open draft and the verified references of `set` are ready for
+ * an evaluation. Sends the error reply and returns null when they are not.
  */
 async function evaluationInputs(
   app: FastifyInstance,
   projectId: string,
   reply: FastifyReply,
+  set: EvaluationSet = 'dev',
 ): Promise<EvaluationInputs | null> {
   const { workbench, templates } = app.deps;
   const project = await workbench.getProject(projectId);
@@ -494,10 +521,13 @@ async function evaluationInputs(
     await reply.code(400).send({ error: 'the draft is not valid', issues });
     return null;
   }
-  const rows = (await referenceRows(app, projectId)).filter((r) => r.reference !== null);
+  const rows = (await referenceRows(app, projectId, set)).filter((r) => r.reference !== null);
   if (!rows.length) {
     await reply.code(409).send({
-      error: 'no verified references for the dev samples; verify some on the References tab first',
+      error:
+        set === 'dev'
+          ? 'no verified references for the dev samples; verify some on the References tab first'
+          : 'no verified references for the holdout samples; verify them on the References tab first',
     });
     return null;
   }
@@ -506,19 +536,25 @@ async function evaluationInputs(
 }
 
 /**
- * Starts an evaluation of the open draft against the verified dev references: one job per
- * reference, recorded as an iteration.
+ * Starts an evaluation of the open draft against the verified references of `options.set`
+ * (the rows `evaluationInputs` gathered for that set): one job per reference, recorded as an
+ * iteration of that set.
  */
 async function startIteration(
   app: FastifyInstance,
   req: FastifyRequest<{ Params: ProjectParams }>,
   inputs: EvaluationInputs,
-  options: { model: EvaluationModel | null; uncached: boolean; groupId: string | null },
+  options: {
+    set: EvaluationSet;
+    model: EvaluationModel | null;
+    uncached: boolean;
+    groupId: string | null;
+  },
 ): Promise<IterationRecord> {
   const { workbench } = app.deps;
   const projectId = req.params.id;
   const { project, draft, record, rows, samples } = inputs;
-  const { model, uncached, groupId } = options;
+  const { set, model, uncached, groupId } = options;
   const jobs = await Promise.all(
     rows.map((row) =>
       app.deps.repo.createWorkbenchJob(
@@ -539,7 +575,7 @@ async function startIteration(
     templateVersion: draft,
     definition: record.definition,
     briefVersion: brief?.version ?? null,
-    set: 'dev',
+    set,
     model,
     jobIds: jobs.map((j) => j.id),
     groupId,
@@ -550,6 +586,7 @@ async function startIteration(
       projectId,
       iteration: iteration.id,
       version: draft,
+      set,
       model,
       uncached,
       groupId,
@@ -663,7 +700,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         role: role.data,
         addedForVersion: version,
       });
-      return reply.code(201).send(await toView(app, record, job));
+      return reply.code(201).send(await toView(app, record, job, 0));
     } catch (err) {
       if (err instanceof WorkbenchConflictError)
         return reply.code(409).send({ error: err.message });
@@ -850,7 +887,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     }
     const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const entries = await referenceEntries(app, projectId);
+    const entries = await referenceEntries(app, projectId, 'dev');
     if (!entries.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
     const unverified = entries.filter((e) => e.row.reference === null);
     if (!unverified.length) {
@@ -1063,8 +1100,65 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (!(await workbench.getProject(req.params.id))) {
       return reply.code(404).send({ error: 'project not found' });
     }
-    return referenceRows(app, req.params.id);
+    const query = ReferencesQuery.safeParse(req.query ?? {});
+    if (!query.success) return reply.code(400).send({ error: query.error.issues });
+    return referenceRows(app, req.params.id, query.data.set ?? 'dev');
   });
+
+  /**
+   * Holdout references: run the template's own models (no override) on every ready holdout
+   * sample that has no reference and no active run, forcing review so each can be verified.
+   * Not a stage: it has no stage state and is not blocked by the stage order.
+   */
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/holdout/reference-runs',
+    async (req, reply) => {
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft; start the next version on the Template tab' });
+      }
+      const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const holdout = await referenceEntries(app, projectId, 'holdout');
+      if (!holdout.length) {
+        return reply.code(409).send({ error: 'no prepared holdout samples to run' });
+      }
+      const unverified = holdout.filter((e) => e.row.reference === null);
+      if (!unverified.length) {
+        return reply.code(409).send({ error: 'every holdout sample already has a reference' });
+      }
+      const todo = unverified
+        .filter((e) => !(e.row.run && activeJob(e.row.run.status)))
+        .map((e) => e.row);
+      if (!todo.length) {
+        return reply.code(409).send({ error: 'reference runs are already running' });
+      }
+      const records = new Map(
+        (await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]),
+      );
+      const jobs = await Promise.all(
+        todo.map((row) =>
+          app.deps.repo.createWorkbenchJob(
+            sampleDocument(records.get(row.sampleId)!, projectId, draft),
+            {
+              projectId,
+              task: 'process',
+              params: { dataPolicy: project.dataPolicy, forceReview: true },
+              // The template's own models: drafting never sees holdout, so no draft model.
+              modelOverride: null,
+            },
+          ),
+        ),
+      );
+      req.log.info({ projectId, version: draft, jobs: jobs.length }, 'holdout reference runs');
+      return reply.code(201).send({ jobs });
+    },
+  );
 
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
@@ -1186,9 +1280,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/evaluations', async (req, reply) => {
     const body = EvaluateBody.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const inputs = await evaluationInputs(app, req.params.id, reply);
+    const set = body.data.set ?? 'dev';
+    const inputs = await evaluationInputs(app, req.params.id, reply, set);
     if (!inputs) return reply;
     const iteration = await startIteration(app, req, inputs, {
+      set,
       model: body.data.model ?? null,
       uncached: body.data.uncached ?? false,
       groupId: null,
@@ -1201,13 +1297,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const body = CompareBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
-      const inputs = await evaluationInputs(app, req.params.id, reply);
+      // Model comparison stays dev-only: it informs drafting, which never sees holdout.
+      const inputs = await evaluationInputs(app, req.params.id, reply, 'dev');
       if (!inputs) return reply;
       const groupId = randomUUID();
       const records: IterationRecord[] = [];
       for (const model of EVALUATION_MODELS) {
         records.push(
           await startIteration(app, req, inputs, {
+            set: 'dev',
             model,
             uncached: body.data.uncached ?? false,
             groupId,
