@@ -310,6 +310,29 @@ describe('ReviewPage', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it('approves a test run awaiting review (a workbench reference run)', async () => {
+    const data = reviewData();
+    const { api } = setup({
+      getReview: vi.fn(async () => ({ ...data, job: { ...data.job, test: true } })),
+    });
+    await screen.findByRole('heading', { name: /scan\.pdf/ });
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and publish' }));
+    expect(api.approve).toHaveBeenCalledWith(JOB_ID, {});
+  });
+
+  it('saves a finished test run as a reference', async () => {
+    const data = reviewData();
+    const { api } = setup({
+      getReview: vi.fn(async () => ({
+        ...data,
+        job: { ...data.job, test: true, status: 'succeeded' },
+      })),
+    });
+    await userEvent.type(await screen.findByLabelText('Reference name'), 'acme-2023');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as reference' }));
+    expect(api.createReference).toHaveBeenCalledWith('tdemo', JOB_ID, 'acme-2023');
+  });
+
   it('saves a finished document as a reference for its document type', async () => {
     const data = reviewData();
     const { api } = setup({

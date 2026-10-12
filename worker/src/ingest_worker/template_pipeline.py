@@ -111,9 +111,16 @@ def process_template_job(
 
 
 def publish_template_job(
-    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: LoadedTemplate
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    loaded: LoadedTemplate,
+    *,
+    deliver: bool = True,
 ) -> list[RenderedOutput]:
-    """Apply the reviewer's edits to the draft (never modified) and deliver to the target."""
+    """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
+    the runs bucket and, when `deliver`, publish it to the final target. Approved test runs
+    (workbench references) pass `deliver=False`: reviewed, never delivered."""
     template = loaded.template
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     draft = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
@@ -139,6 +146,9 @@ def publish_template_job(
         json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
         "application/json",
     )
+    if not deliver:
+        queue.event(job.id, "info", "reviewed", {"edits": len(edits)})
+        return []
     published = publish_outputs(deps, render_document(template, document))
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published

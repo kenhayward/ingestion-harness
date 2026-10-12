@@ -231,3 +231,59 @@ def test_approval_publishes_the_draft_with_edits_applied(tmp_path: Path) -> None
     assert drafts_after == {k: v for k, v in drafts_before.items() if k[0] != "runs"}
     # the LLM is not called again on publish
     assert len(deps.models.resolve("default")[0].calls) == 4  # type: ignore[attr-defined]
+
+
+# --- test runs (workbench references) ---------------------------------------------------------
+
+FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save as a reference"
+
+
+def test_force_review_stops_a_clean_test_run_for_review(tmp_path: Path) -> None:
+    deps, target = make_deps(tmp_path, {**TEMPLATE, "review": {"required": "never"}})
+    job = replace(JOB, test=True, params={"dataPolicy": "local", "forceReview": True})
+    queue = FakeQueue(jobs=[job])
+    run_once(queue, deps, "w1")
+    [(job_id, _, reasons)] = queue.awaiting
+    assert job_id == "job-1" and reasons == [FORCE_REVIEW_REASON]
+    assert not queue.completed and not queue.published and not target.objects
+
+
+def test_force_review_keeps_the_runs_own_review_reasons(tmp_path: Path) -> None:
+    deps, _ = make_deps(tmp_path, TEMPLATE)  # 'Complies' is an issue -> review
+    queue = FakeQueue(jobs=[replace(JOB, test=True, params={"forceReview": True})])
+    run_once(queue, deps, "w1")
+    [(_, _, reasons)] = queue.awaiting
+    assert reasons == ["1 normalisation issue(s)"]
+
+
+def test_approving_a_test_run_writes_the_reviewed_document_but_delivers_nothing(
+    tmp_path: Path,
+) -> None:
+    deps, target = make_deps(tmp_path, TEMPLATE)
+    test_job = replace(JOB, test=True)
+    queue = FakeQueue(jobs=[test_job])
+    run_once(queue, deps, "w1")
+    assert queue.awaiting
+
+    queue.jobs = [replace(test_job, task="publish")]
+    queue.edits["job-1"] = [
+        {
+            "field": "executed_on",
+            "table": None,
+            "row": None,
+            "column": None,
+            "value": "17/02/2023",
+            "editor": "kh",
+            "reason": "misread",
+            "at": "2026-10-09T10:00:00Z",
+        }
+    ]
+    queue.decisions["job-1"] = {"reviewer": "kh", "note": None, "reviewed_at": "2026-10-09"}
+    run_once(queue, deps, "w1")
+
+    assert [job_id for job_id, _ in queue.completed] == ["job-1"]
+    assert not queue.reviewed and not queue.failed
+    assert not queue.published and not target.objects
+    reviewed = json.loads(deps.store.get("runs", "job-1/reviewed-document.json"))
+    assert reviewed["review"]["decision"] == "approved"
+    assert reviewed["fields"]["executed_on"]["value"] == "2023-02-17"

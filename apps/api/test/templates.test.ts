@@ -170,7 +170,7 @@ describe('uploads against database templates', () => {
     expect(res.json()).toMatchObject({ specVersion: 1, test: false });
   });
 
-  it('runs drafts only as test runs, which can never be approved', async () => {
+  it('runs drafts only as test runs, whose approval only finishes review', async () => {
     const { app, repo, templates } = await testApp();
     await templates.create('letter', 2, definition('letter', 2), 'draft');
     const upload = (fields: Record<string, string>) =>
@@ -185,9 +185,11 @@ describe('uploads against database templates', () => {
     expect(test.json()).toMatchObject({ specVersion: 2, test: true });
 
     repo.jobs.set(test.json().id, { ...repo.jobs.get(test.json().id)!, status: 'awaiting_review' });
+    // Approving a test run (a workbench reference run) is allowed: the publish task writes the
+    // reviewed document but never delivers a test run to the target (worker publish_job).
     const approve = await app.inject(json('POST', `/api/jobs/${test.json().id}/approve`, {}));
-    expect(approve.statusCode).toBe(409);
-    expect(approve.json().error).toContain('test runs are never published');
+    expect(approve.statusCode).toBe(200);
+    expect(approve.json()).toMatchObject({ test: true, status: 'queued', task: 'publish' });
   });
 
   it('lists database templates among the document types offered for upload', async () => {

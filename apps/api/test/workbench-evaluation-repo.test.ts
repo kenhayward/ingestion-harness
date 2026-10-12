@@ -49,6 +49,18 @@ describe('evaluation persistence', () => {
     expect(await repo.listProjectRuns('letter')).toEqual([]);
   });
 
+  it('keeps listing a run after review re-runs a step or approves it', async () => {
+    const { repo } = await setup();
+    const run = await repo.createWorkbenchJob(doc('d1', 'sha-a'), {
+      projectId: 'letter',
+      task: 'process',
+    });
+    for (const task of ['rerun', 'publish'] as const) {
+      repo.jobs.set(run.id, { ...repo.jobs.get(run.id)!, task });
+      expect((await repo.listProjectRuns('letter')).map((r) => r.job.id)).toEqual([run.id]);
+    }
+  });
+
   it('lists references with the sha of their document, newest first', async () => {
     const { repo } = await setup();
     const job = await repo.createWorkbenchJob(doc('d1', 'sha-b'), {

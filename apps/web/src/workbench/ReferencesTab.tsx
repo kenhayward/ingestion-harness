@@ -83,7 +83,9 @@ export function ReferencesTab({
   return (
     <div className="references-tab">
       <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
-      <p className="muted">Open each run in Review, correct the values, and Save as reference.</p>
+      <p className="muted">
+        Open each run in Review, correct the values, approve, then Save as reference.
+      </p>
       <div className="actions">
         <button
           type="button"

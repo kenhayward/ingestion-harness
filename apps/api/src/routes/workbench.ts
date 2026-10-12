@@ -36,6 +36,7 @@ import {
   type IterationSummary,
   type IterationView,
   type JobDetail,
+  type JobStatus,
   type JobSummary,
   type ProjectSummary,
   type ProjectView,
@@ -266,8 +267,23 @@ function sampleDocument(sample: SampleRecord, projectId: string, version: number
   };
 }
 
+const activeJob = (status: JobStatus) => status === 'queued' || status === 'running';
+
+/** A reference row plus the sample's newest reference run (draft model), for stage state. */
+interface ReferenceEntry {
+  row: ReferenceRow;
+  draftRun: JobSummary | null;
+}
+
 /** Ready dev samples with their newest reference (by PDF sha256) and newest non-evaluation run. */
 async function referenceRows(app: FastifyInstance, projectId: string): Promise<ReferenceRow[]> {
+  return (await referenceEntries(app, projectId)).map((e) => e.row);
+}
+
+async function referenceEntries(
+  app: FastifyInstance,
+  projectId: string,
+): Promise<ReferenceEntry[]> {
   const samples = (await sampleViews(app, projectId))
     .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
     .map((s) => s.record)
@@ -279,20 +295,25 @@ async function referenceRows(app: FastifyInstance, projectId: string): Promise<R
   return samples.map((s) => {
     const reference = references.find((r) => r.sha256 === s.sha256) ?? null;
     const run = runs.find((r) => r.sha256 === s.sha256)?.job ?? null;
+    const draftRun =
+      runs.find((r) => r.sha256 === s.sha256 && r.job.modelOverride === 'draft')?.job ?? null;
     return {
-      sampleId: s.id,
-      filename: s.filename,
-      sha256: s.sha256,
-      reference: reference && {
-        id: reference.id,
-        name: reference.name,
-        createdAt: reference.createdAt,
-      },
-      run: run && {
-        jobId: run.id,
-        status: run.status,
-        error: run.error,
-        modelOverride: run.modelOverride,
+      draftRun,
+      row: {
+        sampleId: s.id,
+        filename: s.filename,
+        sha256: s.sha256,
+        reference: reference && {
+          id: reference.id,
+          name: reference.name,
+          createdAt: reference.createdAt,
+        },
+        run: run && {
+          jobId: run.id,
+          status: run.status,
+          error: run.error,
+          modelOverride: run.modelOverride,
+        },
       },
     };
   });
@@ -303,8 +324,14 @@ async function referencesView(
   projectId: string,
   earlier: StageView[],
 ): Promise<StageView> {
-  const rows = await referenceRows(app, projectId);
+  const entries = await referenceEntries(app, projectId);
+  const rows = entries.map((e) => e.row);
   const verified = rows.filter((r) => r.reference !== null);
+  // Only reference runs (draft model) of samples still without a reference count: a 3a test
+  // run or an old run of a verified sample says nothing about this stage.
+  const referenceRuns = entries
+    .filter((e) => e.row.reference === null && e.draftRun !== null)
+    .map((e) => e.draftRun!);
   const skips = await app.deps.workbench.listSkips(projectId);
   return referencesStage(earlier, {
     devSamples: rows.length,
@@ -314,10 +341,8 @@ async function referencesView(
         .map((r) => r.reference!.createdAt)
         .sort()
         .at(-1) ?? null,
-    running: rows.some(
-      (r) => r.run !== null && (r.run.status === 'queued' || r.run.status === 'running'),
-    ),
-    hasRuns: rows.some((r) => r.run !== null),
+    running: referenceRuns.some((r) => activeJob(r.status)),
+    hasRuns: referenceRuns.length > 0,
     skippedAt: skips.find((s) => s.stage === 'references')?.skippedAt ?? null,
   });
 }
@@ -689,9 +714,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     }
     const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const todo = (await referenceRows(app, projectId)).filter((r) => r.reference === null);
-    if (!todo.length) {
+    const entries = await referenceEntries(app, projectId);
+    if (!entries.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+    const unverified = entries.filter((e) => e.row.reference === null);
+    if (!unverified.length) {
       return reply.code(409).send({ error: 'every dev sample already has a reference' });
+    }
+    const todo = unverified
+      .filter((e) => !(e.draftRun && activeJob(e.draftRun.status)))
+      .map((e) => e.row);
+    if (!todo.length) {
+      return reply.code(409).send({ error: 'reference runs are already running' });
     }
     const records = new Map(
       (await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]),
@@ -703,7 +736,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           {
             projectId,
             task: 'process',
-            params: { dataPolicy: project.dataPolicy },
+            // forceReview: the worker stops every reference run for review, so it can be
+            // verified, approved and saved as a reference.
+            params: { dataPolicy: project.dataPolicy, forceReview: true },
             modelOverride: 'draft',
           },
         ),

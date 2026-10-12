@@ -122,7 +122,10 @@ export interface IngestionRepo {
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
   /** Jobs of a workbench project (prepare jobs and test runs), newest first. */
   listProjectJobs(projectId: string): Promise<JobSummary[]>;
-  /** The project's `process` jobs (test runs), newest first, each with its document's sha256. */
+  /**
+   * The project's test runs (`process` jobs, still listed once review moves them to `rerun` or
+   * `publish`), newest first, each with its document's sha256.
+   */
   listProjectRuns(projectId: string): Promise<{ job: JobSummary; sha256: string }[]>;
   /**
    * Queue a segmentation preview for a project (no document). Earlier segment jobs of the project

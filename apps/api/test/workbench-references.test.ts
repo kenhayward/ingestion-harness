@@ -73,7 +73,7 @@ describe('references stage', () => {
       referenceId: string | null;
     }[];
     expect(job).toMatchObject({ modelOverride: 'draft', referenceId: null });
-    expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local' });
+    expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local', forceReview: true });
     expect((await stage())!.state).toBe('running');
     expect(await rows()).toEqual([
       {
@@ -104,6 +104,72 @@ describe('references stage', () => {
     const again = await propose();
     expect(again.statusCode).toBe(409);
     expect(again.json().error).toBe('every dev sample already has a reference');
+  });
+
+  it('refuses with no prepared dev samples, distinct from every sample having a reference', async () => {
+    const { add, skipAll, propose } = await project();
+    await add(1, 'holdout');
+    await skipAll();
+    const res = await propose();
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('no prepared dev samples to run');
+  });
+
+  it('skips samples whose draft run is still active, and refuses when all are', async () => {
+    const { add, skipAll, propose, repo } = await project();
+    await add(1);
+    await skipAll();
+    const [first] = (await propose()).json().jobs as { id: string; documentId: string }[];
+    const again = await propose();
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('reference runs are already running');
+
+    repo.jobs.set(first!.id, { ...repo.jobs.get(first!.id)!, status: 'running' });
+    const s2 = await add(2);
+    const res = await propose();
+    expect(res.statusCode).toBe(201);
+    const jobs = res.json().jobs as { documentId: string }[];
+    expect(jobs.map((j) => repo.documents.get(j.documentId)!.sha256)).toEqual([s2.sha256]);
+
+    // a finished draft run is run again (the reviewer has not saved a reference yet)
+    repo.jobs.set(first!.id, { ...repo.jobs.get(first!.id)!, status: 'failed' });
+    for (const j of res.json().jobs as { id: string }[]) {
+      repo.jobs.set(j.id, { ...repo.jobs.get(j.id)!, status: 'succeeded' });
+    }
+    expect((await propose()).json().jobs).toHaveLength(2);
+  });
+
+  it('only counts draft-model runs of samples without a reference', async () => {
+    const { app, add, skipAll, stage, repo } = await project();
+    await add(1);
+    await skipAll();
+    const testRun = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/test-runs',
+      payload: {},
+    });
+    expect(testRun.statusCode).toBe(201);
+    const [job] = testRun.json().jobs as { id: string; modelOverride: string | null }[];
+    expect(job!.modelOverride).toBeNull();
+    expect((await stage())!.state).toBe('pending'); // queued 3a run: not a reference run
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'succeeded' });
+    expect((await stage())!.state).toBe('pending');
+  });
+
+  it('keeps showing a reference run once it is approved', async () => {
+    const { app, add, skipAll, propose, repo, rows } = await project();
+    await add(1);
+    await skipAll();
+    const [job] = (await propose()).json().jobs as { id: string }[];
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'awaiting_review' });
+    const approve = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job!.id}/approve`,
+      payload: {},
+    });
+    expect(approve.statusCode).toBe(200);
+    expect((await rows())[0]!.run).toMatchObject({ jobId: job!.id, status: 'queued' });
+    expect((await propose()).json().error).toBe('reference runs are already running');
   });
 
   it('can be skipped', async () => {

@@ -31,6 +31,8 @@ import {
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
+/** Tasks a test run moves through: listed as one run by listProjectRuns. */
+const RUN_TASKS: JobSummary['task'][] = ['process', 'rerun', 'publish'];
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
 export class MemoryRepo implements IngestionRepo {
@@ -360,7 +362,7 @@ export class MemoryRepo implements IngestionRepo {
   async listProjectRuns(projectId: string) {
     // Map iteration is insertion order, which is reliable where timestamps can tie.
     return [...this.jobs.values()]
-      .filter((j) => j.projectId === projectId && j.task === 'process')
+      .filter((j) => j.projectId === projectId && RUN_TASKS.includes(j.task))
       .reverse()
       .map((job) => ({ job, sha256: this.documents.get(job.documentId)!.sha256 }));
   }

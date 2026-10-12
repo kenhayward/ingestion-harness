@@ -21,6 +21,15 @@ function tab(overrides = {}, hasDraft = true) {
 }
 
 describe('ReferencesTab', () => {
+  it('explains how a run becomes a reference', async () => {
+    tab();
+    expect(
+      await screen.findByText(
+        'Open each run in Review, correct the values, approve, then Save as reference.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('lists each dev sample with its run and reference', async () => {
     tab({
       listReferenceRows: vi.fn(async () => [

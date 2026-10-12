@@ -270,7 +270,7 @@ export class PgRepo implements IngestionRepo {
 
   async listProjectRuns(projectId: string): Promise<{ job: JobSummary; sha256: string }[]> {
     const { rows } = await this.pool.query<JobRow & { sha256: string }>(
-      `SELECT jb.*, d.sha256 FROM (${JOB_SELECT} WHERE j.project_id = $1 AND j.task = 'process') jb
+      `SELECT jb.*, d.sha256 FROM (${JOB_SELECT} WHERE j.project_id = $1 AND j.task IN ('process', 'rerun', 'publish')) jb
          JOIN documents d ON d.id = jb.document_id
         ORDER BY jb.created_at DESC, jb.id DESC`,
       [projectId],
