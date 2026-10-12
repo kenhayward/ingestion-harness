@@ -8,6 +8,8 @@
  * against the score (it measures agreement with the reference, in both directions).
  */
 
+import type { Comparison, FieldComparison, TableComparison } from '@ih/shared';
+
 export interface Expected {
   fields: Record<string, unknown>;
   tables: Record<string, Record<string, unknown>[]>;
@@ -19,40 +21,7 @@ export interface RunDocument {
   tables: Record<string, Record<string, unknown>[] | undefined>;
 }
 
-export interface FieldComparison {
-  id: string;
-  expected: unknown;
-  actual: unknown;
-  match: boolean;
-}
-
-export interface TableComparison {
-  id: string;
-  expected: number;
-  actual: number;
-  /** Rows identical to their expected counterpart. */
-  matched: number;
-  /** Expected rows with no counterpart sharing any cell. */
-  missing: Record<string, unknown>[];
-  /** Actual rows not aligned to any expected row. */
-  extra: Record<string, unknown>[];
-  /** Aligned rows that differ, with the differing columns. */
-  changed: {
-    expected: Record<string, unknown>;
-    actual: Record<string, unknown>;
-    columns: string[];
-  }[];
-  /** Equal cells / all cells considered (aligned rows, missing rows, extra rows). */
-  cells: number;
-  cellsTotal: number;
-}
-
-export interface Comparison {
-  /** (matched fields + equal cells) / (fields + all cells considered); 1 = identical. */
-  score: number;
-  fields: FieldComparison[];
-  tables: TableComparison[];
-}
+export type { Comparison, FieldComparison, TableComparison };
 
 export function expectedFromDocument(doc: RunDocument): Expected {
   return {
@@ -102,6 +71,11 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       changed: [],
       cells: 0,
       cellsTotal: 0,
+      columns: {},
+    };
+    const count = (column: string, equal: boolean) => {
+      const c = result.columns[column] ?? { matched: 0, total: 0 };
+      result.columns[column] = { matched: c.matched + (equal ? 1 : 0), total: c.total + 1 };
     };
     for (const row of rows) {
       let best = -1;
@@ -116,6 +90,7 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       if (best < 0) {
         result.missing.push(row);
         result.cellsTotal += Object.keys(row).length;
+        for (const column of Object.keys(row)) count(column, false);
         continue;
       }
       used.add(best);
@@ -124,6 +99,7 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       const differing = columns.filter((c) => key(row[c]) !== key(counterpart[c]));
       result.cells += columns.length - differing.length;
       result.cellsTotal += columns.length;
+      for (const column of columns) count(column, !differing.includes(column));
       if (differing.length)
         result.changed.push({ expected: row, actual: counterpart, columns: differing });
       else result.matched += 1;
@@ -132,6 +108,7 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       if (used.has(i)) return;
       result.extra.push(candidate);
       result.cellsTotal += Object.keys(candidate).length;
+      for (const column of Object.keys(candidate)) count(column, false);
     });
     return result;
   });

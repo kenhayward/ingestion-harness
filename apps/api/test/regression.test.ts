@@ -54,6 +54,44 @@ describe('compareToReference', () => {
     });
   });
 
+  it('counts table cells per column, so one wrong cell charges one column', () => {
+    const [table] = compareToReference(
+      {
+        fields: {},
+        tables: {
+          items: [
+            { name: 'Bolt', qty: '2' },
+            { name: 'Nut', qty: '5' },
+          ],
+        },
+      },
+      {
+        fields: {},
+        tables: {
+          items: [
+            { name: 'Nut', qty: '5' },
+            { name: 'Bolt', qty: '3' },
+          ],
+        },
+      },
+    ).tables;
+    expect(table!.columns).toEqual({
+      name: { matched: 2, total: 2 },
+      qty: { matched: 1, total: 2 },
+    });
+  });
+
+  it('charges every column of missing and extra rows', () => {
+    const [table] = compareToReference(
+      { fields: {}, tables: { items: [{ name: 'Bolt', qty: '2' }] } },
+      { fields: {}, tables: { items: [{ name: 'Washer', qty: '9' }] } },
+    ).tables;
+    expect(table!.columns).toEqual({
+      name: { matched: 0, total: 2 },
+      qty: { matched: 0, total: 2 },
+    });
+  });
+
   it('aligns rows and gives partial credit per cell', () => {
     const actual = {
       fields: {
