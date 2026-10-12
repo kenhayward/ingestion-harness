@@ -189,11 +189,14 @@ export class PgRepo implements IngestionRepo {
     });
   }
 
-  async createWorkbenchJob(doc: NewDocument, { projectId, task, params }: WorkbenchJobOptions) {
+  async createWorkbenchJob(
+    doc: NewDocument,
+    { projectId, task, params, referenceId, modelOverride }: WorkbenchJobOptions,
+  ) {
     return this.insertDocumentAndJob(doc, {
-      modelOverride: null,
+      modelOverride: modelOverride ?? null,
       test: true,
-      referenceId: null,
+      referenceId: referenceId ?? null,
       projectId,
       task,
       priority: WORKBENCH_PRIORITY,
@@ -263,6 +266,16 @@ export class PgRepo implements IngestionRepo {
       [projectId],
     );
     return rows.map(toSummary);
+  }
+
+  async listProjectRuns(projectId: string): Promise<{ job: JobSummary; sha256: string }[]> {
+    const { rows } = await this.pool.query<JobRow & { sha256: string }>(
+      `SELECT jb.*, d.sha256 FROM (${JOB_SELECT} WHERE j.project_id = $1 AND j.task = 'process') jb
+         JOIN documents d ON d.id = jb.document_id
+        ORDER BY jb.created_at DESC, jb.id DESC`,
+      [projectId],
+    );
+    return rows.map((r) => ({ job: toSummary(r), sha256: r.sha256 }));
   }
 
   private async insertDocumentAndJob(
@@ -630,6 +643,15 @@ export class PgRepo implements IngestionRepo {
       [templateId],
     );
     return rows.map(toReference);
+  }
+
+  async listReferencesWithSha(templateId: string) {
+    const { rows } = await this.pool.query<ReferenceRow & { sha256: string }>(
+      `SELECT r.*, d.sha256 FROM template_references r JOIN documents d ON d.id = r.document_id
+        WHERE r.template_id = $1 ORDER BY r.created_at DESC, r.id DESC`,
+      [templateId],
+    );
+    return rows.map((r) => ({ ...toReference(r), sha256: r.sha256 }));
   }
 
   async deleteReference(templateId: string, id: string): Promise<boolean> {

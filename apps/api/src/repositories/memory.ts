@@ -94,8 +94,16 @@ export class MemoryRepo implements IngestionRepo {
     return job;
   }
 
-  async createWorkbenchJob(doc: NewDocument, { projectId, task, params }: WorkbenchJobOptions) {
-    const job = await this.createDocumentAndJob(doc, null, true);
+  async createWorkbenchJob(
+    doc: NewDocument,
+    { projectId, task, params, referenceId, modelOverride }: WorkbenchJobOptions,
+  ) {
+    const job = await this.createDocumentAndJob(
+      doc,
+      modelOverride ?? null,
+      true,
+      referenceId ?? null,
+    );
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
     if (params) this.jobParams.set(job.id, params);
     return this.update(job.id, { projectId, task });
@@ -337,6 +345,20 @@ export class MemoryRepo implements IngestionRepo {
 
   async listModels(): Promise<ModelInfo[]> {
     return this.models;
+  }
+
+  async listProjectRuns(projectId: string) {
+    // Map iteration is insertion order, which is reliable where timestamps can tie.
+    return [...this.jobs.values()]
+      .filter((j) => j.projectId === projectId && j.task === 'process')
+      .reverse()
+      .map((job) => ({ job, sha256: this.documents.get(job.documentId)!.sha256 }));
+  }
+
+  async listReferencesWithSha(templateId: string) {
+    return (await this.listReferences(templateId))
+      .reverse()
+      .map((r) => ({ ...r, sha256: this.documents.get(r.documentId)!.sha256 }));
   }
 
   async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
