@@ -177,7 +177,7 @@ def build_context(
         if failures_from is not None:
             header = (
                 f'<evaluation_failures templateVersion="{failures_from.template_version}" '
-                f'model="{failures_from.model or "default"}">'
+                f'model="{failures_from.model or "template"}">'
             )
         blocks.append(
             f"{header}\n"

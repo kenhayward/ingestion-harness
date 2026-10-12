@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   draftingKey,
   outputKey,
@@ -174,6 +174,27 @@ describe('feedback', () => {
     expect(
       (await post({ target: 'field', targetId: 'sender', body: 'x', sampleId: 'nope' })).statusCode,
     ).toBe(400);
+  });
+
+  it('only refers to dev iterations', async () => {
+    const { app, workbench } = await project();
+    // The schema allows holdout iterations (eval_set); feedback must never point at one.
+    const holdout = await workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: {},
+      briefVersion: null,
+      set: 'holdout' as unknown as 'dev', // not producible through the routes yet
+      model: null,
+      jobIds: [],
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/feedback',
+      payload: { target: 'field', targetId: 'sender', body: 'x', iterationId: holdout.id },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('feedback can only refer to dev iterations');
   });
 
   it('records the iteration it refers to and lists newest first', async () => {
@@ -355,6 +376,76 @@ describe('revise', () => {
     });
     expect((await decide(second.id, { decision: 'accepted', changes: [0] })).statusCode).toBe(200);
     expect((await open()).resolvedBy).toBe(second.id);
+  });
+
+  it('keeps its feedback open when the draft closed before the accept', async () => {
+    const { app, start, feedback, finishDraft, decide, templates } = await project();
+    const f = await feedback({ target: 'field', targetId: 'sender', body: 'Describe it' });
+    const { id } = (await start('revise')).json();
+    await finishDraft(id, 'revise', {
+      notes: '',
+      changes: [
+        {
+          op: 'putField',
+          field: { id: 'sender', type: 'text', description: 'Who' },
+          reason: 'feedback',
+        },
+      ],
+    });
+    // Published between the version check and the write: updateDraft writes nothing.
+    vi.spyOn(templates, 'updateDraft').mockResolvedValueOnce(null);
+    const res = await decide(id, { decision: 'accepted', changes: [0] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(
+      'the draft is no longer open; start the next version and re-run the stage',
+    );
+    const items = (
+      await app.inject('/api/workbench/projects/letter/feedback')
+    ).json() as FeedbackItem[];
+    expect(items.find((x) => x.id === f.id)!.resolvedBy).toBeNull();
+  });
+
+  it('prefers failures from the template run over a later model comparison', async () => {
+    const ctx = await project();
+    const { app, start, feedback, repo, add, verify, evaluate, finish } = ctx;
+    await verify(await add(1), 'Acme');
+    await evaluate();
+    const evalJobs = async () =>
+      (await repo.listProjectRuns('letter')).filter((r) => r.job.referenceId).map((r) => r.job);
+    const own = await evalJobs();
+    for (const job of own) await finish(job.id, 'Own');
+    await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/evaluations/compare' });
+    const ownIds = new Set(own.map((j) => j.id));
+    for (const job of await evalJobs()) if (!ownIds.has(job.id)) await finish(job.id, 'Compared');
+    await feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const params = paramsOf(ctx, (await start('revise')).json().id);
+    expect((params.failures as { fields: { actual: unknown }[] }[])[0]!.fields[0]!.actual).toBe(
+      'Own',
+    );
+    expect(params.failuresFrom).toEqual({ templateVersion: 1, model: null });
+  });
+
+  it('falls back to the latest complete comparison member and names its model', async () => {
+    const ctx = await project();
+    const { app, start, feedback, repo, add, verify, finish, workbench } = ctx;
+    await verify(await add(1), 'Acme');
+    await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/evaluations/compare' });
+    for (const r of await repo.listProjectRuns('letter')) {
+      if (r.job.referenceId) await finish(r.job.id, 'Compared');
+    }
+    await feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const params = paramsOf(ctx, (await start('revise')).json().id);
+    const [latest] = await workbench.listIterations('letter');
+    expect(latest!.groupId).not.toBeNull();
+    expect(params.failuresFrom).toEqual({ templateVersion: 1, model: latest!.model });
+    expect((params.failures as unknown[]).length).toBe(1);
+  });
+
+  it('sends no failuresFrom without a complete evaluation', async () => {
+    const ctx = await project();
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(params).not.toHaveProperty('failuresFrom');
   });
 
   it('cannot be skipped', async () => {

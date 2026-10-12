@@ -579,16 +579,20 @@ def test_revise_sends_the_lowest_scoring_failures_and_logs_every_sample_referenc
     assert '"sample": "8.pdf"' in prompt and '"sample": "0.pdf"' not in prompt
 
 
+@pytest.mark.parametrize(
+    ("model", "shown"),
+    [("fast", "fast"), (None, "template")],  # None: the template's own step models
+)
 def test_revise_failures_header_names_the_iteration_they_came_from(
-    fixture_specs_dir: Path,
+    fixture_specs_dir: Path, model: str | None, shown: str
 ) -> None:
     failures = [{"sample": "a.pdf", "score": 0.5, "fields": [], "tables": []}]
     prompt = revise_prompt(
         fixture_specs_dir,
         failures=failures,
-        failuresFrom={"templateVersion": 3, "model": "local/qwen"},
+        failuresFrom={"templateVersion": 3, "model": model},
     )
-    assert '<evaluation_failures templateVersion="3" model="local/qwen">' in prompt
+    assert f'<evaluation_failures templateVersion="3" model="{shown}">' in prompt
 
 
 def revise_section_response(anchor: str) -> dict[str, Any]:

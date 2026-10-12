@@ -740,17 +740,18 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
   }
 
   async deleteFeedback(projectId: string, id: string) {
+    // Delete first, then explain a miss: a revision accepted concurrently can resolve the item
+    // between any read and the delete, and then nothing may be deleted.
+    const { rowCount } = await this.pool.query(
+      'DELETE FROM workbench_feedback WHERE project_id = $1 AND id = $2 AND resolved_by IS NULL',
+      [projectId, id],
+    );
+    if (rowCount) return 'deleted' as const;
     const { rows } = await this.pool.query<{ resolved_by: string | null }>(
       'SELECT resolved_by FROM workbench_feedback WHERE project_id = $1 AND id = $2',
       [projectId, id],
     );
-    if (!rows[0]) return 'not-found' as const;
-    if (rows[0].resolved_by) return 'resolved' as const;
-    await this.pool.query(
-      'DELETE FROM workbench_feedback WHERE project_id = $1 AND id = $2 AND resolved_by IS NULL',
-      [projectId, id],
-    );
-    return 'deleted' as const;
+    return rows[0] ? ('resolved' as const) : ('not-found' as const);
   }
 
   async resolveFeedback(projectId: string, ids: string[], proposalId: string) {

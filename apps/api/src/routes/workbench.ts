@@ -886,6 +886,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
    * What a revision is asked to answer, or null when no open feedback remains. Holdout rule
    * (ADR 0007): feedback naming a sample that is not a ready dev sample now is dropped, and the
    * failures come from the latest complete dev iteration, restricted to the current dev samples.
+   * The template's own runs are preferred over model-comparison members (groupId set), which
+   * fall back only when no own run is complete; failuresFrom names the iteration used.
    */
   async function reviseInputs(
     projectId: string,
@@ -893,6 +895,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   ): Promise<{
     feedback: { target: string; targetId: string; sample: string | null; body: string }[];
     failures: FailureDiff[];
+    failuresFrom?: { templateVersion: number; model: EvaluationModel | null };
     feedbackIds: string[];
   } | null> {
     const names = new Map(dev.map((s) => [s.sampleId, s.filename]));
@@ -901,11 +904,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!open.length) return null;
     let failures: FailureDiff[] = [];
-    for (const iteration of await workbench.listIterations(projectId)) {
-      if (iteration.set !== 'dev') continue;
+    let failuresFrom: { templateVersion: number; model: EvaluationModel | null } | undefined;
+    const devRuns = (await workbench.listIterations(projectId)).filter((i) => i.set === 'dev');
+    // Stable sort: own runs first, newest first within each group.
+    const candidates = [...devRuns].sort(
+      (a, b) => Number(a.groupId !== null) - Number(b.groupId !== null),
+    );
+    for (const iteration of candidates) {
       const view = await iterationView(app, iteration);
       if (view.status !== 'complete') continue;
       failures = failureDiffs(view.samples, new Set(names.keys()));
+      failuresFrom = { templateVersion: iteration.templateVersion, model: iteration.model };
       break;
     }
     return {
@@ -916,6 +925,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         body: f.body,
       })),
       failures,
+      ...(failuresFrom ? { failuresFrom } : {}),
       feedbackIds: open.map((f) => f.id),
     };
   }
@@ -943,8 +953,13 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({ error: 'feedback can only refer to dev samples' });
       }
     }
-    if (iterationId !== undefined && !(await workbench.getIteration(projectId, iterationId))) {
-      return reply.code(400).send({ error: 'unknown iteration' });
+    if (iterationId !== undefined) {
+      const iteration = await workbench.getIteration(projectId, iterationId);
+      if (!iteration) return reply.code(400).send({ error: 'unknown iteration' });
+      // Holdout rule (ADR 0007): feedback, which a revision sends to a model, names dev runs only.
+      if (iteration.set !== 'dev') {
+        return reply.code(400).send({ error: 'feedback can only refer to dev iterations' });
+      }
     }
     const item = await workbench.createFeedback({
       projectId,
