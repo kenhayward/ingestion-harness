@@ -112,4 +112,43 @@ describe('SamplesTab', () => {
     expect(screen.getByRole('region', { name: 'Page 1' })).toContainElement(note);
     expect(screen.getByRole('region', { name: 'Page 2' })).not.toContainElement(note);
   });
+
+  it('places a mark whose line is a page marker before the first line of the page', async () => {
+    const api = fakeApi({
+      getSampleText: vi.fn(async () => ({
+        sha256: 'abc',
+        pages: [{ number: 1, text: 'intro\nbody', ocr: false }],
+      })),
+    });
+    render(
+      <SampleText
+        api={api}
+        projectId="letter"
+        sampleId="s1"
+        marks={[{ page: 1, line: '[page 1]', label: 'all' }]}
+      />,
+    );
+    const note = await screen.findByRole('note', { name: 'all starts here' });
+    const pre = note.closest('pre')!;
+    expect(pre.textContent).toMatch(/^▶ all\nintro/);
+  });
+
+  it('matches a truncated start line by prefix', async () => {
+    const long = 'LONG HEADER '.repeat(30);
+    const api = fakeApi({
+      getSampleText: vi.fn(async () => ({
+        sha256: 'abc',
+        pages: [{ number: 1, text: `intro\n${long}\nbody`, ocr: false }],
+      })),
+    });
+    render(
+      <SampleText
+        api={api}
+        projectId="letter"
+        sampleId="s1"
+        marks={[{ page: 1, line: long.slice(0, 200), label: 'head' }]}
+      />,
+    );
+    expect(await screen.findByRole('note', { name: 'head starts here' })).toBeInTheDocument();
+  });
 });

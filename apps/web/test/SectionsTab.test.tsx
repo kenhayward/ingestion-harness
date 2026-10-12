@@ -8,7 +8,12 @@ const definition = {
   id: 'letter',
   version: 2,
   name: 'Letter',
-  document: { ocr: 'auto', pageMarkers: true, sections: [{ id: 'all', anchor: '\\A' }] },
+  document: {
+    ocr: 'auto',
+    pageMarkers: true,
+    copies: { anchor: '^COPY', select: 'last' },
+    sections: [{ id: 'all', anchor: '\\A' }],
+  },
   outputs: { fields: [] },
   pipeline: [],
 };
@@ -22,7 +27,7 @@ const grid = {
       pageCount: 1,
       error: null,
       missingRequired: [],
-      sections: [{ id: 'all', found: true, page: 1, line: 'HEADER', chars: 40 }],
+      sections: [{ id: 'all', found: true, page: 1, line: '[page 1]', chars: 40 }],
     },
   ],
 };
@@ -55,6 +60,7 @@ describe('SectionsTab', () => {
     expect(api.startSegmentation).toHaveBeenCalledWith('letter', {
       sections: [{ id: 'all', anchor: '\\A', required: true }],
       pageMarkers: true,
+      copies: { anchor: '^COPY', select: 'last' },
     });
   });
 
@@ -72,6 +78,7 @@ describe('SectionsTab', () => {
             { id: 'totals', anchor: '^Total', required: true },
           ],
           pageMarkers: true,
+          copies: { anchor: '^COPY', select: 'last' },
         }),
       { timeout: 2000 },
     );
@@ -93,6 +100,29 @@ describe('SectionsTab', () => {
     setup();
     await userEvent.click(await screen.findByRole('button', { name: 'a.pdf · all' }));
     expect(await screen.findByRole('note', { name: 'all starts here' })).toBeInTheDocument();
+  });
+
+  it('keeps Save disabled while two sections share an id', async () => {
+    setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.click(screen.getByRole('button', { name: 'Add section' }));
+    await userEvent.type(screen.getByLabelText('Id of section 2'), 'all');
+    await userEvent.type(screen.getByLabelText('Anchor of section 2'), '^Total');
+    expect(screen.getByRole('button', { name: 'Save to draft' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+  });
+
+  it('removes copies from the saved definition when the copy anchor is cleared', async () => {
+    const api = setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.clear(screen.getByLabelText('Copy anchor'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save to draft' }));
+    const document: Record<string, unknown> = { ...definition.document };
+    delete document.copies;
+    expect(api.saveTemplate).toHaveBeenCalledWith('letter', 2, {
+      ...definition,
+      document: { ...document, sections: [{ id: 'all', anchor: '\\A', required: true }] },
+    });
   });
 
   it('asks for a draft when every version is published', () => {

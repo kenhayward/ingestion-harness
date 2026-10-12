@@ -4,6 +4,9 @@ import type { Api } from '../api/client.js';
 
 export type TextMark = { page: number; line: string; label: string };
 
+/** With page markers on, a section starting at a page top reports this line. */
+const PAGE_MARKER = /^\[page \d+\]$/;
+
 function PageBody({ text, marks }: { text: string; marks: { line: string; label: string }[] }) {
   if (!marks.length) return <pre>{text}</pre>;
   const lines = text.split('\n');
@@ -11,7 +14,11 @@ function PageBody({ text, marks }: { text: string; marks: { line: string; label:
   return (
     <pre>
       {lines.map((line, i) => {
-        const mark = marks.find((m) => !used.has(m.label) && line.trim() === m.line.trim());
+        const mark = marks.find(
+          (m) =>
+            !used.has(m.label) &&
+            (PAGE_MARKER.test(m.line.trim()) ? i === 0 : line.trim().startsWith(m.line.trim())),
+        );
         if (mark) used.add(mark.label);
         return (
           <span key={i}>

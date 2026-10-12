@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
-import { useSegmentPreview } from '../src/workbench/useSegmentPreview.js';
+import { PREVIEW_DEADLINE_MS, useSegmentPreview } from '../src/workbench/useSegmentPreview.js';
 import { fakeApi, segmentationView } from './fake-api.js';
 
 const grid = { anchorErrors: {}, samples: [] };
@@ -63,6 +63,30 @@ describe('useSegmentPreview', () => {
     const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
     act(() => result.current.preview());
     await waitFor(() => expect(result.current.error).toBe('result missing'));
+  });
+
+  it('says so when a succeeded preview has neither result nor error', async () => {
+    const api = fakeApi({
+      startSegmentation: vi.fn(async () => segmentationView({ status: 'succeeded' })),
+    });
+    const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
+    act(() => result.current.preview());
+    await waitFor(() => expect(result.current.error).toBe('preview finished without a result'));
+  });
+
+  it('gives up once the deadline has passed', async () => {
+    const now = vi.spyOn(Date, 'now');
+    now.mockReturnValueOnce(0).mockReturnValue(PREVIEW_DEADLINE_MS + 1);
+    const api = fakeApi({
+      startSegmentation: vi.fn(async () => segmentationView({ status: 'queued' })),
+      getSegmentation: vi.fn(async () => segmentationView({ status: 'running' })),
+    });
+    const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
+    act(() => result.current.preview());
+    await waitFor(() =>
+      expect(result.current.error).toBe('Preview timed out — is the worker running?'),
+    );
+    now.mockRestore();
   });
 
   it('shows the reason a preview needs review', async () => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SegmentDocument, SegmentationView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 
-const MAX_POLLS = 60;
+export const PREVIEW_DEADLINE_MS = 30_000;
 const DONE = new Set(['succeeded', 'failed', 'needs_review', 'cancelled']);
 
 /** Latest-wins segmentation preview: start, poll, and ignore anything superseded. */
@@ -22,9 +22,11 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
       setError(null);
       void (async () => {
         try {
+          const started = Date.now();
           let next = await api.startSegmentation(projectId, document);
-          for (let poll = 0; current() && !DONE.has(next.status); poll++) {
-            if (poll >= MAX_POLLS) throw new Error('Preview timed out — is the worker running?');
+          while (current() && !DONE.has(next.status)) {
+            if (Date.now() - started > PREVIEW_DEADLINE_MS)
+              throw new Error('Preview timed out — is the worker running?');
             await new Promise((resolve) => setTimeout(resolve, pollMs));
             if (!current()) return;
             next = await api.getSegmentation(projectId, next.jobId);
@@ -32,7 +34,12 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
           if (!current()) return;
           setView(next);
           if (next.status !== 'succeeded' || !next.result) {
-            setError(next.error ?? `preview ${next.status}`);
+            setError(
+              next.error ??
+                (next.status === 'succeeded'
+                  ? 'preview finished without a result'
+                  : `preview ${next.status}`),
+            );
           }
         } catch (err) {
           if (!current()) return;

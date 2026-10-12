@@ -7,8 +7,17 @@ import { useSegmentPreview } from './useSegmentPreview.js';
 
 export const PREVIEW_DEBOUNCE_MS = 600;
 
-type Row = { id: string; anchor: string; required: boolean };
+type Row = { key: number; id: string; anchor: string; required: boolean };
 type Copies = { anchor: string; select: 'first' | 'last' } | null;
+
+/** Every row has a filled anchor and a non-empty id, and ids are unique. */
+function isComplete(rows: Row[]): boolean {
+  return (
+    rows.length > 0 &&
+    rows.every((r) => r.id && r.anchor) &&
+    new Set(rows.map((r) => r.id)).size === rows.length
+  );
+}
 
 function candidate(rows: Row[], copies: Copies, pageMarkers: boolean): SegmentDocument {
   return {
@@ -39,22 +48,27 @@ export function SectionsTab({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { view, running, error: previewError, preview } = useSegmentPreview(api, projectId, pollMs);
+  const [saving, setSaving] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextKey = useRef(0);
 
   useEffect(() => {
     if (draft === null) return;
+    let cancelled = false;
     void (async () => {
       try {
         const [{ record }, list] = await Promise.all([
           api.getTemplate(projectId, draft),
           api.listSamples(projectId),
         ]);
+        if (cancelled) return;
         const block = (record.definition.document ?? {}) as {
           sections?: { id: string; anchor: string; required?: boolean }[];
           copies?: Copies;
           pageMarkers?: boolean;
         };
         const loaded = (block.sections ?? []).map((s) => ({
+          key: nextKey.current++,
           id: s.id,
           anchor: s.anchor,
           required: s.required ?? true,
@@ -68,9 +82,12 @@ export function SectionsTab({
         setSamples(list);
         if (loaded.length) preview(candidate(loaded, loadedCopies, loadedMarkers));
       } catch (err) {
-        setError((err as Error).message);
+        if (!cancelled) setError((err as Error).message);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [api, projectId, draft, preview]);
 
   useEffect(
@@ -87,14 +104,14 @@ export function SectionsTab({
 
   const current = candidate(rows, copies, pageMarkers);
   const dirty = JSON.stringify(current) !== saved;
-  const complete = rows.length > 0 && rows.every((r) => r.id && r.anchor);
+  const complete = isComplete(rows);
 
   const edit = (nextRows: Row[], nextCopies: Copies = copies) => {
     setRows(nextRows);
     setCopies(nextCopies);
     setMessage(null);
     if (timer.current) clearTimeout(timer.current);
-    if (nextRows.length && nextRows.every((r) => r.id && r.anchor)) {
+    if (isComplete(nextRows)) {
       timer.current = setTimeout(
         () => preview(candidate(nextRows, nextCopies, pageMarkers)),
         PREVIEW_DEBOUNCE_MS,
@@ -105,6 +122,8 @@ export function SectionsTab({
     edit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   const save = async () => {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     try {
       const { record } = await api.getTemplate(projectId, draft);
@@ -123,6 +142,8 @@ export function SectionsTab({
       setMessage(`Saved to v${draft}`);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -153,7 +174,7 @@ export function SectionsTab({
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={r.key}>
               <td>
                 <input
                   aria-label={`Id of section ${i + 1}`}
@@ -190,7 +211,12 @@ export function SectionsTab({
           ))}
         </tbody>
       </table>
-      <button type="button" onClick={() => edit([...rows, { id: '', anchor: '', required: true }])}>
+      <button
+        type="button"
+        onClick={() =>
+          edit([...rows, { key: nextKey.current++, id: '', anchor: '', required: true }])
+        }
+      >
         Add section
       </button>
       <fieldset className="copies">
@@ -225,14 +251,21 @@ export function SectionsTab({
         </label>
       </fieldset>
       <div className="actions">
-        <button type="button" onClick={() => preview(current)} disabled={!complete}>
+        <button
+          type="button"
+          onClick={() => {
+            if (timer.current) clearTimeout(timer.current);
+            preview(current);
+          }}
+          disabled={!complete}
+        >
           Preview
         </button>
         <button
           type="button"
           className="primary"
           onClick={() => void save()}
-          disabled={!dirty || !complete}
+          disabled={!dirty || !complete || saving}
         >
           Save to draft
         </button>
