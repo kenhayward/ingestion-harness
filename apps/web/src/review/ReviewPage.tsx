@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EditRequest, StepRun } from '@ih/shared';
+import type { EditRequest, JobSummary, StepRun } from '@ih/shared';
 import type { Api, ReviewData } from '../api/client.js';
 import { EditableValue } from './EditableValue.js';
 import { display, effectiveView } from './effective.js';
 import { PageViewer } from './PageViewer.js';
+import { ReviewHeader } from './ReviewHeader.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -37,10 +38,13 @@ export function ReviewPage({
   api,
   jobId,
   onDone,
+  jobs = [],
 }: {
   api: Api;
   jobId: string;
   onDone: () => void;
+  /** The polled job list: the review queue position and Next document come from it. */
+  jobs?: readonly JobSummary[];
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,22 +120,7 @@ export function ReviewPage({
 
   return (
     <div className="review">
-      <header className="review-header">
-        <a href="#/">← Jobs</a>
-        <h2>Review: {job.filename}</h2>
-        <p>
-          {template.name} v{template.version} ·{' '}
-          <span className={`status status-${job.status}`}>{job.status}</span>
-          {view.flaggedCount > 0 && <> · {view.flaggedCount} value(s) flagged</>}
-        </p>
-        {job.reviewReasons && job.reviewReasons.length > 0 && (
-          <ul className="reasons">
-            {job.reviewReasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        )}
-      </header>
+      <ReviewHeader data={data} jobs={jobs} jobId={jobId} />
 
       <div className="review-body">
         <PageViewer

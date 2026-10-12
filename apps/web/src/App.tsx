@@ -104,7 +104,7 @@ function SignedInApp({
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
-    page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
+    page = <ReviewPage api={api} jobId={route.jobId} jobs={jobs} onDone={() => navigate('#/')} />;
   } else if (route.name === 'results') {
     page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {

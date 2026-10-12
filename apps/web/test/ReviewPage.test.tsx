@@ -1,17 +1,18 @@
+import type { JobSummary } from '@ih/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReviewPage } from '../src/review/ReviewPage.js';
-import { fakeApi } from './fake-api.js';
+import { fakeApi, job } from './fake-api.js';
 import { JOB_ID, reviewData } from './review-fixture.js';
 
-function setup(overrides = {}) {
+function setup(overrides = {}, jobs: JobSummary[] = []) {
   const api = fakeApi({
     getReview: vi.fn(async () => reviewData()),
     ...overrides,
   });
   const onDone = vi.fn();
-  render(<ReviewPage api={api} jobId={JOB_ID} onDone={onDone} />);
+  render(<ReviewPage api={api} jobId={JOB_ID} onDone={onDone} jobs={jobs} />);
   return { api, onDone };
 }
 
@@ -19,10 +20,45 @@ const fieldRow = (name: RegExp) => screen.getByRole('row', { name });
 
 beforeEach(() => localStorage.clear());
 
+describe('ReviewPage header and source', () => {
+  it('shows the header with the queue position and Next document', async () => {
+    const self = job({ id: JOB_ID, status: 'awaiting_review', createdAt: '2026-01-01T00:00:00Z' });
+    const other = job({
+      id: 'next-id',
+      status: 'awaiting_review',
+      createdAt: '2026-01-02T00:00:00Z',
+    });
+    setup({}, [self, other]);
+    expect(await screen.findByRole('heading', { level: 1, name: 'scan.pdf' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Jobs/ })).toHaveAttribute('href', '#/');
+    expect(screen.getByText('1 of 2 awaiting review')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Next document/ })).toHaveAttribute(
+      'href',
+      '#/review/next-id',
+    );
+    expect(screen.getByRole('note', { name: 'Why this needs review' })).toHaveTextContent(
+      'check batch_check: 1 unmatched',
+    );
+  });
+
+  it('hides Next document when this is the only one awaiting review', async () => {
+    setup({}, [job({ id: JOB_ID, status: 'awaiting_review' })]);
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(screen.queryByRole('link', { name: /Next document/ })).not.toBeInTheDocument();
+  });
+
+  it('names the source pane and its page controls', async () => {
+    setup();
+    const pane = await screen.findByRole('region', { name: 'Source PDF' });
+    expect(within(pane).getByText('Page 1 of 3')).toBeInTheDocument();
+    expect(within(pane).getByText('Click a value to find it on the page')).toBeInTheDocument();
+  });
+});
+
 describe('ReviewPage', () => {
   it('shows the document, review reasons and every field with its evidence', async () => {
     setup();
-    expect(await screen.findByRole('heading', { name: /scan\.pdf/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'scan.pdf' })).toBeInTheDocument();
     expect(screen.getByText(/check batch_check: 1 unmatched/)).toBeInTheDocument();
     const row = fieldRow(/Execution Date/);
     expect(within(row).getByText('2023-02-16')).toBeInTheDocument();

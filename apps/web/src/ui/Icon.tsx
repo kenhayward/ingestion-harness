@@ -77,6 +77,11 @@ const PATHS = {
       <path d="M12 7v6M12 16.5h.01" />
     </>
   ),
+  chevronLeft: <path d="M15 18l-6-6 6-6" />,
+  chevronRight: <path d="M9 18l6-6-6-6" />,
+  check: <path d="M5 12l5 5 9-10" />,
+  pencil: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
+  flag: <path d="M5 21V4h11l-2 4 2 4H5" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
   download: (
     <>
