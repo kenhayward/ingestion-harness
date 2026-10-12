@@ -45,6 +45,15 @@ export interface RetryOptions {
   specVersion?: number;
 }
 
+/** Workbench jobs run after production work (jobs.priority; ADR 0007). */
+export const WORKBENCH_PRIORITY = -10;
+
+export interface WorkbenchJobOptions {
+  projectId: string;
+  /** prepare: sample text + OCR only; process: a test run of the project's draft. */
+  task: 'prepare' | 'process';
+}
+
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
@@ -79,6 +88,11 @@ export interface IngestionRepo {
     test?: boolean,
     referenceId?: string | null,
   ): Promise<JobSummary>;
+  /** A test job of a workbench project, queued behind production work. */
+  createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
+  /** Jobs of a workbench project (prepare jobs and test runs), newest first. */
+  listProjectJobs(projectId: string): Promise<JobSummary[]>;
+  /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
@@ -101,6 +115,7 @@ export interface IngestionRepo {
   /**
    * Ids of finished jobs whose updated_at is before `cutoffIso`, oldest first. Regression runs
    * (reference_id set) feed regression scores and metrics, so they're left out unless asked.
+   * Prepare jobs are never returned (they belong to the Workbench).
    */
   finishedJobIdsBefore(cutoffIso: string, includeRegression?: boolean): Promise<string[]>;
   listModels(): Promise<ModelInfo[]>;

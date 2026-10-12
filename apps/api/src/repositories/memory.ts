@@ -22,6 +22,8 @@ import {
   type NewDocument,
   type NewEdit,
   type StoredObject,
+  WORKBENCH_PRIORITY,
+  type WorkbenchJobOptions,
 } from './types.js';
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
@@ -40,6 +42,10 @@ export class MemoryRepo implements IngestionRepo {
   readonly stepRuns = new Map<string, StepRun[]>();
   readonly references = new Map<string, Reference>();
   readonly reruns = new Map<string, { step: string } & RerunRequest>();
+  /** jobs.priority; absent = 0 (production). */
+  readonly priorities = new Map<string, number>();
+  /** Documents pinned by workbench samples (workbench_samples in Postgres). */
+  readonly sampleDocuments = new Set<string>();
   models: ModelInfo[] = [];
   private editSeq = 0;
 
@@ -79,9 +85,22 @@ export class MemoryRepo implements IngestionRepo {
     return job;
   }
 
+  async createWorkbenchJob(doc: NewDocument, { projectId, task }: WorkbenchJobOptions) {
+    const job = await this.createDocumentAndJob(doc, null, true);
+    this.priorities.set(job.id, WORKBENCH_PRIORITY);
+    return this.update(job.id, { projectId, task });
+  }
+
+  async listProjectJobs(projectId: string): Promise<JobSummary[]> {
+    return [...this.jobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((j) => this.withModels(j));
+  }
+
   async listJobs({ limit, status }: ListJobsQuery): Promise<JobSummary[]> {
     return [...this.jobs.values()]
-      .filter((j) => !status || j.status === status)
+      .filter((j) => j.task !== 'prepare' && (!status || j.status === status))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
       .map((j) => this.withModels(j));
@@ -179,7 +198,8 @@ export class MemoryRepo implements IngestionRepo {
     const doc = this.documents.get(job.documentId);
     const stillUsed =
       [...this.jobs.values()].some((j) => j.documentId === job.documentId) ||
-      [...this.references.values()].some((r) => r.documentId === job.documentId);
+      [...this.references.values()].some((r) => r.documentId === job.documentId) ||
+      this.sampleDocuments.has(job.documentId);
     let inboxObject: StoredObject | null = null;
     if (doc && !stillUsed) {
       this.documents.delete(job.documentId);
@@ -196,6 +216,7 @@ export class MemoryRepo implements IngestionRepo {
     return [...this.jobs.values()]
       .filter(
         (j) =>
+          j.task !== 'prepare' &&
           DELETABLE_STATUSES.includes(j.status) &&
           Date.parse(j.updatedAt) < cutoff &&
           (includeRegression || !j.referenceId),
@@ -211,8 +232,8 @@ export class MemoryRepo implements IngestionRepo {
     const job = this.jobs.get(id);
     if (!job || !RETRYABLE.includes(job.status)) return null;
     // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
-    // failures re-run processing.
-    const task = job.status === 'cancelled' ? job.task : 'process';
+    // preparation stays a preparation; other failures re-run processing.
+    const task = job.status === 'cancelled' || job.task === 'prepare' ? job.task : 'process';
     const override = model === undefined ? {} : { modelOverride: model };
     const doc = this.documents.get(job.documentId);
     if (specVersion !== undefined && doc) this.documents.set(doc.id, { ...doc, specVersion });
