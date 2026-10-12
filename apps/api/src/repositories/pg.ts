@@ -32,6 +32,7 @@ import {
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
+// Any query on `jobs` that does not go through JOB_SELECT must exclude `document_id IS NULL` rows.
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
@@ -202,6 +203,8 @@ export class PgRepo implements IngestionRepo {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      // READ COMMITTED lets two concurrent calls both miss each other's insert; serialize per project.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
       // Deleting a running job is safe: its worker finds the claim gone and writes nothing.
       const removed = await client.query<{ id: string }>(
         `DELETE FROM jobs WHERE project_id = $1 AND task = 'segment' RETURNING id`,
@@ -442,7 +445,9 @@ export class PgRepo implements IngestionRepo {
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
                 locked_by = NULL, locked_at = NULL, updated_at = now(),
                 model_override = CASE WHEN $2 THEN $3 ELSE model_override END
+          -- document_id IS NOT NULL: segment previews (document-less) are not retryable
           WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled', 'succeeded')
+            AND document_id IS NOT NULL
           RETURNING document_id),
        cleared AS (
          DELETE FROM review_edits
@@ -459,7 +464,7 @@ export class PgRepo implements IngestionRepo {
     const { rowCount } = await this.pool.query(
       `WITH cancelled AS (
          UPDATE jobs SET status = 'cancelled', locked_by = NULL, locked_at = NULL, updated_at = now()
-          WHERE id = $1 AND status IN ('queued', 'running')
+          WHERE id = $1 AND status IN ('queued', 'running') AND document_id IS NOT NULL
           RETURNING id)
        INSERT INTO job_events (job_id, level, message) SELECT id, 'warn', 'cancelled' FROM cancelled`,
       [id],
