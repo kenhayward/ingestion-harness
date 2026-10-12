@@ -2721,6 +2721,11 @@ tr.confirming td {
   gap: 16px;
   margin-top: 8px;
 }
+/* .card-form's flex basis sizes it across the token form's row; in this column it would set
+   the height instead, so it just fits its contents here. */
+.s3-keys > .card-form {
+  flex: none;
+}
 .s3-keys h2 {
   margin: 0;
   font-size: var(--ih-text-lg);
