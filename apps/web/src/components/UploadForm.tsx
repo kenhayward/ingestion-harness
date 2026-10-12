@@ -2,6 +2,26 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { ModelInfo, SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
+/** The Model selection is remembered per browser ('' / absent = spec default). */
+const MODEL_KEY = 'ih.uploadModel';
+
+function loadModel(): string {
+  try {
+    return localStorage.getItem(MODEL_KEY) ?? '';
+  } catch {
+    return ''; // storage blocked (private window, policy): behave as before
+  }
+}
+
+function saveModel(model: string): void {
+  try {
+    if (model) localStorage.setItem(MODEL_KEY, model);
+    else localStorage.removeItem(MODEL_KEY);
+  } catch {
+    // storage blocked: the selection just isn't remembered
+  }
+}
+
 export function UploadForm({
   api,
   onUploaded,
@@ -29,7 +49,23 @@ export function UploadForm({
       },
       (err: Error) => setStatus(`Failed to load specs: ${err.message}`),
     );
-    api.listModels().then(setModels, () => setModels([]));
+    api.listModels().then(
+      (list) => {
+        setModels(list);
+        // Restore the remembered model only if it can still be used; otherwise forget it.
+        const saved = loadModel();
+        if (!saved) return;
+        if (list.some((m) => m.ref === saved && m.enabled)) {
+          setModel(saved);
+          onModelChange?.(saved);
+        } else {
+          saveModel('');
+        }
+      },
+      () => setModels([]),
+    );
+    // onModelChange is a callback prop: restoring runs once per api, not per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   async function submit(e: FormEvent) {
@@ -71,6 +107,7 @@ export function UploadForm({
           value={model}
           onChange={(e) => {
             setModel(e.target.value);
+            saveModel(e.target.value);
             onModelChange?.(e.target.value);
           }}
         >
