@@ -130,4 +130,17 @@ describe('JobsTable actions', () => {
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
     expect(within(row('a.pdf')).getByRole('button', { name: 'Delete' })).toHaveFocus();
   });
+
+  it.each<[JobStatus, boolean]>([
+    ['succeeded', true],
+    ['awaiting_review', true],
+    ['failed', false],
+    ['running', false],
+  ])('%s jobs link to the review screen: %s', (status, linked) => {
+    const j = job({ filename: 'a.pdf', status });
+    render(<JobsTable api={fakeApi()} jobs={[j]} onChanged={vi.fn()} />);
+    const link = within(row('a.pdf')).queryByRole('link', { name: 'Review' });
+    if (linked) expect(link).toHaveAttribute('href', `#/review/${j.id}`);
+    else expect(link).not.toBeInTheDocument();
+  });
 });

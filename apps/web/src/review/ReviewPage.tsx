@@ -30,6 +30,9 @@ function saveReviewer(name: string): void {
   }
 }
 
+/** GET /jobs/:id/review's error for legacy-spec jobs (only templates have a review document). */
+const NOT_A_TEMPLATE = 'job is not a template document';
+
 export function ReviewPage({
   api,
   jobId,
@@ -77,6 +80,14 @@ export function ReviewPage({
 
   const view = useMemo(() => (data ? effectiveView(data) : null), [data]);
 
+  if (error === NOT_A_TEMPLATE) {
+    return (
+      <p>
+        This document type has no review view (legacy spec). See its outputs on the{' '}
+        <a href={`#/results/${jobId}`}>Results page</a>.
+      </p>
+    );
+  }
   if (error) return <p role="alert">Could not load review: {error}</p>;
   if (!data || !view) return <p>Loading review…</p>;
 

@@ -179,4 +179,27 @@ describe('ReviewPage', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve and publish' })).not.toBeInTheDocument();
   });
+
+  it('explains that legacy-spec documents have no review view and links to their results', async () => {
+    setup({
+      getReview: vi.fn(async () => {
+        throw new Error('job is not a template document');
+      }),
+    });
+    expect(await screen.findByText(/This document type has no review view/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Results page' })).toHaveAttribute(
+      'href',
+      `#/results/${JOB_ID}`,
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('still reports other load errors', async () => {
+    setup({
+      getReview: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load review: boom');
+  });
 });
