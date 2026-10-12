@@ -43,6 +43,7 @@ import {
   type DraftStage,
   type EvaluationModel,
   type EvaluationSet,
+  type GateCandidate,
   type FailureDiff,
   type FeedbackItem,
   type GateView,
@@ -232,15 +233,13 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
     (j) => j.task === 'prepare',
   );
   const records = await app.deps.workbench.listSamples(projectId);
-  // Holdout history: the holdout iterations whose jobs ran this sample's PDF.
+  // Holdout history: the holdout iterations that evaluated this sample's PDF.
   const holdoutIterations = (await app.deps.workbench.listIterations(projectId)).filter(
     (i) => i.set === 'holdout',
   );
-  const shaByJob = new Map(
-    (await app.deps.repo.listProjectRuns(projectId)).map((r) => [r.job.id, r.sha256]),
-  );
+  const shaByJob = await jobShas(app, projectId);
   const holdoutRuns = (sha256: string) =>
-    holdoutIterations.filter((i) => i.jobIds.some((id) => shaByJob.get(id) === sha256)).length;
+    holdoutIterations.filter((i) => iterationShas(i, shaByJob).includes(sha256)).length;
   return Promise.all(
     records.map(async (record) => ({
       record,
@@ -251,6 +250,25 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         holdoutRuns(record.sha256),
       ),
     })),
+  );
+}
+
+/** The sha256 of each project job's PDF, by job id (deleted jobs are missing). */
+async function jobShas(app: FastifyInstance, projectId: string): Promise<Map<string, string>> {
+  return new Map((await app.deps.repo.listProjectRuns(projectId)).map((r) => [r.job.id, r.sha256]));
+}
+
+/**
+ * The samples (sha256) an iteration evaluated: as recorded at creation (migration 0017), else,
+ * for older iterations, from the documents of its jobs that still exist.
+ */
+function iterationShas(iteration: IterationRecord, shaByJob: Map<string, string>): string[] {
+  return (
+    iteration.sampleShas ??
+    iteration.jobIds.flatMap((id) => {
+      const sha = shaByJob.get(id);
+      return sha ? [sha] : [];
+    })
   );
 }
 
@@ -402,11 +420,17 @@ const ComparisonParams = z.object({ id: Id, groupId: z.string().uuid() });
 
 /**
  * A finished job's comparison with its reference; null when the job has no readable document
- * (none written, corrupt JSON, or not shaped like a document).
+ * (none written, corrupt JSON, or not shaped like a document). `raw` compares the models'
+ * output, ignoring review edits (holdout: a review must not raise the score).
  */
-async function sampleComparison(app: FastifyInstance, job: JobDetail, reference: Reference) {
+async function sampleComparison(
+  app: FastifyInstance,
+  job: JobDetail,
+  reference: Reference,
+  raw: boolean,
+) {
   try {
-    const document = await jobDocument(app, job);
+    const document = await jobDocument(app, job, { raw });
     return document ? compareToReference(reference.expected, document) : null;
   } catch (err) {
     if (err instanceof SyntaxError || err instanceof TypeError) {
@@ -436,7 +460,7 @@ async function iterationView(
         : null;
       const comparison =
         job && reference && regressionFinished(job.status)
-          ? await sampleComparison(app, job, reference)
+          ? await sampleComparison(app, job, reference, iteration.set === 'holdout')
           : null;
       return {
         sampleId: sample?.id ?? null,
@@ -474,13 +498,16 @@ async function iterationView(
 }
 
 /**
- * The publish gate for the open draft (ADR 0007): only holdout iterations that ran exactly this
- * draft (version and definition) count; scores are computed only for those.
+ * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
+ * draft (version and definition) with the template's own models count; their scores are always
+ * recomputed from the jobs (raw output, so review edits never raise them), and coverage is
+ * measured against the holdout samples that are ready now. `definition` is the `stableJson` of
+ * the draft the gate was decided for.
  */
 async function gateFor(
   app: FastifyInstance,
   project: WorkbenchProject,
-): Promise<GateView & { draft: number | null }> {
+): Promise<GateView & { draft: number | null; definition: string | null }> {
   const { draft } = await versionsOf(app.deps.templates, project.id);
   if (draft === null) {
     return {
@@ -490,29 +517,43 @@ async function gateFor(
       passes: false,
       reason: 'no open draft to publish',
       draft,
+      definition: null,
     };
   }
   const current = stableJson((await app.deps.templates.get(project.id, draft))!.definition);
+  const ready = (await sampleViews(app, project.id))
+    .filter((s) => s.record.role === 'holdout' && s.view.state === 'ready')
+    .map((s) => s.record.sha256);
+  const shaByJob = await jobShas(app, project.id);
   const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
     (i) => i.set === 'holdout',
   );
   const candidates = await Promise.all(
-    holdout.map(async (i) => {
+    holdout.map(async (i): Promise<GateCandidate> => {
       const matchesDraft = i.templateVersion === draft && stableJson(i.definition) === current;
-      // Cached scores when present; runs of another draft never count, so only runs of this
-      // draft are worth scoring. An uncached run of another draft gets a placeholder
-      // (running, no score): publishGate ignores it because matchesDraft is false.
-      const summary =
-        i.scores || !matchesDraft
-          ? {
-              status: i.scores ? ('complete' as const) : ('running' as const),
-              score: i.scores?.score ?? null,
-            }
-          : await iterationView(app, i).then((v) => ({ status: v.status, score: v.score }));
-      return { id: i.id, createdAt: i.createdAt, matchesDraft, ...summary };
+      const evaluated = new Set(iterationShas(i, shaByJob));
+      const base = {
+        id: i.id,
+        createdAt: i.createdAt,
+        matchesDraft,
+        model: i.model,
+        covered: ready.filter((sha) => evaluated.has(sha)).length,
+        holdoutSamples: ready.length,
+      };
+      if (!matchesDraft || i.model !== null) {
+        // publishGate ignores it; not worth scoring.
+        return { ...base, status: 'running', score: null, completed: 0, total: i.jobIds.length };
+      }
+      const view = await iterationView(app, i);
+      const { status, score, completed, total } = view;
+      return { ...base, status, score, completed, total };
     }),
   );
-  return { ...publishGate({ threshold: project.publishThreshold, candidates }), draft };
+  return {
+    ...publishGate({ threshold: project.publishThreshold, candidates }),
+    draft,
+    definition: current,
+  };
 }
 
 function summaryOf(
@@ -626,6 +667,7 @@ async function startIteration(
     set,
     model,
     jobIds: jobs.map((j) => j.id),
+    sampleShas: rows.map((row) => row.sha256),
     groupId,
     uncached,
   });
@@ -722,7 +764,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     const projectId = req.params.id;
     const project = await workbench.getProject(projectId);
     if (!project) return reply.code(404).send({ error: 'project not found' });
-    const { draft, ...gate } = await gateFor(app, project);
+    const { draft, definition, ...gate } = await gateFor(app, project);
     if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
     const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
@@ -731,6 +773,13 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .code(409)
         .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
+    }
+    // The gate was decided for the draft as it was read then; an edit since then voids it.
+    const now = await templates.get(projectId, draft);
+    if (!now || stableJson(now.definition) !== definition) {
+      return reply
+        .code(409)
+        .send({ error: 'the draft changed while publishing; check the gate again' });
     }
     const published = await templates.publish(projectId, draft);
     if (!published) return reply.code(409).send({ error: 'the draft is no longer open' });

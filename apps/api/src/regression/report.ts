@@ -7,13 +7,19 @@ async function readJson(app: FastifyInstance, bucket: string, key: string) {
   return body ? (JSON.parse(body.toString('utf8')) as RunDocument) : null;
 }
 
-/** The document a job produced: the reviewed version if it was reviewed, else its draft. */
+/**
+ * The document a job produced: the reviewed version if it was reviewed, else its draft. With
+ * `raw`, always the draft (what the models extracted, before any review edit).
+ */
 export async function jobDocument(
   app: FastifyInstance,
   job: JobDetail,
+  { raw = false }: { raw?: boolean } = {},
 ): Promise<RunDocument | null> {
-  const reviewed = await readJson(app, app.deps.buckets.runs, `${job.id}/reviewed-document.json`);
-  if (reviewed) return reviewed;
+  if (!raw) {
+    const reviewed = await readJson(app, app.deps.buckets.runs, `${job.id}/reviewed-document.json`);
+    if (reviewed) return reviewed;
+  }
   const draft = job.outputs.find((o) => o.stage === 'draft' && o.outputId === 'document');
   return draft ? readJson(app, draft.bucket, draft.key) : null;
 }

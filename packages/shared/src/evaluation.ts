@@ -280,6 +280,14 @@ export interface GateCandidate {
   /** The iteration ran the open draft as it is now (version and definition snapshot). */
   matchesDraft: boolean;
   createdAt: string;
+  /** Samples compared with their reference / samples the iteration evaluated. */
+  completed: number;
+  total: number;
+  /** Model override of the iteration; only null (the template's own models) counts. */
+  model: string | null;
+  /** Currently ready holdout samples the iteration evaluated / currently ready holdout samples. */
+  covered: number;
+  holdoutSamples: number;
 }
 
 export interface GateView {
@@ -290,9 +298,14 @@ export interface GateView {
   reason: string;
 }
 
-const percent = (x: number) => `${Math.round(x * 100)}%`;
+const percent = (x: number, digits = 0) =>
+  digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;
 
-/** The publish gate (ADR 0007): the newest complete holdout run of the current draft decides. */
+/**
+ * The publish gate (ADR 0007): the newest complete holdout run of the current draft with the
+ * template's own models decides. It passes only when it covered every ready holdout sample,
+ * compared every sample it evaluated, and scored at or above the threshold.
+ */
 export function publishGate({
   threshold,
   candidates,
@@ -301,7 +314,7 @@ export function publishGate({
   candidates: GateCandidate[];
 }): GateView {
   const run = candidates
-    .filter((c) => c.status === 'complete' && c.matchesDraft)
+    .filter((c) => c.status === 'complete' && c.matchesDraft && c.model === null)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!run) {
     return {
@@ -312,17 +325,33 @@ export function publishGate({
       reason: 'no complete holdout evaluation of the current draft',
     };
   }
-  const passes = run.score !== null && run.score >= threshold;
-  const shown = run.score === null ? 'none' : percent(run.score);
-  return {
+  const gate = (passes: boolean, reason: string): GateView => ({
     threshold,
     iterationId: run.id,
     score: run.score,
     passes,
-    reason: passes
-      ? `holdout score ${shown} meets the threshold ${percent(threshold)}`
-      : `holdout score ${shown} is below the threshold ${percent(threshold)}`,
-  };
+    reason,
+  });
+  if (run.covered !== run.holdoutSamples) {
+    return gate(
+      false,
+      `holdout evaluation covered ${run.covered} of ${run.holdoutSamples} holdout samples`,
+    );
+  }
+  if (run.completed !== run.total) {
+    return gate(false, `holdout evaluation compared ${run.completed} of ${run.total} samples`);
+  }
+  if (run.score === null) return gate(false, 'holdout evaluation produced no score');
+  const passes = run.score >= threshold;
+  // A tie in whole percentages would read "90% is below 90%": show one decimal then.
+  const digits = !passes && percent(run.score) === percent(threshold) ? 1 : 0;
+  const [score, limit] = [percent(run.score, digits), percent(threshold, digits)];
+  return gate(
+    passes,
+    passes
+      ? `holdout score ${score} meets the threshold ${limit}`
+      : `holdout score ${score} is below the threshold ${limit}`,
+  );
 }
 
 export interface Publication {

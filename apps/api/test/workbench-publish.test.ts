@@ -253,3 +253,124 @@ describe('publish gate', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+/** Holdout samples 9, 10, …; the first `verified` of them get a reference with sender Acme. */
+async function holdoutSamples(ctx: Ctx, count: number, verified = count) {
+  const samples: SampleView[] = [];
+  for (let n = 0; n < count; n++) {
+    const s = await ctx.add(9 + n);
+    await ctx.setRole(s.id, 'holdout');
+    if (n < verified) await ctx.verify(s, 'Acme');
+    samples.push(s);
+  }
+  return samples;
+}
+
+/** The evaluation jobs of the project (those with a reference), with their sample's sha256. */
+const evaluationRuns = async (ctx: Ctx) =>
+  (await ctx.repo.listProjectRuns('letter')).filter((r) => r.job.referenceId);
+
+const gateOf = async (ctx: Ctx) =>
+  (await ctx.app.inject('/api/workbench/projects/letter/publish-gate')).json();
+
+describe('publish gate honesty', () => {
+  it('fails when a holdout sample was not compared (its job needs review)', async () => {
+    const ctx = await project();
+    const [a, b] = await holdoutSamples(ctx, 2);
+    const iteration = (await ctx.evaluate({ set: 'holdout' })).json();
+    const runs = await evaluationRuns(ctx);
+    await ctx.finish(runs.find((r) => r.sha256 === a!.sha256)!.job.id, 'Acme');
+    const stuck = runs.find((r) => r.sha256 === b!.sha256)!.job.id;
+    ctx.repo.jobs.set(stuck, { ...ctx.repo.jobs.get(stuck)!, status: 'needs_review' });
+    expect(await gateOf(ctx)).toMatchObject({
+      iterationId: iteration.id,
+      score: 1,
+      passes: false,
+      reason: 'holdout evaluation compared 1 of 2 samples',
+    });
+    expect((await publish(ctx)).statusCode).toBe(409);
+  });
+
+  it('fails when an evaluated holdout job was deleted, and keeps its holdout history', async () => {
+    const ctx = await project();
+    const [h] = await holdoutSamples(ctx, 1);
+    await ctx.evaluate({ set: 'holdout' });
+    const [run] = await evaluationRuns(ctx);
+    await ctx.finish(run!.job.id, 'Acme');
+    const deleted = await ctx.app.inject({ method: 'DELETE', url: `/api/jobs/${run!.job.id}` });
+    expect(deleted.statusCode).toBe(204);
+    expect(await gateOf(ctx)).toMatchObject({
+      passes: false,
+      reason: 'holdout evaluation compared 0 of 1 samples',
+    });
+    const samples = (
+      await ctx.app.inject('/api/workbench/projects/letter/samples')
+    ).json() as SampleView[];
+    expect(samples.find((s) => s.id === h!.id)!.holdoutRuns).toBe(1);
+  });
+
+  it('ignores a holdout evaluation with a model override', async () => {
+    const ctx = await project();
+    await holdoutSamples(ctx, 1);
+    expect((await ctx.evaluate({ set: 'holdout', model: 'fast' })).statusCode).toBe(201);
+    const [run] = await evaluationRuns(ctx);
+    await ctx.finish(run!.job.id, 'Acme');
+    expect(await gateOf(ctx)).toMatchObject({
+      iterationId: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    });
+  });
+
+  it('fails when the evaluation did not cover every ready holdout sample', async () => {
+    const ctx = await project();
+    await holdoutSamples(ctx, 2, 1);
+    await ctx.evaluate({ set: 'holdout' });
+    const [run] = await evaluationRuns(ctx);
+    await ctx.finish(run!.job.id, 'Acme');
+    expect(await gateOf(ctx)).toMatchObject({
+      score: 1,
+      passes: false,
+      reason: 'holdout evaluation covered 1 of 2 holdout samples',
+    });
+  });
+
+  it('scores the raw holdout output: a review edit does not raise the gate score', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    const [run] = await evaluationRuns(ctx);
+    await ctx.store.put(
+      'runs',
+      `${run!.job.id}/reviewed-document.json`,
+      Buffer.from(JSON.stringify({ fields: { sender: { value: 'Acme' } }, tables: {} })),
+      'application/json',
+    );
+    expect(await gateOf(ctx)).toMatchObject({ score: 0, passes: false });
+  });
+
+  it('recomputes the score instead of trusting the cached one', async () => {
+    const ctx = await project();
+    const iteration = await holdoutRun(ctx, 'Wrong');
+    expect((await gateOf(ctx)).score).toBe(0);
+    await ctx.workbench.setIterationScores(iteration.id, { score: 1, completed: 1, total: 1 });
+    expect(await gateOf(ctx)).toMatchObject({ score: 0, passes: false });
+  });
+
+  it('refuses to publish when the draft changed while the gate was checked', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    const list = ctx.workbench.listIterations.bind(ctx.workbench);
+    let edited = false;
+    ctx.workbench.listIterations = async (projectId: string) => {
+      if (!edited) {
+        edited = true;
+        await ctx.templates.updateDraft('letter', 1, { ...letter(1), name: 'Edited meanwhile' });
+      }
+      return list(projectId);
+    };
+    const res = await publish(ctx);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('the draft changed while publishing; check the gate again');
+    expect((await ctx.templates.get('letter', 1))!.status).toBe('draft');
+  });
+});

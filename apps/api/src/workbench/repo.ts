@@ -80,6 +80,11 @@ export interface IterationRecord {
   set: EvaluationSet;
   model: EvaluationModel | null;
   jobIds: string[];
+  /**
+   * sha256 of each sample the iteration evaluated (migration 0017), kept when its jobs are
+   * deleted; null for iterations recorded before it (callers map `jobIds` to documents then).
+   */
+  sampleShas: string[] | null;
   /** Shared by the iterations of one model comparison. */
   groupId: string | null;
   /** The jobs were told not to read the step cache. */
@@ -91,9 +96,9 @@ export interface IterationRecord {
 
 export type NewIteration = Omit<
   IterationRecord,
-  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached'
+  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
 > &
-  Partial<Pick<IterationRecord, 'groupId' | 'uncached'>>;
+  Partial<Pick<IterationRecord, 'groupId' | 'uncached' | 'sampleShas'>>;
 
 export class WorkbenchConflictError extends Error {}
 
@@ -388,6 +393,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async createIteration(input: NewIteration) {
     const record: IterationRecord = {
       ...input,
+      sampleShas: input.sampleShas ?? null,
       groupId: input.groupId ?? null,
       uncached: input.uncached ?? false,
       id: randomUUID(),
@@ -505,6 +511,7 @@ interface IterationRow {
   eval_set: EvaluationSet;
   model: EvaluationModel | null;
   job_ids: string[];
+  sample_shas: string[] | null;
   group_id: string | null;
   uncached: boolean;
   scores: IterationRecord['scores'];
@@ -520,6 +527,7 @@ const toIteration = (r: IterationRow): IterationRecord => ({
   set: r.eval_set,
   model: r.model,
   jobIds: r.job_ids,
+  sampleShas: r.sample_shas,
   groupId: r.group_id,
   uncached: r.uncached,
   scores: r.scores,
@@ -873,8 +881,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     const { rows } = await this.pool.query<IterationRow>(
       `INSERT INTO workbench_iterations
          (project_id, template_version, definition, brief_version, eval_set, model, job_ids,
-          group_id, uncached)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+          group_id, uncached, sample_shas)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         i.projectId,
         i.templateVersion,
@@ -885,6 +893,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         i.jobIds,
         i.groupId ?? null,
         i.uncached ?? false,
+        i.sampleShas ?? null,
       ],
     );
     return toIteration(rows[0]!);

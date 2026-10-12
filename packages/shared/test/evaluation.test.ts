@@ -279,6 +279,11 @@ describe('publishGate', () => {
     score: 0.95,
     matchesDraft: true,
     createdAt: '2026-10-12T10:00:00.000Z',
+    completed: 2,
+    total: 2,
+    model: null,
+    covered: 2,
+    holdoutSamples: 2,
     ...over,
   });
 
@@ -329,6 +334,60 @@ describe('publishGate', () => {
     expect(publishGate({ threshold: 1, candidates: [c({ score: 0.99 })] }).passes).toBe(false);
     expect(publishGate({ threshold: 1, candidates: [c({ score: 1 })] }).passes).toBe(true);
     expect(publishGate({ threshold: 0.5, candidates: [c({ score: null })] }).passes).toBe(false);
+  });
+
+  it('ignores runs with a model override (only the template own models count)', () => {
+    const gate = publishGate({
+      threshold: 0.9,
+      candidates: [
+        c({ id: 'template', score: 0.5, createdAt: '2026-10-12T09:00:00.000Z' }),
+        c({ id: 'fast', model: 'fast', score: 1 }),
+      ],
+    });
+    expect(gate).toMatchObject({ iterationId: 'template', passes: false, score: 0.5 });
+    expect(publishGate({ threshold: 0.9, candidates: [c({ model: 'fast' })] })).toMatchObject({
+      iterationId: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    });
+  });
+
+  it.each([
+    [
+      'a sample was not compared',
+      { completed: 1, total: 2, score: 1 },
+      'holdout evaluation compared 1 of 2 samples',
+    ],
+    [
+      'a ready holdout sample was not evaluated',
+      { covered: 1, holdoutSamples: 2, score: 1 },
+      'holdout evaluation covered 1 of 2 holdout samples',
+    ],
+    [
+      'coverage is reported before comparisons',
+      { covered: 1, holdoutSamples: 3, completed: 0, total: 1 },
+      'holdout evaluation covered 1 of 3 holdout samples',
+    ],
+    [
+      'comparisons are reported before the score',
+      { completed: 1, total: 2, score: 0.1 },
+      'holdout evaluation compared 1 of 2 samples',
+    ],
+    ['there is no score', { score: null }, 'holdout evaluation produced no score'],
+    [
+      'the rounded percentages tie (one decimal)',
+      { score: 0.899 },
+      'holdout score 89.9% is below the threshold 90.0%',
+    ],
+  ] as [string, Partial<GateCandidate>, string][])('fails when %s', (_name, over, reason) => {
+    const gate = publishGate({ threshold: 0.9, candidates: [c({ id: 'run', ...over })] });
+    expect(gate).toMatchObject({ iterationId: 'run', passes: false, reason });
+  });
+
+  it('keeps whole percentages when the rounded values agree with the verdict', () => {
+    expect(publishGate({ threshold: 0.9, candidates: [c({ score: 0.904 })] }).reason).toBe(
+      'holdout score 90% meets the threshold 90%',
+    );
   });
 });
 

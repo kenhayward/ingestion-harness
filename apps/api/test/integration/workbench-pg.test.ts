@@ -329,7 +329,18 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       definition: input.definition,
     });
     expect(await workbench.getIteration('it-other', a.id)).toBeNull();
-    expect(a).toMatchObject({ groupId: null, uncached: false });
+    expect(a).toMatchObject({ groupId: null, uncached: false, sampleShas: null });
+    const c = await workbench.createIteration({
+      ...input,
+      set: 'holdout',
+      model: null,
+      jobIds: [jobId],
+      sampleShas: ['a'.repeat(64), 'b'.repeat(64)],
+    });
+    expect((await workbench.getIteration(projectId, c.id))!.sampleShas).toEqual([
+      'a'.repeat(64),
+      'b'.repeat(64),
+    ]);
   });
 
   it('stores the publish threshold and logs publications as numbers, newest first', async () => {

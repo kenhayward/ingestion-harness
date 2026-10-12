@@ -132,6 +132,22 @@ describe('holdout', () => {
     expect(done.json().error).toBe('every holdout sample already has a reference');
   });
 
+  it('refuses holdout runs while every unverified holdout sample is already running', async () => {
+    const ctx = await project();
+    const h = await ctx.add(1);
+    await ctx.setRole(h.id, 'holdout');
+    expect((await holdoutRuns(ctx)).statusCode).toBe(201);
+    const again = await holdoutRuns(ctx);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('reference runs are already running');
+  });
+
+  it('rejects an unknown reference set', async () => {
+    const { app } = await project();
+    const res = await app.inject('/api/workbench/projects/letter/references?set=bogus');
+    expect(res.statusCode).toBe(400);
+  });
+
   it('evaluates on holdout, counts each sample’s holdout runs, and never feeds revise', async () => {
     const { app, add, setRole, verify, evaluate, finish, repo, start, feedback } = await project();
     const d = await add(1);

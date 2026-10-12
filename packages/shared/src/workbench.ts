@@ -110,7 +110,10 @@ export interface SampleView {
   prepareJobId: string | null;
   error: string | null;
   triage: PreparedTriage | null;
-  /** Holdout evaluation runs that have used this sample (always 0 for dev samples). */
+  /**
+   * The number of holdout evaluations (iterations) that evaluated this sample's PDF. A sample
+   * moved back to dev keeps its count; the count survives the evaluation jobs being deleted.
+   */
   holdoutRuns: number;
 }
 

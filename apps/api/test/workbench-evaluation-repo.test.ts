@@ -112,5 +112,13 @@ describe('evaluation persistence', () => {
       definition: { id: 'letter', version: 1 },
     });
     expect(await workbench.getIteration('other', a.id)).toBeNull();
+    expect(a.sampleShas).toBeNull();
+    const c = await workbench.createIteration({
+      ...input,
+      model: null,
+      jobIds: [],
+      sampleShas: ['aa', 'bb'],
+    });
+    expect((await workbench.getIteration('letter', c.id))!.sampleShas).toEqual(['aa', 'bb']);
   });
 });
