@@ -579,7 +579,7 @@ th {
     margin-left: 0;
   }
   /* Wide tables scroll inside their own box, never the page (pages get card layouts later). */
-  .page table:not(.job-list):not(.result-list) {
+  .page table:not(.job-list):not(.result-list):not(.token-list) {
     display: block;
     overflow-x: auto;
   }
@@ -2406,4 +2406,141 @@ button.add {
   .test-rail {
     max-width: none;
   }
+}
+
+/* Access (UI handoff §6): issue form + note, new-token panel, token list */
+.access-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.access-page .page-header {
+  margin-bottom: 0;
+}
+.access-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.card-form {
+  flex: 3 1 520px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.card-form h2 {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.card-form > label {
+  flex: 1 1 200px;
+}
+.card-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.note-card {
+  flex: 1 1 260px;
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  color: var(--ih-text);
+}
+.note-card > .icon {
+  color: var(--ih-info-fg);
+}
+.note-card p {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.token-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1.5px solid var(--ih-ok-fg);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-ok-bg);
+}
+.token-panel strong {
+  color: var(--ih-ok-fg);
+}
+.token-panel p {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+}
+.token-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.token-copy input {
+  flex: 1 1 280px;
+  min-width: 0;
+  background: var(--ih-surface);
+}
+.token-list {
+  min-width: 860px;
+  background: transparent;
+}
+.token-list th,
+.token-list td {
+  padding: 12px 16px;
+}
+.token-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+.token-label {
+  display: block;
+  font-weight: 500;
+}
+.confirm-text {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-danger-fg);
+}
+.tag {
+  padding: 2px 8px;
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+}
+.expiry span,
+.expiry small {
+  display: block;
+}
+.expiry small {
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.expiry.soon small {
+  color: var(--ih-warn-fg);
+  font-weight: 600;
+}
+tr.muted-row td {
+  background: var(--ih-surface2);
+}
+tr.confirming td {
+  background: var(--ih-danger-bg);
+}
+.token-list .actions-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+.token-list .row-actions > button {
+  min-height: 34px;
 }

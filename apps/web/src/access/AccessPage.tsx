@@ -123,6 +123,7 @@ export function AccessPage({
             />
           </div>
           <button type="submit" className="primary" disabled={!label.trim()}>
+            <Icon name="plus" />
             Create token
           </button>
         </form>
