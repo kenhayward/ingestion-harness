@@ -196,3 +196,90 @@ describe('version diff', () => {
     expect((await ctx.app.inject('/api/templates/letter/diff?from=1&to=9')).statusCode).toBe(404);
   });
 });
+
+describe('document type summaries (GET /api/templates)', () => {
+  const summaryOf = async (ctx: Awaited<ReturnType<typeof testApp>>, id: string) =>
+    (await ctx.app.inject('/api/templates')).json().find((t: { id: string }) => t.id === id)
+      .summary;
+
+  /** A finished regression run of letter v2 against the 'acme' reference, scoring `items`. */
+  async function finishedRegression(ctx: Awaited<ReturnType<typeof testApp>>, items: string[]) {
+    const source = await processedJob(ctx);
+    await ctx.app.inject(
+      post('/api/templates/letter/references', { jobId: source.id, name: 'acme' }),
+    );
+    const [run] = (
+      await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}))
+    ).json().jobs;
+    const key = `letter/v2/document/${run.documentId}.json`;
+    await ctx.store.put(
+      'outputs',
+      key,
+      Buffer.from(JSON.stringify(draftDocument('ACME Ltd', items))),
+      'application/json',
+    );
+    ctx.repo.outputs.set(run.id, [
+      {
+        outputId: 'document',
+        stage: 'draft',
+        format: 'json',
+        bucket: 'outputs',
+        key,
+        rowCount: null,
+      },
+    ]);
+    ctx.repo.jobs.set(run.id, {
+      ...ctx.repo.jobs.get(run.id)!,
+      status: 'succeeded',
+      updatedAt: '2026-10-12T10:00:00.000Z',
+    });
+  }
+
+  it('summarises shape, references and draft issues', async () => {
+    const ctx = await setup();
+    expect(await summaryOf(ctx, 'letter')).toEqual({
+      sections: 1,
+      fields: 1,
+      tables: 1,
+      references: 0,
+      draftIssues: 0,
+      lastRegression: null,
+    });
+  });
+
+  it('reports the last regression of the version shown (draft first)', async () => {
+    const ctx = await setup();
+    await finishedRegression(ctx, ['bolts', 'nuts']);
+    expect(await summaryOf(ctx, 'letter')).toMatchObject({
+      references: 1,
+      lastRegression: { version: 2, matched: 1, total: 1, at: '2026-10-12T10:00:00.000Z' },
+    });
+  });
+
+  it('counts a reference with differences as not matched', async () => {
+    const ctx = await setup();
+    await finishedRegression(ctx, ['bolts']);
+    expect((await summaryOf(ctx, 'letter')).lastRegression).toMatchObject({ matched: 0, total: 1 });
+  });
+
+  it('counts 0 for a malformed draft instead of failing the list', async () => {
+    const ctx = await setup();
+    await ctx.templates.create('memo', 1, { id: 'memo', version: 1, name: 'Memo' }, 'draft');
+    const res = await ctx.app.inject('/api/templates');
+    expect(res.statusCode).toBe(200);
+    const memo = (await summaryOf(ctx, 'memo')) as { sections: number; draftIssues: number };
+    expect(memo).toMatchObject({ sections: 0, fields: 0, tables: 0, references: 0 });
+    expect(memo.draftIssues).toBeGreaterThan(0);
+  });
+
+  it('leaves lastRegression null when regression documents cannot be read', async () => {
+    const ctx = await setup();
+    await finishedRegression(ctx, ['bolts', 'nuts']);
+    ctx.store.get = async () => {
+      throw new Error('connect ECONNREFUSED');
+    };
+    const res = await ctx.app.inject('/api/templates');
+    expect(res.statusCode).toBe(200);
+    expect((await summaryOf(ctx, 'letter')).lastRegression).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
-import type { FastifyPluginAsync, FastifyReply } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
+import { regressionFinished, regressionReport } from '../regression/report.js';
 import { validateTemplate } from '../templates/definitions.js';
 import { TemplateConflictError, type TemplateRecord } from '../templates/repo.js';
 
@@ -24,16 +25,63 @@ const pinned = (definition: Record<string, unknown>, id: string, version: number
   version,
 });
 
+const count = (value: unknown) => (Array.isArray(value) ? value.length : 0);
+
+/**
+ * The card summary for a document type (UI handoff A5): shape of the version shown (draft first),
+ * references, the draft's validation issues, and that version's last regression. Definitions may
+ * be unfinished drafts, so every part is read defensively.
+ */
+async function summarise(
+  app: FastifyInstance,
+  id: string,
+  latest: TemplateRecord,
+  draft: TemplateRecord | null,
+  log: FastifyBaseLogger,
+) {
+  const definition = latest.definition as {
+    document?: { sections?: unknown };
+    outputs?: { fields?: unknown; tables?: unknown };
+  };
+  const references = (await app.deps.repo.listReferences(id)).length;
+  let lastRegression: { version: number; matched: number; total: number; at: string } | null = null;
+  try {
+    const report = await regressionReport(app, id, latest.version);
+    const finished = report.jobs.filter((j) => regressionFinished(j.status));
+    if (finished.length) {
+      lastRegression = {
+        version: latest.version,
+        matched: report.items.filter((i) => i.comparison?.score === 1).length,
+        total: report.summary.references,
+        at: finished
+          .map((j) => j.updatedAt)
+          .sort()
+          .at(-1)!,
+      };
+    }
+  } catch (err) {
+    log.warn({ err, templateId: id }, 'regression summary unavailable'); // the list still loads
+  }
+  return {
+    sections: count(definition.document?.sections),
+    fields: count(definition.outputs?.fields),
+    tables: count(definition.outputs?.tables),
+    references,
+    draftIssues: draft ? validateTemplate(draft.definition).length : null,
+    lastRegression,
+  };
+}
+
 export const templateRoutes: FastifyPluginAsync = async (app) => {
   const repo = () => app.deps.templates;
   const versionOf = (p: Params) => Number(p.version);
   const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'template not found' });
 
   /** One entry per document type: name, latest published version, open draft. */
-  app.get('/templates', async () => {
+  app.get('/templates', async (req) => {
     const byId = new Map<string, TemplateRecord[]>();
     for (const r of await repo().list()) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
-    return [...byId.entries()].map(([id, versions]) => {
+    const entries = [...byId.entries()].map(([id, versions]) => {
       const published = versions.filter((v) => v.status === 'published').at(-1) ?? null;
       const draft = versions.find((v) => v.status === 'draft') ?? null;
       const latest = draft ?? published ?? versions.at(-1)!;
@@ -48,8 +96,16 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           status: v.status,
           updatedAt: v.updatedAt,
         })),
+        latest,
+        draftRecord: draft,
       };
     });
+    return Promise.all(
+      entries.map(async ({ latest, draftRecord, ...item }) => ({
+        ...item,
+        summary: await summarise(app, item.id, latest, draftRecord, req.log),
+      })),
+    );
   });
 
   /** New document type: v1 draft skeleton to fill in with the editor. */
