@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import {
+  BriefBodySchema,
   MAX_SAMPLES,
   PreparedTextSchema,
   PreparedTriageSchema,
@@ -18,6 +19,7 @@ import {
 } from '@ih/shared';
 import { createNextDraft, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
+import { validateTemplate } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
 import { WorkbenchConflictError, type SampleRecord } from '../workbench/repo.js';
 
@@ -250,4 +252,59 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       return PreparedTextSchema.parse(text);
     },
   );
+
+  /** Save the brief: a new version when it changed, else the latest one (200). */
+  app.put<{ Params: ProjectParams }>('/workbench/projects/:id/brief', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const body = BriefBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const latest = await workbench.latestBrief(req.params.id);
+    if (latest && JSON.stringify(latest.body) === JSON.stringify(body.data)) return latest;
+    return reply.code(201).send(await workbench.saveBrief(req.params.id, body.data));
+  });
+
+  /** Test-run the open draft on every prepared dev sample (holdout samples are not used). */
+  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
+    const projectId = req.params.id;
+    if (!(await workbench.getProject(projectId))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const { draft } = await versionsOf(templates, projectId);
+    if (draft === null) {
+      return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
+    }
+    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+    const ready = (await sampleViews(app, projectId)).filter(
+      (s) => s.view.role === 'dev' && s.view.state === 'ready',
+    );
+    if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+    const jobs = await Promise.all(
+      ready.map(({ record }) =>
+        app.deps.repo.createWorkbenchJob(
+          {
+            id: randomUUID(),
+            filename: record.filename,
+            sha256: record.sha256,
+            sizeBytes: record.sizeBytes,
+            specId: projectId,
+            specVersion: draft,
+            bucket: record.bucket,
+            objectKey: record.objectKey,
+          },
+          { projectId, task: 'process' },
+        ),
+      ),
+    );
+    return reply.code(201).send({ jobs });
+  });
+
+  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    return (await app.deps.repo.listProjectJobs(req.params.id)).filter((j) => j.task !== 'prepare');
+  });
 };
