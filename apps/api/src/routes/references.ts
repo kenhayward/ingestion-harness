@@ -1,5 +1,4 @@
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import type { JobDetail } from '@ih/shared';
+import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { expectedFromDocument } from '../regression/compare.js';
 import { jobDocument, regressionReport } from '../regression/report.js';
