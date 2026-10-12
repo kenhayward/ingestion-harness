@@ -140,4 +140,33 @@ describe('ProjectPage', () => {
       await screen.findByRole('button', { name: 'Propose section anchors' }),
     ).toBeInTheDocument();
   });
+  it('shows the references stage state and renders the References and Evaluate tabs', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listStages: vi.fn(async () => [
+        { stage: 'references' as const, state: 'proposed' as const, completedAt: null },
+      ]),
+    });
+    const { unmount } = render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="references"
+        onNavigate={vi.fn()}
+        role="admin"
+      />,
+    );
+    const tabs = await screen.findByRole('navigation', { name: 'Project' });
+    expect(
+      await within(tabs).findByRole('link', { name: /References · proposed/ }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Run the draft model on unverified samples' }),
+    ).toBeInTheDocument();
+    unmount();
+    render(
+      <ProjectPage api={api} projectId="letter" tab="evaluate" onNavigate={vi.fn()} role="admin" />,
+    );
+    expect(await screen.findByRole('button', { name: 'Evaluate the draft' })).toBeInTheDocument();
+  });
 });
