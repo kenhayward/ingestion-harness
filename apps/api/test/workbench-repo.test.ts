@@ -56,6 +56,53 @@ describe('MemoryWorkbenchRepo', () => {
     expect(await repo.listSamples('letter')).toEqual([]);
   });
 
+  it('rejects a document sampled twice in one project', async () => {
+    const { jobs, repo } = await setup();
+    const sample = {
+      projectId: 'letter',
+      documentId: 'd1',
+      role: 'dev' as const,
+      addedForVersion: 1,
+    };
+    await repo.addSample(sample);
+    await expect(repo.addSample(sample)).rejects.toBeInstanceOf(WorkbenchConflictError);
+    expect(await repo.listSamples('letter')).toHaveLength(1);
+    expect(jobs.sampleDocuments.has('d1')).toBe(true);
+  });
+
+  it('rejects unknown documents and projects without changing state', async () => {
+    const { jobs, repo } = await setup();
+    await expect(
+      repo.addSample({ projectId: 'letter', documentId: 'nope', role: 'dev', addedForVersion: 1 }),
+    ).rejects.toThrow(/unknown document/);
+    await expect(
+      repo.addSample({ projectId: 'ghost', documentId: 'd1', role: 'dev', addedForVersion: 1 }),
+    ).rejects.toThrow(/unknown project/);
+    expect(await repo.listSamples('letter')).toEqual([]);
+    expect(jobs.sampleDocuments.size).toBe(0);
+  });
+
+  it('keeps a document pinned while another project still samples it', async () => {
+    const { jobs, repo } = await setup();
+    await repo.createProject('other', 'Other');
+    const a = await repo.addSample({
+      projectId: 'letter',
+      documentId: 'd1',
+      role: 'dev',
+      addedForVersion: 1,
+    });
+    const b = await repo.addSample({
+      projectId: 'other',
+      documentId: 'd1',
+      role: 'dev',
+      addedForVersion: 1,
+    });
+    await repo.removeSample('letter', a.id);
+    expect(jobs.sampleDocuments.has('d1')).toBe(true);
+    await repo.removeSample('other', b.id);
+    expect(jobs.sampleDocuments.has('d1')).toBe(false);
+  });
+
   it('versions briefs', async () => {
     const { repo } = await setup();
     expect(await repo.latestBrief('letter')).toBeNull();

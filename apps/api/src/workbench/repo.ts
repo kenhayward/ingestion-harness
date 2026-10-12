@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
+import { BriefBodySchema } from '@ih/shared';
 import type { Brief, BriefBody, SampleRole, WorkbenchProject } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
 
@@ -73,6 +74,21 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   }
 
   async addSample(sample: NewSample) {
+    // Mirror migration 0008: FKs on project and document, UNIQUE (project_id, document_id).
+    if (!this.projects.has(sample.projectId)) {
+      throw new Error(`unknown project ${sample.projectId}`);
+    }
+    if (!this.jobs.documents.has(sample.documentId)) {
+      throw new Error(`unknown document ${sample.documentId}`);
+    }
+    const duplicate = [...this.samples.values()].some(
+      (s) => s.projectId === sample.projectId && s.documentId === sample.documentId,
+    );
+    if (duplicate) {
+      throw new WorkbenchConflictError(
+        `document ${sample.documentId} is already a sample of ${sample.projectId}`,
+      );
+    }
     const row = { ...sample, id: randomUUID(), createdAt: new Date().toISOString() };
     this.samples.set(row.id, row);
     this.jobs.sampleDocuments.add(sample.documentId);
@@ -182,7 +198,7 @@ const toSample = (r: SampleRow): SampleRecord => ({
 const toBrief = (r: BriefRow): Brief => ({
   projectId: r.project_id,
   version: r.version,
-  body: r.body,
+  body: BriefBodySchema.parse(r.body),
   createdAt: r.created_at.toISOString(),
 });
 
@@ -221,12 +237,21 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
   }
 
   async addSample(sample: NewSample) {
-    const { rows } = await this.pool.query<{ id: string }>(
-      `INSERT INTO workbench_samples (project_id, document_id, role, added_for_version)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [sample.projectId, sample.documentId, sample.role, sample.addedForVersion],
-    );
-    return (await this.sample(rows[0]!.id))!;
+    try {
+      const { rows } = await this.pool.query<{ id: string }>(
+        `INSERT INTO workbench_samples (project_id, document_id, role, added_for_version)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [sample.projectId, sample.documentId, sample.role, sample.addedForVersion],
+      );
+      return (await this.sample(rows[0]!.id))!;
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') {
+        throw new WorkbenchConflictError(
+          `document ${sample.documentId} is already a sample of ${sample.projectId}`,
+        );
+      }
+      throw err;
+    }
   }
 
   async listSamples(projectId: string) {
