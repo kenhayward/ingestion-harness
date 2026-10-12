@@ -55,6 +55,89 @@ describe('ReviewPage header and source', () => {
   });
 });
 
+describe('ReviewPage extracted data', () => {
+  const withFieldIssue = () => {
+    const data = reviewData();
+    data.document.issues.push({
+      step: 'head',
+      target: 'kind',
+      row: null,
+      column: null,
+      raw: 'x',
+      message: 'not an option',
+    });
+    return data;
+  };
+
+  it('counts each tab and marks tabs with flagged content', async () => {
+    setup();
+    const tabs = await screen.findByRole('tablist', { name: 'Extracted data' });
+    expect(within(tabs).getByRole('tab', { name: 'Fields 4' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(tabs).getByRole('tab', { name: 'results 3 (flagged)' })).toBeInTheDocument();
+    expect(within(tabs).getByRole('tab', { name: 'Edits 0' })).toBeInTheDocument();
+    expect(within(tabs).getByRole('tab', { name: 'Steps 2' })).toBeInTheDocument();
+  });
+
+  it('cycles through flagged values, switching tabs', async () => {
+    const data = withFieldIssue();
+    setup({ getReview: vi.fn(async () => data) });
+    const next = await screen.findByRole('button', { name: 'Next flagged (3)' });
+    await userEvent.click(next);
+    expect(fieldRow(/kind/)).toHaveFocus();
+    expect(within(fieldRow(/kind/)).getByText('not an option')).toBeInTheDocument();
+    await userEvent.click(next);
+    expect(screen.getByRole('tab', { name: /^results/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('cell', { name: /GX/ })).toHaveFocus();
+    await userEvent.click(next);
+    expect(screen.getByRole('cell', { name: /Complies/ })).toHaveFocus();
+    await userEvent.click(next); // wraps to the first
+    expect(screen.getByRole('tab', { name: /^Fields/ })).toHaveAttribute('aria-selected', 'true');
+    expect(fieldRow(/kind/)).toHaveFocus();
+  });
+
+  it('hides Next flagged when nothing is flagged', async () => {
+    const data = reviewData();
+    data.document.issues = [];
+    data.document.checks = {};
+    setup({ getReview: vi.fn(async () => data) });
+    await screen.findByRole('tablist', { name: 'Extracted data' });
+    expect(screen.queryByRole('button', { name: /Next flagged/ })).not.toBeInTheDocument();
+  });
+
+  it('selects a field to find it on the page, and keeps the page for fields without one', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: /^Execution Date/ }));
+    expect(screen.getByRole('img', { name: /page 3 of 3/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^kind/ }));
+    expect(screen.getByRole('img', { name: /page 3 of 3/i })).toBeInTheDocument();
+  });
+
+  it('shows who edited a value and what it was', async () => {
+    const data = reviewData({
+      edits: [
+        {
+          id: 1,
+          at: '2026-10-12T10:00:00Z',
+          field: 'product',
+          table: null,
+          row: null,
+          column: null,
+          oldValue: 'Richfer',
+          newValue: 'Richfer capsules 50',
+          editor: 'khd1',
+          reason: null,
+        },
+      ],
+    });
+    setup({ getReview: vi.fn(async () => data) });
+    const row = await screen.findByRole('row', { name: /Medicinal Product/ });
+    expect(within(row).getByText('Edited by khd1 · was Richfer')).toBeInTheDocument();
+  });
+});
+
 describe('ReviewPage', () => {
   it('shows the document, review reasons and every field with its evidence', async () => {
     setup();
@@ -83,7 +166,9 @@ describe('ReviewPage', () => {
     const { api } = setup();
     await screen.findByRole('heading', { name: /scan\.pdf/ });
     await userEvent.type(screen.getByLabelText('Reviewer'), 'kh');
-    await userEvent.click(within(fieldRow(/Execution Date/)).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(
+      within(fieldRow(/Execution Date/)).getByRole('button', { name: 'Edit Execution Date' }),
+    );
     const input = screen.getByRole('textbox', { name: 'New value for executed_on' });
     await userEvent.clear(input);
     await userEvent.type(input, '17/02/2023{Enter}');
@@ -98,7 +183,9 @@ describe('ReviewPage', () => {
   it('edits list fields as comma-separated values', async () => {
     const { api } = setup();
     await screen.findByRole('heading', { name: /scan\.pdf/ });
-    await userEvent.click(within(fieldRow(/compound/)).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(
+      within(fieldRow(/compound/)).getByRole('button', { name: 'Edit compound' }),
+    );
     const input = screen.getByRole('textbox', { name: 'New value for compound' });
     await userEvent.clear(input);
     await userEvent.type(input, 'Carbonyl Iron, Zinc{Enter}');
@@ -110,7 +197,7 @@ describe('ReviewPage', () => {
 
   it('shows tables with flagged cells and can filter to flagged rows', async () => {
     setup();
-    await userEvent.click(await screen.findByRole('tab', { name: /results \(3\)/ }));
+    await userEvent.click(await screen.findByRole('tab', { name: /^results 3/ }));
     const table = screen.getByRole('table', { name: 'results' });
     expect(within(table).getAllByRole('row')).toHaveLength(4); // header + 3
     const flagged = within(table).getByTitle("'Complies' is not a valid decimal");
@@ -212,7 +299,7 @@ describe('ReviewPage', () => {
       getReview: vi.fn(async () => ({ ...data, job: { ...data.job, status: 'succeeded' } })),
     });
     await screen.findByRole('heading', { name: /scan\.pdf/ });
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve and publish' })).not.toBeInTheDocument();
   });
 
