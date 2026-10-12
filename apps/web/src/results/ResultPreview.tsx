@@ -108,14 +108,6 @@ export function ResultPreview({
           )}
         </>
       )}
-      <div className="panel-actions">
-        <a className="button primary" href={`#/results/${summary.jobId}`}>
-          Open full result
-        </a>
-        <a className="button" href={api.documentUrl(summary.jobId)} target="_blank" rel="noopener">
-          View source PDF
-        </a>
-      </div>
     </aside>
   );
 }

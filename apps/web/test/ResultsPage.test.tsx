@@ -55,7 +55,7 @@ describe('ResultsPage list', () => {
     expect(within(row('unnamed.pdf')).getByText('unnamed reviewer')).toBeInTheDocument();
   });
 
-  it('links each published file for download', async () => {
+  it('offers one ZIP download, the full result and the PDF on each row', async () => {
     const r = result({
       jobId: 'j1',
       filename: 'a.pdf',
@@ -66,12 +66,16 @@ describe('ResultsPage list', () => {
     });
     render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r]) })} />);
     await screen.findByRole('button', { name: 'Show preview of a.pdf' });
-    expect(
-      within(row('a.pdf')).getByRole('link', { name: 'Download results.csv for a.pdf' }),
-    ).toHaveAttribute('href', '/api/jobs/j1/outputs/results?stage=published');
-    expect(
-      within(row('a.pdf')).getByRole('link', { name: 'Download document.json for a.pdf' }),
-    ).toHaveAttribute('href', '/api/jobs/j1/outputs/document?stage=published');
+    const links = within(row('a.pdf')).getAllByRole('link');
+    expect(links.map((l) => [l.getAttribute('aria-label'), l.getAttribute('href')])).toEqual([
+      ['Open full result for a.pdf', '#/results/j1'],
+      ['View PDF of a.pdf', '/api/jobs/j1/document'],
+      ['Download a.pdf results as ZIP', '/api/results/j1/archive'],
+    ]);
+    expect(within(row('a.pdf')).getByRole('link', { name: 'View PDF of a.pdf' })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
   });
 
   it('filters by document type with chips', async () => {
