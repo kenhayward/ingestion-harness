@@ -35,6 +35,21 @@ describe('EvaluateTab', () => {
     expect(await screen.findByText('Score 75%')).toBeInTheDocument();
   });
 
+  it('reports a failed History refresh once the evaluation completes', async () => {
+    const running = iterationView({ status: 'running', score: null, completed: 0 });
+    const done = iterationView({ id: running.id });
+    tab({
+      listIterations: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockRejectedValue(new Error('history unavailable')),
+      startEvaluation: vi.fn(async () => running),
+      getIteration: vi.fn().mockResolvedValueOnce(running).mockResolvedValue(done),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate the draft' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('history unavailable');
+  });
+
   it('shows per-sample scores, worst fields first, and a drill-down', async () => {
     const iter = iterationView();
     tab({ listIterations: vi.fn(async () => [iter]), getIteration: vi.fn(async () => iter) });

@@ -73,7 +73,9 @@ export function EvaluateTab({
               (list) => {
                 if (!stopped) setHistory(list);
               },
-              () => undefined,
+              (err: Error) => {
+                if (!stopped) setError(`could not refresh the history: ${err.message}`);
+              },
             );
           }
         },
