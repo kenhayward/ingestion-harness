@@ -1,14 +1,26 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PublishPanel } from '../src/workbench/PublishPanel.js';
 import { fakeApi, gateView, projectView, publication } from './fake-api.js';
 
-function panel(overrides = {}) {
+function panel(overrides = {}, draft: number | null = 2) {
   const api = fakeApi({ getProject: vi.fn(async () => projectView()), ...overrides });
   const onPublished = vi.fn();
-  render(<PublishPanel api={api} projectId="letter" draft={2} onPublished={onPublished} />);
-  return { api, onPublished };
+  const view = render(
+    <PublishPanel api={api} projectId="letter" draft={draft} onPublished={onPublished} />,
+  );
+  const rerender = (next: number | null, refreshKey?: string) =>
+    view.rerender(
+      <PublishPanel
+        api={api}
+        projectId="letter"
+        draft={next}
+        refreshKey={refreshKey}
+        onPublished={onPublished}
+      />,
+    );
+  return { api, onPublished, rerender };
 }
 
 describe('PublishPanel', () => {
@@ -70,6 +82,52 @@ describe('PublishPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Publish v2' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('below the threshold 90%');
     expect(screen.getByLabelText('Override reason')).toHaveValue('Known bad scan in holdout');
+  });
+
+  it('keeps "Published vN" once the draft is gone, with no Publish button', async () => {
+    const { rerender } = panel({
+      getPublishGate: vi.fn(async () => gateView({ passes: true })),
+      publish: vi.fn(async () => ({
+        publication: publication({ version: 2 }),
+        project: projectView(),
+      })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Publish v2' }));
+    expect(await screen.findByText('Published v2')).toBeInTheDocument();
+    rerender(null);
+    expect(
+      await screen.findByText(
+        'Every version is published; start the next version on the Template tab',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Published v2')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish v/ })).toBeNull();
+  });
+
+  it('shows the publications without an open draft, and no Publish button', async () => {
+    const { api } = panel(
+      { listPublications: vi.fn(async () => [publication({ version: 1, score: 0.95 })]) },
+      null,
+    );
+    expect(
+      await screen.findByText(
+        'Every version is published; start the next version on the Template tab',
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: 'Publications' })).toHaveTextContent('v1');
+    expect(screen.queryByRole('button', { name: /^Publish v/ })).toBeNull();
+    expect(screen.queryByLabelText('Override reason')).toBeNull();
+    expect(api.getPublishGate).not.toHaveBeenCalled();
+  });
+
+  it('reloads the gate when the refresh key changes and after saving the threshold', async () => {
+    const { api, rerender } = panel({ setPublishThreshold: vi.fn(async () => projectView()) });
+    await screen.findByRole('button', { name: 'Publish v2' });
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(1));
+    rerender(2, 'iteration-1:complete');
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(3));
   });
 
   it('lists recent publications with their override reasons', async () => {

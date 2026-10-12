@@ -71,11 +71,24 @@ describe('EvaluateTab', () => {
     expect(await screen.findByText('gate reason')).toBeInTheDocument();
   });
 
-  it('hides the publish panel without an open draft', async () => {
-    const { api } = tab({}, false);
-    await screen.findByRole('button', { name: 'Evaluate the draft' });
+  it('keeps the publish panel without an open draft, with no Publish button', async () => {
+    tab({}, false);
+    expect(
+      await screen.findByText(
+        'Every version is published; start the next version on the Template tab',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Publish v/ })).toBeNull();
-    expect(api.getPublishGate).not.toHaveBeenCalled();
+  });
+
+  it('reloads the publish gate when the latest evaluation completes', async () => {
+    const running = iterationView({ status: 'running', score: null, set: 'holdout' });
+    const done = iterationView({ id: running.id, status: 'complete', set: 'holdout' });
+    const getIteration = vi.fn().mockResolvedValueOnce(running).mockResolvedValue(done);
+    const { api } = tab({ listIterations: vi.fn(async () => [running]), getIteration });
+    await waitFor(() => expect(getIteration.mock.calls.length).toBeGreaterThan(1));
+    // Once on mount, once when the running iteration loads, once when it completes.
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(3));
   });
 
   it('comments on a field from the drill-down', async () => {

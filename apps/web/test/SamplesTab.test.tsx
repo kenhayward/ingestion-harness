@@ -36,7 +36,19 @@ describe('SamplesTab', () => {
     );
     await screen.findByRole('table', { name: 'Samples' });
     expect(row('h.pdf')).toHaveTextContent('used in 2 holdout evaluations');
-    expect(row('d.pdf')).not.toHaveTextContent('holdout evaluations');
+    expect(row('d.pdf')).not.toHaveTextContent('holdout evaluation');
+  });
+
+  it('says "1 holdout evaluation" in the singular', async () => {
+    tab(
+      fakeApi({
+        listSamples: vi.fn(async () => [
+          sampleView({ filename: 'h.pdf', role: 'holdout', holdoutRuns: 1 }),
+        ]),
+      }),
+    );
+    await screen.findByRole('table', { name: 'Samples' });
+    expect(row('h.pdf')).toHaveTextContent(/used in 1 holdout evaluation(?!s)/);
   });
 
   it('uploads each chosen PDF as a dev sample and reports failures', async () => {

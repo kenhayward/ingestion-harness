@@ -40,7 +40,7 @@ export function EvaluateTab({
   projectId: string;
   dataPolicy: DataPolicy;
   hasDraft: boolean;
-  /** The open draft version; the Publish panel is hidden without one. */
+  /** The open draft version; without one the Publish panel only shows the publication log. */
   draft: number | null;
   pollMs: number;
   onRestored: () => void;
@@ -436,9 +436,13 @@ export function EvaluateTab({
           </tbody>
         </table>
       )}
-      {draft !== null && (
-        <PublishPanel api={api} projectId={projectId} draft={draft} onPublished={onRestored} />
-      )}
+      <PublishPanel
+        api={api}
+        projectId={projectId}
+        draft={draft}
+        refreshKey={current ? `${current.id}:${current.status}` : undefined}
+        onPublished={onRestored}
+      />
     </div>
   );
 }

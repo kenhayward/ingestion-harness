@@ -7,16 +7,23 @@ const MAX_OVERRIDE_CHARS = 1000;
 const DOT = '·';
 const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
 
-/** Publish gate (ADR 0007): the newest holdout score of this draft against the threshold. */
+/**
+ * Publish gate (ADR 0007): the newest holdout score of this draft against the threshold, and the
+ * publication log. Without an open draft only the log and the threshold are shown.
+ */
 export function PublishPanel({
   api,
   projectId,
   draft,
+  refreshKey,
   onPublished,
 }: {
   api: Api;
   projectId: string;
-  draft: number;
+  /** The open draft version; null when every version is published. */
+  draft: number | null;
+  /** Changes when the gate may have changed (e.g. the latest evaluation completed). */
+  refreshKey?: string;
   onPublished: () => void;
 }) {
   const [gate, setGate] = useState<GateView | null>(null);
@@ -30,7 +37,7 @@ export function PublishPanel({
   const load = useCallback(async () => {
     try {
       const [nextGate, nextPublications, view] = await Promise.all([
-        api.getPublishGate(projectId),
+        draft === null ? null : api.getPublishGate(projectId),
         api.listPublications(projectId),
         api.getProject(projectId),
       ]);
@@ -41,11 +48,11 @@ export function PublishPanel({
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [api, projectId]);
+  }, [api, projectId, draft]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -81,7 +88,11 @@ export function PublishPanel({
   return (
     <section aria-label="Publish">
       <h3>Publish</h3>
-      {gate && <p>{gate.reason}</p>}
+      {draft === null ? (
+        <p>Every version is published; start the next version on the Template tab</p>
+      ) : (
+        gate && <p>{gate.reason}</p>
+      )}
       <div className="actions">
         <label>
           Publish threshold (%){' '}
@@ -102,7 +113,7 @@ export function PublishPanel({
           Save threshold
         </button>
       </div>
-      {needsOverride && (
+      {draft !== null && needsOverride && (
         <label>
           Override reason
           <textarea
@@ -112,20 +123,22 @@ export function PublishPanel({
           />
         </label>
       )}
-      <div className="actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={
-            busy ||
-            gate === null ||
-            (needsOverride && overrideReason.trim().length < MIN_OVERRIDE_CHARS)
-          }
-          onClick={() => void publish()}
-        >
-          Publish v{draft}
-        </button>
-      </div>
+      {draft !== null && (
+        <div className="actions">
+          <button
+            type="button"
+            className="primary"
+            disabled={
+              busy ||
+              gate === null ||
+              (needsOverride && overrideReason.trim().length < MIN_OVERRIDE_CHARS)
+            }
+            onClick={() => void publish()}
+          >
+            Publish v{draft}
+          </button>
+        </div>
+      )}
       {error && <p role="alert">{error}</p>}
       {published !== null && <p role="status">Published v{published}</p>}
       {publications.length > 0 && (
