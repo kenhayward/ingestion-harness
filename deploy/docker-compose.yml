@@ -40,16 +40,19 @@ services:
       retries: 20
 
   seaweedfs:
-    image: chrislusf/seaweedfs:${SEAWEEDFS_TAG:-latest}
+    # Pinned to an exact 4.x release; Dependabot proposes newer 4.x tags (ADR 0008).
+    image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
     # Render the S3 identity file from env, then run master+volume+filer+s3 in one process.
+    # The admin identity is static (the IAM API can't change it); -s3.iam.readOnly=false lets the
+    # API manage the data lake's read-only `lake-*` users through the embedded IAM (ADR 0008).
     entrypoint: ['/bin/sh', '-c']
     command:
       - >
         sed -e "s|__ACCESS_KEY__|$${S3_ACCESS_KEY}|" -e "s|__SECRET_KEY__|$${S3_SECRET_KEY}|"
         /etc/seaweedfs/s3.json.template > /tmp/s3.json &&
         exec weed server -dir=/data -volume.max=0 -master.volumeSizeLimitMB=1024
-        -s3 -s3.port=8333 -s3.config=/tmp/s3.json
+        -s3 -s3.port=8333 -s3.config=/tmp/s3.json -s3.iam.readOnly=false
     environment:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
@@ -58,6 +61,7 @@ services:
       - ./seaweedfs/s3.json.template:/etc/seaweedfs/s3.json.template:ro
     ports:
       # S3 endpoint for downstream loaders; bound to localhost unless S3_PUBLIC_BIND is set.
+      # Publish it through the proxy with the GET/HEAD-only rules in deploy/README.md (ADR 0008).
       - ${S3_PUBLIC_BIND:-127.0.0.1}:${S3_PUBLIC_PORT:-8335}:8333
       # Master UI (unauthenticated); localhost unless SEAWEEDFS_MASTER_BIND is set.
       - ${SEAWEEDFS_MASTER_BIND:-127.0.0.1}:${SEAWEEDFS_MASTER_PORT:-9334}:9333
@@ -98,6 +102,8 @@ services:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
       # Proxies whose X-Forwarded-* the API trusts (empty = private networks; ADR 0006).
       TRUST_PROXY: ${TRUST_PROXY:-}
+      # URL the data lake reads the publish bucket through (shown with new S3 keys; ADR 0008).
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
