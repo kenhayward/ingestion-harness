@@ -300,11 +300,13 @@ export function ReviewPage({
                         </td>
                         <td>{step.table ?? step.fields.join(', ')}</td>
                         <td>
-                          {last
-                            ? `${last.model ?? '?'} · ${last.attempts} attempt(s) · ${last.status}` +
-                              (last.outputTokens ? ` · ${last.outputTokens} output tokens` : '') +
-                              (last.trigger === 'rerun' ? ' · re-run' : '')
-                            : '—'}
+                          {last?.cached
+                            ? `${last.model ?? '?'} · cached · ${last.status}`
+                            : last
+                              ? `${last.model ?? '?'} · ${last.attempts} attempt(s) · ${last.status}` +
+                                (last.outputTokens ? ` · ${last.outputTokens} output tokens` : '') +
+                                (last.trigger === 'rerun' ? ' · re-run' : '')
+                              : '—'}
                         </td>
                         <td>
                           {editable && (

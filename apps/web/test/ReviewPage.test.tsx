@@ -285,6 +285,7 @@ describe('ReviewPage', () => {
           inputTokens: 900,
           outputTokens: 300,
           status: 'succeeded',
+          cached: false,
           error: null,
           startedAt: '2026-10-09T10:00:00Z',
           finishedAt: '2026-10-09T10:01:00Z',
@@ -308,6 +309,31 @@ describe('ReviewPage', () => {
       pageImages: [3, 2],
     });
     expect(onDone).toHaveBeenCalled();
+  });
+
+  it('shows a step served from the step cache as cached', async () => {
+    setup({
+      getStepRuns: vi.fn(async () => [
+        {
+          id: 1,
+          stepId: 'data',
+          trigger: 'process',
+          model: 'local/qwen',
+          attempts: 1,
+          inputTokens: null,
+          outputTokens: null,
+          status: 'succeeded',
+          cached: true,
+          error: null,
+          startedAt: '2026-10-09T10:00:00Z',
+          finishedAt: '2026-10-09T10:00:00Z',
+        },
+      ]),
+    });
+    await userEvent.click(await screen.findByRole('tab', { name: /Steps/ }));
+    const row = await screen.findByRole('row', { name: /data/ });
+    expect(row).toHaveTextContent('cached');
+    expect(row).not.toHaveTextContent('attempt');
   });
 
   it('approves a test run awaiting review (a workbench reference run)', async () => {

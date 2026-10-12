@@ -259,6 +259,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     startEvaluation: vi.fn(async () => {
       throw new Error('startEvaluation not stubbed');
     }),
+    startComparison: vi.fn(async () => {
+      throw new Error('startComparison not stubbed');
+    }),
+    getComparison: vi.fn(async () => {
+      throw new Error('getComparison not stubbed');
+    }),
     listIterations: vi.fn(async () => []),
     getIteration: vi.fn(async () => {
       throw new Error('getIteration not stubbed');
