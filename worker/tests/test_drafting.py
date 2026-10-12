@@ -213,7 +213,7 @@ def test_transient_provider_errors_retry_the_job(fixture_specs_dir: Path) -> Non
 
 def test_unknown_stage_needs_review(fixture_specs_dir: Path) -> None:
     provider, _, deps = make(fixture_specs_dir)
-    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    queue = FakeQueue(jobs=[draft_job(stage="references")])
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert "stage" in reason and provider.calls == []
@@ -244,3 +244,81 @@ def test_missing_prepared_text_needs_review_without_a_call(fixture_specs_dir: Pa
     [(_, reason)] = queue.reviewed
     assert "prepared text" in reason
     assert provider.calls == []
+
+
+OUTPUTS_BODY = {
+    "notes": "",
+    "changes": [
+        {
+            "op": "putField",
+            "id": "protocol_number",
+            "name": None,
+            "type": "text",
+            "description": "Protocol id, e.g. PVP/23/003",
+            "enum": None,
+            "columns": None,
+            "reason": "header of every sample",
+        }
+    ],
+}
+
+
+def test_outputs_job_writes_typed_changes_and_sees_the_accepted_survey(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [OUTPUTS_BODY]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs", survey=SURVEY_BODY)])
+    run_once(queue, deps, "w1")
+    result = json.loads(store.get("runs", drafting_key("letter", "job-d")))
+    assert result["body"]["changes"] == [
+        {
+            "op": "putField",
+            "field": {"id": "protocol_number", "description": "Protocol id, e.g. PVP/23/003"},
+            "reason": "header of every sample",
+        }
+    ]
+    [(_, request)] = provider.calls
+    assert "<survey>" in request.prompt and "Process validation protocols." in request.prompt
+
+
+def test_steps_errors_are_fed_back_then_need_review(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    bad = {
+        "notes": "",
+        "changes": [
+            {
+                "op": "putStep",
+                "id": "head",
+                "type": "extract",
+                "fields": ["missing"],
+                "table": None,
+                "sections": ["all"],
+                "instructions": None,
+                "pageImages": None,
+                "chunkPages": None,
+                "context": None,
+                "description": None,
+                "values": None,
+                "reference": None,
+                "aliases": None,
+                "preamble": None,
+                "reason": "r",
+            }
+        ],
+    }
+    provider.responses = [bad, bad]
+    queue = FakeQueue(jobs=[draft_job(stage="steps")])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 2
+    assert "unknown field" in provider.calls[1][1].prompt
+    [(_, reason)] = queue.reviewed
+    assert "unknown field" in reason
+
+
+def test_change_stage_without_a_draft_needs_review(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    queue = FakeQueue(jobs=[draft_job(stage="outputs", draft=None)])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "needs the current draft" in reason and provider.calls == []

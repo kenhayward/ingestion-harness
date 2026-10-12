@@ -13,7 +13,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .extract import ExtractionFailedError, run_extraction
+from .draft_stages import OUTPUTS, STEPS, Stage
+from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
 from .pipeline import DocumentError, PipelineDeps, check_cancelled, enforce_data_policy
@@ -52,13 +53,6 @@ class DraftSample:
     filename: str
     role: str
     pages: list[str]
-
-
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    instructions: str
-    schema: dict[str, Any]
 
 
 def _object(required: dict[str, Any]) -> dict[str, Any]:
@@ -115,7 +109,9 @@ Return JSON only.""",
     SURVEY_SCHEMA,
 )
 
-STAGES: dict[str, Stage] = {SURVEY.id: SURVEY}
+STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, STEPS)}
+#: Stages that propose changes to the current draft (so they need it).
+CHANGE_STAGE_IDS = {"outputs", "sections", "steps"}
 
 _BRIEF_LABELS = [
     ("purpose", "Purpose"),
@@ -152,6 +148,7 @@ def build_context(
     draft: dict[str, Any] | None,
     samples: list[DraftSample],
     example_yaml: str | None,
+    survey: dict[str, Any] | None = None,
 ) -> str:
     """Everything a drafting model sees, in one string. Refuses holdout (non-dev) samples."""
     for s in samples:
@@ -160,6 +157,8 @@ def build_context(
                 f"sample {s.sample_id} is {s.role}: holdout text is never sent to drafting"
             )
     blocks = [f"<harness>\n{RULES}</harness>", f"<brief>\n{_brief_text(brief)}\n</brief>"]
+    if survey:
+        blocks.append(f"<survey>\n{json.dumps(survey, indent=1, ensure_ascii=False)}\n</survey>")
     if example_yaml:
         blocks.append(f"<example_template>\n{example_yaml.strip()}\n</example_template>")
     if draft:
@@ -192,6 +191,7 @@ class DraftParams(BaseModel):
     brief_version: int | None = Field(default=None, alias="briefVersion")
     brief: dict[str, Any]
     draft: dict[str, Any] | None = None
+    survey: dict[str, Any] | None = None
     samples: list[DraftParamSample]
     model: str | None = None
 
@@ -212,6 +212,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     stage = STAGES.get(params.stage)
     if stage is None:
         raise DocumentError(f"drafting stage {params.stage!r} is not available")
+    if stage.id in CHANGE_STAGE_IDS and params.draft is None:
+        raise DocumentError(f"drafting stage {stage.id} needs the current draft")
     if job.project_id is None:
         raise DocumentError("draft job without a project")
     holdout = [s.sample_id for s in params.samples if s.role != "dev"]
@@ -229,7 +231,11 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
     samples = [DraftSample(s.sample_id, s.filename, s.role, _pages(deps, s.sha256)) for s in sent]
     context = build_context(
-        brief=params.brief, draft=params.draft, samples=samples, example_yaml=deps.example_template
+        brief=params.brief,
+        draft=params.draft,
+        samples=samples,
+        example_yaml=deps.example_template,
+        survey=params.survey,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
@@ -239,29 +245,43 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             "external model call",
             {"stage": stage.id, "model": model_ref, "samples": [s.sample_id for s in samples]},
         )
-    try:
-        result = run_extraction(
-            extraction_id=f"draft-{stage.id}",
-            provider=provider,
-            model_id=model_id,
-            prompt=f"{context}\n\n{stage.instructions}",
-            schema=stage.schema,
-            max_attempts=2,
-            max_tokens=DRAFT_MAX_TOKENS,
-            system=DRAFT_SYSTEM,
-        )
-    except ExtractionFailedError as exc:
-        _audit(deps, job, stage, exc.attempts)
-        raise DocumentError(str(exc)) from exc
-    except RefusalError as exc:
-        raise DocumentError(f"drafting model refused: {exc}") from exc
-    _audit(deps, job, stage, result.attempts)
+    draft = params.draft or {}
+
+    def check(data: dict[str, Any]) -> list[str]:
+        body, errors = stage.convert(data) if stage.convert else (data, [])
+        if not errors and stage.check is not None:
+            errors = stage.check(body, draft)
+        return errors
+
+    def propose(prompt: str, label: str) -> tuple[ExtractionResult, dict[str, Any]]:
+        try:
+            result = run_extraction(
+                extraction_id=label,
+                provider=provider,
+                model_id=model_id,
+                prompt=prompt,
+                schema=stage.schema,
+                max_attempts=2,
+                max_tokens=DRAFT_MAX_TOKENS,
+                system=DRAFT_SYSTEM,
+                check=check if (stage.convert or stage.check) else None,
+            )
+        except ExtractionFailedError as exc:
+            _audit(deps, job, label, exc.attempts)
+            raise DocumentError(str(exc)) from exc
+        except RefusalError as exc:
+            raise DocumentError(f"drafting model refused: {exc}") from exc
+        _audit(deps, job, label, result.attempts)
+        body = stage.convert(result.data)[0] if stage.convert else result.data
+        return result, body
+
+    result, body = propose(f"{context}\n\n{stage.instructions}", f"draft-{stage.id}")
 
     last = result.attempts[-1]
     output = {
         "stage": stage.id,
         "model": result.model_ref,
-        "body": result.data,
+        "body": body,
         "usage": {"inputTokens": last.input_tokens, "outputTokens": last.output_tokens},
     }
     check_cancelled(job, queue)
@@ -274,12 +294,12 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     return output
 
 
-def _audit(deps: PipelineDeps, job: ClaimedJob, stage: Stage, attempts: list[Any]) -> None:
+def _audit(deps: PipelineDeps, job: ClaimedJob, label: str, attempts: list[Any]) -> None:
     for a in attempts:
         record = {"prompt": a.prompt, "response": a.response, "errors": a.errors}
         deps.store.put(
             deps.buckets.runs,
-            run_key(job.id, f"draft-{stage.id}", a.n),
+            run_key(job.id, label, a.n),
             json.dumps(record).encode(),
             "application/json",
         )
