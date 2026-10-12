@@ -174,7 +174,12 @@ def test_external_drafting_is_logged_with_the_samples_sent(fixture_specs_dir: Pa
     queue = FakeQueue(jobs=[draft_job(dataPolicy="external")])
     run_once(queue, deps, "w1")
     [details] = [d for _, _, msg, d in queue.event_details if msg == "external model call"]
-    assert details == {"stage": "survey", "model": "drafter/big", "samples": ["s1"]}
+    assert details == {
+        "stage": "survey",
+        "model": "drafter/big",
+        "samples": ["s1"],
+        "referencedSamples": [],
+    }
 
 
 def test_local_only_project_never_reaches_an_external_drafter(fixture_specs_dir: Path) -> None:
@@ -516,7 +521,7 @@ def test_revise_drops_feedback_and_failures_for_samples_that_are_not_dev(
     feedback = [
         {"target": "field", "targetId": "x", "sample": "a.pdf", "body": "keep sample note"},
         {"target": "field", "targetId": "x", "sample": "holdout.pdf", "body": "leaky note"},
-        {"target": "template", "targetId": "t", "body": "keep general note"},
+        {"target": "step", "targetId": "head", "body": "keep general note"},
     ]
     failures = [
         {"sample": "a.pdf", "score": 0.1, "fields": [], "tables": []},
@@ -533,3 +538,106 @@ def test_revise_caps_failures_at_the_context_sample_limit(fixture_specs_dir: Pat
     ]
     prompt = revise_prompt(fixture_specs_dir, failures=failures)
     assert prompt.count('"sample": "a.pdf"') == MAX_CONTEXT_SAMPLES
+
+
+def test_revise_sends_the_lowest_scoring_failures_and_logs_every_sample_referenced(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir, location="external")
+    provider.responses = [revise_response()]
+    samples = []
+    for i in range(MAX_CONTEXT_SAMPLES + 1):
+        sha = f"sha-{i}"
+        text = {"sha256": sha, "pages": [{"number": 1, "text": f"TEXT-{i}", "ocr": False}]}
+        store.put("runs", prepared_text_key(sha), json.dumps(text).encode(), "application/json")
+        samples.append({"sampleId": f"s{i}", "filename": f"{i}.pdf", "sha256": sha, "role": "dev"})
+    # Highest scores first: the 9th sample (8.pdf) fails worst and must survive the cap.
+    failures = [
+        {"sample": f"{i}.pdf", "score": 0.9 - i / 100, "fields": [], "tables": []}
+        for i in range(MAX_CONTEXT_SAMPLES + 1)
+    ]
+    feedback = [{"target": "field", "targetId": "sender", "sample": "7.pdf", "body": "note"}]
+    queue = FakeQueue(
+        jobs=[
+            draft_job(
+                stage="revise",
+                dataPolicy="external",
+                draft=REVISE_DRAFT,
+                samples=samples,
+                failures=failures,
+                feedback=feedback,
+            )
+        ]
+    )
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    [details] = [d for _, _, msg, d in queue.event_details if msg == "external model call"]
+    assert details["samples"] == [f"s{i}" for i in range(MAX_CONTEXT_SAMPLES)]
+    sent = [f"{i}.pdf" for i in range(1, MAX_CONTEXT_SAMPLES + 1)]  # 0.pdf scored highest
+    assert details["referencedSamples"] == sorted(sent)
+    prompt = str(provider.calls[0][1].prompt)
+    assert '"sample": "8.pdf"' in prompt and '"sample": "0.pdf"' not in prompt
+
+
+def test_revise_failures_header_names_the_iteration_they_came_from(
+    fixture_specs_dir: Path,
+) -> None:
+    failures = [{"sample": "a.pdf", "score": 0.5, "fields": [], "tables": []}]
+    prompt = revise_prompt(
+        fixture_specs_dir,
+        failures=failures,
+        failuresFrom={"templateVersion": 3, "model": "local/qwen"},
+    )
+    assert '<evaluation_failures templateVersion="3" model="local/qwen">' in prompt
+
+
+def revise_section_response(anchor: str) -> dict[str, Any]:
+    response = revise_response()
+    [change] = response["changes"]
+    change["op"] = "putSection"  # only the section payload is read for putSection
+    change["section"] |= {"id": "all", "anchor": anchor, "required": True}
+    return response
+
+
+def test_revise_section_changes_get_one_timeout_check(
+    fixture_specs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[Any] = []
+
+    def stub(*a: Any, **_k: Any) -> dict[str, Any]:
+        seen.append(a)
+        raise DocumentError(TIMEOUT)
+
+    monkeypatch.setattr("ingest_worker.drafting.segment_with_timeout", stub)
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [revise_section_response("^(a+)+$")]
+    queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 1  # no feedback round
+    [(_, reason)] = queue.reviewed
+    assert "backtrack" in reason
+    [(pages, _doc)] = seen
+    assert pages == [("s1", ["PROTOCOL APPROVAL\nPVP/23/003"])]
+    assert store.get_optional("runs", drafting_key("letter", "job-d")) is None
+
+
+def test_revise_section_change_that_segments_in_time_stores_no_anchor_check(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [revise_section_response("^PROTOCOL")]
+    queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 1
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert body["changes"][0]["op"] == "putSection" and "anchorCheck" not in body
+
+
+def test_revise_without_section_changes_never_segments(
+    fixture_specs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def stub(*_a: Any, **_k: Any) -> dict[str, Any]:
+        raise AssertionError("segmented a revise without section changes")
+
+    monkeypatch.setattr("ingest_worker.drafting.segment_with_timeout", stub)
+    revise_prompt(fixture_specs_dir)

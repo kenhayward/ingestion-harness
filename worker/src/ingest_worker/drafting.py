@@ -153,6 +153,7 @@ def build_context(
     survey: dict[str, Any] | None = None,
     feedback: list[dict[str, Any]] | None = None,
     failures: list[dict[str, Any]] | None = None,
+    failures_from: FailuresFrom | None = None,
 ) -> str:
     """Everything a drafting model sees, in one string. Refuses holdout (non-dev) samples."""
     for s in samples:
@@ -172,8 +173,14 @@ def build_context(
         ]
         blocks.append("<feedback>\n" + "\n".join(lines) + "\n</feedback>")
     if failures:
+        header = "<evaluation_failures>"
+        if failures_from is not None:
+            header = (
+                f'<evaluation_failures templateVersion="{failures_from.template_version}" '
+                f'model="{failures_from.model or "default"}">'
+            )
         blocks.append(
-            "<evaluation_failures>\n"
+            f"{header}\n"
             f"{json.dumps(failures, indent=1, ensure_ascii=False)}\n"
             "</evaluation_failures>"
         )
@@ -199,6 +206,15 @@ class DraftParamSample(BaseModel):
     role: str
 
 
+class FailuresFrom(BaseModel):
+    """The dev iteration a revision's failures were taken from."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    template_version: int = Field(alias="templateVersion")
+    model: str | None = None
+
+
 class DraftParams(BaseModel):
     """jobs.params of a draft job (written by the API)."""
 
@@ -215,6 +231,7 @@ class DraftParams(BaseModel):
     feedback: list[dict[str, Any]] = Field(default_factory=list)
     failures: list[dict[str, Any]] = Field(default_factory=list)
     feedback_ids: list[str] = Field(default_factory=list, alias="feedbackIds")
+    failures_from: FailuresFrom | None = Field(default=None, alias="failuresFrom")
 
 
 def _pages(deps: PipelineDeps, sha256: str) -> list[str]:
@@ -254,7 +271,11 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     # Defence in depth for the holdout rule: the API already filters, the worker re-checks.
     names = {s.filename for s in params.samples if s.role == "dev"}
     dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
-    dev_failures = [f for f in params.failures if f.get("sample") in names][:MAX_CONTEXT_SAMPLES]
+    # The worst-scoring failures are the most worth fixing; the cap keeps the prompt bounded.
+    dev_failures = sorted(
+        (f for f in params.failures if f.get("sample") in names),
+        key=lambda f: float(f.get("score", 0)),
+    )[:MAX_CONTEXT_SAMPLES]
     context = build_context(
         brief=params.brief,
         draft=params.draft,
@@ -263,6 +284,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         survey=params.survey,
         feedback=dev_feedback,
         failures=dev_failures,
+        failures_from=params.failures_from,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
@@ -270,7 +292,15 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             job.id,
             "info",
             "external model call",
-            {"stage": stage.id, "model": model_ref, "samples": [s.sample_id for s in samples]},
+            {
+                "stage": stage.id,
+                "model": model_ref,
+                "samples": [s.sample_id for s in samples],
+                # Failures and feedback can name dev samples whose text is not sent.
+                "referencedSamples": sorted(
+                    {str(f["sample"]) for f in dev_feedback + dev_failures if f.get("sample")}
+                ),
+            },
         )
     draft = params.draft or {}
 
@@ -319,6 +349,15 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             if grid is None:
                 raise DocumentError(final_misses[0])
         body = {**body, "anchorCheck": grid}
+    elif (
+        stage.id == "revise"
+        and samples
+        and any(c["op"] in ("putSection", "setCopies") for c in body["changes"])
+    ):
+        # One pass, no feedback round: a runaway anchor must not reach the Sections tab.
+        segment_with_timeout(
+            [(s.sample_id, s.pages) for s in samples], _segment_document(draft, body)
+        )
 
     last = result.attempts[-1]
     output = {
@@ -344,9 +383,7 @@ def anchor_check(
     code as the anchor preview, capped by SEGMENT_TIMEOUT_S). Returns the grid and the misses
     worth feeding back: an anchor that matches no sample, or a required one that misses any."""
     block = apply_changes(draft, body["changes"])["document"]
-    document = SegmentDocument.model_validate(
-        {k: block[k] for k in ("sections", "copies", "pageMarkers") if k in block}
-    )
+    document = _segment_document(draft, body)
     try:
         grid = segment_with_timeout([(s.sample_id, s.pages) for s in samples], document)
     except DocumentError as exc:
@@ -377,6 +414,14 @@ def anchor_check(
                 f"{', '.join(missed)}"
             )
     return grid, misses
+
+
+def _segment_document(draft: dict[str, Any], body: dict[str, Any]) -> SegmentDocument:
+    """The draft's document block with a proposal's changes applied, as segmentation sees it."""
+    block = apply_changes(draft, body["changes"])["document"]
+    return SegmentDocument.model_validate(
+        {k: block[k] for k in ("sections", "copies", "pageMarkers") if k in block}
+    )
 
 
 def _audit(deps: PipelineDeps, job: ClaimedJob, label: str, attempts: list[Any]) -> None:
