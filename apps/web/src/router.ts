@@ -9,6 +9,7 @@ export const PROJECT_TABS = [
   'steps',
   'references',
   'evaluate',
+  'revise',
   'template',
   'runs',
 ] as const;

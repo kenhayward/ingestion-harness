@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { EvaluateTab } from '../src/workbench/EvaluateTab.js';
-import { fakeApi, iterationView, projectView } from './fake-api.js';
+import { fakeApi, feedbackItem, iterationView, projectView } from './fake-api.js';
 
 function tab(overrides = {}, hasDraft = true) {
   const api = fakeApi(overrides);
@@ -31,6 +31,37 @@ describe('EvaluateTab', () => {
     await userEvent.click(await screen.findByLabelText('Fresh model calls (skip the step cache)'));
     await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
     expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, { uncached: true });
+  });
+
+  it('comments on a field from the drill-down', async () => {
+    const latest = iterationView();
+    const { api } = tab({
+      listIterations: vi.fn(async () => [latest]),
+      getIteration: vi.fn(async () => latest),
+      addFeedback: vi.fn(async () => feedbackItem()),
+    });
+    const samples = await screen.findByRole('table', { name: 'Samples' });
+    await userEvent.click(
+      within(within(samples).getByText('a.pdf').closest('tr')!).getByRole('button', {
+        name: 'Details',
+      }),
+    );
+    const detail = screen.getByRole('table', { name: 'Fields in a.pdf' });
+    await userEvent.click(
+      within(within(detail).getByText('sent_on').closest('tr')!).getByRole('button', {
+        name: 'Comment',
+      }),
+    );
+    await userEvent.type(screen.getByLabelText('Comment on sent_on'), 'Dates are DMY');
+    await userEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    expect(api.addFeedback).toHaveBeenCalledWith('letter', {
+      target: 'field',
+      targetId: 'sent_on',
+      body: 'Dates are DMY',
+      sampleId: 's1',
+      iterationId: latest.id,
+    });
+    expect(await screen.findByText('Comment saved; see the Revise tab')).toBeInTheDocument();
   });
 
   it('compares models side by side', async () => {

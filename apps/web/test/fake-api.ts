@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type {
+  FeedbackItem,
   IterationView,
   JobSummary,
   ProjectView,
@@ -84,6 +85,21 @@ export function iterationView(overrides: Partial<IterationView> = {}): Iteration
         },
       },
     ],
+    ...overrides,
+  };
+}
+
+export function feedbackItem(overrides: Partial<FeedbackItem> = {}): FeedbackItem {
+  return {
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    target: 'field',
+    targetId: 'sender',
+    sampleId: null,
+    iterationId: null,
+    body: 'Use the letterhead name',
+    createdAt: '2026-10-12T10:00:00.000Z',
+    resolvedBy: null,
     ...overrides,
   };
 }
@@ -266,6 +282,13 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('getComparison not stubbed');
     }),
     listIterations: vi.fn(async () => []),
+    listFeedback: vi.fn(async () => []),
+    addFeedback: vi.fn(async () => {
+      throw new Error('addFeedback not stubbed');
+    }),
+    deleteFeedback: vi.fn(async () => {
+      throw new Error('deleteFeedback not stubbed');
+    }),
     getIteration: vi.fn(async () => {
       throw new Error('getIteration not stubbed');
     }),

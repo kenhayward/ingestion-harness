@@ -249,3 +249,30 @@ describe('http api: comparison', () => {
     ]);
   });
 });
+
+describe('http api: feedback', () => {
+  it('lists, adds and deletes feedback', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : respond(200, []),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listFeedback('letter');
+    await api.addFeedback('letter', { target: 'field', targetId: 'sender', body: 'Letterhead' });
+    await api.deleteFeedback('letter', 'f1');
+    const calls = fetchMock.mock.calls.map(([url, init]) => [
+      init?.method ?? 'GET',
+      url,
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ['GET', '/api/workbench/projects/letter/feedback', undefined],
+      [
+        'POST',
+        '/api/workbench/projects/letter/feedback',
+        { target: 'field', targetId: 'sender', body: 'Letterhead' },
+      ],
+      ['DELETE', '/api/workbench/projects/letter/feedback/f1', undefined],
+    ]);
+  });
+});

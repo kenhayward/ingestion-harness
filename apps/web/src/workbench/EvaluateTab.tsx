@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   EVALUATION_MODELS,
   comparisonRows,
@@ -44,6 +44,12 @@ export function EvaluateTab({
   const [open, setOpen] = useState<string | null>(null);
   const [uncached, setUncached] = useState(false);
   const [comparison, setComparison] = useState<ComparisonView | null>(null);
+  const [commenting, setCommenting] = useState<{
+    targetId: string;
+    sampleId: string | null;
+  } | null>(null);
+  const [commentBody, setCommentBody] = useState('');
+  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,6 +162,21 @@ export function EvaluateTab({
       if (!window.confirm('Replace the open draft with the template from this iteration?')) return;
       await api.restoreIteration(projectId, id);
       onRestored();
+    });
+
+  const saveComment = () =>
+    act(async () => {
+      if (!commenting || !current) return;
+      await api.addFeedback(projectId, {
+        target: 'field',
+        targetId: commenting.targetId,
+        body: commentBody,
+        ...(commenting.sampleId ? { sampleId: commenting.sampleId } : {}),
+        iterationId: current.id,
+      });
+      setCommenting(null);
+      setCommentBody('');
+      setSaved(true);
     });
 
   const accuracy = current ? [...current.scorecard.fields, ...current.scorecard.columns] : [];
@@ -271,6 +292,7 @@ export function EvaluateTab({
               ))}
             </tbody>
           </table>
+          {saved && <p role="status">Comment saved; see the Revise tab</p>}
           {opened?.comparison && (
             <table aria-label={`Fields in ${opened.filename}`}>
               <thead>
@@ -279,16 +301,52 @@ export function EvaluateTab({
                   <th>Expected</th>
                   <th>Actual</th>
                   <th>Match</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {opened.comparison.fields.map((f) => (
-                  <tr key={f.id}>
-                    <td>{f.id}</td>
-                    <td>{show(f.expected)}</td>
-                    <td>{show(f.actual)}</td>
-                    <td>{f.match ? '✓' : '✗'}</td>
-                  </tr>
+                  <Fragment key={f.id}>
+                    <tr>
+                      <td>{f.id}</td>
+                      <td>{show(f.expected)}</td>
+                      <td>{show(f.actual)}</td>
+                      <td>{f.match ? '✓' : '✗'}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCommenting({ targetId: f.id, sampleId: opened.sampleId });
+                            setCommentBody('');
+                            setSaved(false);
+                          }}
+                        >
+                          Comment
+                        </button>
+                      </td>
+                    </tr>
+                    {commenting?.targetId === f.id && commenting.sampleId === opened.sampleId && (
+                      <tr>
+                        <td colSpan={5}>
+                          <label>
+                            Comment on {f.id}
+                            <textarea
+                              value={commentBody}
+                              onChange={(e) => setCommentBody(e.target.value)}
+                            />
+                          </label>{' '}
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={busy || !commentBody.trim()}
+                            onClick={() => void saveComment()}
+                          >
+                            Save comment
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
                 {opened.comparison.tables.map((t) => (
                   <tr key={`table-${t.id}`}>
