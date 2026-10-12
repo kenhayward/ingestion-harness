@@ -20,7 +20,9 @@ describe('sign-in gate', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(api.login).toHaveBeenCalledWith('ih_abc');
     expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
-    expect(screen.getByText('Ken – laptop · user')).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -59,13 +61,13 @@ describe('sign-in gate', () => {
   it('shows the Access link to admins only', async () => {
     const { unmount } = render(<App api={fakeApi()} pollMs={0} />);
     expect(await screen.findByRole('link', { name: 'Access' })).toHaveAttribute('href', '#/access');
-    expect(screen.getByText('admin · admin')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Signed in as admin (admin)' })).toBeInTheDocument();
     unmount();
     const user = fakeApi({
       me: vi.fn(async () => ({ role: 'user' as const, label: 'Ken', expiresAt: null })),
     });
     render(<App api={user} pollMs={0} />);
-    await screen.findByText('Ken · user');
+    await screen.findByRole('group', { name: 'Signed in as Ken (user)' });
     expect(screen.queryByRole('link', { name: 'Access' })).not.toBeInTheDocument();
   });
 

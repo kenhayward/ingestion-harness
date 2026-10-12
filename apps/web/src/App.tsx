@@ -10,6 +10,8 @@ import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
+import { AppShell } from './shell/AppShell.js';
+import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
 
@@ -80,6 +82,8 @@ function SignedInApp({
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
+  const { jobs, error, refresh } = useJobs(api, pollMs);
+  const [query, setQuery] = useState('');
   let page: ReactNode;
   if (route.name === 'review') {
     page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
@@ -102,70 +106,36 @@ function SignedInApp({
       />
     );
   } else {
-    page = <JobsView api={api} pollMs={pollMs} />;
+    page = <JobsView api={api} jobs={jobs} error={error} refresh={refresh} />;
   }
   return (
-    <main className={route.name === 'jobs' ? undefined : 'wide'}>
-      <nav className="top-nav" aria-label="Main">
-        <strong>Ingestion Harness</strong>
-        <a
-          href="#/"
-          aria-current={route.name === 'jobs' || route.name === 'review' ? 'page' : undefined}
-        >
-          Jobs
-        </a>
-        <a
-          href="#/results"
-          aria-current={route.name === 'results' || route.name === 'result' ? 'page' : undefined}
-        >
-          Results
-        </a>
-        <a
-          href="#/templates"
-          aria-current={
-            route.name === 'templates' || route.name === 'template' ? 'page' : undefined
-          }
-        >
-          Document types
-        </a>
-        {me.role === 'admin' && (
-          <a href="#/access" aria-current={route.name === 'access' ? 'page' : undefined}>
-            Access
-          </a>
-        )}
-        <span className="identity">
-          {me.label} · {me.role}
-        </span>
-        <button type="button" className="link" onClick={onSignOut}>
-          Sign out
-        </button>
-      </nav>
+    <AppShell
+      me={me}
+      route={route}
+      jobs={jobs}
+      query={query}
+      onQuery={setQuery}
+      onUpload={() => navigate('#/')}
+      onSignOut={onSignOut}
+    >
       {page}
-    </main>
+    </AppShell>
   );
 }
 
-function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
+function JobsView({
+  api,
+  jobs,
+  error,
+  refresh,
+}: {
+  api: Api;
+  jobs: JobSummary[];
+  error: string | null;
+  refresh: () => Promise<void>;
+}) {
   /** The upload form's Model selection; Retry uses it too. */
   const [retryModel, setRetryModel] = useState('');
-
-  const refresh = useCallback(async () => {
-    try {
-      setJobs(await api.listJobs());
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void refresh();
-    if (pollMs <= 0) return;
-    const timer = setInterval(() => void refresh(), pollMs);
-    return () => clearInterval(timer);
-  }, [refresh, pollMs]);
 
   return (
     <>
