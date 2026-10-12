@@ -24,9 +24,9 @@ export function qualityLine(
     };
   }
   if (s.lastRegression) {
-    const { matched, total, version } = s.lastRegression;
+    const { matched, total } = s.lastRegression;
     return {
-      text: `${matched} of ${total} references match (v${version})`,
+      text: `Regression: ${matched} of ${total} references match`,
       tone: matched === total ? 'ok' : 'warn',
     };
   }

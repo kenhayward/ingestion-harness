@@ -11,10 +11,13 @@ export function Dialog({
   title,
   onClose,
   children,
+  actions,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** The primary action(s), beside Cancel (a submit button can target a form by `form`). */
+  actions?: ReactNode;
 }) {
   const titleId = useId();
   const box = useRef<HTMLDivElement>(null);
@@ -66,6 +69,7 @@ export function Dialog({
           <button type="button" onClick={onClose}>
             Cancel
           </button>
+          {actions}
         </div>
       </div>
     </div>

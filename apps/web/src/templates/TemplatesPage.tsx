@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import type { Api, TemplateListItem } from '../api/client.js';
 import { matchesQuery } from '../shell/derive.js';
 import { Dialog } from '../ui/Dialog.js';
@@ -44,6 +44,7 @@ export function TemplatesPage({
             Import YAML
           </button>
           <button type="button" className="primary" onClick={() => setDialog('new')}>
+            <Icon name="plus" />
             New document type
           </button>
         </div>
@@ -100,6 +101,7 @@ function NewTypeDialog({
   onNavigate: (hash: string) => void;
   onClose: () => void;
 }) {
+  const formId = useId();
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   const { error, busy, run } = useOpen(onNavigate);
@@ -108,8 +110,21 @@ function NewTypeDialog({
     void run(() => api.createTemplate(id.trim(), name.trim()));
   };
   return (
-    <Dialog title="New document type" onClose={onClose}>
-      <form className="dialog-form" onSubmit={submit} aria-label="New document type">
+    <Dialog
+      title="New document type"
+      onClose={onClose}
+      actions={
+        <button
+          type="submit"
+          form={formId}
+          className="primary"
+          disabled={busy || !id.trim() || !name.trim()}
+        >
+          Create
+        </button>
+      }
+    >
+      <form id={formId} className="dialog-form" onSubmit={submit} aria-label="New document type">
         <label>
           Id
           <input
@@ -124,9 +139,6 @@ function NewTypeDialog({
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" className="primary" disabled={busy || !id.trim() || !name.trim()}>
-          Create
-        </button>
       </form>
     </Dialog>
   );
@@ -141,6 +153,7 @@ function ImportDialog({
   onNavigate: (hash: string) => void;
   onClose: () => void;
 }) {
+  const formId = useId();
   const [yaml, setYaml] = useState('');
   const [publish, setPublish] = useState(false);
   const { error, busy, run } = useOpen(onNavigate);
@@ -149,8 +162,16 @@ function ImportDialog({
     void run(() => api.importTemplate(yaml, publish));
   };
   return (
-    <Dialog title="Import YAML" onClose={onClose}>
-      <form className="dialog-form" onSubmit={submit} aria-label="Import YAML">
+    <Dialog
+      title="Import YAML"
+      onClose={onClose}
+      actions={
+        <button type="submit" form={formId} className="primary" disabled={busy || !yaml.trim()}>
+          Import
+        </button>
+      }
+    >
+      <form id={formId} className="dialog-form" onSubmit={submit} aria-label="Import YAML">
         <label>
           Template YAML
           <textarea
@@ -165,9 +186,6 @@ function ImportDialog({
           Publish if valid
         </label>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" className="primary" disabled={busy || !yaml.trim()}>
-          Import
-        </button>
       </form>
     </Dialog>
   );

@@ -60,7 +60,7 @@ describe('TemplatesPage cards', () => {
     );
     expect(within(pvp).getByText('Draft v4')).toBeInTheDocument();
     expect(within(pvp).getByText('5 sections · 9 fields · 1 table')).toBeInTheDocument();
-    expect(within(pvp).getByText('3 of 3 references match (v4)')).toBeInTheDocument();
+    expect(within(pvp).getByText('Regression: 3 of 3 references match')).toBeInTheDocument();
     expect(within(pvp).getByRole('link', { name: 'Edit draft v4' })).toHaveAttribute(
       'href',
       '#/templates/pvp/4',

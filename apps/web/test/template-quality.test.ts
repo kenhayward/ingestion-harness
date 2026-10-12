@@ -32,13 +32,13 @@ describe('qualityLine', () => {
     [
       summary({ draftIssues: 0, references: 3, lastRegression: run(3, 3) }),
       4,
-      '3 of 3 references match (v4)',
+      'Regression: 3 of 3 references match',
       'ok',
     ],
     [
       summary({ references: 3, lastRegression: run(2, 3) }),
       null,
-      '2 of 3 references match (v4)',
+      'Regression: 2 of 3 references match',
       'warn',
     ],
     [summary({ references: 0 }), null, 'No reference documents yet', 'muted'],
