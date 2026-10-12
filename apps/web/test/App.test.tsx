@@ -101,4 +101,26 @@ describe('review routing', () => {
     );
     expect(api.retryJob).toHaveBeenCalledWith('f', 'anthropic/claude-haiku-5-5');
   });
+
+  it('offers Retry with the remembered model after a reload', async () => {
+    localStorage.setItem('ih.uploadModel', 'anthropic/claude-haiku-5-5');
+    const api = fakeApi({
+      listModels: async () => [
+        {
+          ref: 'anthropic/claude-haiku-5-5',
+          provider: 'anthropic',
+          providerKind: 'anthropic',
+          modelId: 'claude-haiku-5-5',
+          displayName: 'Claude Haiku 5.5',
+          enabled: true,
+          discoveredAt: '',
+        },
+      ],
+      listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
+    });
+    render(<App api={api} pollMs={0} />);
+    expect(
+      await screen.findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+    ).toBeInTheDocument();
+  });
 });
