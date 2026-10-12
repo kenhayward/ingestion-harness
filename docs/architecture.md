@@ -73,8 +73,9 @@ The Workbench ([design](design/workbench.md), [ADR 0007](adr/0007-workbench.md))
 workspace for developing a template: one project per type (`workbench_projects.id` is the template id).
 Samples are ordinary documents; uploading one queues a `prepare` job (text extraction and OCR only,
 no LLM extraction) that writes `prepared/{sha256}/text.json|triage.json` to the runs bucket, and the
-sample's state is derived from that job. Workbench jobs run at `priority = -10` against production's 0,
-prepare jobs never appear on the Jobs page, and a sample's document is never deleted along with a job.
+sample's state is derived from that job. Workbench jobs (prepare and test runs) run at `priority = -10` against production's 0.
+Prepare jobs never appear on the Jobs page and are never bulk-deleted, dev test runs are ordinary test jobs, and a sample's
+document is never deleted along with a job.
 
 ## Access
 
