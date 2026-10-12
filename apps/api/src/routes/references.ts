@@ -1,11 +1,7 @@
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import type { JobDetail } from '@ih/shared';
+import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import {
-  compareToReference,
-  expectedFromDocument,
-  type RunDocument,
-} from '../regression/compare.js';
+import { expectedFromDocument } from '../regression/compare.js';
+import { jobDocument, regressionReport } from '../regression/report.js';
 import { diffDefinitions } from '../regression/diff.js';
 import { computeMetrics } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
@@ -13,19 +9,6 @@ import { ReferenceConflictError } from '../repositories/types.js';
 const CreateReference = z
   .object({ jobId: z.string().uuid(), name: z.string().min(1).max(100) })
   .strict();
-
-async function readJson(app: FastifyInstance, bucket: string, key: string) {
-  const body = await app.deps.store.get(bucket, key);
-  return body ? (JSON.parse(body.toString('utf8')) as RunDocument) : null;
-}
-
-/** The document a job produced: the reviewed version if it was reviewed, else its draft. */
-async function jobDocument(app: FastifyInstance, job: JobDetail): Promise<RunDocument | null> {
-  const reviewed = await readJson(app, app.deps.buckets.runs, `${job.id}/reviewed-document.json`);
-  if (reviewed) return reviewed;
-  const draft = job.outputs.find((o) => o.stage === 'draft' && o.outputId === 'document');
-  return draft ? readJson(app, draft.bucket, draft.key) : null;
-}
 
 export const referenceRoutes: FastifyPluginAsync = async (app) => {
   const typeExists = async (id: string) =>
@@ -108,30 +91,12 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string; version: string } }>(
     '/templates/:id/versions/:version/regression',
     async (req) => {
-      const version = Number(req.params.version);
-      const references = await app.deps.repo.listReferences(req.params.id);
-      const jobs = await app.deps.repo.listRegressionJobs(req.params.id, version);
-      const items = await Promise.all(
-        references.map(async (reference) => {
-          const job = jobs.find((j) => j.referenceId === reference.id) ?? null;
-          const ready = job && (job.status === 'succeeded' || job.status === 'awaiting_review');
-          const document = ready ? await jobDocument(app, job) : null;
-          return {
-            reference: { id: reference.id, name: reference.name },
-            job: job && { id: job.id, status: job.status, error: job.error },
-            comparison: document ? compareToReference(reference.expected, document) : null,
-          };
-        }),
+      const { items, summary } = await regressionReport(
+        app,
+        req.params.id,
+        Number(req.params.version),
       );
-      const scores = items.flatMap((i) => (i.comparison ? [i.comparison.score] : []));
-      return {
-        items,
-        summary: {
-          references: references.length,
-          completed: scores.length,
-          averageScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
-        },
-      };
+      return { items, summary };
     },
   );
 

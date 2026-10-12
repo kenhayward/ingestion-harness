@@ -1,67 +1,167 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { TemplateListItem } from '../src/api/client.js';
 import { TemplatesPage } from '../src/templates/TemplatesPage.js';
-import { fakeApi } from './fake-api.js';
+import { fakeApi, templateView } from './fake-api.js';
 
-const list = [
+const summary = {
+  sections: 5,
+  fields: 9,
+  tables: 1,
+  references: 3,
+  draftIssues: 0,
+  lastRegression: { version: 4, matched: 3, total: 3, at: '2026-10-12T10:00:00Z' },
+  regressionRunning: false,
+};
+
+const list: TemplateListItem[] = [
   {
-    id: 'process-validation-protocol',
+    id: 'pvp',
     name: 'Process Validation Protocol',
     description: null,
     published: 3,
-    draft: null,
-    versions: [{ version: 3, status: 'published' as const, updatedAt: '' }],
+    draft: 4,
+    versions: [],
+    summary,
   },
   {
-    id: 'letter',
-    name: 'Letter',
+    id: 'coa',
+    name: 'Certificate of analysis',
     description: null,
-    published: null,
-    draft: 1,
-    versions: [{ version: 1, status: 'draft' as const, updatedAt: '' }],
+    published: 2,
+    draft: null,
+    versions: [],
+    summary: { ...summary, references: 0, draftIssues: null, lastRegression: null },
   },
 ];
 
-describe('TemplatesPage', () => {
-  it('lists document types with links to their published and draft versions', async () => {
-    render(
-      <TemplatesPage
-        api={fakeApi({ listTemplates: vi.fn(async () => list) })}
-        onNavigate={vi.fn()}
-      />,
-    );
-    const row = await screen.findByRole('row', { name: /Process Validation Protocol/ });
-    expect(within(row).getByRole('link', { name: 'v3 (published)' })).toHaveAttribute(
+const card = (name: string) => screen.getByRole('article', { name });
+const pdf = (name: string) => new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+
+function setup(overrides = {}) {
+  const onNavigate = vi.fn();
+  const api = fakeApi({ listTemplates: vi.fn(async () => list), ...overrides });
+  render(<TemplatesPage api={api} onNavigate={onNavigate} />);
+  return { api, onNavigate };
+}
+
+describe('TemplatesPage cards', () => {
+  it('has a header and a card per document type', async () => {
+    setup();
+    expect(screen.getByRole('heading', { level: 1, name: 'Document types' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Published versions are immutable; edit a draft\./),
+    ).toBeInTheDocument();
+    const pvp = await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    expect(within(pvp).getByText('pvp')).toBeInTheDocument();
+    expect(within(pvp).getByRole('link', { name: 'Published v3' })).toHaveAttribute(
       'href',
-      '#/templates/process-validation-protocol/3',
+      '#/templates/pvp/3',
     );
-    const letter = screen.getByRole('row', { name: /Letter/ });
-    expect(within(letter).getByRole('link', { name: 'v1 (draft)' })).toHaveAttribute(
+    expect(within(pvp).getByText('Draft v4')).toBeInTheDocument();
+    expect(within(pvp).getByText('5 sections · 9 fields · 1 table')).toBeInTheDocument();
+    expect(within(pvp).getByText('Regression: 3 of 3 references match')).toBeInTheDocument();
+    expect(within(pvp).getByRole('link', { name: 'Edit draft v4' })).toHaveAttribute(
       'href',
-      '#/templates/letter/1',
+      '#/templates/pvp/4',
+    );
+    expect(
+      within(pvp).getByRole('link', { name: 'Export Process Validation Protocol YAML' }),
+    ).toHaveAttribute('href', '/api/templates/pvp/versions/4/export');
+  });
+
+  it('offers a new draft for a published-only type', async () => {
+    const { api, onNavigate } = setup({
+      newDraft: vi.fn(async () => templateView({ id: 'coa', version: 3 })),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    expect(within(coa).getByText('No reference documents yet')).toBeInTheDocument();
+    expect(within(coa).queryByText(/^Draft v/)).not.toBeInTheDocument();
+    await userEvent.click(within(coa).getByRole('button', { name: 'New draft from v2' }));
+    expect(api.newDraft).toHaveBeenCalledWith('coa', 2);
+    expect(onNavigate).toHaveBeenCalledWith('#/templates/coa/3');
+  });
+
+  it('test-runs a PDF on the version shown', async () => {
+    const { api } = setup();
+    await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    const file = pdf('sample.pdf');
+    await userEvent.upload(
+      within(card('Process Validation Protocol')).getByLabelText(
+        'Test run Process Validation Protocol with a PDF',
+      ),
+      file,
+    );
+    expect(api.testRun).toHaveBeenCalledWith(file, 'pvp', 4);
+    expect(
+      await within(card('Process Validation Protocol')).findByRole('status'),
+    ).toHaveTextContent('Test run queued — see Jobs');
+  });
+
+  it('sends nothing when no file or a non-PDF is chosen', async () => {
+    const { api } = setup();
+    await screen.findByRole('article', { name: 'Certificate of analysis' });
+    const input = within(card('Certificate of analysis')).getByLabelText(
+      'Test run Certificate of analysis with a PDF',
+    );
+    fireEvent.change(input, { target: { files: [] } });
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] },
+    });
+    expect(api.testRun).not.toHaveBeenCalled();
+    expect(within(card('Certificate of analysis')).getByRole('status')).toHaveTextContent(
+      'Choose a PDF',
     );
   });
 
+  it('filters cards with the top-bar search', async () => {
+    const api = fakeApi({ listTemplates: vi.fn(async () => list) });
+    render(<TemplatesPage api={api} onNavigate={vi.fn()} query="certificate" />);
+    expect(
+      await screen.findByRole('article', { name: 'Certificate of analysis' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('article', { name: 'Process Validation Protocol' }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('TemplatesPage dialogs', () => {
   it('creates a document type and opens its v1 draft', async () => {
-    const onNavigate = vi.fn();
-    const api = fakeApi({ listTemplates: vi.fn(async () => []) });
-    render(<TemplatesPage api={api} onNavigate={onNavigate} />);
-    await userEvent.type(await screen.findByLabelText('Id'), 'letter');
-    await userEvent.type(screen.getByLabelText('Name'), 'Letter');
-    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    const { api, onNavigate } = setup({ listTemplates: vi.fn(async () => []) });
+    await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
+    const dialog = screen.getByRole('dialog', { name: 'New document type' });
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'letter');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Letter');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
     expect(api.createTemplate).toHaveBeenCalledWith('letter', 'Letter');
     expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/1');
   });
 
   it('imports YAML, optionally publishing it', async () => {
-    const onNavigate = vi.fn();
-    const api = fakeApi({ listTemplates: vi.fn(async () => []) });
-    render(<TemplatesPage api={api} onNavigate={onNavigate} />);
-    await userEvent.type(await screen.findByLabelText('Template YAML'), 'id: memo');
-    await userEvent.click(screen.getByLabelText('Publish if valid'));
-    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    const { api, onNavigate } = setup({ listTemplates: vi.fn(async () => []) });
+    await userEvent.click(screen.getByRole('button', { name: 'Import YAML' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import YAML' });
+    await userEvent.type(within(dialog).getByLabelText('Template YAML'), 'id: memo');
+    await userEvent.click(within(dialog).getByLabelText('Publish if valid'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
     expect(api.importTemplate).toHaveBeenCalledWith('id: memo', true);
     expect(onNavigate).toHaveBeenCalledWith('#/templates/memo/4');
+  });
+
+  it('shows an error inside the dialog and keeps it open', async () => {
+    setup({
+      listTemplates: vi.fn(async () => []),
+      createTemplate: vi.fn(async () => {
+        throw new Error('document type letter already exists');
+      }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
+    const dialog = screen.getByRole('dialog', { name: 'New document type' });
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'letter');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Letter');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('already exists');
   });
 });

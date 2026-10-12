@@ -56,6 +56,21 @@ export interface TemplateListItem {
   published: number | null;
   draft: number | null;
   versions: { version: number; status: 'draft' | 'published'; updatedAt: string }[];
+  /** Card summary of the version shown (draft first). */
+  summary: TemplateSummary;
+}
+
+export interface TemplateSummary {
+  sections: number;
+  fields: number;
+  tables: number;
+  references: number;
+  /** Validation issues of the draft; null when there is no draft. */
+  draftIssues: number | null;
+  /** Last finished regression of the version shown; matched = references scoring 1. */
+  lastRegression: { version: number; matched: number; total: number; at: string } | null;
+  /** A regression run of that version is still queued or running (no score yet). */
+  regressionRunning: boolean;
 }
 
 export interface TemplateRecordView {

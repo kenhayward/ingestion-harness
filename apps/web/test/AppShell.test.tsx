@@ -102,6 +102,15 @@ const template = (id: string, name: string) => ({
   published: 1,
   draft: null,
   versions: [],
+  summary: {
+    sections: 1,
+    fields: 1,
+    tables: 0,
+    references: 0,
+    draftIssues: null,
+    lastRegression: null,
+    regressionRunning: false,
+  },
 });
 
 const result = (filename: string): ResultSummary => ({

@@ -529,11 +529,12 @@ export class PgRepo implements IngestionRepo {
     );
   }
 
-  async listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+  async listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+    // One row per reference however many times regression ran: the list endpoint reads these.
     const { rows } = await this.pool.query<{ id: string }>(
-      `SELECT j.id FROM jobs j JOIN documents d ON d.id = j.document_id
+      `SELECT DISTINCT ON (j.reference_id) j.id FROM jobs j JOIN documents d ON d.id = j.document_id
         WHERE j.reference_id IS NOT NULL AND d.spec_id = $1 AND d.spec_version = $2
-        ORDER BY j.created_at DESC`,
+        ORDER BY j.reference_id, j.created_at DESC, j.id DESC`,
       [templateId, version],
     );
     const jobs = await Promise.all(rows.map((r) => this.getJob(r.id)));

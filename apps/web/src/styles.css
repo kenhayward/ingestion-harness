@@ -1935,3 +1935,152 @@ a.dl:hover {
     max-width: none;
   }
 }
+
+/* Document types (UI handoff §4): card grid + dialogs */
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 16px;
+}
+.type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.type-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.type-card-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.type-card-head .mono {
+  font-size: var(--ih-text-sm);
+}
+.type-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pills .pill::before {
+  display: none;
+}
+a.pill {
+  text-decoration: none;
+}
+.tone-info {
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+}
+.shape-line,
+.quality {
+  margin: 0;
+  font-size: var(--ih-text-md);
+}
+.shape-line {
+  margin-bottom: -8px;
+}
+.quality-warn {
+  color: var(--ih-warn-fg);
+}
+.quality-ok {
+  color: var(--ih-ok-fg);
+}
+.quality-muted {
+  color: var(--ih-muted);
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.card-actions > .primary {
+  flex: 1;
+}
+label.button {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ih-control-h);
+  padding: 0 14px;
+  border: 1px solid var(--ih-border-strong);
+  border-radius: var(--ih-radius-md);
+  color: var(--ih-text);
+  font-size: var(--ih-text-base);
+  font-weight: 500;
+  cursor: pointer;
+}
+.card-actions:has(input:focus-visible) label.button {
+  outline: 2px solid var(--ih-accent);
+}
+a.button.icon.bordered {
+  width: var(--ih-control-h);
+  padding: 0;
+}
+.type-card [role='status'] {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(6, 12, 20, 0.55);
+}
+.dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--ih-border);
+  border-radius: 14px;
+  background: var(--ih-surface);
+  box-shadow: var(--ih-shadow-card);
+}
+.dialog h2 {
+  margin: 0;
+  font-size: var(--ih-text-xl);
+}
+.dialog-form {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+}
+.dialog-form textarea {
+  width: 100%;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
