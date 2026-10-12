@@ -8,8 +8,27 @@ import type {
   Reference,
   ResultSummary,
   ReviewEdit,
+  SegmentDocument,
   StepRun,
 } from '@ih/shared';
+
+/** Segment previews run before other workbench work, still after production (ADR 0007). */
+export const SEGMENT_PRIORITY = -5;
+
+export interface SegmentJob {
+  id: string;
+  projectId: string;
+  status: JobStatus;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** jobs.params of a segment job (worker: workbench.SegmentParams). */
+export interface SegmentJobParams {
+  samples: { sampleId: string; sha256: string }[];
+  document: SegmentDocument;
+}
 
 export interface NewDocument {
   id: string;
@@ -94,6 +113,15 @@ export interface IngestionRepo {
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
   /** Jobs of a workbench project (prepare jobs and test runs), newest first. */
   listProjectJobs(projectId: string): Promise<JobSummary[]>;
+  /**
+   * Queue a segmentation preview for a project (no document). Earlier segment jobs of the project
+   * are deleted first (only the latest preview matters); their ids are returned in `removed`.
+   */
+  createSegmentJob(
+    projectId: string,
+    params: SegmentJobParams,
+  ): Promise<{ job: SegmentJob; removed: string[] }>;
+  getSegmentJob(projectId: string, id: string): Promise<SegmentJob | null>;
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
@@ -117,7 +145,7 @@ export interface IngestionRepo {
   /**
    * Ids of finished jobs whose updated_at is before `cutoffIso`, oldest first. Regression runs
    * (reference_id set) feed regression scores and metrics, so they're left out unless asked.
-   * Prepare jobs are never returned (they belong to the Workbench).
+   * Prepare jobs and document-less (segment) jobs are never returned (they belong to the Workbench).
    */
   finishedJobIdsBefore(cutoffIso: string, includeRegression?: boolean): Promise<string[]>;
   listModels(): Promise<ModelInfo[]>;
