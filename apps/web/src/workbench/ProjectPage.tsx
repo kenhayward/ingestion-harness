@@ -4,6 +4,8 @@ import { ApiError, type Api } from '../api/client.js';
 import { PROJECT_TABS, type ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
+import { EvaluateTab } from './EvaluateTab.js';
+import { ReferencesTab } from './ReferencesTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
@@ -17,6 +19,8 @@ const TAB_LABEL: Record<ProjectTab, string> = {
   outputs: 'Outputs',
   sections: 'Sections',
   steps: 'Steps',
+  references: 'References',
+  evaluate: 'Evaluate',
   template: 'Template',
   runs: 'Test runs',
 };
@@ -207,6 +211,27 @@ export function ProjectPage({
           />
           <SectionsTab key={revision} api={api} projectId={project.id} draft={draft} pollMs={300} />
         </>
+      )}
+      {tab === 'references' && (
+        <ReferencesTab
+          key={`references-${revision}`}
+          api={api}
+          projectId={project.id}
+          dataPolicy={project.dataPolicy}
+          hasDraft={draft !== null}
+          pollMs={pollMs}
+          onChanged={changed}
+        />
+      )}
+      {tab === 'evaluate' && (
+        <EvaluateTab
+          api={api}
+          projectId={project.id}
+          dataPolicy={project.dataPolicy}
+          hasDraft={draft !== null}
+          pollMs={pollMs}
+          onRestored={changed}
+        />
       )}
       {tab === 'runs' && <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />}
       {tab === 'template' &&

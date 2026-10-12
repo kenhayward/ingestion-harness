@@ -6,6 +6,7 @@ import type {
   BriefBody,
   DataPolicy,
   DraftStage,
+  EvaluationModel,
   ProposalDecision,
   SampleRole,
   StageSkip,
@@ -63,6 +64,23 @@ export interface NewProposal {
   baseDefinition?: Record<string, unknown> | null;
 }
 
+/** One evaluation run of the draft (migration 0013); the scorecard is derived from its jobs. */
+export interface IterationRecord {
+  id: string;
+  projectId: string;
+  templateVersion: number;
+  definition: Record<string, unknown>;
+  briefVersion: number | null;
+  set: 'dev';
+  model: EvaluationModel | null;
+  jobIds: string[];
+  /** Cached summary once every job has finished; null while running. */
+  scores: { score: number | null; completed: number; total: number } | null;
+  createdAt: string;
+}
+
+export type NewIteration = Omit<IterationRecord, 'id' | 'scores' | 'createdAt'>;
+
 export class WorkbenchConflictError extends Error {}
 
 /** Persistence for workbench projects, samples and briefs (ADR 0007; migration 0008). */
@@ -103,6 +121,11 @@ export interface WorkbenchRepo {
   addSkip(projectId: string, stage: DraftStage): Promise<StageSkipRecord>;
   /** Newest first. */
   listSkips(projectId: string): Promise<StageSkipRecord[]>;
+  createIteration(input: NewIteration): Promise<IterationRecord>;
+  /** Newest first. */
+  listIterations(projectId: string): Promise<IterationRecord[]>;
+  getIteration(projectId: string, id: string): Promise<IterationRecord | null>;
+  setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>): Promise<void>;
 }
 
 /** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
@@ -112,7 +135,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly briefs: Brief[] = [];
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
-  private lastTime = 0;
+  readonly iterations: IterationRecord[] = [];
 
   constructor(private readonly jobs: MemoryRepo) {}
 
@@ -124,10 +147,9 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return this.projects.get(id) ?? null;
   }
 
-  /** Strictly increasing ISO times: stage states compare them, so ties would hide staleness. */
+  /** Strictly increasing ISO times (the MemoryRepo's clock): stage states compare them. */
   private now(): string {
-    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
-    return new Date(this.lastTime).toISOString();
+    return this.jobs.now();
   }
 
   async createProject(id: string, name: string) {
@@ -278,6 +300,30 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return this.skips.filter((s) => s.projectId === projectId).reverse();
   }
 
+  async createIteration(input: NewIteration) {
+    const record: IterationRecord = {
+      ...input,
+      id: randomUUID(),
+      scores: null,
+      createdAt: this.now(),
+    };
+    this.iterations.push(record);
+    return record;
+  }
+
+  async listIterations(projectId: string) {
+    return this.iterations.filter((i) => i.projectId === projectId).reverse();
+  }
+
+  async getIteration(projectId: string, id: string) {
+    return this.iterations.find((i) => i.projectId === projectId && i.id === id) ?? null;
+  }
+
+  async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
+    const at = this.iterations.findIndex((i) => i.id === id);
+    if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, scores };
+  }
+
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
     const doc = this.jobs.documents.get(row.documentId)!;
     return {
@@ -344,6 +390,32 @@ interface SkipRow {
   stage: DraftStage;
   skipped_at: Date;
 }
+
+interface IterationRow {
+  id: string;
+  project_id: string;
+  template_version: number;
+  definition: Record<string, unknown>;
+  brief_version: number | null;
+  eval_set: 'dev';
+  model: EvaluationModel | null;
+  job_ids: string[];
+  scores: IterationRecord['scores'];
+  created_at: Date;
+}
+
+const toIteration = (r: IterationRow): IterationRecord => ({
+  id: r.id,
+  projectId: r.project_id,
+  templateVersion: r.template_version,
+  definition: r.definition,
+  briefVersion: r.brief_version,
+  set: r.eval_set,
+  model: r.model,
+  jobIds: r.job_ids,
+  scores: r.scores,
+  createdAt: r.created_at.toISOString(),
+});
 
 const toSkip = (r: SkipRow): StageSkipRecord => ({
   projectId: r.project_id,
@@ -571,6 +643,47 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId],
     );
     return rows.map(toSkip);
+  }
+
+  async createIteration(i: NewIteration) {
+    const { rows } = await this.pool.query<IterationRow>(
+      `INSERT INTO workbench_iterations
+         (project_id, template_version, definition, brief_version, eval_set, model, job_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        i.projectId,
+        i.templateVersion,
+        JSON.stringify(i.definition),
+        i.briefVersion,
+        i.set,
+        i.model,
+        i.jobIds,
+      ],
+    );
+    return toIteration(rows[0]!);
+  }
+
+  async listIterations(projectId: string) {
+    const { rows } = await this.pool.query<IterationRow>(
+      'SELECT * FROM workbench_iterations WHERE project_id = $1 ORDER BY created_at DESC, id DESC',
+      [projectId],
+    );
+    return rows.map(toIteration);
+  }
+
+  async getIteration(projectId: string, id: string) {
+    const { rows } = await this.pool.query<IterationRow>(
+      'SELECT * FROM workbench_iterations WHERE project_id = $1 AND id = $2',
+      [projectId, id],
+    );
+    return rows[0] ? toIteration(rows[0]) : null;
+  }
+
+  async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
+    await this.pool.query('UPDATE workbench_iterations SET scores = $2 WHERE id = $1', [
+      id,
+      JSON.stringify(scores),
+    ]);
   }
 
   private async sample(id: string) {

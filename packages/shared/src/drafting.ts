@@ -261,3 +261,44 @@ export const surveyBodyOf = (p: Pick<ProposalView, 'stage' | 'body'>): SurveyBod
   p.stage === 'survey' ? (p.body as SurveyBody | null) : null;
 export const changeBodyOf = (p: Pick<ProposalView, 'stage' | 'body'>): ChangeBody | null =>
   p.stage !== 'survey' ? (p.body as ChangeBody | null) : null;
+
+/** The first proposal stage that is neither accepted nor skipped (references needs all four). */
+export function firstIncomplete(states: StageView[]): DraftStage | null {
+  return STAGE_ORDER.find((stage) => !states.find((s) => s.stage === stage)?.completedAt) ?? null;
+}
+
+/**
+ * The references stage (phase 4a) is complete once every ready dev sample has a verified
+ * reference; it is derived from samples and references, not from proposals.
+ */
+export function referencesStage(
+  earlier: StageView[],
+  input: {
+    devSamples: number;
+    verified: number;
+    lastVerifiedAt: string | null;
+    running: boolean;
+    hasRuns: boolean;
+    skippedAt: string | null;
+  },
+): StageView {
+  const verifiedAt =
+    input.devSamples > 0 && input.verified >= input.devSamples ? input.lastVerifiedAt : null;
+  const skipped = input.skippedAt !== null && (verifiedAt === null || input.skippedAt > verifiedAt);
+  const completedAt = skipped ? input.skippedAt : verifiedAt;
+  const stale =
+    completedAt !== null &&
+    earlier.some((s) => s.completedAt !== null && s.completedAt > completedAt);
+  const state: StageState = input.running
+    ? 'running'
+    : completedAt !== null
+      ? stale
+        ? 'stale'
+        : skipped
+          ? 'skipped'
+          : 'accepted'
+      : input.hasRuns || input.verified > 0
+        ? 'proposed'
+        : 'pending';
+  return { stage: 'references', state, completedAt };
+}

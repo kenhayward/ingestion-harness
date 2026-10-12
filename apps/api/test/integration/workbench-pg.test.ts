@@ -200,4 +200,56 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
 
     expect(await workbench.setDataPolicy('it-missing', 'local', null)).toBeNull();
   });
+
+  it('stores reference and model override on workbench jobs; lists runs and references with sha', async () => {
+    const projectId = await newProject();
+    const plain = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    const source = doc(projectId);
+    const first = await repo.createWorkbenchJob(source, { projectId, task: 'process' });
+    const reference = await repo.createReference({
+      templateId: projectId,
+      name: 'first',
+      documentId: first.documentId,
+      sourceJobId: first.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const evaluation = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      referenceId: reference.id,
+      modelOverride: 'draft',
+    });
+    await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+    expect(plain).toMatchObject({ referenceId: null, modelOverride: null });
+    expect(evaluation).toMatchObject({ referenceId: reference.id, modelOverride: 'draft' });
+
+    const runs = await repo.listProjectRuns(projectId);
+    expect(runs.map((r) => r.job.id)).toEqual([evaluation.id, first.id, plain.id]);
+    expect(runs.find((r) => r.job.id === first.id)!.sha256).toBe(source.sha256);
+
+    const refs = await repo.listReferencesWithSha(projectId);
+    expect(refs.map((r) => [r.name, r.sha256])).toEqual([['first', source.sha256]]);
+  });
+
+  it('records iterations and caches their scores', async () => {
+    const projectId = await newProject();
+    const input = {
+      projectId,
+      templateVersion: 1,
+      definition: { id: projectId, version: 1 },
+      briefVersion: null,
+      set: 'dev' as const,
+    };
+    const jobId = randomUUID();
+    const a = await workbench.createIteration({ ...input, model: null, jobIds: [jobId] });
+    const b = await workbench.createIteration({ ...input, model: 'fast', jobIds: [] });
+    expect(a).toMatchObject({ scores: null, jobIds: [jobId], model: null, set: 'dev' });
+    expect((await workbench.listIterations(projectId)).map((i) => i.id)).toEqual([b.id, a.id]);
+    await workbench.setIterationScores(a.id, { score: 0.5, completed: 1, total: 1 });
+    expect(await workbench.getIteration(projectId, a.id)).toMatchObject({
+      scores: { score: 0.5, completed: 1, total: 1 },
+      definition: input.definition,
+    });
+    expect(await workbench.getIteration('it-other', a.id)).toBeNull();
+  });
 });

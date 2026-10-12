@@ -108,13 +108,14 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send(saved);
   });
 
+  /**
+   * Approve: queue the publish task. A test run's approval (e.g. a workbench reference run)
+   * writes the reviewed document but is never delivered to the target (worker publish_job).
+   */
   app.post<{ Params: { id: string } }>('/jobs/:id/approve', async (req, reply) => {
     const body = ApproveRequestSchema.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    if ((await app.deps.repo.getJob(req.params.id))?.test) {
-      return reply.code(409).send({ error: 'test runs are never published; reject or discard it' });
-    }
     const job = await app.deps.repo.approve(
       req.params.id,
       body.data.reviewer ?? null,

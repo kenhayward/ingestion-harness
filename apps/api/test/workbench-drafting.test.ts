@@ -178,11 +178,13 @@ describe('survey stage', () => {
     });
   });
 
-  it('refuses when only holdout samples are ready, and unavailable stages', async () => {
+  it('refuses when only holdout samples are ready, and unknown stages', async () => {
     const { add, start } = await project();
     await add(1, 'holdout');
     expect((await start()).statusCode).toBe(409);
-    expect((await start('references')).statusCode).toBe(400);
+    const references = await start('references');
+    expect(references.statusCode).toBe(409);
+    expect(references.json().error).toBe('finish the survey stage first (accept or skip it)');
     expect((await start('bogus')).statusCode).toBe(400);
   });
 

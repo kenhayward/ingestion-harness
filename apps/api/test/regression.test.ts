@@ -54,6 +54,82 @@ describe('compareToReference', () => {
     });
   });
 
+  it('counts table cells per column, so one wrong cell charges one column', () => {
+    const [table] = compareToReference(
+      {
+        fields: {},
+        tables: {
+          items: [
+            { name: 'Bolt', qty: '2' },
+            { name: 'Nut', qty: '5' },
+          ],
+        },
+      },
+      {
+        fields: {},
+        tables: {
+          items: [
+            { name: 'Nut', qty: '5' },
+            { name: 'Bolt', qty: '3' },
+          ],
+        },
+      },
+    ).tables;
+    expect(table!.columns).toEqual({
+      name: { matched: 2, total: 2 },
+      qty: { matched: 1, total: 2 },
+    });
+  });
+
+  it('charges every column of missing and extra rows', () => {
+    const [table] = compareToReference(
+      { fields: {}, tables: { items: [{ name: 'Bolt', qty: '2' }] } },
+      { fields: {}, tables: { items: [{ name: 'Washer', qty: '9' }] } },
+    ).tables;
+    expect(table!.columns).toEqual({
+      name: { matched: 0, total: 2 },
+      qty: { matched: 0, total: 2 },
+    });
+  });
+
+  it('counts columns whose names are Object.prototype keys', () => {
+    const [table] = compareToReference(
+      { fields: {}, tables: { items: [{ constructor: 'a', toString: 'b', __proto__x: 'c' }] } },
+      { fields: {}, tables: { items: [{ constructor: 'a', toString: 'x', __proto__x: 'c' }] } },
+    ).tables;
+    expect(table!.columns).toEqual({
+      constructor: { matched: 1, total: 1 },
+      toString: { matched: 0, total: 1 },
+      __proto__x: { matched: 1, total: 1 },
+    });
+  });
+
+  it.each([
+    {
+      name: 'same keys',
+      expected: [{ a: '1', b: '2' }],
+      actual: [{ a: '1', b: '3' }],
+    },
+    {
+      name: 'differing key sets, missing and extra rows',
+      expected: [{ a: '1', b: '2' }, { a: '9', c: 'only expected' }, { z: 'never matched' }],
+      actual: [
+        { a: '1', d: 'only actual' },
+        { a: '9', c: 'only expected' },
+        { q: 'extra' },
+        { r: 'extra', s: 'row' },
+      ],
+    },
+  ])('column counts sum to the table cell counts ($name)', ({ expected, actual }) => {
+    const [table] = compareToReference(
+      { fields: {}, tables: { items: expected } },
+      { fields: {}, tables: { items: actual } },
+    ).tables;
+    const columns = Object.values(table!.columns);
+    expect(columns.reduce((n, c) => n + c.total, 0)).toBe(table!.cellsTotal);
+    expect(columns.reduce((n, c) => n + c.matched, 0)).toBe(table!.cells);
+  });
+
   it('aligns rows and gives partial credit per cell', () => {
     const actual = {
       fields: {

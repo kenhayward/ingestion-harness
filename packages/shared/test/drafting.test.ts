@@ -5,10 +5,13 @@ import {
   applyChanges,
   blockingStage,
   conflictingChanges,
+  firstIncomplete,
   parseChangeBody,
+  referencesStage,
   stableJson,
   stageStates,
   type DraftChange,
+  type StageView,
 } from '../src/index.js';
 
 const cases = JSON.parse(
@@ -210,5 +213,72 @@ describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)
       },
     };
     expect(parseChangeBody('sections', body)).not.toBeNull();
+  });
+});
+
+describe('references stage', () => {
+  const done = (stage: StageView['stage'], at: string): StageView => ({
+    stage,
+    state: 'accepted',
+    completedAt: at,
+  });
+  const earlier = [
+    done('survey', '2026-10-12T10:00:01.000Z'),
+    done('outputs', '2026-10-12T10:00:02.000Z'),
+    done('sections', '2026-10-12T10:00:03.000Z'),
+    done('steps', '2026-10-12T10:00:04.000Z'),
+  ];
+  const base = {
+    devSamples: 2,
+    verified: 0,
+    lastVerifiedAt: null,
+    running: false,
+    hasRuns: false,
+    skippedAt: null,
+  };
+
+  it('needs every earlier stage complete', () => {
+    expect(firstIncomplete(earlier)).toBeNull();
+    expect(
+      firstIncomplete([
+        ...earlier.slice(0, 3),
+        { stage: 'steps', state: 'pending', completedAt: null },
+      ]),
+    ).toBe('steps');
+  });
+
+  it('is accepted when every dev sample is verified, and stale after a later earlier-stage change', () => {
+    expect(referencesStage(earlier, base)).toEqual({
+      stage: 'references',
+      state: 'pending',
+      completedAt: null,
+    });
+    expect(referencesStage(earlier, { ...base, hasRuns: true, running: true }).state).toBe(
+      'running',
+    );
+    expect(
+      referencesStage(earlier, {
+        ...base,
+        hasRuns: true,
+        verified: 1,
+        lastVerifiedAt: '2026-10-12T10:00:05.000Z',
+      }).state,
+    ).toBe('proposed');
+    const complete = { ...base, verified: 2, lastVerifiedAt: '2026-10-12T10:00:05.000Z' };
+    expect(referencesStage(earlier, complete)).toEqual({
+      stage: 'references',
+      state: 'accepted',
+      completedAt: '2026-10-12T10:00:05.000Z',
+    });
+    const changedLater = [...earlier.slice(0, 3), done('steps', '2026-10-12T10:00:09.000Z')];
+    expect(referencesStage(changedLater, complete).state).toBe('stale');
+  });
+
+  it('can be skipped', () => {
+    expect(referencesStage(earlier, { ...base, skippedAt: '2026-10-12T10:00:06.000Z' })).toEqual({
+      stage: 'references',
+      state: 'skipped',
+      completedAt: '2026-10-12T10:00:06.000Z',
+    });
   });
 });

@@ -76,6 +76,10 @@ export interface WorkbenchJobOptions {
   task: 'prepare' | 'process';
   /** jobs.params, e.g. `{ dataPolicy }`; the worker enforces it (ADR 0007). */
   params?: Record<string, unknown>;
+  /** Evaluation run: the reference it is scored against. Default null. */
+  referenceId?: string | null;
+  /** Every step runs on this alias, e.g. `draft` for reference runs. Default null. */
+  modelOverride?: string | null;
 }
 
 export interface ListJobsQuery {
@@ -118,6 +122,11 @@ export interface IngestionRepo {
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
   /** Jobs of a workbench project (prepare jobs and test runs), newest first. */
   listProjectJobs(projectId: string): Promise<JobSummary[]>;
+  /**
+   * The project's test runs (`process` jobs, still listed once review moves them to `rerun` or
+   * `publish`), newest first, each with its document's sha256.
+   */
+  listProjectRuns(projectId: string): Promise<{ job: JobSummary; sha256: string }[]>;
   /**
    * Queue a segmentation preview for a project (no document). Earlier segment jobs of the project
    * are deleted first (only the latest preview matters); their ids are returned in `removed`.
@@ -166,6 +175,8 @@ export interface IngestionRepo {
   /** Throws ReferenceConflictError when the name is taken for the template. */
   createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference>;
   listReferences(templateId: string): Promise<Reference[]>;
+  /** References with their document's sha256, newest first. */
+  listReferencesWithSha(templateId: string): Promise<(Reference & { sha256: string })[]>;
   deleteReference(templateId: string, id: string): Promise<boolean>;
   /** Test job of `version` re-running the reference's PDF (new document row, same object). */
   createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;

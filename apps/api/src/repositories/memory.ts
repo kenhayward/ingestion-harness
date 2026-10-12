@@ -31,6 +31,8 @@ import {
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
+/** Tasks a test run moves through: listed as one run by listProjectRuns. */
+const RUN_TASKS: JobSummary['task'][] = ['process', 'rerun', 'publish'];
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
 export class MemoryRepo implements IngestionRepo {
@@ -48,6 +50,16 @@ export class MemoryRepo implements IngestionRepo {
   readonly publishedAt = new Map<string, string>();
   readonly documents = new Map<string, NewDocument>();
   readonly edits = new Map<string, ReviewEdit[]>();
+  private lastTime = 0;
+
+  /**
+   * Strictly increasing ISO times, shared with MemoryWorkbenchRepo: stage states compare
+   * reference times with skip and decision times, so ties or clock skew would hide staleness.
+   */
+  now(): string {
+    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
+    return new Date(this.lastTime).toISOString();
+  }
   readonly stepRuns = new Map<string, StepRun[]>();
   readonly references = new Map<string, Reference>();
   readonly reruns = new Map<string, { step: string } & RerunRequest>();
@@ -94,8 +106,16 @@ export class MemoryRepo implements IngestionRepo {
     return job;
   }
 
-  async createWorkbenchJob(doc: NewDocument, { projectId, task, params }: WorkbenchJobOptions) {
-    const job = await this.createDocumentAndJob(doc, null, true);
+  async createWorkbenchJob(
+    doc: NewDocument,
+    { projectId, task, params, referenceId, modelOverride }: WorkbenchJobOptions,
+  ) {
+    const job = await this.createDocumentAndJob(
+      doc,
+      modelOverride ?? null,
+      true,
+      referenceId ?? null,
+    );
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
     if (params) this.jobParams.set(job.id, params);
     return this.update(job.id, { projectId, task });
@@ -339,12 +359,26 @@ export class MemoryRepo implements IngestionRepo {
     return this.models;
   }
 
+  async listProjectRuns(projectId: string) {
+    // Map iteration is insertion order, which is reliable where timestamps can tie.
+    return [...this.jobs.values()]
+      .filter((j) => j.projectId === projectId && RUN_TASKS.includes(j.task))
+      .reverse()
+      .map((job) => ({ job, sha256: this.documents.get(job.documentId)!.sha256 }));
+  }
+
+  async listReferencesWithSha(templateId: string) {
+    return (await this.listReferences(templateId))
+      .reverse()
+      .map((r) => ({ ...r, sha256: this.documents.get(r.documentId)!.sha256 }));
+  }
+
   async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
     const taken = [...this.references.values()].some(
       (r) => r.templateId === input.templateId && r.name === input.name,
     );
     if (taken) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
-    const ref: Reference = { ...input, id: randomUUID(), createdAt: new Date().toISOString() };
+    const ref: Reference = { ...input, id: randomUUID(), createdAt: this.now() };
     this.references.set(ref.id, ref);
     return ref;
   }

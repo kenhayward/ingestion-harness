@@ -102,6 +102,16 @@ misses, and stores the result as `anchorCheck`; a segmentation timeout in the fi
 `needs_review`. The worker drops empty strings and lists from drafted changes and checks removals against
 the draft with the earlier changes in the same body applied; all other validation runs on the whole body applied.
 
+Phase 4a adds the scored loop. Samples are linked to references by PDF sha256; a reference run is a dev test run
+with `modelOverride: 'draft'` that the user verifies in Review and saves as a reference, and the `references` stage
+is accepted once every ready dev sample is verified (starting it earlier is a 409). Evaluate runs the draft over the
+dev samples as project jobs carrying `referenceId`, `modelOverride` and `params.dataPolicy`, and records a
+`workbench_iterations` row (migration 0013) with a snapshot of the definition. The scorecard (per-column counts,
+per-sample drill-down) is computed from the jobs against the references with `buildScorecard`; once every job has
+finished the summary is cached in `scores`. Store outages are rethrown rather than cached, and a corrupt or missing
+document yields a null comparison. Restoring an iteration writes its snapshot into the open draft. No worker code
+changed: evaluation and reference runs are ordinary `process` jobs.
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an access token. The

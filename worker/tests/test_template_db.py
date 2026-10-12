@@ -84,8 +84,9 @@ def test_test_runs_are_never_published(tmp_path: Path) -> None:
     run_once(queue, deps, "w1")
     assert queue.completed and not queue.published and not target.objects
 
+    # Approving a test run (a workbench reference) finishes review without delivering.
     queue.jobs = [replace(JOB, test=True, task="publish")]
     run_once(queue, deps, "w1")
-    [(_, reason)] = queue.reviewed
-    assert "test runs are never published" in reason
-    assert not target.objects
+    assert not queue.reviewed and len(queue.completed) == 2
+    assert not queue.published and not target.objects
+    assert ("runs", "job-1/reviewed-document.json") in deps.store.objects

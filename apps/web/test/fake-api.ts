@@ -1,8 +1,10 @@
 import { vi } from 'vitest';
 import type {
+  IterationView,
   JobSummary,
   ProjectView,
   ProposalView,
+  ReferenceRow,
   SampleView,
   SegmentationView,
 } from '@ih/shared';
@@ -12,6 +14,76 @@ import {
   type CleanupRequest,
   type TemplateRecordView,
 } from '../src/api/client.js';
+
+export function referenceRow(overrides: Partial<ReferenceRow> = {}): ReferenceRow {
+  return {
+    sampleId: crypto.randomUUID(),
+    filename: 'a.pdf',
+    sha256: 'sha-a',
+    reference: null,
+    run: null,
+    ...overrides,
+  };
+}
+
+export function iterationView(overrides: Partial<IterationView> = {}): IterationView {
+  return {
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    templateVersion: 2,
+    briefVersion: 1,
+    set: 'dev',
+    model: null,
+    createdAt: '2026-10-12T10:00:00.000Z',
+    status: 'complete',
+    score: 0.75,
+    completed: 2,
+    total: 2,
+    scorecard: {
+      score: 0.75,
+      completed: 2,
+      total: 2,
+      fields: [
+        { id: 'sent_on', matched: 1, total: 2, accuracy: 0.5 },
+        { id: 'sender', matched: 2, total: 2, accuracy: 1 },
+      ],
+      columns: [],
+    },
+    samples: [
+      {
+        sampleId: 's1',
+        filename: 'a.pdf',
+        jobId: 'j1',
+        status: 'succeeded',
+        error: null,
+        comparison: {
+          score: 0.5,
+          fields: [
+            { id: 'sent_on', expected: '2026-03-01', actual: '2026-01-03', match: false },
+            { id: 'sender', expected: 'Acme', actual: 'Acme', match: true },
+          ],
+          tables: [],
+        },
+      },
+      {
+        sampleId: 's2',
+        filename: 'b.pdf',
+        jobId: 'j2',
+        status: 'succeeded',
+        error: null,
+        comparison: {
+          score: 1,
+          fields: [
+            { id: 'sent_on', expected: '2026-04-02', actual: '2026-04-02', match: true },
+            { id: 'sender', expected: 'Globex', actual: 'Globex', match: true },
+          ],
+          tables: [],
+        },
+      },
+    ],
+    ...overrides,
+  };
+}
 
 export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   return {
@@ -177,6 +249,20 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('skipStage not stubbed');
     }),
     listStages: vi.fn(async () => []),
+    listReferenceRows: vi.fn(async () => []),
+    proposeReferences: vi.fn(async () => {
+      throw new Error('proposeReferences not stubbed');
+    }),
+    startEvaluation: vi.fn(async () => {
+      throw new Error('startEvaluation not stubbed');
+    }),
+    listIterations: vi.fn(async () => []),
+    getIteration: vi.fn(async () => {
+      throw new Error('getIteration not stubbed');
+    }),
+    restoreIteration: vi.fn(async () => {
+      throw new Error('restoreIteration not stubbed');
+    }),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),

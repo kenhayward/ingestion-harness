@@ -69,7 +69,8 @@ secondary path for edge cases, built from the same context assembly the drafting
 7. **Steps:** it proposes extract steps, instructions, `pageImages`, `chunkPages`, `context` and
    check steps.
 8. **References:** it proposes expected values for each sample, with page evidence. The user
-   verifies each one in the Review screen and saves it as a reference.
+   verifies each one in the Review screen (reference runs always stop for review), approves it
+   (an approved test run is never delivered to the target) and saves it as a reference.
 9. **Evaluate:** a test run on dev (cached steps reused) produces a scorecard and drill-down. The
    user gives feedback on failing fields or steps, `revise` proposes a change, and the loop
    repeats.
@@ -339,8 +340,10 @@ Each phase is usable on its own.
    - **3a (done):** provider `location`, per-project data policy, `draft` alias, document-less
      `draft` jobs, context assembly (dev samples only), the `survey` stage, proposals.
    - **3b (done):** the outputs, sections and steps stages; per-change accept; skip; stale.
-4. **Evaluation loop:** the references stage (reference proposals and verification), step cache, scorecard, feedback,
-   `revise`, iterations.
+4. **Evaluation loop**, split in three:
+   - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
+   - **4b (next):** step cache, model comparison and re-run uncached.
+   - **4c:** feedback and `revise`.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**
 
@@ -359,6 +362,12 @@ fast, users will go back to editing YAML by hand.
   phase 3.
 - **Proposal conflicts** when the user edits the draft while a proposal is pending. The first
   version rejects conflicting changes; per-change rebase can come later.
+- **Known limitation (phase 4a): an iteration's snapshot can differ from what ran.** Evaluate
+  snapshots the draft definition when it is clicked, but each queued job loads the draft as it
+  is when a worker claims it. Editing the draft while an evaluation runs therefore scores a mix
+  of versions against a snapshot that matches none of them exactly; Restore brings back the
+  snapshot, not what ran. Until phase 4b's step cache snapshots the definition per job, leave
+  the draft alone while an evaluation is running.
 - Decided in phase 2, on design grounds (real timings are still to be measured): the worker
   wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
 - **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).

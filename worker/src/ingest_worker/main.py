@@ -31,6 +31,9 @@ from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
 
+#: Review reason for a reference run (`params.forceReview`) that needed no review of its own.
+FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save as a reference"
+
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     """Claim and run one job (process, publish, rerun or prepare). Returns False when the queue is empty."""
@@ -42,7 +45,7 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
         if job.task == "publish":
             check_cancelled(job, queue)
             published = publish_job(job, deps, queue)
-            if deps.target is not None:
+            if deps.target is not None and not job.test:  # approved test runs are not delivered
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s published %d outputs", job.id, len(published))
@@ -75,9 +78,12 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
         check_cancelled(job, queue)
-        if result.review_reasons:
-            queue.await_review(job, result.outputs, deps.buckets.outputs, result.review_reasons)
-            log.info("job %s awaiting review: %s", job.id, "; ".join(result.review_reasons))
+        reasons = result.review_reasons
+        if not reasons and (job.params or {}).get("forceReview"):
+            reasons = [FORCE_REVIEW_REASON]
+        if reasons:
+            queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
+            log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
             published = [] if job.test else publish_outputs(deps, result.outputs)
             if deps.target is not None and published:
@@ -110,12 +116,12 @@ def _quietly(job: ClaimedJob, write: Callable[[], None]) -> None:
 
 
 def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
-    if job.test:
-        raise DocumentError("test runs are never published")
+    """Approved review: apply the edits and deliver. A test run's approval (a workbench
+    reference) keeps the reviewed document but is never delivered to the target."""
     loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only template documents go through review/publish")
-    return publish_template_job(job, deps, queue, loaded)
+    return publish_template_job(job, deps, queue, loaded, deliver=not job.test)
 
 
 def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
