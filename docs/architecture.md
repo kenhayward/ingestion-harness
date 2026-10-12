@@ -48,7 +48,8 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    `spec.document.pages`.
    **OCR** (`document.ocr: auto` by default): pages with fewer than `ocr.minChars` non-space
    characters are rendered with pypdfium2 (longest side 1288px) and transcribed by the OCR
-   vision model (default `local/olmocr-2-7b-1025`) using olmOCR's prompt. Its YAML front matter
+   vision model (default `local/olmocr-2-7b-1025`; on its own server/key when `OCR_BASE_URL`/`OCR_API_KEY` are set)
+   using olmOCR's prompt. Its YAML front matter
    is parsed: if the page is reported rotated, it is re-rendered with the suggested clockwise
    correction and retried once. HTML tables are flattened to text rows. Raw output goes to
    `runs/{jobId}/ocr/page-N.md` and to a shared cache,

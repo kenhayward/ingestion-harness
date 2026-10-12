@@ -256,7 +256,7 @@ def ocr_pages(
     if not targets:
         return pages
     try:
-        provider, model_id = deps.models.resolve(deps.ocr.model)
+        provider, model_id = deps.models.resolve_ocr(deps.ocr.model)
     except ModelResolutionError as exc:
         raise DocumentError(f"OCR model: {exc}") from exc
 
