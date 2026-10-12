@@ -1,11 +1,35 @@
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { Api, Me } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
+import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 
 function message(err: unknown): string {
   const status = (err as { status?: number }).status;
   if (status === 401) return 'That token is invalid or has expired.';
   if (status === 429) return 'Too many attempts. Try again in a few minutes.';
   return `Sign-in failed: ${(err as Error).message}`;
+}
+
+/** Full-screen layout outside the app shell: sign in, loading, server unreachable. */
+export function AuthLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="auth">
+      <div className="auth-top">
+        <ThemeSwitch />
+      </div>
+      <main className="auth-main">
+        <div className="auth-column">
+          <div className="auth-brand">
+            <span className="brand-mark large">
+              <Icon name="brand" size={26} />
+            </span>
+            <h1>Ingestion Harness</h1>
+          </div>
+          {children}
+        </div>
+      </main>
+    </div>
+  );
 }
 
 /** Token entry screen (ADR 0006): a valid token opens a session cookie. */
@@ -19,7 +43,9 @@ export function SignIn({
   ended: boolean;
   onSignedIn: (me: Me) => void;
 }) {
+  const fieldId = useId();
   const [token, setToken] = useState('');
+  const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,26 +63,63 @@ export function SignIn({
   }
 
   return (
-    <main className="sign-in">
-      <h1>Ingestion Harness</h1>
-      {ended && <p role="status">Your session has ended.</p>}
-      <form onSubmit={submit} aria-label="Sign in">
-        <label>
-          Access token
-          <input
-            type="password"
-            autoComplete="off"
-            autoFocus
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </label>
-        <button type="submit" disabled={busy || !token.trim()}>
+    <AuthLayout>
+      <form className="card auth-card" onSubmit={submit} aria-label="Sign in">
+        {ended && (
+          <div role="status" className="callout tone-info">
+            <Icon name="clock" size={18} />
+            <span>
+              <strong>Your session has ended</strong>
+              <span>
+                It expired, was revoked, or the admin token rotated. Sign in again to continue.
+              </span>
+            </span>
+          </div>
+        )}
+        <div className="token-field">
+          <label htmlFor={fieldId}>Access token</label>
+          <span className={error ? 'token-input invalid' : 'token-input'}>
+            <Icon name="key" size={18} />
+            <input
+              id={fieldId}
+              type={shown ? 'text' : 'password'}
+              autoComplete="off"
+              autoFocus
+              spellCheck={false}
+              placeholder="Paste your token"
+              aria-invalid={error !== null}
+              value={token}
+              onChange={(e) => {
+                setToken(e.target.value);
+                setError(null);
+              }}
+            />
+            <button
+              type="button"
+              className="icon"
+              aria-label={shown ? 'Hide token' : 'Show token'}
+              aria-pressed={shown}
+              onClick={() => setShown((s) => !s)}
+            >
+              <Icon name={shown ? 'eyeOff' : 'eye'} size={18} />
+            </button>
+          </span>
+        </div>
+        {error && (
+          <p role="alert" className="field-error">
+            <Icon name="alert" />
+            {error}
+          </p>
+        )}
+        <button type="submit" className="primary block" disabled={busy || !token.trim()}>
           Sign in
         </button>
       </form>
-      {error && <p role="alert">{error}</p>}
-      <p className="hint">Ask an administrator for an access token.</p>
-    </main>
+      <p className="auth-hint">
+        Ask an administrator for an access token.
+        <br />
+        Administrators: the admin token is printed in the API log on each restart.
+      </p>
+    </AuthLayout>
   );
 }

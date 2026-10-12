@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
 import { AccessPage } from './access/AccessPage.js';
-import { SignIn } from './access/SignIn.js';
+import { AuthLayout, SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
@@ -10,6 +10,9 @@ import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
+import { AppShell } from './shell/AppShell.js';
+import { matchesQuery, sectionOf } from './shell/derive.js';
+import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
 
@@ -35,15 +38,25 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
 
   if (unreachable !== null) {
     return (
-      <main className="sign-in">
-        <p role="alert">Can't reach the server ({unreachable}).</p>
-        <button type="button" onClick={check}>
-          Retry
-        </button>
-      </main>
+      <AuthLayout>
+        <div className="card auth-card">
+          <p role="alert" className="field-error">
+            Can't reach the server ({unreachable}).
+          </p>
+          <button type="button" className="primary block" onClick={check}>
+            Retry
+          </button>
+        </div>
+      </AuthLayout>
     );
   }
-  if (me === undefined) return <p>Loading…</p>;
+  if (me === undefined) {
+    return (
+      <AuthLayout>
+        <p className="auth-hint">Loading…</p>
+      </AuthLayout>
+    );
+  }
   if (me === null) {
     return (
       <SignIn
@@ -80,17 +93,29 @@ function SignedInApp({
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
+  const { jobs, error, refresh } = useJobs(api, pollMs);
+  const [query, setQuery] = useState('');
+  // The search filters the current section's list: moving to another section starts afresh,
+  // so a leftover query never hides rows somewhere else.
+  const section = sectionOf(route);
+  const [querySection, setQuerySection] = useState(section);
+  if (querySection !== section) {
+    setQuerySection(section);
+    setQuery('');
+  }
+  /** Upload PDF was pressed: the Jobs page opens the file picker once, then clears this. */
+  const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
     page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
   } else if (route.name === 'results') {
-    page = <ResultsPage api={api} />;
+    page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
   } else if (route.name === 'access') {
-    page = <AccessPage api={api} me={me} />;
+    page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'templates') {
-    page = <TemplatesPage api={api} onNavigate={navigate} />;
+    page = <TemplatesPage api={api} onNavigate={navigate} query={query} />;
   } else if (route.name === 'template') {
     page = (
       <TemplateEditor
@@ -102,76 +127,74 @@ function SignedInApp({
       />
     );
   } else {
-    page = <JobsView api={api} pollMs={pollMs} />;
+    page = (
+      <JobsView
+        api={api}
+        jobs={jobs}
+        error={error}
+        refresh={refresh}
+        query={query}
+        pickPending={pickPending}
+        onPicked={() => setPickPending(false)}
+      />
+    );
   }
   return (
-    <main className={route.name === 'jobs' ? undefined : 'wide'}>
-      <nav className="top-nav" aria-label="Main">
-        <strong>Ingestion Harness</strong>
-        <a
-          href="#/"
-          aria-current={route.name === 'jobs' || route.name === 'review' ? 'page' : undefined}
-        >
-          Jobs
-        </a>
-        <a
-          href="#/results"
-          aria-current={route.name === 'results' || route.name === 'result' ? 'page' : undefined}
-        >
-          Results
-        </a>
-        <a
-          href="#/templates"
-          aria-current={
-            route.name === 'templates' || route.name === 'template' ? 'page' : undefined
-          }
-        >
-          Document types
-        </a>
-        {me.role === 'admin' && (
-          <a href="#/access" aria-current={route.name === 'access' ? 'page' : undefined}>
-            Access
-          </a>
-        )}
-        <span className="identity">
-          {me.label} · {me.role}
-        </span>
-        <button type="button" className="link" onClick={onSignOut}>
-          Sign out
-        </button>
-      </nav>
+    <AppShell
+      me={me}
+      route={route}
+      jobs={jobs}
+      query={query}
+      onQuery={setQuery}
+      onUpload={() => {
+        navigate('#/');
+        setPickPending(true);
+      }}
+      onSignOut={onSignOut}
+    >
       {page}
-    </main>
+    </AppShell>
   );
 }
 
-function JobsView({ api, pollMs }: { api: Api; pollMs: number }) {
-  const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
+function JobsView({
+  api,
+  jobs,
+  error,
+  refresh,
+  query,
+  pickPending,
+  onPicked,
+}: {
+  api: Api;
+  jobs: JobSummary[];
+  error: string | null;
+  refresh: () => Promise<void>;
+  query: string;
+  pickPending: boolean;
+  onPicked: () => void;
+}) {
   /** The upload form's Model selection; Retry uses it too. */
   const [retryModel, setRetryModel] = useState('');
-
-  const refresh = useCallback(async () => {
-    try {
-      setJobs(await api.listJobs());
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void refresh();
-    if (pollMs <= 0) return;
-    const timer = setInterval(() => void refresh(), pollMs);
-    return () => clearInterval(timer);
-  }, [refresh, pollMs]);
+  const shown = jobs.filter((j) =>
+    matchesQuery(query, j.filename, j.specId, j.modelOverride, j.status, ...j.modelsUsed),
+  );
 
   return (
     <>
-      <UploadForm api={api} onUploaded={refresh} onModelChange={setRetryModel} />
+      <UploadForm
+        api={api}
+        onUploaded={refresh}
+        onModelChange={setRetryModel}
+        pickPending={pickPending}
+        onPicked={onPicked}
+      />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
-      <JobsTable api={api} jobs={jobs} onChanged={refresh} retryModel={retryModel} />
+      {jobs.length > 0 && shown.length === 0 ? (
+        <p>No jobs match “{query.trim()}”.</p>
+      ) : (
+        <JobsTable api={api} jobs={shown} onChanged={refresh} retryModel={retryModel} />
+      )}
       <JobCleanup api={api} onChanged={refresh} />
     </>
   );

@@ -20,7 +20,9 @@ describe('sign-in gate', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(api.login).toHaveBeenCalledWith('ih_abc');
     expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
-    expect(screen.getByText('Ken – laptop · user')).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -45,7 +47,51 @@ describe('sign-in gate', () => {
     await screen.findByText('No jobs yet.');
     act(() => api.expireSession());
     expect(await screen.findByLabelText('Access token')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Your session has ended.');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Your session has ended');
+    expect(status).toHaveTextContent(
+      'It expired, was revoked, or the admin token rotated. Sign in again to continue.',
+    );
+  });
+
+  it('shows and hides the token', async () => {
+    render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
+    const field = await screen.findByLabelText('Access token');
+    const toggle = screen.getByRole('button', { name: 'Show token' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(toggle);
+    expect(field).toHaveAttribute('type', 'text');
+    const hide = screen.getByRole('button', { name: 'Hide token' });
+    expect(hide).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(hide);
+    expect(field).toHaveAttribute('type', 'password');
+  });
+
+  it('marks the field invalid on an error and clears it on edit', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => null),
+      login: vi.fn(async () => {
+        throw statusError(401, 'nope');
+      }),
+    });
+    render(<App api={api} pollMs={0} />);
+    const field = await screen.findByLabelText('Access token');
+    await userEvent.type(field, 'ih_x');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('alert');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    await userEvent.type(field, 'y');
+    expect(field).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('offers the colour mode switch and the admin hint before sign-in', async () => {
+    render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
+    await screen.findByLabelText('Access token'); // the loading screen has the switch too
+    expect(screen.getByRole('group', { name: 'Colour mode' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/the admin token is printed in the API log on each restart/),
+    ).toBeInTheDocument();
   });
 
   it('signs out', async () => {
@@ -59,13 +105,13 @@ describe('sign-in gate', () => {
   it('shows the Access link to admins only', async () => {
     const { unmount } = render(<App api={fakeApi()} pollMs={0} />);
     expect(await screen.findByRole('link', { name: 'Access' })).toHaveAttribute('href', '#/access');
-    expect(screen.getByText('admin · admin')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Signed in as admin (admin)' })).toBeInTheDocument();
     unmount();
     const user = fakeApi({
       me: vi.fn(async () => ({ role: 'user' as const, label: 'Ken', expiresAt: null })),
     });
     render(<App api={user} pollMs={0} />);
-    await screen.findByText('Ken · user');
+    await screen.findByRole('group', { name: 'Signed in as Ken (user)' });
     expect(screen.queryByRole('link', { name: 'Access' })).not.toBeInTheDocument();
   });
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AccessToken, Api, Me } from '../api/client.js';
+import { matchesQuery } from '../shell/derive.js';
 
 const EXPIRY_OPTIONS: [string, string][] = [
   ['1', '1 day'],
@@ -20,13 +21,23 @@ const STATUS_LABEL: Record<AccessToken['status'], string> = {
 };
 
 /** Admin page (ADR 0006): issue user tokens (shown once), revoke and delete them. */
-export function AccessPage({ api, me }: { api: Api; me: Me }) {
+export function AccessPage({
+  api,
+  me,
+  query = '',
+}: {
+  api: Api;
+  me: Me;
+  /** Top-bar search: shows only matching tokens. */
+  query?: string;
+}) {
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [label, setLabel] = useState('');
   const [expiry, setExpiry] = useState('30');
   const [created, setCreated] = useState<{ label: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = me.role === 'admin';
+  const shown = tokens.filter((t) => matchesQuery(query, t.label, t.role));
 
   const load = useCallback(async () => {
     try {
@@ -108,7 +119,12 @@ export function AccessPage({ api, me }: { api: Api; me: Me }) {
           </tr>
         </thead>
         <tbody>
-          {tokens.map((t) => (
+          {shown.length === 0 && tokens.length > 0 && (
+            <tr>
+              <td colSpan={7}>No tokens match “{query.trim()}”.</td>
+            </tr>
+          )}
+          {shown.map((t) => (
             <tr key={t.id}>
               <td>{t.label}</td>
               <td>{t.role}</td>

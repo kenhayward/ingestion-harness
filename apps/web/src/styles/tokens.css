@@ -1,0 +1,137 @@
+/* Ingestion Harness design tokens — generated from design-source/Main.dc.html.
+   Theme: <html data-theme="light|dark">; no attribute = follow the OS (System). */
+:root {
+  color-scheme: light dark;
+  --ih-font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --ih-font-mono: 'IBM Plex Mono', Consolas, ui-monospace, monospace;
+  --ih-text-xs: 11px;
+  --ih-text-sm: 12px;
+  --ih-text-md: 13px;
+  --ih-text-base: 14px;
+  --ih-text-lg: 15px;
+  --ih-text-xl: 17px;
+  --ih-text-h1: 22px;
+  --ih-radius-sm: 6px;
+  --ih-radius-md: 8px;
+  --ih-radius-lg: 12px;
+  --ih-radius-pill: 999px;
+  --ih-space-1: 4px;
+  --ih-space-2: 8px;
+  --ih-space-3: 12px;
+  --ih-space-4: 16px;
+  --ih-space-5: 20px;
+  --ih-space-6: 24px;
+  --ih-control-h: 40px;
+  --ih-control-h-sm: 34px;
+  --ih-touch: 44px;
+  --ih-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(15, 27, 45, 0.08);
+  --ih-shadow-bar: 0 6px 24px rgba(0, 0, 0, 0.1);
+}
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ih-bg: #f3f5f8;
+  --ih-surface: #ffffff;
+  --ih-surface2: #f6f8fb;
+  --ih-border: #dce2ea;
+  --ih-border-soft: #e9edf2;
+  --ih-border-strong: #b4bfcd;
+  --ih-text: #0f1b2d;
+  --ih-muted: #4f5d70;
+  --ih-accent: #0a5bb0;
+  --ih-accent-text: #ffffff;
+  --ih-accent-soft: #e4eefa;
+  --ih-accent-soft-text: #0a4f99;
+  --ih-sel-row: #eef4fc;
+  --ih-seg-active: #ffffff;
+  --ih-seg-shadow: 0 1px 2px rgba(15, 27, 45, 0.12);
+  --ih-page-well: #e6eaf0;
+  --ih-paper: #ffffff;
+  --ih-paper-ink: #d6dde6;
+  --ih-code-bg: #f7f9fc;
+  --ih-box-fill: rgba(10, 91, 176, 0.1);
+  --ih-neutral-bg: #eceff3;
+  --ih-neutral-fg: #46546a;
+  --ih-info-bg: #e4eefa;
+  --ih-info-fg: #0a4f99;
+  --ih-warn-bg: #fcf0da;
+  --ih-warn-fg: #7a4300;
+  --ih-alert-bg: #fde7dc;
+  --ih-alert-fg: #9a3412;
+  --ih-danger-bg: #fbe4e2;
+  --ih-danger-fg: #a4231b;
+  --ih-ok-bg: #dff2e6;
+  --ih-ok-fg: #17633a;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --ih-bg: #0b1119;
+  --ih-surface: #121a25;
+  --ih-surface2: #0e151f;
+  --ih-border: #243041;
+  --ih-border-soft: #1b2532;
+  --ih-border-strong: #3a4b62;
+  --ih-text: #e5ebf2;
+  --ih-muted: #9dabbd;
+  --ih-accent: #5ea3ee;
+  --ih-accent-text: #061321;
+  --ih-accent-soft: #15283e;
+  --ih-accent-soft-text: #a9cdf7;
+  --ih-sel-row: #15233a;
+  --ih-seg-active: #22324a;
+  --ih-seg-shadow: none;
+  --ih-page-well: #070b11;
+  --ih-paper: #dce2e9;
+  --ih-paper-ink: #b3bdca;
+  --ih-code-bg: #0e151f;
+  --ih-box-fill: rgba(10, 91, 176, 0.14);
+  --ih-neutral-bg: #1e2834;
+  --ih-neutral-fg: #b2bdcb;
+  --ih-info-bg: #15283e;
+  --ih-info-fg: #9cc8f8;
+  --ih-warn-bg: #33270f;
+  --ih-warn-fg: #f3c77f;
+  --ih-alert-bg: #3a2013;
+  --ih-alert-fg: #f7ae85;
+  --ih-danger-bg: #3a1716;
+  --ih-danger-fg: #ffa39b;
+  --ih-ok-bg: #11301f;
+  --ih-ok-fg: #86d9a4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --ih-bg: #0b1119;
+    --ih-surface: #121a25;
+    --ih-surface2: #0e151f;
+    --ih-border: #243041;
+    --ih-border-soft: #1b2532;
+    --ih-border-strong: #3a4b62;
+    --ih-text: #e5ebf2;
+    --ih-muted: #9dabbd;
+    --ih-accent: #5ea3ee;
+    --ih-accent-text: #061321;
+    --ih-accent-soft: #15283e;
+    --ih-accent-soft-text: #a9cdf7;
+    --ih-sel-row: #15233a;
+    --ih-seg-active: #22324a;
+    --ih-seg-shadow: none;
+    --ih-page-well: #070b11;
+    --ih-paper: #dce2e9;
+    --ih-paper-ink: #b3bdca;
+    --ih-code-bg: #0e151f;
+    --ih-box-fill: rgba(10, 91, 176, 0.14);
+    --ih-neutral-bg: #1e2834;
+    --ih-neutral-fg: #b2bdcb;
+    --ih-info-bg: #15283e;
+    --ih-info-fg: #9cc8f8;
+    --ih-warn-bg: #33270f;
+    --ih-warn-fg: #f3c77f;
+    --ih-alert-bg: #3a2013;
+    --ih-alert-fg: #f7ae85;
+    --ih-danger-bg: #3a1716;
+    --ih-danger-fg: #ffa39b;
+    --ih-ok-bg: #11301f;
+    --ih-ok-fg: #86d9a4;
+  }
+}
