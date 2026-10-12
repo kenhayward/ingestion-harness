@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from ingest_worker.segment import MissingSectionsError, segment, select_copy
+from ingest_worker.segment import (
+    PAGE_BREAK,
+    MissingSectionsError,
+    SectionSpan,
+    section_spans,
+    segment,
+    select_copy,
+)
 from ingest_worker.specs import CopySelection, Section
 
 SECTIONS = [
@@ -84,3 +91,21 @@ def test_sections_starting_mid_page_carry_their_page_marker() -> None:
     assert result["header"] == "[page 1]\nINVOICE 1"
     assert result["lines"].startswith("[page 1]\nDescription Qty")
     assert result["totals"] == "[page 2]\nSubtotal 1"
+
+
+def test_section_spans_are_in_document_order_with_unmatched_ids() -> None:
+    text = "Subtotal 1\nINVOICE 1\nDescription Qty\nx"
+    spans, unmatched = section_spans(text, SECTIONS)
+    assert [s.id for s in spans] == ["totals", "header", "lines"]
+    assert unmatched == ["notes"]
+    assert spans[0] == SectionSpan("totals", 0, text.index("INVOICE"))
+    assert spans[-1].end == len(text)
+
+
+def test_segment_bodies_equal_their_spans() -> None:
+    pages = ["INVOICE #42\nAcme\nDescription Qty\nWidget", "Subtotal 13.00"]
+    text = PAGE_BREAK.join(pages)
+    spans, _ = section_spans(text, SECTIONS)
+    result = segment(pages, SECTIONS)
+    for span in spans:
+        assert result[span.id] == text[span.start : span.end].strip()

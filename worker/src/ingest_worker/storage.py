@@ -48,6 +48,11 @@ def prepared_triage_key(pdf_sha256: str) -> str:
     return f"prepared/{pdf_sha256}/triage.json"
 
 
+def segmentation_key(project_id: str, job_id: str) -> str:
+    """Section-anchor preview grid of a workbench project (runs bucket, segment task)."""
+    return f"segmentation/{project_id}/{job_id}.json"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 

@@ -15,3 +15,9 @@ def test_prepared_keys_mirror_the_typescript_helpers() -> None:
 
     assert prepared_text_key("abc") == "prepared/abc/text.json"
     assert prepared_triage_key("abc") == "prepared/abc/triage.json"
+
+
+def test_segmentation_key_mirrors_the_typescript_helper() -> None:
+    from ingest_worker.storage import segmentation_key
+
+    assert segmentation_key("letter", "j1") == "segmentation/letter/j1.json"

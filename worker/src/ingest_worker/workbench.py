@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from bisect import bisect_right
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from .ocr import pages_needing_ocr
-from .pipeline import DocumentError, PipelineDeps, check_cancelled, ocr_pages
+from .pipeline import DocumentError, PipelineDeps, check_cancelled, mark_pages, ocr_pages
 from .queue import ClaimedJob, JobQueue
+from .segment import PAGE_BREAK, section_spans, select_copy
+from .specs import CopySelection, Section
 from .storage import prepared_text_key, prepared_triage_key
+
+#: Longest matched line returned to the UI.
+LINE_LIMIT = 200
 
 
 def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
@@ -52,3 +61,102 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
     )
     queue.event(job.id, "info", "prepared", {"pages": len(pages), "ocr_pages": ocr_numbers})
     return triage
+
+
+class SegmentDocument(BaseModel):
+    """The candidate `document` block a preview applies (TS: SegmentDocumentSchema)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    sections: list[Section] = Field(min_length=1)
+    copies: CopySelection | None = None
+    page_markers: bool = Field(default=True, alias="pageMarkers")
+
+
+def _regex_error(pattern: str) -> str | None:
+    try:
+        re.compile(pattern, re.MULTILINE)
+    except re.error as exc:
+        return str(exc)
+    return None
+
+
+def _line_at(text: str, pos: int) -> str:
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    return text[start : len(text) if end == -1 else end].strip()[:LINE_LIMIT]
+
+
+def segment_samples(
+    samples: list[tuple[str, list[str] | None]], document: SegmentDocument
+) -> dict[str, Any]:
+    """The preview grid (TS: SegmentationResult) for (sample id, prepared pages or None).
+
+    Same steps as prepare_document: copy selection, page markers, then section_spans, so the
+    grid shows exactly where production segmentation would cut. Invalid anchors are reported in
+    anchorErrors and skipped; they never fail the preview."""
+    anchor_errors: dict[str, str] = {}
+    for section in document.sections:
+        if (error := _regex_error(section.anchor)) is not None:
+            anchor_errors[section.id] = error
+    copies = document.copies
+    if copies is not None and (error := _regex_error(copies.anchor)) is not None:
+        anchor_errors["copies"] = error
+        copies = None
+    valid = [s for s in document.sections if s.id not in anchor_errors]
+    required = [s.id for s in valid if s.required]
+
+    rows: list[dict[str, Any]] = []
+    for sample_id, pages in samples:
+        if pages is None:
+            rows.append(
+                {
+                    "sampleId": sample_id,
+                    "firstPage": 1,
+                    "pageCount": 0,
+                    "error": "not prepared",
+                    "missingRequired": [],
+                    "sections": [],
+                }
+            )
+            continue
+        first, kept = select_copy(pages, copies) if copies else (0, pages)
+        if document.page_markers:
+            kept = mark_pages(kept, first + 1)
+        text = PAGE_BREAK.join(kept)
+        page_starts: list[int] = []
+        offset = 0
+        for page in kept:
+            page_starts.append(offset)
+            offset += len(page) + len(PAGE_BREAK)
+        spans, unmatched = section_spans(text, valid)
+        by_id = {span.id: span for span in spans}
+        cells: list[dict[str, Any]] = []
+        for section in document.sections:
+            span = by_id.get(section.id)
+            if span is None:
+                cells.append(
+                    {"id": section.id, "found": False, "page": None, "line": None, "chars": 0}
+                )
+                continue
+            body = text[span.start : span.end].strip()
+            cells.append(
+                {
+                    "id": section.id,
+                    "found": True,
+                    "page": first + bisect_right(page_starts, span.start),
+                    "line": _line_at(text, span.start),
+                    "chars": len(body),
+                }
+            )
+        rows.append(
+            {
+                "sampleId": sample_id,
+                "firstPage": first + 1,
+                "pageCount": len(kept),
+                "error": None,
+                "missingRequired": [i for i in unmatched if i in required],
+                "sections": cells,
+            }
+        )
+    return {"anchorErrors": anchor_errors, "samples": rows}
