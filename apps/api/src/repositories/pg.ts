@@ -28,7 +28,7 @@ import {
 
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
          array(SELECT model FROM step_runs
                 WHERE job_id = j.id AND model IS NOT NULL
@@ -46,9 +46,10 @@ interface JobRow {
   models_used: string[];
   attempts: number;
   error: string | null;
-  task: 'process' | 'publish';
+  task: JobSummary['task'];
   test: boolean;
   reference_id: string | null;
+  project_id: string | null;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -72,6 +73,7 @@ function toSummary(r: JobRow): JobSummary {
     task: r.task,
     test: r.test,
     referenceId: r.reference_id,
+    projectId: r.project_id,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,

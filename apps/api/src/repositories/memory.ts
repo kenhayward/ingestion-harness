@@ -67,6 +67,7 @@ export class MemoryRepo implements IngestionRepo {
       task: 'process',
       test,
       referenceId,
+      projectId: null,
       reviewReasons: null,
       reviewer: null,
       reviewNote: null,

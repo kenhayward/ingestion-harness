@@ -22,6 +22,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     task: 'process',
     test: false,
     referenceId: null,
+    projectId: null,
     reviewReasons: null,
     reviewer: null,
     reviewNote: null,
