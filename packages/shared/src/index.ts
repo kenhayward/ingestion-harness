@@ -5,3 +5,4 @@ export * from './storage-keys.js';
 export * from './template.js';
 export * from './results.js';
 export * from './workbench.js';
+export * from './drafting.js';

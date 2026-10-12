@@ -247,6 +247,7 @@ export function proposalView(overrides: Partial<ProposalView> = {}): ProposalVie
     status: 'ready',
     error: null,
     briefVersion: 1,
+    acceptedChanges: null,
     model: 'local/qwen',
     body: {
       summary: 'Process validation protocols, blank and executed.',

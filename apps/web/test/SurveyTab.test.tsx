@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { EMPTY_BRIEF } from '@ih/shared';
+import { EMPTY_BRIEF, surveyBodyOf, type SurveyBody } from '@ih/shared';
 import { SurveyTab } from '../src/workbench/SurveyTab.js';
 import { fakeApi, proposalView } from './fake-api.js';
 
@@ -87,7 +87,7 @@ describe('SurveyTab', () => {
 
   it('keeps rows whose names or strings repeat', async () => {
     const base = proposalView();
-    const body = base.body!;
+    const body = surveyBodyOf(base) as SurveyBody;
     tab({
       listProposals: vi.fn(async () => [
         {

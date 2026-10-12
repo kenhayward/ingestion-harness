@@ -182,7 +182,7 @@ describe('survey stage', () => {
     const { add, start } = await project();
     await add(1, 'holdout');
     expect((await start()).statusCode).toBe(409);
-    expect((await start('outputs')).statusCode).toBe(400);
+    expect((await start('references')).statusCode).toBe(400);
     expect((await start('bogus')).statusCode).toBe(400);
   });
 

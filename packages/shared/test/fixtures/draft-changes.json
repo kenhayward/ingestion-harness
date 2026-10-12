@@ -1,0 +1,250 @@
+[
+  {
+    "name": "putField appends a new field",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+    },
+    "changes": [
+      {
+        "op": "putField",
+        "field": { "id": "sent_on", "type": "date", "description": "Date of the letter" },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": {
+        "fields": [
+          { "id": "sender", "type": "text" },
+          { "id": "sent_on", "type": "date", "description": "Date of the letter" }
+        ],
+        "tables": []
+      },
+      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+    }
+  },
+  {
+    "name": "put replaces by id in place and drops an output of the other kind with that id",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": {
+        "fields": [
+          { "id": "sender", "type": "text" },
+          { "id": "ref", "type": "text" }
+        ],
+        "tables": [{ "id": "items", "columns": [{ "id": "name", "type": "text" }] }]
+      },
+      "pipeline": []
+    },
+    "changes": [
+      {
+        "op": "putField",
+        "field": { "id": "sender", "type": "text", "description": "Who wrote it" },
+        "reason": "r"
+      },
+      { "op": "putField", "field": { "id": "items", "type": "list" }, "reason": "r" },
+      {
+        "op": "putTable",
+        "table": { "id": "ref", "columns": [{ "id": "code", "type": "text" }] },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": {
+        "fields": [
+          { "id": "sender", "type": "text", "description": "Who wrote it" },
+          { "id": "items", "type": "list" }
+        ],
+        "tables": [{ "id": "ref", "columns": [{ "id": "code", "type": "text" }] }]
+      },
+      "pipeline": []
+    }
+  },
+  {
+    "name": "removeOutput removes the output and ignores unknown ids",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": []
+    },
+    "changes": [
+      { "op": "removeOutput", "id": "sender", "reason": "r" },
+      { "op": "removeOutput", "id": "nope", "reason": "r" }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    }
+  },
+  {
+    "name": "sections: put replaces and appends, setCopies sets",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    },
+    "changes": [
+      { "op": "putSection", "section": { "id": "all", "anchor": "^Dear" }, "reason": "r" },
+      {
+        "op": "putSection",
+        "section": { "id": "sig", "anchor": "^Yours", "required": false },
+        "reason": "r"
+      },
+      { "op": "setCopies", "copies": { "anchor": "^LETTER", "select": "last" }, "reason": "r" }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          { "id": "all", "anchor": "^Dear" },
+          { "id": "sig", "anchor": "^Yours", "required": false }
+        ],
+        "copies": { "anchor": "^LETTER", "select": "last" }
+      },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    }
+  },
+  {
+    "name": "removeSection drops a section and setCopies null clears copy selection",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "sections": [
+          { "id": "all", "anchor": "\\A" },
+          { "id": "sig", "anchor": "^Yours" }
+        ],
+        "copies": { "anchor": "^LETTER", "select": "first" }
+      },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    },
+    "changes": [
+      { "op": "removeSection", "id": "sig", "reason": "r" },
+      { "op": "setCopies", "copies": null, "reason": "r" }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    }
+  },
+  {
+    "name": "steps: putStep replaces in place and appends, setPreamble sets",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+    },
+    "changes": [
+      {
+        "op": "putStep",
+        "step": { "type": "check", "id": "c1", "values": "sender", "reference": "sender" },
+        "reason": "r"
+      },
+      {
+        "op": "putStep",
+        "step": {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"],
+          "instructions": "Top of page 1"
+        },
+        "reason": "r"
+      },
+      { "op": "setPreamble", "preamble": "Letters to QA.", "reason": "r" }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "preamble": "Letters to QA.",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"],
+          "instructions": "Top of page 1"
+        },
+        { "type": "check", "id": "c1", "values": "sender", "reference": "sender" }
+      ]
+    }
+  },
+  {
+    "name": "removeStep drops a step and an empty preamble removes it",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "preamble": "Old.",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+    },
+    "changes": [
+      { "op": "removeStep", "id": "head", "reason": "r" },
+      { "op": "setPreamble", "preamble": "", "reason": "r" }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    }
+  },
+  {
+    "name": "missing blocks are created",
+    "definition": { "id": "letter", "version": 1, "name": "Letter" },
+    "changes": [{ "op": "putSection", "section": { "id": "all", "anchor": "\\A" }, "reason": "r" }],
+    "expected": {
+      "id": "letter",
+      "version": 1,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [], "tables": [] },
+      "pipeline": []
+    }
+  }
+]

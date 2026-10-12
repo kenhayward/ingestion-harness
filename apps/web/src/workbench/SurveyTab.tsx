@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Brief, DataPolicy, ProposalView } from '@ih/shared';
-import { EMPTY_BRIEF } from '@ih/shared';
+import { EMPTY_BRIEF, surveyBodyOf } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
@@ -82,7 +82,7 @@ export function SurveyTab({
   const briefAnswer = (question: string) =>
     briefAnswers.find((qa) => qa.question === question)?.answer ?? '';
   // Only the displayed questions whose typed answer is non-empty and differs from the brief's.
-  const given = (proposal?.body?.questions ?? [])
+  const given = (proposal ? (surveyBodyOf(proposal)?.questions ?? []) : [])
     .map((q) => [q.question, (typed[q.question] ?? '').trim()] as const)
     .filter(([q, a]) => a !== '' && a !== briefAnswer(q));
 
@@ -100,7 +100,7 @@ export function SurveyTab({
     });
 
   if (proposal === undefined) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
-  const body = proposal?.body ?? null;
+  const body = proposal ? surveyBodyOf(proposal) : null;
 
   return (
     <div className="survey-tab">

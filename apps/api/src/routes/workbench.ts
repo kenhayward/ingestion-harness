@@ -113,6 +113,7 @@ async function proposalView(
     briefVersion: p.briefVersion,
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
+    acceptedChanges: null,
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {

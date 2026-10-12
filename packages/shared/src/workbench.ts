@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ChangeBody } from './drafting.js';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
 import type { JobStatus } from './jobs.js';
 
@@ -175,8 +176,8 @@ export interface SegmentationView {
 
 export const DRAFT_STAGES = ['survey', 'outputs', 'sections', 'steps', 'references'] as const;
 export type DraftStage = (typeof DRAFT_STAGES)[number];
-/** Stages that can be run in this release (3a); 3b adds the rest. */
-export const AVAILABLE_STAGES: readonly DraftStage[] = ['survey'];
+/** Stages that can be run in this release (3b); `references` comes with phase 4. */
+export const AVAILABLE_STAGES: readonly DraftStage[] = ['survey', 'outputs', 'sections', 'steps'];
 
 /** Body of a `survey` proposal. Mirrors worker drafting.SURVEY_SCHEMA. */
 export const SurveyBodySchema = z
@@ -213,7 +214,8 @@ export const DraftResultSchema = z.object({
 });
 export type DraftResult = z.infer<typeof DraftResultSchema>;
 
-export type ProposalStatus = 'running' | 'ready' | 'failed' | 'accepted' | 'rejected';
+export type ProposalStatus =
+  'running' | 'ready' | 'failed' | 'accepted' | 'partially_accepted' | 'rejected';
 
 export interface ProposalView {
   id: string;
@@ -223,8 +225,10 @@ export interface ProposalView {
   briefVersion: number | null;
   /** Resolved model that produced it (once ready). */
   model: string | null;
-  /** Parsed stage body (survey only in 3a); null until ready. */
-  body: SurveyBody | null;
+  /** survey: SurveyBody; outputs/sections/steps: ChangeBody. Null until ready. */
+  body: SurveyBody | ChangeBody | null;
+  /** Indexes of the changes applied to the draft (accepted / partially_accepted). */
+  acceptedChanges: number[] | null;
   createdAt: string;
   decidedAt: string | null;
 }
