@@ -45,10 +45,13 @@ export const PRIVATE_NETWORKS = '127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.
 
 /** Composition root. Tests call this with in-memory deps and use `app.inject()`. */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const app = Fastify({
-    logger: deps.logger ?? false,
-    trustProxy: deps.trustProxy ?? PRIVATE_NETWORKS,
-  });
+  // TRUST_PROXY adds to the private networks: the app nginx (Docker network) must stay trusted,
+  // or X-Forwarded-Proto/-For from the TLS proxy would be ignored.
+  const trustProxy =
+    typeof deps.trustProxy === 'string' && deps.trustProxy.trim()
+      ? `${PRIVATE_NETWORKS},${deps.trustProxy}`
+      : (deps.trustProxy ?? PRIVATE_NETWORKS);
+  const app = Fastify({ logger: deps.logger ?? false, trustProxy });
   app.decorate('deps', deps);
 
   await app.register(multipart, { limits: { fileSize: deps.maxUploadBytes, files: 1 } });

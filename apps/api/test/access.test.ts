@@ -79,6 +79,25 @@ describe('token access', () => {
     });
   });
 
+  it('keeps the session cookie for the token lifetime (not just the browser session)', async () => {
+    const { app, adminToken, access } = await setup();
+    const never = cookieOf((await login(app, adminToken)).res).header;
+    expect(never).toMatch(/Max-Age=34560000/); // 400 days: browsers cap cookie lifetimes there
+    const { token } = await access.createToken('week', 7);
+    const week = cookieOf((await login(app, token)).res).header;
+    const maxAge = Number(/Max-Age=(\d+)/.exec(week)?.[1]);
+    expect(maxAge).toBeGreaterThan(7 * 86_400 - 60);
+    expect(maxAge).toBeLessThanOrEqual(7 * 86_400);
+  });
+
+  it('keeps trusting the private proxies when TRUST_PROXY adds one', async () => {
+    const access = new MemoryAccessRepo();
+    const { app } = await testApp({ access, trustProxy: '203.0.113.10' });
+    const adminToken = await access.rotateAdminToken();
+    const { res } = await login(app, adminToken, { 'x-forwarded-proto': 'https' });
+    expect(cookieOf(res).header).toMatch(/Secure/i); // inject() comes from 127.0.0.1
+  });
+
   it('marks the cookie Secure behind an HTTPS proxy', async () => {
     const { app, adminToken } = await setup();
     const { res } = await login(app, adminToken, { 'x-forwarded-proto': 'https' });

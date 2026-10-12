@@ -27,13 +27,30 @@ const CreateBody = z.object({
   ]),
 });
 
-function setSession(req: FastifyRequest, reply: FastifyReply, sessionId: string) {
+/** Browsers cap cookie lifetimes at 400 days; the server still ends idle sessions after 7. */
+const MAX_COOKIE_AGE_S = 400 * 86_400;
+
+function setSession(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  sessionId: string,
+  expiresAt: string | null,
+) {
+  // Persistent until the token expires (not a browser-session cookie): people shouldn't have to
+  // re-enter a token after every browser restart.
   // Secure only over HTTPS (via the proxies' X-Forwarded-Proto): plain-HTTP LAN access must work.
   void reply.setCookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     sameSite: 'strict',
     path: '/',
     secure: req.protocol === 'https',
+    maxAge:
+      expiresAt === null
+        ? MAX_COOKIE_AGE_S
+        : Math.max(
+            0,
+            Math.min(MAX_COOKIE_AGE_S, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)),
+          ),
   });
 }
 
@@ -73,9 +90,10 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     if (!result) {
       limiter.fail(req.ip);
       req.log.warn({ ip: req.ip }, 'failed sign-in');
+      if (limiter.surge()) req.log.warn('many failed sign-ins from many clients (scan?)');
       return reply.code(401).send({ error: 'invalid or expired token' });
     }
-    setSession(req, reply, result.sessionId);
+    setSession(req, reply, result.sessionId, result.session.expiresAt);
     const { role, label, expiresAt } = result.session;
     return { role, label, expiresAt };
   });
