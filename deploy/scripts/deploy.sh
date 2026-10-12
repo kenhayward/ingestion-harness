@@ -32,8 +32,12 @@ compose run --rm init-buckets
 compose run --rm migrate
 compose up -d --remove-orphans api worker app
 
+ADMIN_TOKEN="$("$DEPLOY_DIR/scripts/admin-token.sh" --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.yml")"
+export ADMIN_TOKEN
 APP_PORT="$(grep -E '^APP_PORT=' "$ENV_FILE" | cut -d= -f2 || true)" \
   "$DEPLOY_DIR/scripts/smoke-test.sh"
 
 echo "==> deployed $IMAGE_TAG"
 compose ps
+echo "==> ADMIN TOKEN (valid until the API restarts): $ADMIN_TOKEN"
+echo "    Sign in with it, then issue user tokens under Access (ADR 0006)."

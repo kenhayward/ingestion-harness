@@ -67,6 +67,12 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    `outputs/{specId}/v{version}/{outputId}/{documentId}.{csv|json}`; rows recorded in
    `job_outputs`.
 
+## Access
+
+Every request to the API needs a session cookie, obtained by signing in with an access token. The
+admin token rotates on every API start and is printed in the log; admins issue user tokens on the
+**Access** page. See [ADR 0006](adr/0006-token-access.md).
+
 ## LLM provider layer
 
 `config/llm-providers.yaml` declares providers; each has a `kind`:

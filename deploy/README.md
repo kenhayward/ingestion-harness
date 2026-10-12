@@ -46,6 +46,31 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 | `SEAWEEDFS_MASTER_PORT` (9334) | SeaweedFS master UI (unauthenticated) | `127.0.0.1` (set `SEAWEEDFS_MASTER_BIND`) |
 | 8888 | SeaweedFS filer UI | dev overlay only, `127.0.0.1` |
 
+## Remote access (NGINX Proxy Manager)
+
+The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/adr/0006-token-access.md)).
+
+1. **Admin token:** after each deploy, `deploy.sh` / `deploy.ps1` print it. You can also get it
+   any time with `deploy/scripts/admin-token.sh --env-file deploy/.env -f deploy/docker-compose.yml`
+   or `docker compose logs api | grep "ADMIN TOKEN"`. It changes on every API restart.
+2. **Sign in and issue tokens:** sign in with the admin token, open **Access**, and issue a user
+   token per person or device, with a label and an expiry. A new token is shown once. Revoke a
+   token to end its sessions immediately.
+3. **NGINX Proxy Manager:**
+   - add a proxy host for your domain, forwarding to `http://<docker-host>:8081` (the `app`
+     container, `APP_PORT`);
+   - SSL: request a Let's Encrypt certificate, and turn on Force SSL and HSTS;
+   - turn on **Block common exploits**;
+   - Advanced: `client_max_body_size 60m; proxy_read_timeout 300s;` (uploads and long requests).
+4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds
+   on `127.0.0.1` (the defaults). Postgres and the API container are never published.
+5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
+   NGINX Proxy Manager and the app's nginx live. If your proxy reaches the host from a public
+   address, set `TRUST_PROXY` to its address.
+
+The browser session lasts until the token expires or is revoked, and ends after 7 idle days.
+Session cookies are `Secure` over HTTPS and still work over plain HTTP on the LAN.
+
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
 
 Zscaler's PAC file returns `PROXY 127.0.0.1:8888; PROXY 127.0.0.1:9001`. Docker Desktop tries
