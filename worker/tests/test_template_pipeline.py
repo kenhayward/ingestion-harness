@@ -114,7 +114,7 @@ def run(tmp_path: Path):  # type: ignore[no-untyped-def]
 
 
 def read_csv(store: MemoryObjectStore, key: str) -> list[dict[str, str]]:
-    return list(csv.DictReader(io.StringIO(store.get("outputs", key).decode())))
+    return list(csv.DictReader(io.StringIO(store.get("outputs", key).decode("utf-8-sig"))))
 
 
 def test_job_completes_with_one_call_per_step_and_chunk(run) -> None:  # type: ignore[no-untyped-def]
@@ -237,3 +237,12 @@ def test_preview_failures_do_not_fail_the_job(run) -> None:  # type: ignore[no-u
     assert queue.awaiting and not queue.failed
     assert any(msg == "page previews unavailable" for _, _, msg in queue.events)
     assert not any(key.startswith("job-1/pages/") for _, key in store.objects)
+
+
+def test_template_csvs_have_a_bom_and_a_utf8_content_type(run) -> None:  # type: ignore[no-untyped-def]
+    _, store, _ = run
+    csvs = [(k, v) for (b, k), v in store.objects.items() if b == "outputs" and k.endswith(".csv")]
+    assert csvs
+    for key, (body, content_type) in csvs:
+        assert body.startswith(b"\xef\xbb\xbf"), key
+        assert content_type == "text/csv; charset=utf-8", key

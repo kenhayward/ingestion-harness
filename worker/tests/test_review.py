@@ -47,7 +47,7 @@ def make_deps(tmp_path: Path, template: dict[str, Any]) -> tuple[PipelineDeps, M
 
 
 def target_csv(target: MemoryObjectStore, key: str) -> list[dict[str, str]]:
-    return list(csv.DictReader(io.StringIO(target.get("published", key).decode())))
+    return list(csv.DictReader(io.StringIO(target.get("published", key).decode("utf-8-sig"))))
 
 
 # --- applying edits to a draft document ------------------------------------------------------

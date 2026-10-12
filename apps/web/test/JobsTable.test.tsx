@@ -15,7 +15,7 @@ describe('JobsTable actions', () => {
   it.each<[JobStatus, string[]]>([
     ['queued', ['Cancel']],
     ['running', ['Cancel']],
-    ['succeeded', ['Delete']],
+    ['succeeded', ['Re-run with spec default', 'Delete']],
     ['failed', ['Retry with spec default', 'Delete']],
     ['needs_review', ['Retry with spec default', 'Delete']],
     ['cancelled', ['Retry with spec default', 'Delete']],
@@ -142,5 +142,24 @@ describe('JobsTable actions', () => {
     const link = within(row('a.pdf')).queryByRole('link', { name: 'Review' });
     if (linked) expect(link).toHaveAttribute('href', `#/review/${j.id}`);
     else expect(link).not.toBeInTheDocument();
+  });
+
+  it('re-runs a succeeded job after confirming what it discards', async () => {
+    const api = fakeApi();
+    const onChanged = vi.fn();
+    const j = job({ filename: 'a.pdf', status: 'succeeded' });
+    render(<JobsTable api={api} jobs={[j]} onChanged={onChanged} retryModel="anthropic/new" />);
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Re-run with anthropic/new' }),
+    );
+    expect(within(row('a.pdf')).getByText(/Re-run a\.pdf\?/)).toHaveTextContent(
+      'Re-run a.pdf? It is extracted again on the latest template version; earlier review edits are discarded.',
+    );
+    expect(api.retryJob).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Confirm re-run a.pdf' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'anthropic/new');
+    expect(onChanged).toHaveBeenCalled();
   });
 });

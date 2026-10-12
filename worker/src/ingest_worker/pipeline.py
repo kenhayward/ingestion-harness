@@ -23,7 +23,7 @@ from .ocr import (
     render_page_png,
     render_preview_jpeg,
 )
-from .outputs import RenderedOutput, render_outputs
+from .outputs import RenderedOutput, content_type, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
@@ -164,8 +164,8 @@ def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[R
         return []
     published = [replace(o, key=f"{deps.target.prefix}{o.key}") for o in outputs]
     for o in published:
-        content_type = "text/csv" if o.format == "csv" else "application/json"
-        deps.target.store.put(deps.target.bucket, o.key, o.body, content_type)
+        ctype = content_type(o.format)
+        deps.target.store.put(deps.target.bucket, o.key, o.body, ctype)
     return published
 
 
@@ -236,8 +236,8 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
         models=models_used,
     )
     for o in outputs:
-        content_type = "text/csv" if o.format == "csv" else "application/json"
-        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
+        ctype = content_type(o.format)
+        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
     return ProcessResult(outputs)
 
 

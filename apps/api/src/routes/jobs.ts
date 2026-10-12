@@ -143,7 +143,10 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
     return (
       reply
-        .header('content-type', output.format === 'csv' ? 'text/csv' : 'application/json')
+        .header(
+          'content-type',
+          output.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json',
+        )
         .header(
           'content-disposition',
           `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,

@@ -21,7 +21,7 @@ from .extract import ExtractionResult
 from .llm.base import LLMProvider
 from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
-from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell
+from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
 from .pipeline import (
     DocumentError,
     PipelineDeps,
@@ -104,8 +104,8 @@ def process_template_job(
     }
     outputs = render_document(template, document)
     for o in outputs:
-        content_type = "text/csv" if o.format == "csv" else "application/json"
-        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
+        ctype = content_type(o.format)
+        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
     return ProcessResult(outputs, reasons)
 
 
@@ -313,8 +313,8 @@ def rerun_template_job(
     )
     outputs = render_document(template, document)
     for o in outputs:
-        content_type = "text/csv" if o.format == "csv" else "application/json"
-        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type)
+        ctype = content_type(o.format)
+        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
     return ProcessResult(outputs, reasons)
 
 
@@ -412,7 +412,7 @@ def _csv(header: list[str], rows: list[list[Any]]) -> bytes:
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(header)
     writer.writerows([[_cell(v) for v in row] for row in rows])
-    return buf.getvalue().encode("utf-8")
+    return encode_csv(buf.getvalue())
 
 
 def render_document(template: Template, document: dict[str, Any]) -> list[RenderedOutput]:

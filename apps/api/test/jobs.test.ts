@@ -60,7 +60,7 @@ describe('jobs API', () => {
 
     const res = await app.inject(`/api/jobs/${job.id}/outputs/lines`);
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(res.body).toBe('a,b\n1,2\n');
   });
 });
@@ -393,5 +393,61 @@ describe('retry moves to the latest version', () => {
     const res = await retry(ctx, ctx.job.id);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ specVersion: 1 });
+  });
+});
+
+describe('re-running a succeeded job', () => {
+  it('re-processes it on the latest version and discards the earlier review', async () => {
+    const ctx = await testApp();
+    const job = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart(
+          { specId: 'tdemo', specVersion: '1' },
+          { filename: 'a.pdf', content: fakePdf },
+        ),
+      })
+    ).json();
+    ctx.repo.jobs.set(job.id, {
+      ...ctx.repo.jobs.get(job.id)!,
+      status: 'succeeded',
+      task: 'publish',
+      reviewer: 'Ken',
+      reviewNote: 'ok',
+      reviewedAt: '2026-10-01T00:00:00Z',
+      reviewReasons: ['1 issue'],
+    });
+    await ctx.repo.addEdit(job.id, {
+      field: 'product',
+      table: null,
+      row: null,
+      column: null,
+      oldValue: 'a',
+      newValue: 'b',
+      editor: 'Ken',
+      reason: null,
+    });
+    await ctx.templates.create('tdemo', 2, { ...demoTemplate, version: 2 }, 'published');
+
+    const res = await ctx.app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      status: 'queued',
+      task: 'process',
+      specVersion: 2,
+      reviewer: null,
+      reviewNote: null,
+      reviewedAt: null,
+      reviewReasons: null,
+    });
+    expect(await ctx.repo.listEdits(job.id)).toEqual([]);
+  });
+
+  it('keeps the review of failed jobs untouched (nothing to discard)', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'failed', reviewer: 'Ken' });
+    const res = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+    expect(res.json()).toMatchObject({ status: 'queued', reviewer: 'Ken' });
   });
 });

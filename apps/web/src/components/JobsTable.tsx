@@ -74,6 +74,16 @@ const DELETABLE = new Set<JobStatus>([
 ]);
 /** awaiting_review: decide; succeeded: read-only view (evidence, edits, save as reference). */
 const REVIEWABLE = new Set<JobStatus>(['awaiting_review', 'succeeded']);
+type Action = 'cancel' | 'delete' | 're-run';
+
+/** Inline confirmation text per action (also the Confirm button's description). */
+const PROMPTS: Record<Action, (filename: string) => string> = {
+  delete: (f) => `Delete ${f}? Published copies in the target are kept.`,
+  cancel: () => 'Cancel job?',
+  're-run': (f) =>
+    `Re-run ${f}? It is extracted again on the latest template version; earlier review edits are discarded.`,
+};
+
 const RETRYABLE = new Set<JobStatus>(['failed', 'needs_review', 'cancelled']);
 
 /** Row actions; Cancel and Delete ask for an inline confirmation first. */
@@ -88,18 +98,18 @@ function JobActions({
   onChanged: () => void;
   retryModel: string;
 }) {
-  const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Keyboard/screen-reader users: focus the confirmation when it opens, and the button that
   // opened it when they keep the job.
   const confirmRef = useRef<HTMLButtonElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [returnFocus, setReturnFocus] = useState(false);
+  const triggers = useRef<Partial<Record<Action, HTMLButtonElement | null>>>({});
+  const [returnFocus, setReturnFocus] = useState<Action | null>(null);
   useEffect(() => {
     if (confirm) confirmRef.current?.focus();
     else if (returnFocus) {
-      triggerRef.current?.focus();
-      setReturnFocus(false);
+      triggers.current[returnFocus]?.focus();
+      setReturnFocus(null);
     }
   }, [confirm, returnFocus]);
 
@@ -123,18 +133,20 @@ function JobActions({
     const promptId = `confirm-${job.id}`;
     return (
       <>
-        <span id={promptId}>
-          {confirm === 'delete'
-            ? `Delete ${job.filename}? Published copies in the target are kept.`
-            : 'Cancel job?'}
-        </span>{' '}
+        <span id={promptId}>{PROMPTS[confirm](job.filename)}</span>{' '}
         <button
           ref={confirmRef}
           type="button"
           aria-label={`Confirm ${confirm} ${job.filename}`}
           aria-describedby={promptId}
           onClick={() =>
-            void run(() => (confirm === 'delete' ? api.deleteJob(job.id) : api.cancelJob(job.id)))
+            void run(() =>
+              confirm === 'delete'
+                ? api.deleteJob(job.id)
+                : confirm === 'cancel'
+                  ? api.cancelJob(job.id)
+                  : api.retryJob(job.id, retryModel || null),
+            )
           }
         >
           Confirm
@@ -143,8 +155,8 @@ function JobActions({
           type="button"
           aria-label={`Keep ${job.filename}`}
           onClick={() => {
+            setReturnFocus(confirm);
             setConfirm(null);
-            setReturnFocus(true);
           }}
         >
           Keep
@@ -164,14 +176,33 @@ function JobActions({
           Retry with {retryModel || 'spec default'}
         </button>
       )}
+      {job.status === 'succeeded' && (
+        <button
+          ref={(el) => {
+            triggers.current['re-run'] = el;
+          }}
+          type="button"
+          onClick={() => setConfirm('re-run')}
+        >
+          Re-run with {retryModel || 'spec default'}
+        </button>
+      )}
       {(job.status === 'queued' || job.status === 'running') && (
-        <button ref={triggerRef} type="button" onClick={() => setConfirm('cancel')}>
+        <button
+          ref={(el) => {
+            triggers.current.cancel = el;
+          }}
+          type="button"
+          onClick={() => setConfirm('cancel')}
+        >
           Cancel
         </button>
       )}
       {DELETABLE.has(job.status) && (
         <button
-          ref={triggerRef}
+          ref={(el) => {
+            triggers.current.delete = el;
+          }}
           type="button"
           className="danger"
           onClick={() => setConfirm('delete')}

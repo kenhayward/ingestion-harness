@@ -24,6 +24,9 @@ import {
   type StoredObject,
 } from './types.js';
 
+/** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
+const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
+
 /** In-memory repo for unit tests and local UI work without Postgres. */
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
@@ -199,7 +202,7 @@ export class MemoryRepo implements IngestionRepo {
     { model, specVersion }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
-    if (!job || !['failed', 'needs_review', 'cancelled'].includes(job.status)) return null;
+    if (!job || !RETRYABLE.includes(job.status)) return null;
     // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
     // failures re-run processing.
     const task = job.status === 'cancelled' ? job.task : 'process';
@@ -207,6 +210,12 @@ export class MemoryRepo implements IngestionRepo {
     const doc = this.documents.get(job.documentId);
     if (specVersion !== undefined && doc) this.documents.set(doc.id, { ...doc, specVersion });
     const version = specVersion === undefined ? {} : { specVersion };
+    // Re-running a succeeded job re-extracts: its review belonged to the old extraction.
+    const review =
+      job.status === 'succeeded'
+        ? { reviewer: null, reviewNote: null, reviewedAt: null, reviewReasons: null }
+        : {};
+    if (job.status === 'succeeded') this.edits.delete(id);
     return this.update(id, {
       status: 'queued',
       task,
@@ -214,6 +223,7 @@ export class MemoryRepo implements IngestionRepo {
       error: null,
       ...override,
       ...version,
+      ...review,
     });
   }
 
