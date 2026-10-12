@@ -115,12 +115,15 @@ export function buildScorecard(samples: SampleResult[]): Scorecard {
   };
 }
 
+export const EVALUATION_SETS = ['dev', 'holdout'] as const;
+export type EvaluationSet = (typeof EVALUATION_SETS)[number];
+
 export interface IterationSummary {
   id: string;
   projectId: string;
   templateVersion: number;
   briefVersion: number | null;
-  set: 'dev';
+  set: EvaluationSet;
   /** Alias every step was overridden with; null = the template's own models. */
   model: EvaluationModel | null;
   /** Shared by the iterations of one model comparison. */
@@ -261,4 +264,105 @@ export function failureDiffs(
       },
     ];
   });
+}
+
+export const PublishBodySchema = z
+  .object({ overrideReason: z.string().trim().min(10).max(1000).optional() })
+  .strict();
+export const ThresholdBodySchema = z
+  .object({ publishThreshold: z.number().min(0).max(1) })
+  .strict();
+
+export interface GateCandidate {
+  id: string;
+  status: 'running' | 'complete';
+  score: number | null;
+  /** The iteration ran the open draft as it is now (version and definition snapshot). */
+  matchesDraft: boolean;
+  createdAt: string;
+  /** Samples compared with their reference / samples the iteration evaluated. */
+  completed: number;
+  total: number;
+  /** Model override of the iteration; only null (the template's own models) counts. */
+  model: string | null;
+  /** Currently ready holdout samples the iteration evaluated / currently ready holdout samples. */
+  covered: number;
+  holdoutSamples: number;
+}
+
+export interface GateView {
+  threshold: number;
+  iterationId: string | null;
+  score: number | null;
+  passes: boolean;
+  reason: string;
+}
+
+const percent = (x: number, digits = 0) =>
+  digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;
+
+/**
+ * The publish gate (ADR 0007): the newest complete holdout run of the current draft with the
+ * template's own models decides. It passes only when it covered every ready holdout sample,
+ * compared every sample it evaluated, and scored at or above the threshold.
+ */
+export function publishGate({
+  threshold,
+  candidates,
+}: {
+  threshold: number;
+  candidates: GateCandidate[];
+}): GateView {
+  const run = candidates
+    .filter((c) => c.status === 'complete' && c.matchesDraft && c.model === null)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (!run) {
+    return {
+      threshold,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    };
+  }
+  const gate = (passes: boolean, reason: string): GateView => ({
+    threshold,
+    iterationId: run.id,
+    score: run.score,
+    passes,
+    reason,
+  });
+  if (run.covered !== run.holdoutSamples) {
+    return gate(
+      false,
+      `holdout evaluation covered ${run.covered} of ${run.holdoutSamples} holdout samples`,
+    );
+  }
+  if (run.completed !== run.total) {
+    return gate(false, `holdout evaluation compared ${run.completed} of ${run.total} samples`);
+  }
+  if (run.score === null) return gate(false, 'holdout evaluation produced no score');
+  const passes = run.score >= threshold;
+  // A tie in whole percentages would read "90% is below 90%": show one decimal then.
+  const digits = !passes && percent(run.score) === percent(threshold) ? 1 : 0;
+  const [score, limit] = [percent(run.score, digits), percent(threshold, digits)];
+  return gate(
+    passes,
+    passes
+      ? `holdout score ${score} meets the threshold ${limit}`
+      : `holdout score ${score} is below the threshold ${limit}`,
+  );
+}
+
+export interface Publication {
+  id: string;
+  projectId: string;
+  version: number;
+  iterationId: string | null;
+  score: number | null;
+  threshold: number;
+  overrideReason: string | null;
+  /** Label of the session's token. */
+  publishedBy: string | null;
+  publishedAt: string;
 }

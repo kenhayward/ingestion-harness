@@ -56,7 +56,7 @@ describe('ReferencesTab', () => {
   });
 
   it('runs the draft model on unverified samples and polls while they run', async () => {
-    const listReferenceRows = vi
+    const dev = vi
       .fn()
       .mockResolvedValueOnce([referenceRow({ run: null })])
       .mockResolvedValueOnce([
@@ -69,6 +69,9 @@ describe('ReferencesTab', () => {
           run: { jobId: 'j1', status: 'awaiting_review', error: null, modelOverride: 'draft' },
         }),
       ]);
+    const listReferenceRows = vi.fn(async (_id: string, set?: string) =>
+      set === 'holdout' ? [] : dev(),
+    );
     const { api, onChanged } = tab({
       listReferenceRows,
       proposeReferences: vi.fn(async () => [job()]),
@@ -79,6 +82,40 @@ describe('ReferencesTab', () => {
     expect(api.proposeReferences).toHaveBeenCalledWith('letter');
     expect(onChanged).toHaveBeenCalled();
     expect(await screen.findByRole('link', { name: 'Verify in Review' })).toBeInTheDocument();
+  });
+
+  it('lists holdout references and runs the template on unverified holdout samples', async () => {
+    const listReferenceRows = vi.fn(async (_id: string, set?: string) =>
+      set === 'holdout'
+        ? [
+            referenceRow({
+              filename: 'h.pdf',
+              run: { jobId: 'hj1', status: 'awaiting_review', error: null, modelOverride: null },
+            }),
+          ]
+        : [],
+    );
+    const { api, onChanged } = tab({
+      listReferenceRows,
+      startHoldoutReferenceRuns: vi.fn(async () => [job()]),
+    });
+    expect(
+      await screen.findByText(
+        "Holdout samples are extracted by the template's own models; drafting never sees them.",
+      ),
+    ).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Holdout references' });
+    const h = within(table).getByText('h.pdf').closest('tr')!;
+    expect(within(h).getByRole('link', { name: 'Verify in Review' })).toHaveAttribute(
+      'href',
+      '#/review/hj1',
+    );
+    expect(listReferenceRows).toHaveBeenCalledWith('letter', 'holdout');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Run the template on unverified holdout samples' }),
+    );
+    expect(api.startHoldoutReferenceRuns).toHaveBeenCalledWith('letter');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('needs an open draft', async () => {

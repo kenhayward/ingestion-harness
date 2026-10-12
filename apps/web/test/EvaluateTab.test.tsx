@@ -2,10 +2,10 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { EvaluateTab } from '../src/workbench/EvaluateTab.js';
-import { fakeApi, feedbackItem, iterationView, projectView } from './fake-api.js';
+import { fakeApi, feedbackItem, gateView, iterationView, projectView } from './fake-api.js';
 
 function tab(overrides = {}, hasDraft = true) {
-  const api = fakeApi(overrides);
+  const api = fakeApi({ getProject: vi.fn(async () => projectView()), ...overrides });
   const onRestored = vi.fn();
   render(
     <EvaluateTab
@@ -13,6 +13,7 @@ function tab(overrides = {}, hasDraft = true) {
       projectId="letter"
       dataPolicy="local"
       hasDraft={hasDraft}
+      draft={hasDraft ? 2 : null}
       pollMs={1}
       onRestored={onRestored}
     />,
@@ -30,7 +31,64 @@ describe('EvaluateTab', () => {
     });
     await userEvent.click(await screen.findByLabelText('Fresh model calls (skip the step cache)'));
     await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
-    expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, { uncached: true });
+    expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {
+      uncached: true,
+      set: 'dev',
+    });
+  });
+
+  it('evaluates the holdout set, which cannot be compared across models', async () => {
+    const it0 = iterationView({ status: 'running', score: null, set: 'holdout' });
+    const { api } = tab({
+      listIterations: vi.fn(async () => []),
+      startEvaluation: vi.fn(async () => it0),
+      getIteration: vi.fn(async () => it0),
+    });
+    await userEvent.selectOptions(await screen.findByLabelText('Set'), 'holdout');
+    expect(screen.getByRole('button', { name: 'Compare models' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
+    expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {
+      uncached: false,
+      set: 'holdout',
+    });
+  });
+
+  it('marks holdout iterations in the history', async () => {
+    const dev = iterationView();
+    const holdout = iterationView({ set: 'holdout' });
+    tab({
+      listIterations: vi.fn(async () => [holdout, dev]),
+      getIteration: vi.fn(async () => holdout),
+    });
+    const history = await screen.findByRole('table', { name: 'History' });
+    const rows = within(history).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('holdout');
+    expect(rows[2]).not.toHaveTextContent('holdout');
+  });
+
+  it('shows the publish panel only for an open draft', async () => {
+    tab({ getPublishGate: vi.fn(async () => gateView({ reason: 'gate reason' })) });
+    expect(await screen.findByText('gate reason')).toBeInTheDocument();
+  });
+
+  it('keeps the publish panel without an open draft, with no Publish button', async () => {
+    tab({}, false);
+    expect(
+      await screen.findByText(
+        'Every version is published; start the next version on the Template tab',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish v/ })).toBeNull();
+  });
+
+  it('reloads the publish gate when the latest evaluation completes', async () => {
+    const running = iterationView({ status: 'running', score: null, set: 'holdout' });
+    const done = iterationView({ id: running.id, status: 'complete', set: 'holdout' });
+    const getIteration = vi.fn().mockResolvedValueOnce(running).mockResolvedValue(done);
+    const { api } = tab({ listIterations: vi.fn(async () => [running]), getIteration });
+    await waitFor(() => expect(getIteration.mock.calls.length).toBeGreaterThan(1));
+    // Once on mount, once when the running iteration loads, once when it completes.
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(3));
   });
 
   it('comments on a field from the drill-down', async () => {
@@ -208,7 +266,10 @@ describe('EvaluateTab', () => {
     });
     await userEvent.selectOptions(await screen.findByLabelText('Model'), 'fast');
     await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
-    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'fast', { uncached: false });
+    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'fast', {
+      uncached: false,
+      set: 'dev',
+    });
     expect(await screen.findByText('Score 75%')).toBeInTheDocument();
   });
 

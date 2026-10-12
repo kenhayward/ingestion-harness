@@ -1,10 +1,12 @@
 import { vi } from 'vitest';
 import type {
   FeedbackItem,
+  GateView,
   IterationView,
   JobSummary,
   ProjectView,
   ProposalView,
+  Publication,
   ReferenceRow,
   SampleView,
   SegmentationView,
@@ -295,6 +297,17 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     restoreIteration: vi.fn(async () => {
       throw new Error('restoreIteration not stubbed');
     }),
+    startHoldoutReferenceRuns: vi.fn(async () => {
+      throw new Error('startHoldoutReferenceRuns not stubbed');
+    }),
+    setPublishThreshold: vi.fn(async () => {
+      throw new Error('setPublishThreshold not stubbed');
+    }),
+    getPublishGate: vi.fn(async () => gateView()),
+    publish: vi.fn(async () => {
+      throw new Error('publish not stubbed');
+    }),
+    listPublications: vi.fn(async () => []),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
@@ -322,6 +335,32 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
   };
 }
 
+export function gateView(overrides: Partial<GateView> = {}): GateView {
+  return {
+    threshold: 0.9,
+    iterationId: null,
+    score: null,
+    passes: false,
+    reason: 'no complete holdout evaluation of the current draft',
+    ...overrides,
+  };
+}
+
+export function publication(overrides: Partial<Publication> = {}): Publication {
+  return {
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    version: 1,
+    iterationId: null,
+    score: 0.95,
+    threshold: 0.9,
+    overrideReason: null,
+    publishedBy: 'admin',
+    publishedAt: '2026-10-12T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
 export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
   return {
     project: {
@@ -331,6 +370,7 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
       dataPolicy: 'local',
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
+      publishThreshold: 0.9,
     },
     draft: 1,
     published: null,
@@ -354,6 +394,7 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     prepareJobId: crypto.randomUUID(),
     error: null,
     triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
+    holdoutRuns: 0,
     ...overrides,
   };
 }

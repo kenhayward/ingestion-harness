@@ -123,6 +123,14 @@ export function SamplesTab({
                 <td>
                   {s.state}
                   {s.error && <small> — {s.error}</small>}
+                  {s.holdoutRuns > 0 && (
+                    <>
+                      {' '}
+                      <small className="muted">
+                        used in {s.holdoutRuns} holdout evaluation{s.holdoutRuns === 1 ? '' : 's'}
+                      </small>
+                    </>
+                  )}
                 </td>
                 <td>
                   {s.state === 'ready' && (

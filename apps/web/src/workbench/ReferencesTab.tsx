@@ -28,13 +28,19 @@ export function ReferencesTab({
   onChanged: () => void;
 }) {
   const [rows, setRows] = useState<ReferenceRow[] | null>(null);
+  const [holdoutRows, setHoldoutRows] = useState<ReferenceRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await api.listReferenceRows(projectId));
+      const [dev, holdout] = await Promise.all([
+        api.listReferenceRows(projectId),
+        api.listReferenceRows(projectId, 'holdout'),
+      ]);
+      setRows(dev);
+      setHoldoutRows(holdout);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -45,7 +51,9 @@ export function ReferencesTab({
     void refresh();
   }, [refresh]);
 
-  const running = rows?.some((r) => r.run !== null && active(r.run.status)) ?? false;
+  const running = [...(rows ?? []), ...(holdoutRows ?? [])].some(
+    (r) => r.run !== null && active(r.run.status),
+  );
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => void refresh(), pollMs);
@@ -70,6 +78,13 @@ export function ReferencesTab({
     act(async () => {
       const jobs = await api.proposeReferences(projectId);
       setMessage(`${jobs.length} run${jobs.length === 1 ? '' : 's'} queued`);
+      onChanged();
+      await refresh();
+    });
+  const proposeHoldout = () =>
+    act(async () => {
+      const jobs = await api.startHoldoutReferenceRuns(projectId);
+      setMessage(`${jobs.length} holdout run${jobs.length === 1 ? '' : 's'} queued`);
       onChanged();
       await refresh();
     });
@@ -101,46 +116,59 @@ export function ReferencesTab({
       </div>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
-      {rows === null ? (
-        <p>Loading…</p>
-      ) : (
-        <table aria-label="References">
-          <thead>
-            <tr>
-              <th>Sample</th>
-              <th>Run</th>
-              <th>Reference</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.sampleId}>
-                <td>{r.filename}</td>
-                <td>
-                  {r.run ? (
-                    <>
-                      {r.run.status.replace('_', ' ')}
-                      {r.run.error && <small className="muted"> {r.run.error}</small>}{' '}
-                      {reviewable(r.run.status) && (
-                        <a href={`#/review/${r.run.jobId}`}>Verify in Review</a>
-                      )}
-                    </>
-                  ) : (
-                    <span className="muted">No run yet</span>
-                  )}
-                </td>
-                <td>
-                  {r.reference ? (
-                    `✓ ${r.reference.name}`
-                  ) : (
-                    <span className="muted">Not verified</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <ReferenceTable label="References" rows={rows} />
+      <h3>Holdout references</h3>
+      <p className="muted">
+        Holdout samples are extracted by the template&apos;s own models; drafting never sees them.
+      </p>
+      <div className="actions">
+        <button
+          type="button"
+          disabled={!hasDraft || busy || running}
+          onClick={() => void proposeHoldout()}
+        >
+          Run the template on unverified holdout samples
+        </button>
+      </div>
+      <ReferenceTable label="Holdout references" rows={holdoutRows} />
     </div>
+  );
+}
+
+function ReferenceTable({ label, rows }: { label: string; rows: ReferenceRow[] | null }) {
+  if (rows === null) return <p>Loading…</p>;
+  return (
+    <table aria-label={label}>
+      <thead>
+        <tr>
+          <th>Sample</th>
+          <th>Run</th>
+          <th>Reference</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.sampleId}>
+            <td>{r.filename}</td>
+            <td>
+              {r.run ? (
+                <>
+                  {r.run.status.replace('_', ' ')}
+                  {r.run.error && <small className="muted"> {r.run.error}</small>}{' '}
+                  {reviewable(r.run.status) && (
+                    <a href={`#/review/${r.run.jobId}`}>Verify in Review</a>
+                  )}
+                </>
+              ) : (
+                <span className="muted">No run yet</span>
+              )}
+            </td>
+            <td>
+              {r.reference ? `✓ ${r.reference.name}` : <span className="muted">Not verified</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

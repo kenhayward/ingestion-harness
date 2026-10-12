@@ -7,16 +7,19 @@ import {
   DRAFT_STAGES,
   DataPolicySchema,
   EVALUATION_MODELS,
+  EVALUATION_SETS,
   DraftResultSchema,
   EMPTY_BRIEF,
   FeedbackBodySchema,
   MAX_SAMPLES,
   PreparedTextSchema,
+  PublishBodySchema,
   PreparedTriageSchema,
   SampleRoleSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
   SurveyBodySchema,
+  ThresholdBodySchema,
   applyChanges,
   blockingStage,
   buildScorecard,
@@ -30,15 +33,20 @@ import {
   parseChangeBody,
   preparedTextKey,
   preparedTriageKey,
+  publishGate,
   referencesStage,
   segmentationKey,
+  stableJson,
   stageStates,
   type ChangeBody,
   type ComparisonView,
   type DraftStage,
   type EvaluationModel,
+  type EvaluationSet,
+  type GateCandidate,
   type FailureDiff,
   type FeedbackItem,
+  type GateView,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -48,6 +56,7 @@ import {
   type ProjectView,
   type ProposalStatus,
   type ProposalView,
+  type Publication,
   type Reference,
   type ReferenceRow,
   type SampleResult,
@@ -224,6 +233,13 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
     (j) => j.task === 'prepare',
   );
   const records = await app.deps.workbench.listSamples(projectId);
+  // Holdout history: the holdout iterations that evaluated this sample's PDF.
+  const holdoutIterations = (await app.deps.workbench.listIterations(projectId)).filter(
+    (i) => i.set === 'holdout',
+  );
+  const shaByJob = await jobShas(app, projectId);
+  const holdoutRuns = (sha256: string) =>
+    holdoutIterations.filter((i) => iterationShas(i, shaByJob).includes(sha256)).length;
   return Promise.all(
     records.map(async (record) => ({
       record,
@@ -231,8 +247,28 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         app,
         record,
         prepares.find((j) => j.documentId === record.documentId) ?? null,
+        holdoutRuns(record.sha256),
       ),
     })),
+  );
+}
+
+/** The sha256 of each project job's PDF, by job id (deleted jobs are missing). */
+async function jobShas(app: FastifyInstance, projectId: string): Promise<Map<string, string>> {
+  return new Map((await app.deps.repo.listProjectRuns(projectId)).map((r) => [r.job.id, r.sha256]));
+}
+
+/**
+ * The samples (sha256) an iteration evaluated: as recorded at creation (migration 0017), else,
+ * for older iterations, from the documents of its jobs that still exist.
+ */
+function iterationShas(iteration: IterationRecord, shaByJob: Map<string, string>): string[] {
+  return (
+    iteration.sampleShas ??
+    iteration.jobIds.flatMap((id) => {
+      const sha = shaByJob.get(id);
+      return sha ? [sha] : [];
+    })
   );
 }
 
@@ -240,6 +276,7 @@ async function toView(
   app: FastifyInstance,
   s: SampleRecord,
   job: JobSummary | null,
+  holdoutRuns: number,
 ): Promise<SampleView> {
   const state = stateOf(job);
   const triage = state === 'ready' ? await readJson(app, preparedTriageKey(s.sha256)) : null;
@@ -257,6 +294,7 @@ async function toView(
     prepareJobId: job?.id ?? null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
+    holdoutRuns,
   };
 }
 
@@ -282,17 +320,25 @@ interface ReferenceEntry {
   draftRun: JobSummary | null;
 }
 
-/** Ready dev samples with their newest reference (by PDF sha256) and newest non-evaluation run. */
-async function referenceRows(app: FastifyInstance, projectId: string): Promise<ReferenceRow[]> {
-  return (await referenceEntries(app, projectId)).map((e) => e.row);
+/**
+ * Ready samples of one set with their newest reference (by PDF sha256) and newest
+ * non-evaluation run.
+ */
+async function referenceRows(
+  app: FastifyInstance,
+  projectId: string,
+  set: EvaluationSet = 'dev',
+): Promise<ReferenceRow[]> {
+  return (await referenceEntries(app, projectId, set)).map((e) => e.row);
 }
 
 async function referenceEntries(
   app: FastifyInstance,
   projectId: string,
+  set: EvaluationSet = 'dev',
 ): Promise<ReferenceEntry[]> {
   const samples = (await sampleViews(app, projectId))
-    .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+    .filter((s) => s.view.role === set && s.view.state === 'ready')
     .map((s) => s.record)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const references = await app.deps.repo.listReferencesWithSha(projectId);
@@ -331,7 +377,7 @@ async function referencesView(
   projectId: string,
   earlier: StageView[],
 ): Promise<StageView> {
-  const entries = await referenceEntries(app, projectId);
+  const entries = await referenceEntries(app, projectId, 'dev');
   const rows = entries.map((e) => e.row);
   const verified = rows.filter((r) => r.reference !== null);
   // Only reference runs (draft model) of samples still without a reference count: a 3a test
@@ -361,19 +407,30 @@ async function allStages(app: FastifyInstance, projectId: string): Promise<Stage
 }
 
 const EvaluateBody = z
-  .object({ model: z.enum(EVALUATION_MODELS).optional(), uncached: z.boolean().optional() })
+  .object({
+    model: z.enum(EVALUATION_MODELS).optional(),
+    uncached: z.boolean().optional(),
+    set: z.enum(EVALUATION_SETS).optional(),
+  })
   .strict();
+const ReferencesQuery = z.object({ set: z.enum(EVALUATION_SETS).optional() });
 const CompareBody = z.object({ uncached: z.boolean().optional() }).strict();
 const IterationParams = z.object({ id: Id, iid: z.string().uuid() });
 const ComparisonParams = z.object({ id: Id, groupId: z.string().uuid() });
 
 /**
  * A finished job's comparison with its reference; null when the job has no readable document
- * (none written, corrupt JSON, or not shaped like a document).
+ * (none written, corrupt JSON, or not shaped like a document). `raw` compares the models'
+ * output, ignoring review edits (holdout: a review must not raise the score).
  */
-async function sampleComparison(app: FastifyInstance, job: JobDetail, reference: Reference) {
+async function sampleComparison(
+  app: FastifyInstance,
+  job: JobDetail,
+  reference: Reference,
+  raw: boolean,
+) {
   try {
-    const document = await jobDocument(app, job);
+    const document = await jobDocument(app, job, { raw });
     return document ? compareToReference(reference.expected, document) : null;
   } catch (err) {
     if (err instanceof SyntaxError || err instanceof TypeError) {
@@ -403,7 +460,7 @@ async function iterationView(
         : null;
       const comparison =
         job && reference && regressionFinished(job.status)
-          ? await sampleComparison(app, job, reference)
+          ? await sampleComparison(app, job, reference, iteration.set === 'holdout')
           : null;
       return {
         sampleId: sample?.id ?? null,
@@ -440,6 +497,65 @@ async function iterationView(
   };
 }
 
+/**
+ * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
+ * draft (version and definition) with the template's own models count; their scores are always
+ * recomputed from the jobs (raw output, so review edits never raise them), and coverage is
+ * measured against the holdout samples that are ready now. `definition` is the `stableJson` of
+ * the draft the gate was decided for.
+ */
+async function gateFor(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+): Promise<GateView & { draft: number | null; definition: string | null }> {
+  const { draft } = await versionsOf(app.deps.templates, project.id);
+  if (draft === null) {
+    return {
+      threshold: project.publishThreshold,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no open draft to publish',
+      draft,
+      definition: null,
+    };
+  }
+  const current = stableJson((await app.deps.templates.get(project.id, draft))!.definition);
+  const ready = (await sampleViews(app, project.id))
+    .filter((s) => s.record.role === 'holdout' && s.view.state === 'ready')
+    .map((s) => s.record.sha256);
+  const shaByJob = await jobShas(app, project.id);
+  const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
+    (i) => i.set === 'holdout',
+  );
+  const candidates = await Promise.all(
+    holdout.map(async (i): Promise<GateCandidate> => {
+      const matchesDraft = i.templateVersion === draft && stableJson(i.definition) === current;
+      const evaluated = new Set(iterationShas(i, shaByJob));
+      const base = {
+        id: i.id,
+        createdAt: i.createdAt,
+        matchesDraft,
+        model: i.model,
+        covered: ready.filter((sha) => evaluated.has(sha)).length,
+        holdoutSamples: ready.length,
+      };
+      if (!matchesDraft || i.model !== null) {
+        // publishGate ignores it; not worth scoring.
+        return { ...base, status: 'running', score: null, completed: 0, total: i.jobIds.length };
+      }
+      const view = await iterationView(app, i);
+      const { status, score, completed, total } = view;
+      return { ...base, status, score, completed, total };
+    }),
+  );
+  return {
+    ...publishGate({ threshold: project.publishThreshold, candidates }),
+    draft,
+    definition: current,
+  };
+}
+
 function summaryOf(
   iteration: IterationRecord,
 ): Omit<IterationSummary, 'status' | 'score' | 'completed' | 'total'> {
@@ -466,13 +582,14 @@ interface EvaluationInputs {
 }
 
 /**
- * Checks that the project, its open draft and the verified dev references are ready for an
- * evaluation. Sends the error reply and returns null when they are not.
+ * Checks that the project, its open draft and the verified references of `set` are ready for
+ * an evaluation. Sends the error reply and returns null when they are not.
  */
 async function evaluationInputs(
   app: FastifyInstance,
   projectId: string,
   reply: FastifyReply,
+  set: EvaluationSet = 'dev',
 ): Promise<EvaluationInputs | null> {
   const { workbench, templates } = app.deps;
   const project = await workbench.getProject(projectId);
@@ -493,10 +610,13 @@ async function evaluationInputs(
     await reply.code(400).send({ error: 'the draft is not valid', issues });
     return null;
   }
-  const rows = (await referenceRows(app, projectId)).filter((r) => r.reference !== null);
+  const rows = (await referenceRows(app, projectId, set)).filter((r) => r.reference !== null);
   if (!rows.length) {
     await reply.code(409).send({
-      error: 'no verified references for the dev samples; verify some on the References tab first',
+      error:
+        set === 'dev'
+          ? 'no verified references for the dev samples; verify some on the References tab first'
+          : 'no verified references for the holdout samples; verify them on the References tab first',
     });
     return null;
   }
@@ -505,19 +625,25 @@ async function evaluationInputs(
 }
 
 /**
- * Starts an evaluation of the open draft against the verified dev references: one job per
- * reference, recorded as an iteration.
+ * Starts an evaluation of the open draft against the verified references of `options.set`
+ * (the rows `evaluationInputs` gathered for that set): one job per reference, recorded as an
+ * iteration of that set.
  */
 async function startIteration(
   app: FastifyInstance,
   req: FastifyRequest<{ Params: ProjectParams }>,
   inputs: EvaluationInputs,
-  options: { model: EvaluationModel | null; uncached: boolean; groupId: string | null },
+  options: {
+    set: EvaluationSet;
+    model: EvaluationModel | null;
+    uncached: boolean;
+    groupId: string | null;
+  },
 ): Promise<IterationRecord> {
   const { workbench } = app.deps;
   const projectId = req.params.id;
   const { project, draft, record, rows, samples } = inputs;
-  const { model, uncached, groupId } = options;
+  const { set, model, uncached, groupId } = options;
   const jobs = await Promise.all(
     rows.map((row) =>
       app.deps.repo.createWorkbenchJob(
@@ -538,9 +664,10 @@ async function startIteration(
     templateVersion: draft,
     definition: record.definition,
     briefVersion: brief?.version ?? null,
-    set: 'dev',
+    set,
     model,
     jobIds: jobs.map((j) => j.id),
+    sampleShas: rows.map((row) => row.sha256),
     groupId,
     uncached,
   });
@@ -549,6 +676,7 @@ async function startIteration(
       projectId,
       iteration: iteration.id,
       version: draft,
+      set,
       model,
       uncached,
       groupId,
@@ -606,6 +734,89 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     return projectView(app, project);
   });
 
+  /** Project settings: the holdout score a draft needs to publish without an override. */
+  app.patch<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
+    const body = ThresholdBodySchema.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const project = await workbench.setPublishThreshold(req.params.id, body.data.publishThreshold);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    req.log.info(
+      { projectId: project.id, publishThreshold: project.publishThreshold },
+      'publish threshold changed',
+    );
+    return projectView(app, project);
+  });
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/publish-gate',
+    async (req, reply): Promise<GateView> => {
+      const project = await workbench.getProject(req.params.id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { threshold, iterationId, score, passes, reason } = await gateFor(app, project);
+      return { threshold, iterationId, score, passes, reason };
+    },
+  );
+
+  /** Publish the open draft through the holdout gate; below it, only with an override reason. */
+  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/publish', async (req, reply) => {
+    const body = PublishBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const projectId = req.params.id;
+    const project = await workbench.getProject(projectId);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    const { draft, definition, ...gate } = await gateFor(app, project);
+    if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
+    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+    const { overrideReason } = body.data;
+    if (!gate.passes && !overrideReason) {
+      return reply
+        .code(409)
+        .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
+    }
+    // The gate was decided for the draft as it was read then; an edit since then voids it.
+    const now = await templates.get(projectId, draft);
+    if (!now || stableJson(now.definition) !== definition) {
+      return reply
+        .code(409)
+        .send({ error: 'the draft changed while publishing; check the gate again' });
+    }
+    const published = await templates.publish(projectId, draft);
+    if (!published) return reply.code(409).send({ error: 'the draft is no longer open' });
+    const publication = await workbench.recordPublication({
+      projectId,
+      version: draft,
+      iterationId: gate.iterationId,
+      score: gate.score,
+      threshold: gate.threshold,
+      // An override is recorded only when it was needed.
+      overrideReason: gate.passes ? null : overrideReason!,
+      publishedBy: req.auth?.label ?? null,
+    });
+    req.log.info(
+      {
+        projectId,
+        version: draft,
+        iterationId: gate.iterationId,
+        score: gate.score,
+        threshold: gate.threshold,
+        override: publication.overrideReason !== null,
+      },
+      'workbench draft published',
+    );
+    return reply.code(201).send({ publication, project: await projectView(app, project) });
+  });
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/publications',
+    async (req, reply): Promise<Publication[]> => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return workbench.listPublications(req.params.id);
+    },
+  );
+
   const findSample = async (projectId: string, sampleId: string) =>
     (await sampleViews(app, projectId)).find((s) => s.record.id === sampleId) ?? null;
 
@@ -662,7 +873,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         role: role.data,
         addedForVersion: version,
       });
-      return reply.code(201).send(await toView(app, record, job));
+      return reply.code(201).send(await toView(app, record, job, 0));
     } catch (err) {
       if (err instanceof WorkbenchConflictError)
         return reply.code(409).send({ error: err.message });
@@ -849,7 +1060,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     }
     const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const entries = await referenceEntries(app, projectId);
+    const entries = await referenceEntries(app, projectId, 'dev');
     if (!entries.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
     const unverified = entries.filter((e) => e.row.reference === null);
     if (!unverified.length) {
@@ -1062,8 +1273,65 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (!(await workbench.getProject(req.params.id))) {
       return reply.code(404).send({ error: 'project not found' });
     }
-    return referenceRows(app, req.params.id);
+    const query = ReferencesQuery.safeParse(req.query ?? {});
+    if (!query.success) return reply.code(400).send({ error: query.error.issues });
+    return referenceRows(app, req.params.id, query.data.set ?? 'dev');
   });
+
+  /**
+   * Holdout references: run the template's own models (no override) on every ready holdout
+   * sample that has no reference and no active run, forcing review so each can be verified.
+   * Not a stage: it has no stage state and is not blocked by the stage order.
+   */
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/holdout/reference-runs',
+    async (req, reply) => {
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft; start the next version on the Template tab' });
+      }
+      const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const holdout = await referenceEntries(app, projectId, 'holdout');
+      if (!holdout.length) {
+        return reply.code(409).send({ error: 'no prepared holdout samples to run' });
+      }
+      const unverified = holdout.filter((e) => e.row.reference === null);
+      if (!unverified.length) {
+        return reply.code(409).send({ error: 'every holdout sample already has a reference' });
+      }
+      const todo = unverified
+        .filter((e) => !(e.row.run && activeJob(e.row.run.status)))
+        .map((e) => e.row);
+      if (!todo.length) {
+        return reply.code(409).send({ error: 'reference runs are already running' });
+      }
+      const records = new Map(
+        (await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]),
+      );
+      const jobs = await Promise.all(
+        todo.map((row) =>
+          app.deps.repo.createWorkbenchJob(
+            sampleDocument(records.get(row.sampleId)!, projectId, draft),
+            {
+              projectId,
+              task: 'process',
+              params: { dataPolicy: project.dataPolicy, forceReview: true },
+              // The template's own models: drafting never sees holdout, so no draft model.
+              modelOverride: null,
+            },
+          ),
+        ),
+      );
+      req.log.info({ projectId, version: draft, jobs: jobs.length }, 'holdout reference runs');
+      return reply.code(201).send({ jobs });
+    },
+  );
 
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
@@ -1185,9 +1453,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/evaluations', async (req, reply) => {
     const body = EvaluateBody.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const inputs = await evaluationInputs(app, req.params.id, reply);
+    const set = body.data.set ?? 'dev';
+    const inputs = await evaluationInputs(app, req.params.id, reply, set);
     if (!inputs) return reply;
     const iteration = await startIteration(app, req, inputs, {
+      set,
       model: body.data.model ?? null,
       uncached: body.data.uncached ?? false,
       groupId: null,
@@ -1200,13 +1470,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const body = CompareBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
-      const inputs = await evaluationInputs(app, req.params.id, reply);
+      // Model comparison stays dev-only: it informs drafting, which never sees holdout.
+      const inputs = await evaluationInputs(app, req.params.id, reply, 'dev');
       if (!inputs) return reply;
       const groupId = randomUUID();
       const records: IterationRecord[] = [];
       for (const model of EVALUATION_MODELS) {
         records.push(
           await startIteration(app, req, inputs, {
+            set: 'dev',
             model,
             uncached: body.data.uncached ?? false,
             groupId,

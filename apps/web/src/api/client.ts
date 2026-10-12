@@ -5,8 +5,10 @@ import type {
   DraftStage,
   EditRequest,
   EvaluationModel,
+  EvaluationSet,
   FeedbackItem,
   FeedbackTarget,
+  GateView,
   IterationSummary,
   ComparisonView,
   IterationView,
@@ -15,6 +17,7 @@ import type {
   ModelInfo,
   PreparedText,
   ProposalView,
+  Publication,
   ProjectSummary,
   ProjectView,
   Reference,
@@ -314,15 +317,26 @@ export interface Api {
     changes?: number[],
   ): Promise<ProposalView>;
   skipStage(projectId: string, stage: DraftStage): Promise<StageView[]>;
-  listReferenceRows(projectId: string): Promise<ReferenceRow[]>;
+  /** Reference rows for the dev samples, or (set = 'holdout') the holdout samples. */
+  listReferenceRows(projectId: string, set?: EvaluationSet): Promise<ReferenceRow[]>;
   /** Queue draft-model runs on unverified dev samples. */
   proposeReferences(projectId: string): Promise<JobSummary[]>;
   /** `uncached` makes every step call its model (the step cache is not read). */
   startEvaluation(
     projectId: string,
     model: EvaluationModel | null,
-    options?: { uncached?: boolean },
+    options?: { uncached?: boolean; set?: EvaluationSet },
   ): Promise<IterationView>;
+  /** Queue template runs on unverified holdout samples. */
+  startHoldoutReferenceRuns(projectId: string): Promise<JobSummary[]>;
+  setPublishThreshold(projectId: string, threshold: number): Promise<ProjectView>;
+  getPublishGate(projectId: string): Promise<GateView>;
+  /** Rejects with an ApiError (409, the gate reason) below the threshold without an override. */
+  publish(
+    projectId: string,
+    overrideReason?: string,
+  ): Promise<{ publication: Publication; project: ProjectView }>;
+  listPublications(projectId: string): Promise<Publication[]>;
   /** Evaluate the draft on every comparison model at once. */
   startComparison(projectId: string, options?: { uncached?: boolean }): Promise<ComparisonView>;
   getComparison(projectId: string, groupId: string): Promise<ComparisonView>;
@@ -549,8 +563,10 @@ export function createHttpApi(base = '/api'): Api {
       ),
     skipStage: (id, stage) =>
       post<StageView[]>(`${base}/workbench/projects/${id}/stages/${stage}/skip`, {}),
-    listReferenceRows: (id) =>
-      apiFetch(`${base}/workbench/projects/${id}/references`).then(json<ReferenceRow[]>),
+    listReferenceRows: (id, set) =>
+      apiFetch(
+        `${base}/workbench/projects/${id}/references${set === 'holdout' ? '?set=holdout' : ''}`,
+      ).then(json<ReferenceRow[]>),
     proposeReferences: (id) =>
       post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/stages/references`, {}).then(
         (r) => r.jobs,
@@ -559,7 +575,24 @@ export function createHttpApi(base = '/api'): Api {
       post<IterationView>(`${base}/workbench/projects/${id}/evaluations`, {
         ...(model ? { model } : {}),
         ...(options?.uncached ? { uncached: true } : {}),
+        ...(options?.set === 'holdout' ? { set: 'holdout' } : {}),
       }),
+    startHoldoutReferenceRuns: (id) =>
+      post<{ jobs: JobSummary[] }>(
+        `${base}/workbench/projects/${id}/holdout/reference-runs`,
+        {},
+      ).then((r) => r.jobs),
+    setPublishThreshold: (id, publishThreshold) =>
+      post<ProjectView>(`${base}/workbench/projects/${id}`, { publishThreshold }, 'PATCH'),
+    getPublishGate: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/publish-gate`).then(json<GateView>),
+    publish: (id, overrideReason) =>
+      post<{ publication: Publication; project: ProjectView }>(
+        `${base}/workbench/projects/${id}/publish`,
+        overrideReason ? { overrideReason } : {},
+      ),
+    listPublications: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/publications`).then(json<Publication[]>),
     startComparison: (id, options) =>
       post<ComparisonView>(
         `${base}/workbench/projects/${id}/evaluations/compare`,

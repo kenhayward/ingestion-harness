@@ -244,7 +244,14 @@ Rules:
 - Holdout failures **are** visible to the user (ADR 0007). A sample's `added_for_version` and its
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
 - The publish gate uses the holdout score: at or above `publish_threshold` publishes directly;
-  below it, publishing needs an override reason, recorded on the iteration.
+  below it, publishing needs an override reason, recorded on the publication.
+- Only an honest holdout run counts: the newest complete holdout iteration of the current draft
+  that ran the template's own models (iterations with a model override are for exploration and
+  never count), covered every ready holdout sample, and compared every sample it evaluated (a
+  job that failed, needs review, was cancelled or deleted fails the gate). Its score is always
+  recomputed from the raw model output, so review edits on a holdout job cannot raise it.
+- Holdout history is a count of the holdout iterations that evaluated the sample, recorded by
+  sha256 on the iteration (`sample_shas`, migration 0017) so it survives deleted jobs.
 
 ### References across versions
 
@@ -348,7 +355,9 @@ Each phase is usable on its own.
    - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
    - **4b (done):** step cache, re-run uncached ("Fresh model calls"), model comparison.
    - **4c (done):** feedback, `revise`, commenting from the scorecard drill-down. Phase 4 is complete.
-5. **Holdout and publish (next):** holdout runs, publish gate, references across versions.
+5. **Holdout and publish**, split in two:
+   - **5a (done):** holdout evaluation, the publish gate and holdout history.
+   - **5b (next):** references across versions.
 6. **Export/import bundle.**
 
 The most important phases are 2 and 4. If the segmentation preview and the scored loop aren't

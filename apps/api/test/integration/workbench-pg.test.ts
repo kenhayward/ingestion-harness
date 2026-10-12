@@ -329,7 +329,56 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       definition: input.definition,
     });
     expect(await workbench.getIteration('it-other', a.id)).toBeNull();
-    expect(a).toMatchObject({ groupId: null, uncached: false });
+    expect(a).toMatchObject({ groupId: null, uncached: false, sampleShas: null });
+    const c = await workbench.createIteration({
+      ...input,
+      set: 'holdout',
+      model: null,
+      jobIds: [jobId],
+      sampleShas: ['a'.repeat(64), 'b'.repeat(64)],
+    });
+    expect((await workbench.getIteration(projectId, c.id))!.sampleShas).toEqual([
+      'a'.repeat(64),
+      'b'.repeat(64),
+    ]);
+  });
+
+  it('stores the publish threshold and logs publications as numbers, newest first', async () => {
+    const projectId = await newProject();
+    expect((await workbench.getProject(projectId))!.publishThreshold).toBe(0.9);
+    expect((await workbench.setPublishThreshold(projectId, 0.75))!.publishThreshold).toBe(0.75);
+    expect(await workbench.setPublishThreshold('it-nope', 0.5)).toBeNull();
+    const holdout = await workbench.createIteration({
+      projectId,
+      templateVersion: 1,
+      definition: {},
+      briefVersion: null,
+      set: 'holdout',
+      model: null,
+      jobIds: [],
+    });
+    expect((await workbench.getIteration(projectId, holdout.id))!.set).toBe('holdout');
+    const a = await workbench.recordPublication({
+      projectId,
+      version: 1,
+      iterationId: null,
+      score: null,
+      threshold: 0.75,
+      overrideReason: 'First version, no holdout yet',
+      publishedBy: 'admin',
+    });
+    const b = await workbench.recordPublication({
+      projectId,
+      version: 2,
+      iterationId: holdout.id,
+      score: 0.92,
+      threshold: 0.75,
+      overrideReason: null,
+      publishedBy: null,
+    });
+    expect(a).toMatchObject({ score: null, threshold: 0.75 });
+    expect(b).toMatchObject({ score: 0.92, threshold: 0.75, iterationId: holdout.id });
+    expect((await workbench.listPublications(projectId)).map((p) => p.id)).toEqual([b.id, a.id]);
   });
 
   it('groups comparison iterations and records uncached runs', async () => {

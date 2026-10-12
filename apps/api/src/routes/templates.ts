@@ -147,6 +147,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     const version = versionOf(req.params);
     const existing = await repo().get(id, version);
     if (!existing) return notFound(reply);
+    if (await app.deps.workbench.getProject(id)) {
+      // A Workbench type publishes only through its holdout gate (ADR 0007).
+      return reply.code(409).send({ error: `publish ${id} from the Workbench (holdout gate)` });
+    }
     if (existing.status !== 'draft') {
       return reply.code(409).send({ error: `${id} v${version} is already published` });
     }
@@ -199,6 +203,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(definition);
     if (!ident.success) {
       return reply.code(400).send({ error: 'definition needs a valid id and version' });
+    }
+    if (body.data.publish && (await app.deps.workbench.getProject(ident.data.id))) {
+      // Importing as a draft is fine; publishing must go through the holdout gate (ADR 0007).
+      return reply
+        .code(409)
+        .send({ error: `publish ${ident.data.id} from the Workbench (holdout gate)` });
     }
     const issues = validateTemplate(definition);
     if (body.data.publish && issues.length) {

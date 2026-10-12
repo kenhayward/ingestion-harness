@@ -76,6 +76,15 @@ describe('template lifecycle', () => {
     ).toBe(409);
   });
 
+  it('publishes a type without a Workbench project, even while another type has one', async () => {
+    const { app, templates } = await testApp();
+    await app.inject(json('POST', '/api/workbench/projects', { id: 'invoice', name: 'Invoice' }));
+    await templates.create('letter', 1, definition(), 'draft');
+    const res = await app.inject(json('POST', '/api/templates/letter/versions/1/publish', {}));
+    expect(res.statusCode).toBe(200);
+    expect(res.json().record).toMatchObject({ status: 'published' });
+  });
+
   it('starts a new draft from a published version, one draft at a time', async () => {
     const { app, templates } = await testApp();
     await templates.create('letter', 1, definition(), 'published');

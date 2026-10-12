@@ -250,6 +250,43 @@ describe('http api: comparison', () => {
   });
 });
 
+describe('http api: holdout and publishing', () => {
+  it('lists holdout references, evaluates the holdout, sets the threshold and publishes', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      respond(200, { jobs: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listReferenceRows('letter', 'dev');
+    await api.listReferenceRows('letter', 'holdout');
+    await api.startHoldoutReferenceRuns('letter');
+    await api.startEvaluation('letter', null, { set: 'holdout' });
+    await api.startEvaluation('letter', null, { set: 'dev' });
+    await api.setPublishThreshold('letter', 0.8);
+    await api.getPublishGate('letter');
+    await api.publish('letter');
+    await api.publish('letter', 'Known bad scan');
+    await api.listPublications('letter');
+    const calls = fetchMock.mock.calls.map(([url, init]) => [
+      init?.method ?? 'GET',
+      url,
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ['GET', '/api/workbench/projects/letter/references', undefined],
+      ['GET', '/api/workbench/projects/letter/references?set=holdout', undefined],
+      ['POST', '/api/workbench/projects/letter/holdout/reference-runs', {}],
+      ['POST', '/api/workbench/projects/letter/evaluations', { set: 'holdout' }],
+      ['POST', '/api/workbench/projects/letter/evaluations', {}],
+      ['PATCH', '/api/workbench/projects/letter', { publishThreshold: 0.8 }],
+      ['GET', '/api/workbench/projects/letter/publish-gate', undefined],
+      ['POST', '/api/workbench/projects/letter/publish', {}],
+      ['POST', '/api/workbench/projects/letter/publish', { overrideReason: 'Known bad scan' }],
+      ['GET', '/api/workbench/projects/letter/publications', undefined],
+    ]);
+  });
+});
+
 describe('http api: feedback', () => {
   it('lists, adds and deletes feedback', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

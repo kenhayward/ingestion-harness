@@ -7,8 +7,10 @@ import type {
   DataPolicy,
   DraftStage,
   EvaluationModel,
+  EvaluationSet,
   FeedbackItem,
   ProposalDecision,
+  Publication,
   SampleRole,
   StageSkip,
   WorkbenchProject,
@@ -75,9 +77,14 @@ export interface IterationRecord {
   templateVersion: number;
   definition: Record<string, unknown>;
   briefVersion: number | null;
-  set: 'dev';
+  set: EvaluationSet;
   model: EvaluationModel | null;
   jobIds: string[];
+  /**
+   * sha256 of each sample the iteration evaluated (migration 0017), kept when its jobs are
+   * deleted; null for iterations recorded before it (callers map `jobIds` to documents then).
+   */
+  sampleShas: string[] | null;
   /** Shared by the iterations of one model comparison. */
   groupId: string | null;
   /** The jobs were told not to read the step cache. */
@@ -89,9 +96,9 @@ export interface IterationRecord {
 
 export type NewIteration = Omit<
   IterationRecord,
-  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached'
+  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
 > &
-  Partial<Pick<IterationRecord, 'groupId' | 'uncached'>>;
+  Partial<Pick<IterationRecord, 'groupId' | 'uncached' | 'sampleShas'>>;
 
 export class WorkbenchConflictError extends Error {}
 
@@ -120,6 +127,11 @@ export interface WorkbenchRepo {
     policy: DataPolicy,
     by: string | null,
   ): Promise<WorkbenchProject | null>;
+  /** Null when the project is unknown. */
+  setPublishThreshold(id: string, threshold: number): Promise<WorkbenchProject | null>;
+  recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>): Promise<Publication>;
+  /** Newest first. */
+  listPublications(projectId: string): Promise<Publication[]>;
   createProposal(p: NewProposal): Promise<ProposalRecord>;
   /** Newest first. */
   listProposals(projectId: string): Promise<ProposalRecord[]>;
@@ -159,6 +171,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
   readonly iterations: IterationRecord[] = [];
+  readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
 
   constructor(private readonly jobs: MemoryRepo) {}
@@ -185,9 +198,28 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       dataPolicy: 'local',
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
+      publishThreshold: 0.9,
     };
     this.projects.set(id, project);
     return project;
+  }
+
+  async setPublishThreshold(id: string, threshold: number) {
+    const project = this.projects.get(id);
+    if (!project) return null;
+    const updated = { ...project, publishThreshold: threshold };
+    this.projects.set(id, updated);
+    return updated;
+  }
+
+  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+    const row: Publication = { ...p, id: randomUUID(), publishedAt: this.now() };
+    this.publications.push(row);
+    return row;
+  }
+
+  async listPublications(projectId: string) {
+    return this.publications.filter((p) => p.projectId === projectId).reverse();
   }
 
   async addSample(sample: NewSample) {
@@ -361,6 +393,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async createIteration(input: NewIteration) {
     const record: IterationRecord = {
       ...input,
+      sampleShas: input.sampleShas ?? null,
       groupId: input.groupId ?? null,
       uncached: input.uncached ?? false,
       id: randomUUID(),
@@ -413,6 +446,7 @@ interface ProjectRow {
   data_policy: DataPolicy;
   data_policy_changed_at: Date | null;
   data_policy_changed_by: string | null;
+  publish_threshold: string;
 }
 
 interface SampleRow {
@@ -474,9 +508,10 @@ interface IterationRow {
   template_version: number;
   definition: Record<string, unknown>;
   brief_version: number | null;
-  eval_set: 'dev';
+  eval_set: EvaluationSet;
   model: EvaluationModel | null;
   job_ids: string[];
+  sample_shas: string[] | null;
   group_id: string | null;
   uncached: boolean;
   scores: IterationRecord['scores'];
@@ -492,6 +527,7 @@ const toIteration = (r: IterationRow): IterationRecord => ({
   set: r.eval_set,
   model: r.model,
   jobIds: r.job_ids,
+  sampleShas: r.sample_shas,
   groupId: r.group_id,
   uncached: r.uncached,
   scores: r.scores,
@@ -530,6 +566,30 @@ const toFeedback = (r: FeedbackRow): FeedbackItem => ({
   resolvedBy: r.resolved_by,
 });
 
+interface PublicationRow {
+  id: string;
+  project_id: string;
+  version: number;
+  iteration_id: string | null;
+  score: string | null;
+  threshold: string;
+  override_reason: string | null;
+  published_by: string | null;
+  published_at: Date;
+}
+
+const toPublication = (r: PublicationRow): Publication => ({
+  id: r.id,
+  projectId: r.project_id,
+  version: r.version,
+  iterationId: r.iteration_id,
+  score: r.score === null ? null : Number(r.score),
+  threshold: Number(r.threshold),
+  overrideReason: r.override_reason,
+  publishedBy: r.published_by,
+  publishedAt: r.published_at.toISOString(),
+});
+
 const toProject = (r: ProjectRow): WorkbenchProject => ({
   id: r.id,
   name: r.name,
@@ -537,6 +597,7 @@ const toProject = (r: ProjectRow): WorkbenchProject => ({
   dataPolicy: r.data_policy,
   dataPolicyChangedAt: r.data_policy_changed_at?.toISOString() ?? null,
   dataPolicyChangedBy: r.data_policy_changed_by,
+  publishThreshold: Number(r.publish_threshold),
 });
 
 const toSample = (r: SampleRow): SampleRecord => ({
@@ -582,6 +643,41 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [id],
     );
     return rows[0] ? toProject(rows[0]) : null;
+  }
+
+  async setPublishThreshold(id: string, threshold: number) {
+    const { rows } = await this.pool.query<ProjectRow>(
+      'UPDATE workbench_projects SET publish_threshold = $2 WHERE id = $1 RETURNING *',
+      [id, threshold],
+    );
+    return rows[0] ? toProject(rows[0]) : null;
+  }
+
+  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+    const { rows } = await this.pool.query<PublicationRow>(
+      `INSERT INTO workbench_publications
+         (project_id, version, iteration_id, score, threshold, override_reason, published_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        p.projectId,
+        p.version,
+        p.iterationId,
+        p.score,
+        p.threshold,
+        p.overrideReason,
+        p.publishedBy,
+      ],
+    );
+    return toPublication(rows[0]!);
+  }
+
+  async listPublications(projectId: string) {
+    const { rows } = await this.pool.query<PublicationRow>(
+      `SELECT * FROM workbench_publications WHERE project_id = $1
+        ORDER BY published_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toPublication);
   }
 
   async createProject(id: string, name: string) {
@@ -785,8 +881,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     const { rows } = await this.pool.query<IterationRow>(
       `INSERT INTO workbench_iterations
          (project_id, template_version, definition, brief_version, eval_set, model, job_ids,
-          group_id, uncached)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+          group_id, uncached, sample_shas)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         i.projectId,
         i.templateVersion,
@@ -797,6 +893,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         i.jobIds,
         i.groupId ?? null,
         i.uncached ?? false,
+        i.sampleShas ?? null,
       ],
     );
     return toIteration(rows[0]!);
