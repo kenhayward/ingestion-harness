@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { FilterChips } from '../ui/FilterChips.js';
+import { shortWhen } from './format.js';
 import { ResultPreview } from './ResultPreview.js';
 
 /** Must match the API's default `limit` for GET /api/results. */
@@ -9,7 +10,7 @@ export const RESULTS_PAGE_SIZE = 50;
 /** The file name filter is sent once typing pauses this long. */
 export const FILTER_DEBOUNCE_MS = 250;
 
-const when = (iso: string) => new Date(iso).toLocaleString();
+const when = shortWhen;
 
 function reviewedBy(r: ResultSummary): string {
   if (!r.reviewedAt) return 'auto-approved';
@@ -93,6 +94,7 @@ export function ResultsPage({
   }, [load]);
 
   const selected = rows.find((r) => r.jobId === selectedId) ?? rows[0] ?? null;
+  const titleOf = (id: string) => types.find((t) => t.id === id)?.title ?? id;
 
   return (
     <div className="results-page">
@@ -163,7 +165,7 @@ export function ResultsPage({
                         </button>
                       </td>
                       <td>
-                        {r.specId} v{r.specVersion}
+                        {titleOf(r.specId)} v{r.specVersion}
                       </td>
                       <td className="muted">{when(r.publishedAt)}</td>
                       <td>{reviewedBy(r)}</td>
@@ -202,7 +204,14 @@ export function ResultsPage({
             </button>
           )}
         </div>
-        {selected && <ResultPreview key={selected.jobId} api={api} summary={selected} />}
+        {selected && (
+          <ResultPreview
+            key={selected.jobId}
+            api={api}
+            summary={selected}
+            typeTitle={titleOf(selected.specId)}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ResultDetail, ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { shortWhen } from './format.js';
 import { DOCUMENT_ERRORS, format } from './ResultDetail.js';
 
 /** Rows of the first table shown in the preview (the full result shows them all). */
@@ -12,7 +13,16 @@ const label = (c: { id: string; name?: string }) => c.name ?? c.id;
  * Result preview (UI handoff §3): what was published for the selected row, without leaving the
  * list. The header renders from the list row at once; fields and rows come from getResult.
  */
-export function ResultPreview({ api, summary }: { api: Api; summary: ResultSummary }) {
+export function ResultPreview({
+  api,
+  summary,
+  typeTitle = summary.specId,
+}: {
+  api: Api;
+  summary: ResultSummary;
+  /** The document type's title (the list knows it); falls back to its id. */
+  typeTitle?: string;
+}) {
   const [detail, setDetail] = useState<ResultDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,8 +56,7 @@ export function ResultPreview({ api, summary }: { api: Api; summary: ResultSumma
       <p className="eyebrow">Preview</p>
       <h2>{summary.filename}</h2>
       <p className="muted">
-        {summary.specId} v{summary.specVersion} · published{' '}
-        {new Date(summary.publishedAt).toLocaleString()} · {reviewed}
+        {typeTitle} v{summary.specVersion} · published {shortWhen(summary.publishedAt)} · {reviewed}
       </p>
       {error && <p className="error">Couldn't load the preview: {error}</p>}
       {detail?.documentError && <p className="error">{DOCUMENT_ERRORS[detail.documentError]}.</p>}
@@ -66,6 +75,9 @@ export function ResultPreview({ api, summary }: { api: Api; summary: ResultSumma
           </dl>
           {table && rows.length > 0 && (
             <div className="preview-table">
+              <p className="eyebrow">
+                {label(table)} · first {Math.min(rows.length, PREVIEW_TABLE_ROWS)} rows
+              </p>
               <table aria-label={label(table)}>
                 <thead>
                   <tr>
