@@ -1,14 +1,25 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { ProjectSummary } from '@ih/shared';
 import { WorkbenchPage } from '../src/workbench/WorkbenchPage.js';
 import { fakeApi, projectView } from './fake-api.js';
 
 describe('WorkbenchPage', () => {
   it('lists projects with their versions and sample counts', async () => {
     const api = fakeApi({
-      listProjects: vi.fn(async () => [
-        { id: 'letter', name: 'Letter', createdAt: '', draft: 2, published: 1, samples: 5 },
+      listProjects: vi.fn(async (): Promise<ProjectSummary[]> => [
+        {
+          id: 'letter',
+          name: 'Letter',
+          createdAt: '',
+          dataPolicy: 'local',
+          dataPolicyChangedAt: null,
+          dataPolicyChangedBy: null,
+          draft: 2,
+          published: 1,
+          samples: 5,
+        },
       ]),
     });
     render(<WorkbenchPage api={api} onNavigate={vi.fn()} />);

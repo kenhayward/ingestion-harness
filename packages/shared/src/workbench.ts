@@ -10,6 +10,10 @@ export type SampleRole = z.infer<typeof SampleRoleSchema>;
 /** Most samples a project holds: 3–8 dev samples plus a few held out. */
 export const MAX_SAMPLES = 12;
 
+export const DATA_POLICIES = ['local', 'external'] as const;
+export const DataPolicySchema = z.enum(DATA_POLICIES);
+export type DataPolicy = z.infer<typeof DataPolicySchema>;
+
 export const BriefBodySchema = z
   .object({
     purpose: z.string().default(''),
@@ -18,6 +22,8 @@ export const BriefBodySchema = z
     glossary: z.string().default(''),
     variants: z.string().default(''),
     rules: z.string().default(''),
+    /** Survey questions and the user's answers (drafting stage `survey`). */
+    answers: z.array(z.object({ question: z.string(), answer: z.string() }).strict()).default([]),
   })
   .strict();
 export type BriefBody = z.infer<typeof BriefBodySchema>;
@@ -29,6 +35,7 @@ export const EMPTY_BRIEF: BriefBody = {
   glossary: '',
   variants: '',
   rules: '',
+  answers: [],
 };
 
 export interface Brief {
@@ -42,6 +49,11 @@ export interface WorkbenchProject {
   id: string;
   name: string;
   createdAt: string;
+  /** Where sample text may go (ADR 0007): local models only, or external providers too. */
+  dataPolicy: DataPolicy;
+  dataPolicyChangedAt: string | null;
+  /** Label of the admin token that last changed the policy. */
+  dataPolicyChangedBy: string | null;
 }
 
 export interface ProjectSummary extends WorkbenchProject {
@@ -159,4 +171,60 @@ export interface SegmentationView {
   error: string | null;
   /** Present once the job succeeded. */
   result: SegmentationResult | null;
+}
+
+export const DRAFT_STAGES = ['survey', 'outputs', 'sections', 'steps', 'references'] as const;
+export type DraftStage = (typeof DRAFT_STAGES)[number];
+/** Stages that can be run in this release (3a); 3b adds the rest. */
+export const AVAILABLE_STAGES: readonly DraftStage[] = ['survey'];
+
+/** Body of a `survey` proposal. Mirrors worker drafting.SURVEY_SCHEMA. */
+export const SurveyBodySchema = z
+  .object({
+    summary: z.string(),
+    structure: z.array(
+      z.object({ name: z.string(), description: z.string(), howToFind: z.string() }).strict(),
+    ),
+    variants: z.array(z.string()),
+    candidates: z.array(
+      z
+        .object({
+          name: z.string(),
+          description: z.string(),
+          where: z.string(),
+          kind: z.enum(['field', 'table']),
+        })
+        .strict(),
+    ),
+    questions: z.array(z.object({ question: z.string(), why: z.string() }).strict()),
+  })
+  .strict();
+export type SurveyBody = z.infer<typeof SurveyBodySchema>;
+
+/** Written by the worker's draft task (runs bucket, draftingKey). */
+export const DraftResultSchema = z.object({
+  stage: z.enum(DRAFT_STAGES),
+  model: z.string(),
+  body: z.unknown(),
+  usage: z.object({
+    inputTokens: z.number().int().nullable(),
+    outputTokens: z.number().int().nullable(),
+  }),
+});
+export type DraftResult = z.infer<typeof DraftResultSchema>;
+
+export type ProposalStatus = 'running' | 'ready' | 'failed' | 'accepted' | 'rejected';
+
+export interface ProposalView {
+  id: string;
+  stage: DraftStage;
+  status: ProposalStatus;
+  error: string | null;
+  briefVersion: number | null;
+  /** Resolved model that produced it (once ready). */
+  model: string | null;
+  /** Parsed stage body (survey only in 3a); null until ready. */
+  body: SurveyBody | null;
+  createdAt: string;
+  decidedAt: string | null;
 }

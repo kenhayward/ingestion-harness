@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BriefBodySchema,
+  DataPolicySchema,
   EMPTY_BRIEF,
+  SurveyBodySchema,
+  draftingKey,
   JobSummarySchema,
   PreparedTextSchema,
   PreparedTriageSchema,
@@ -97,5 +100,50 @@ describe('segmentation contracts', () => {
 
   it('accepts segment jobs', () => {
     expect(JobSummarySchema.shape.task.parse('segment')).toBe('segment');
+  });
+});
+
+describe('drafting contracts', () => {
+  it('keys a drafting result by project and job (mirrors worker storage.py)', () => {
+    expect(draftingKey('letter', 'j1')).toBe('drafting/letter/j1.json');
+  });
+
+  it('accepts only the two data policies', () => {
+    expect(DataPolicySchema.parse('local')).toBe('local');
+    expect(DataPolicySchema.safeParse('cloud').success).toBe(false);
+  });
+
+  it('keeps survey answers in the brief, defaulting to none', () => {
+    expect(BriefBodySchema.parse({}).answers).toEqual([]);
+    expect(
+      BriefBodySchema.parse({ answers: [{ question: 'Which copy?', answer: 'Executed' }] }).answers,
+    ).toEqual([{ question: 'Which copy?', answer: 'Executed' }]);
+  });
+
+  it('parses a survey body and rejects unknown keys', () => {
+    const body = {
+      summary: 'Process validation protocols, blank and executed.',
+      structure: [
+        { name: 'Approvals', description: 'Signatures', howToFind: 'PROTOCOL APPROVAL heading' },
+      ],
+      variants: ['Scanned executed copy follows the blank protocol'],
+      candidates: [
+        {
+          name: 'protocol_number',
+          description: 'Protocol id',
+          where: 'page header',
+          kind: 'field',
+        },
+      ],
+      questions: [
+        { question: 'Which copy should be extracted?', why: 'Some PDFs hold two copies' },
+      ],
+    };
+    expect(SurveyBodySchema.parse(body)).toEqual(body);
+    expect(SurveyBodySchema.safeParse({ ...body, extra: 1 }).success).toBe(false);
+  });
+
+  it('accepts draft jobs', () => {
+    expect(JobSummarySchema.shape.task.parse('draft')).toBe('draft');
   });
 });

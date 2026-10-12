@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { BriefBodySchema } from '@ih/shared';
-import type { Brief, BriefBody, SampleRole, WorkbenchProject } from '@ih/shared';
+import type { Brief, BriefBody, DataPolicy, SampleRole, WorkbenchProject } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
 
 /** A workbench sample joined with its document row. */
@@ -68,7 +68,14 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
 
   async createProject(id: string, name: string) {
     if (this.projects.has(id)) throw new WorkbenchConflictError(`project ${id} already exists`);
-    const project = { id, name, createdAt: new Date().toISOString() };
+    const project: WorkbenchProject = {
+      id,
+      name,
+      createdAt: new Date().toISOString(),
+      dataPolicy: 'local',
+      dataPolicyChangedAt: null,
+      dataPolicyChangedBy: null,
+    };
     this.projects.set(id, project);
     return project;
   }
@@ -152,6 +159,9 @@ interface ProjectRow {
   id: string;
   name: string;
   created_at: Date;
+  data_policy: DataPolicy;
+  data_policy_changed_at: Date | null;
+  data_policy_changed_by: string | null;
 }
 
 interface SampleRow {
@@ -179,6 +189,9 @@ const toProject = (r: ProjectRow): WorkbenchProject => ({
   id: r.id,
   name: r.name,
   createdAt: r.created_at.toISOString(),
+  dataPolicy: r.data_policy,
+  dataPolicyChangedAt: r.data_policy_changed_at?.toISOString() ?? null,
+  dataPolicyChangedBy: r.data_policy_changed_by,
 });
 
 const toSample = (r: SampleRow): SampleRecord => ({

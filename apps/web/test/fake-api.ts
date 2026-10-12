@@ -176,7 +176,14 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
 
 export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
   return {
-    project: { id: 'letter', name: 'Letter', createdAt: '2026-10-12T00:00:00.000Z' },
+    project: {
+      id: 'letter',
+      name: 'Letter',
+      createdAt: '2026-10-12T00:00:00.000Z',
+      dataPolicy: 'local',
+      dataPolicyChangedAt: null,
+      dataPolicyChangedBy: null,
+    },
     draft: 1,
     published: null,
     brief: null,
