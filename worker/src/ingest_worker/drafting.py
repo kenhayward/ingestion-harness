@@ -13,13 +13,15 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .draft_stages import OUTPUTS, STEPS, Stage
+from .draft_changes import apply_changes
+from .draft_stages import OUTPUTS, SECTIONS, STEPS, Stage
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
 from .pipeline import DocumentError, PipelineDeps, check_cancelled, enforce_data_policy
 from .queue import ClaimedJob, JobQueue
 from .storage import drafting_key, prepared_text_key, run_key
+from .workbench import SegmentDocument, segment_with_timeout
 
 MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
@@ -109,7 +111,7 @@ Return JSON only.""",
     SURVEY_SCHEMA,
 )
 
-STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, STEPS)}
+STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS)}
 #: Stages that propose changes to the current draft (so they need it).
 CHANGE_STAGE_IDS = {"outputs", "sections", "steps"}
 
@@ -275,7 +277,21 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         body = stage.convert(result.data)[0] if stage.convert else result.data
         return result, body
 
-    result, body = propose(f"{context}\n\n{stage.instructions}", f"draft-{stage.id}")
+    prompt = f"{context}\n\n{stage.instructions}"
+    result, body = propose(prompt, f"draft-{stage.id}")
+    if stage.id == "sections":
+        grid, misses = anchor_check(samples, draft, body)
+        if misses:
+            check_cancelled(job, queue)
+            feedback = "\n".join(misses)
+            result, body = propose(
+                f"{prompt}\n\nYour proposal was tested on the dev samples and these anchors "
+                f"need work:\n<anchor_misses>\n{feedback}\n</anchor_misses>\n"
+                "Propose the full set of changes again.",
+                "draft-sections-anchors",
+            )
+            grid, _ = anchor_check(samples, draft, body)
+        body = {**body, "anchorCheck": grid}
 
     last = result.attempts[-1]
     output = {
@@ -292,6 +308,48 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         "application/json",
     )
     return output
+
+
+def anchor_check(
+    samples: list[DraftSample], draft: dict[str, Any], body: dict[str, Any]
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Apply a sections proposal to the draft and segment every dev sample with it (the same
+    code as the anchor preview, capped by SEGMENT_TIMEOUT_S). Returns the grid and the misses
+    worth feeding back: an anchor that matches no sample, or a required one that misses any."""
+    block = apply_changes(draft, body["changes"])["document"]
+    document = SegmentDocument.model_validate(
+        {k: block[k] for k in ("sections", "copies", "pageMarkers") if k in block}
+    )
+    try:
+        grid = segment_with_timeout([(s.sample_id, s.pages) for s in samples], document)
+    except DocumentError as exc:
+        return None, [str(exc)]
+    names = {s.sample_id: s.filename for s in samples}
+    rows = [row for row in grid["samples"] if not row.get("error")]
+    misses: list[str] = []
+    for change in body["changes"]:
+        if change["op"] != "putSection":
+            continue
+        section = change["section"]
+        sid = section["id"]
+        if sid in grid["anchorErrors"]:
+            misses.append(f'section "{sid}": {grid["anchorErrors"][sid]}')
+            continue
+        missed = [
+            names.get(row["sampleId"], row["sampleId"])
+            for row in rows
+            if not any(c["id"] == sid and c["found"] for c in row["sections"])
+        ]
+        if rows and len(missed) == len(rows):
+            misses.append(
+                f'section "{sid}": anchor {section["anchor"]!r} matched none of the dev samples'
+            )
+        elif missed and section.get("required", True):
+            misses.append(
+                f'section "{sid}" is required but anchor {section["anchor"]!r} missed: '
+                f"{', '.join(missed)}"
+            )
+    return grid, misses
 
 
 def _audit(deps: PipelineDeps, job: ClaimedJob, label: str, attempts: list[Any]) -> None:

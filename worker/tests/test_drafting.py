@@ -322,3 +322,46 @@ def test_change_stage_without_a_draft_needs_review(fixture_specs_dir: Path) -> N
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert "needs the current draft" in reason and provider.calls == []
+
+
+def sections_body(anchor: str) -> dict[str, Any]:
+    return {
+        "notes": "",
+        "changes": [
+            {
+                "op": "putSection",
+                "id": "approval",
+                "anchor": anchor,
+                "required": None,
+                "description": None,
+                "copiesSelect": None,
+                "reason": "r",
+            }
+        ],
+    }
+
+
+def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^SIGNATURES"), sections_body("^PROTOCOL APPROVAL")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert len(provider.calls) == 2
+    assert "matched none of the dev samples" in provider.calls[1][1].prompt
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    [row] = body["anchorCheck"]["samples"]
+    assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
+    assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+
+
+def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 2
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    [row] = body["anchorCheck"]["samples"]
+    assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is False

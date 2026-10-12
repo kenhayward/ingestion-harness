@@ -8,6 +8,7 @@ errors back to the model through run_extraction(check=...)."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, get_args
@@ -16,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 
 from .draft_changes import apply_changes
 from .normalize import ValueType
+from .specs import CopySelection, Section
 from .template import RESERVED_OUTPUT_IDS, CheckStep, ExtractStep, TableDef, Template, ValueDef
 
 Converter = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]]]
@@ -279,4 +281,104 @@ Return JSON only.""",
     STEPS_SCHEMA,
     convert_steps,
     check_steps,
+)
+
+SECTIONS_SCHEMA = _body(
+    _object(
+        {
+            "op": _ops("putSection", "removeSection", "setCopies"),
+            "id": _S,
+            "anchor": _NS,
+            "required": {"type": ["boolean", "null"]},
+            "description": _NS,
+            "copiesSelect": {"type": ["string", "null"], "enum": ["first", "last", None]},
+            "reason": _S,
+        }
+    )
+)
+
+
+def _regex_error(pattern: str) -> str | None:
+    try:
+        re.compile(pattern, re.MULTILINE)
+    except re.error as exc:
+        return str(exc)
+    return None
+
+
+def convert_sections(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    changes: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for i, c in enumerate(data["changes"]):
+        try:
+            if c["op"] == "putSection":
+                keys = ("id", "anchor", "required", "description")
+                section = Section.model_validate(_clean({k: c.get(k) for k in keys}))
+                changes.append(
+                    {"op": "putSection", "section": _dump(section), "reason": c["reason"]}
+                )
+            elif c["op"] == "removeSection":
+                changes.append({"op": "removeSection", "id": c["id"], "reason": c["reason"]})
+            else:
+                copies = (
+                    _dump(
+                        CopySelection.model_validate(
+                            _clean({"anchor": c["anchor"], "select": c.get("copiesSelect")})
+                        )
+                    )
+                    if c.get("anchor")
+                    else None
+                )
+                changes.append({"op": "setCopies", "copies": copies, "reason": c["reason"]})
+        except ValidationError as exc:
+            errors += _errors(i, exc)
+    return {"notes": data["notes"], "changes": changes}, errors
+
+
+def _section_ids(definition: dict[str, Any]) -> list[Any]:
+    return [s.get("id") for s in (definition.get("document") or {}).get("sections") or []]
+
+
+def check_sections(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for i, c in enumerate(body["changes"]):
+        if c["op"] == "putSection" and (error := _regex_error(c["section"]["anchor"])):
+            errors.append(f"section {c['section']['id']!r}: invalid regular expression: {error}")
+        elif (
+            c["op"] == "setCopies"
+            and c["copies"]
+            and (error := _regex_error(c["copies"]["anchor"]))
+        ):
+            errors.append(f"copies: invalid regular expression: {error}")
+        elif c["op"] == "removeSection" and c["id"] not in _section_ids(
+            apply_changes(draft, body["changes"][:i])
+        ):
+            errors.append(
+                f"changes[{i}]: removeSection {c['id']!r}: no such section in the draft at that point"
+            )
+    if not _section_ids(apply_changes(draft, body["changes"])):
+        errors.append("keep at least one section")
+    return errors
+
+
+SECTIONS = Stage(
+    "sections",
+    """\
+Task: propose section anchors that split every sample the same way.
+- putSection:
+  - id: lowercase.
+  - anchor: a Python regular expression (multiline mode) matching the first line of the
+    section in every sample. Prefer headings and wording over page numbers or layout.
+  - required: false when some documents legitimately lack the section.
+  - description: what the section contains.
+- removeSection: drop a section from the current draft.
+- setCopies: when a PDF holds several copies (for example blank, then executed), anchor is the
+  regex that starts each copy and copiesSelect is first or last; anchor null removes copy
+  selection.
+- Every anchor is tested on every dev sample before the user sees it; misses are reported back.
+- Use null for keys that do not apply. reason: one sentence.
+Return JSON only.""",
+    SECTIONS_SCHEMA,
+    convert_sections,
+    check_sections,
 )

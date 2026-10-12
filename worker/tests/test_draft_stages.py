@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ingest_worker.draft_stages import OUTPUTS, STEPS, Stage
+from ingest_worker.draft_stages import OUTPUTS, SECTIONS, STEPS, Stage
 
 DRAFT: dict[str, Any] = {
     "id": "letter",
@@ -179,3 +179,68 @@ def test_removes_are_checked_against_the_draft_after_earlier_changes() -> None:
     steps = [step_item(), step_item(op="removeStep", id="head")]
     _, errors = run(STEPS, {"notes": "", "changes": steps}, draft)
     assert not any("no such step" in e for e in errors)
+
+
+def section_item(**kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "op": "putSection",
+        "id": "approval",
+        "anchor": "^PROTOCOL APPROVAL",
+        "required": None,
+        "description": "Signatures",
+        "copiesSelect": None,
+        "reason": "r",
+    }
+    return {**base, **kw}
+
+
+def test_sections_convert_sections_and_copies() -> None:
+    body, errors = run(
+        SECTIONS,
+        {
+            "notes": "",
+            "changes": [
+                section_item(),
+                section_item(
+                    op="setCopies",
+                    id="copies",
+                    anchor="^PROTOCOL$",
+                    copiesSelect="first",
+                    description=None,
+                ),
+                section_item(op="setCopies", id="copies", anchor=None, description=None),
+            ],
+        },
+    )
+    assert errors == []
+    assert body["changes"] == [
+        {
+            "op": "putSection",
+            "section": {
+                "id": "approval",
+                "anchor": "^PROTOCOL APPROVAL",
+                "description": "Signatures",
+            },
+            "reason": "r",
+        },
+        {"op": "setCopies", "copies": {"anchor": "^PROTOCOL$", "select": "first"}, "reason": "r"},
+        {"op": "setCopies", "copies": None, "reason": "r"},
+    ]
+
+
+def test_sections_report_bad_regexes_and_keep_one_section() -> None:
+    _, errors = run(SECTIONS, {"notes": "", "changes": [section_item(anchor="(unclosed")]})
+    assert any("approval" in e and "regular expression" in e for e in errors)
+    _, errors = run(
+        SECTIONS, {"notes": "", "changes": [section_item(op="removeSection", id="all")]}
+    )
+    assert any("at least one section" in e for e in errors)
+
+
+def test_sections_remove_is_checked_against_the_draft_at_that_point() -> None:
+    changes = [section_item(op="removeSection", id="approval"), section_item()]
+    _, errors = run(SECTIONS, {"notes": "", "changes": changes})
+    assert any("removeSection" in e and "no such section" in e for e in errors)
+    changes = [section_item(), section_item(op="removeSection", id="approval")]
+    _, errors = run(SECTIONS, {"notes": "", "changes": changes})
+    assert errors == []

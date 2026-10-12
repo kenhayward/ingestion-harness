@@ -174,8 +174,41 @@ describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)
       reason: 'r',
     },
     { op: 'setPreamble', preamble: 'Letters to QA.', reason: 'r' },
+    {
+      op: 'putSection',
+      section: { id: 'approval', anchor: '^PROTOCOL APPROVAL', description: 'Signatures' },
+      reason: 'r',
+    },
+    { op: 'putSection', section: { id: 'tail', anchor: '^END', required: false }, reason: 'r' },
+    { op: 'removeSection', id: 'all', reason: 'r' },
+    { op: 'setCopies', copies: { anchor: '^PROTOCOL$', select: 'first' }, reason: 'r' },
+    { op: 'setCopies', copies: { anchor: '^PROTOCOL$' }, reason: 'r' },
+    { op: 'setCopies', copies: null, reason: 'r' },
   ];
   it.each(dumps.map((d) => [d.op, d] as const))('%s parses', (_op, dump) => {
     expect(DraftChangeSchema.safeParse(dump).success).toBe(true);
+  });
+
+  it('a sections body with the worker anchorCheck grid parses', () => {
+    const row = (id: string, line: string) => ({
+      sampleId: id,
+      firstPage: 1,
+      pageCount: 1,
+      error: null,
+      missingRequired: ['b'],
+      sections: [
+        { id: 'a', found: true, page: 1, line, chars: 10 },
+        { id: 'b', found: false, page: null, line: null, chars: 0 },
+      ],
+    });
+    const body = {
+      notes: '',
+      changes: [{ op: 'putSection', section: { id: 'a', anchor: '^PROTOCOL' }, reason: 'r' }],
+      anchorCheck: {
+        anchorErrors: { c: 'missing ), unterminated subpattern at position 0' },
+        samples: [row('s1', 'PROTOCOL X'), row('s2', 'PROTOCOL Y')],
+      },
+    };
+    expect(parseChangeBody('sections', body)).not.toBeNull();
   });
 });
