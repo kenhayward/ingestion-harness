@@ -224,12 +224,12 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     enforce_data_policy(job, deps, provider, ref)
     model_ref = f"{provider.name}/{model_id}"
 
-    samples = [
-        DraftSample(s.sample_id, s.filename, s.role, _pages(deps, s.sha256)) for s in params.samples
-    ]
+    sent = params.samples[:MAX_CONTEXT_SAMPLES]
+    samples = [DraftSample(s.sample_id, s.filename, s.role, _pages(deps, s.sha256)) for s in sent]
     context = build_context(
         brief=params.brief, draft=params.draft, samples=samples, example_yaml=deps.example_template
     )
+    check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
         queue.event(
             job.id,
@@ -237,7 +237,6 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             "external model call",
             {"stage": stage.id, "model": model_ref, "samples": [s.sample_id for s in samples]},
         )
-    check_cancelled(job, queue)
     try:
         result = run_extraction(
             extraction_id=f"draft-{stage.id}",

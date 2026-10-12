@@ -214,3 +214,30 @@ def test_unknown_stage_needs_review(fixture_specs_dir: Path) -> None:
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert "stage" in reason and provider.calls == []
+
+
+def test_only_the_first_eight_samples_are_sent_and_logged(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir, location="external")
+    provider.responses = [SURVEY_BODY]
+    samples = []
+    for i in range(9):
+        sha = f"sha-{i}"
+        text = {"sha256": sha, "pages": [{"number": 1, "text": f"UNIQUE-TEXT-{i}", "ocr": False}]}
+        store.put("runs", prepared_text_key(sha), json.dumps(text).encode(), "application/json")
+        samples.append({"sampleId": f"s{i}", "filename": f"{i}.pdf", "sha256": sha, "role": "dev"})
+    queue = FakeQueue(jobs=[draft_job(dataPolicy="external", samples=samples)])
+    run_once(queue, deps, "w1")
+    [details] = [d for _, _, msg, d in queue.event_details if msg == "external model call"]
+    assert details["samples"] == [f"s{i}" for i in range(8)]
+    prompt = provider.calls[0][1].prompt
+    assert "UNIQUE-TEXT-7" in prompt and "UNIQUE-TEXT-8" not in prompt
+
+
+def test_missing_prepared_text_needs_review_without_a_call(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    store.delete("runs", prepared_text_key("sha-a"))
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "prepared text" in reason
+    assert provider.calls == []
