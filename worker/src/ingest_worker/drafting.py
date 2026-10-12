@@ -22,6 +22,8 @@ from .storage import drafting_key, prepared_text_key, run_key
 
 MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
+#: Output budget of one drafting call (a survey or proposal is far smaller than an extraction).
+DRAFT_MAX_TOKENS = 16_000
 
 DRAFT_SYSTEM = (
     "You help configure a document ingestion harness. You read sample documents and a user's "
@@ -245,6 +247,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             prompt=f"{context}\n\n{stage.instructions}",
             schema=stage.schema,
             max_attempts=2,
+            max_tokens=DRAFT_MAX_TOKENS,
             system=DRAFT_SYSTEM,
         )
     except ExtractionFailedError as exc:

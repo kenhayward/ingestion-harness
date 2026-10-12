@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from ingest_worker.drafting import (
+    DRAFT_MAX_TOKENS,
     MAX_SAMPLE_CHARS,
     SURVEY,
     DraftSample,
@@ -157,6 +158,8 @@ def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     assert model == "big"
     assert "PVP/23/003" in request.prompt and SURVEY.instructions in request.prompt
     assert request.json_schema == SURVEY.schema
+    assert DRAFT_MAX_TOKENS == 16_000
+    assert request.max_tokens == DRAFT_MAX_TOKENS
     assert store.get_optional("runs", "job-d/draft-survey/attempt-1.json") is not None
     assert not any(msg == "external model call" for _, _, msg in queue.events)  # local provider
 
