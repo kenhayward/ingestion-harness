@@ -61,6 +61,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     ]),
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
+    access: null, // access enforcement is covered by access.test.ts
     ...overrides,
   });
   return { app, repo, store, targetStore, templates };

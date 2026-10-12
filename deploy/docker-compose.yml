@@ -96,6 +96,8 @@ services:
       <<: [*db-env, *s3-env]
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      # Proxies whose X-Forwarded-* the API trusts (empty = private networks; ADR 0006).
+      TRUST_PROXY: ${TRUST_PROXY:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
-import type { Api } from './api/client.js';
+import type { Api, Me } from './api/client.js';
+import { AccessPage } from './access/AccessPage.js';
+import { SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
@@ -11,7 +13,72 @@ import { navigate, useHashRoute } from './router.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
 
+/** Sign-in gate (ADR 0006): the app renders only for a valid session. */
 export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const [ended, setEnded] = useState(false);
+  /** The session check failed for another reason (API restarting, proxy error): not "signed out". */
+  const [unreachable, setUnreachable] = useState<string | null>(null);
+
+  const check = useCallback(() => {
+    setUnreachable(null);
+    api.me().then(setMe, (err: Error) => setUnreachable(err.message));
+  }, [api]);
+
+  useEffect(() => {
+    check();
+    return api.onUnauthorized(() => {
+      setMe(null);
+      setEnded(true);
+    });
+  }, [api, check]);
+
+  if (unreachable !== null) {
+    return (
+      <main className="sign-in">
+        <p role="alert">Can't reach the server ({unreachable}).</p>
+        <button type="button" onClick={check}>
+          Retry
+        </button>
+      </main>
+    );
+  }
+  if (me === undefined) return <p>Loading…</p>;
+  if (me === null) {
+    return (
+      <SignIn
+        api={api}
+        ended={ended}
+        onSignedIn={(signedIn) => {
+          setEnded(false);
+          setMe(signedIn);
+        }}
+      />
+    );
+  }
+  return (
+    <SignedInApp
+      api={api}
+      pollMs={pollMs}
+      me={me}
+      onSignOut={() => {
+        void api.logout().finally(() => setMe(null));
+      }}
+    />
+  );
+}
+
+function SignedInApp({
+  api,
+  pollMs,
+  me,
+  onSignOut,
+}: {
+  api: Api;
+  pollMs: number;
+  me: Me;
+  onSignOut: () => void;
+}) {
   const route = useHashRoute();
   let page: ReactNode;
   if (route.name === 'review') {
@@ -20,6 +87,8 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
     page = <ResultsPage api={api} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
+  } else if (route.name === 'access') {
+    page = <AccessPage api={api} me={me} />;
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} />;
   } else if (route.name === 'template') {
@@ -59,6 +128,17 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
         >
           Document types
         </a>
+        {me.role === 'admin' && (
+          <a href="#/access" aria-current={route.name === 'access' ? 'page' : undefined}>
+            Access
+          </a>
+        )}
+        <span className="identity">
+          {me.label} · {me.role}
+        </span>
+        <button type="button" className="link" onClick={onSignOut}>
+          Sign out
+        </button>
       </nav>
       {page}
     </main>

@@ -180,6 +180,21 @@ export interface CleanupResult {
 
 /** API port — components take this as a prop so tests can pass a fake. */
 export interface Api {
+  /** Current session, or null when not signed in (401). */
+  me(): Promise<Me | null>;
+  /** Exchange an access token for a session cookie. Rejects with an ApiError (401/429). */
+  login(token: string): Promise<Me>;
+  logout(): Promise<void>;
+  /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
+  onUnauthorized(listener: () => void): () => void;
+  listTokens(): Promise<AccessToken[]>;
+  /** A new user token: the plaintext `token` is only ever returned here. */
+  createToken(
+    label: string,
+    expiresInDays: number | null,
+  ): Promise<{ token: string; record: AccessToken }>;
+  revokeToken(id: string): Promise<void>;
+  deleteToken(id: string): Promise<void>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
   listJobs(): Promise<JobSummary[]>;
@@ -231,16 +246,78 @@ export interface Api {
   testRun(file: File, id: string, version: number): Promise<JobSummary>;
 }
 
+/** An access token as listed to admins (never the token itself). */
+export interface AccessToken {
+  id: string;
+  label: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  status: 'active' | 'expired' | 'revoked' | 'current-admin';
+}
+
+/** Signed-in identity (GET /api/auth/me). */
+export interface Me {
+  role: 'admin' | 'user';
+  label: string;
+  expiresAt: string | null;
+}
+
+const unauthorizedListeners = new Set<() => void>();
+
+/** 401s that mean "not signed in yet / wrong token", not "your session ended". */
+const SIGN_IN_CALLS = ['/auth/login', '/auth/me'];
+
+/**
+ * fetch for API calls: a 401 from any other call (token management included) means the session
+ * ended (expired, revoked, admin token rotated), so listeners can send the user back to sign-in.
+ */
+const apiFetch: typeof fetch = async (input, init) => {
+  const res = await fetch(input, init);
+  const url = String(input);
+  if (res.status === 401 && !SIGN_IN_CALLS.some((path) => url.endsWith(path))) {
+    for (const listener of unauthorizedListeners) listener();
+  }
+  return res;
+};
+
+/** An API error carrying its HTTP status (e.g. 401, 429 on sign-in). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
+    throw new ApiError(
+      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
+      res.status,
+    );
   }
   return res.json() as Promise<T>;
 }
 
+/** For 204 responses: throws the API error like json() does. */
+async function noContent(response: Promise<Response>): Promise<void> {
+  const res = await response;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(
+      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
+      res.status,
+    );
+  }
+}
+
 function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
-  return fetch(url, {
+  return apiFetch(url, {
     method,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -249,15 +326,39 @@ function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
 
 export function createHttpApi(base = '/api'): Api {
   return {
-    listSpecs: () => fetch(`${base}/specs`).then(json<SpecSummary[]>),
-    listModels: () => fetch(`${base}/models`).then(json<ModelInfo[]>),
-    listJobs: () => fetch(`${base}/jobs`).then(json<JobSummary[]>),
-    getJob: (id) => fetch(`${base}/jobs/${id}`).then(json<JobDetail>),
+    me: async () => {
+      const res = await apiFetch(`${base}/auth/me`);
+      return res.status === 401 ? null : json<Me>(res);
+    },
+    login: (token) => post<Me>(`${base}/auth/login`, { token }),
+    logout: async () => {
+      await apiFetch(`${base}/auth/logout`, { method: 'POST' });
+    },
+    listTokens: () => apiFetch(`${base}/auth/tokens`).then(json<AccessToken[]>),
+    createToken: (label, expiresInDays) =>
+      post<{ token: string; record: AccessToken }>(`${base}/auth/tokens`, {
+        label,
+        expiresInDays,
+      }),
+    revokeToken: async (id) => {
+      await noContent(apiFetch(`${base}/auth/tokens/${id}/revoke`, { method: 'POST' }));
+    },
+    deleteToken: async (id) => {
+      await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
+    },
+    onUnauthorized: (listener) => {
+      unauthorizedListeners.add(listener);
+      return () => unauthorizedListeners.delete(listener);
+    },
+    listSpecs: () => apiFetch(`${base}/specs`).then(json<SpecSummary[]>),
+    listModels: () => apiFetch(`${base}/models`).then(json<ModelInfo[]>),
+    listJobs: () => apiFetch(`${base}/jobs`).then(json<JobSummary[]>),
+    getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
     retryJob: (id, model) =>
       post<JobSummary>(`${base}/jobs/${id}/retry`, model === undefined ? {} : { model }),
     cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
     deleteJob: async (id) => {
-      const res = await fetch(`${base}/jobs/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`${base}/jobs/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
@@ -271,11 +372,11 @@ export function createHttpApi(base = '/api'): Api {
       if (specVersion !== undefined) form.append('specVersion', String(specVersion));
       if (model) form.append('model', model);
       form.append('file', file);
-      return fetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
+      return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
     outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
     getOutputText: async (jobId, outputId, stage) => {
-      const res = await fetch(outputPath(base, jobId, outputId, { stage, inline: true }));
+      const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
@@ -288,25 +389,25 @@ export function createHttpApi(base = '/api'): Api {
       if (query.before) params.set('before', query.before);
       if (query.beforeId) params.set('beforeId', query.beforeId);
       const qs = params.toString();
-      return fetch(`${base}/results${qs ? `?${qs}` : ''}`).then(json<ResultSummary[]>);
+      return apiFetch(`${base}/results${qs ? `?${qs}` : ''}`).then(json<ResultSummary[]>);
     },
-    getResult: (jobId) => fetch(`${base}/results/${jobId}`).then(json<ResultDetail>),
-    getReview: (jobId) => fetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
+    getResult: (jobId) => apiFetch(`${base}/results/${jobId}`).then(json<ResultDetail>),
+    getReview: (jobId) => apiFetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
     addEdit: (jobId, edit) => post<ReviewEdit>(`${base}/jobs/${jobId}/edits`, edit),
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
-    getStepRuns: (jobId) => fetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
+    getStepRuns: (jobId) => apiFetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
     getMetrics: (templateId) =>
-      fetch(`${base}/templates/${templateId}/metrics`).then(json<TemplateMetrics>),
+      apiFetch(`${base}/templates/${templateId}/metrics`).then(json<TemplateMetrics>),
     listReferences: (templateId) =>
-      fetch(`${base}/templates/${templateId}/references`).then(json<Reference[]>),
+      apiFetch(`${base}/templates/${templateId}/references`).then(json<Reference[]>),
     createReference: (templateId, jobId, name) =>
       post<Reference>(`${base}/templates/${templateId}/references`, { jobId, name }),
     deleteReference: async (templateId, referenceId) => {
-      const res = await fetch(`${base}/templates/${templateId}/references/${referenceId}`, {
+      const res = await apiFetch(`${base}/templates/${templateId}/references/${referenceId}`, {
         method: 'DELETE',
       });
       if (!res.ok) await json(res);
@@ -317,15 +418,17 @@ export function createHttpApi(base = '/api'): Api {
         {},
       ),
     getRegression: (templateId, version) =>
-      fetch(`${base}/templates/${templateId}/versions/${version}/regression`).then(
+      apiFetch(`${base}/templates/${templateId}/versions/${version}/regression`).then(
         json<RegressionReport>,
       ),
     diffVersions: (templateId, from, to) =>
-      fetch(`${base}/templates/${templateId}/diff?from=${from}&to=${to}`).then(json<VersionDiff>),
-    listTemplates: () => fetch(`${base}/templates`).then(json<TemplateListItem[]>),
+      apiFetch(`${base}/templates/${templateId}/diff?from=${from}&to=${to}`).then(
+        json<VersionDiff>,
+      ),
+    listTemplates: () => apiFetch(`${base}/templates`).then(json<TemplateListItem[]>),
     createTemplate: (id, name) => post<TemplateRecordView>(`${base}/templates`, { id, name }),
     getTemplate: (id, version) =>
-      fetch(`${base}/templates/${id}/versions/${version}`).then(json<TemplateRecordView>),
+      apiFetch(`${base}/templates/${id}/versions/${version}`).then(json<TemplateRecordView>),
     saveTemplate: (id, version, definition) =>
       post<TemplateRecordView>(
         `${base}/templates/${id}/versions/${version}`,
@@ -336,7 +439,9 @@ export function createHttpApi(base = '/api'): Api {
       post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
     newDraft: (id, from) => post<TemplateRecordView>(`${base}/templates/${id}/drafts`, { from }),
     deleteDraft: async (id, version) => {
-      const res = await fetch(`${base}/templates/${id}/versions/${version}`, { method: 'DELETE' });
+      const res = await apiFetch(`${base}/templates/${id}/versions/${version}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) await json(res);
     },
     importTemplate: (yaml, publish) =>
@@ -348,7 +453,7 @@ export function createHttpApi(base = '/api'): Api {
       form.append('specVersion', String(version));
       form.append('test', 'true');
       form.append('file', file);
-      return fetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
+      return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
   };
 }

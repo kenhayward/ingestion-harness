@@ -398,3 +398,39 @@ input.code {
 .job-cleanup p {
   margin: 0;
 }
+
+/* Access: sign-in screen and signed-in identity */
+.sign-in {
+  max-width: 24rem;
+  margin: 15vh auto 0;
+}
+.sign-in form {
+  flex-direction: column;
+  align-items: stretch;
+}
+.top-nav .identity {
+  margin-left: auto;
+  opacity: 0.75;
+}
+.new-token {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: end;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+  border: 1px solid #1a7f37;
+  border-radius: 6px;
+}
+.new-token input {
+  width: 32rem;
+  max-width: 100%;
+  font-family: ui-monospace, monospace;
+}
+.token-revoked,
+.token-expired {
+  color: #57606a;
+}
+.token-current-admin {
+  font-weight: 600;
+}
