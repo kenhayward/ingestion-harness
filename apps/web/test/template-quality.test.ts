@@ -9,6 +9,7 @@ const summary = (o: Partial<TemplateSummary> = {}): TemplateSummary => ({
   references: 0,
   draftIssues: null,
   lastRegression: null,
+  regressionRunning: false,
   ...o,
 });
 
@@ -41,6 +42,7 @@ describe('qualityLine', () => {
       'Regression: 2 of 3 references match',
       'warn',
     ],
+    [summary({ references: 3, regressionRunning: true }), 4, 'Regression running…', 'muted'],
     [summary({ references: 0 }), null, 'No reference documents yet', 'muted'],
     [summary({ references: 1 }), null, '1 reference · no regression run yet', 'muted'],
     [summary({ references: 2 }), null, '2 references · no regression run yet', 'muted'],

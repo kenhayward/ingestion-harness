@@ -115,7 +115,8 @@ export interface IngestionRepo {
   /** Test job of `version` re-running the reference's PDF (new document row, same object). */
   createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;
   /** Regression jobs of a template version, newest first. */
-  listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]>;
+  /** The newest regression job per reference for a version (older runs are history). */
+  listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]>;
 
   /** Raw rows behind GET /api/templates/:id/metrics. */
   metricsData(templateId: string): Promise<MetricsData>;

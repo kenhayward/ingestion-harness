@@ -43,12 +43,15 @@ async function summarise(
     document?: { sections?: unknown };
     outputs?: { fields?: unknown; tables?: unknown };
   };
-  const references = (await app.deps.repo.listReferences(id)).length;
+  const refs = await app.deps.repo.listReferences(id);
   let lastRegression: { version: number; matched: number; total: number; at: string } | null = null;
+  let regressionRunning = false;
   try {
-    const report = await regressionReport(app, id, latest.version);
+    // Only each reference's newest run counts: a re-run in progress isn't a score yet.
+    const report = await regressionReport(app, id, latest.version, refs);
+    regressionRunning = report.jobs.some((j) => j.status === 'queued' || j.status === 'running');
     const finished = report.jobs.filter((j) => regressionFinished(j.status));
-    if (finished.length) {
+    if (!regressionRunning && finished.length) {
       lastRegression = {
         version: latest.version,
         matched: report.items.filter((i) => i.comparison?.score === 1).length,
@@ -66,9 +69,10 @@ async function summarise(
     sections: count(definition.document?.sections),
     fields: count(definition.outputs?.fields),
     tables: count(definition.outputs?.tables),
-    references,
+    references: refs.length,
     draftIssues: draft ? validateTemplate(draft.definition).length : null,
     lastRegression,
+    regressionRunning,
   };
 }
 

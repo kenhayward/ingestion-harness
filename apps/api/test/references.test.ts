@@ -244,6 +244,17 @@ describe('document type summaries (GET /api/templates)', () => {
       references: 0,
       draftIssues: 0,
       lastRegression: null,
+      regressionRunning: false,
+    });
+  });
+
+  it('says a re-run is in progress instead of scoring its unfinished jobs', async () => {
+    const ctx = await setup();
+    await finishedRegression(ctx, ['bolts', 'nuts']);
+    await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}));
+    expect(await summaryOf(ctx, 'letter')).toMatchObject({
+      lastRegression: null,
+      regressionRunning: true,
     });
   });
 

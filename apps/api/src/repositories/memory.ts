@@ -272,11 +272,14 @@ export class MemoryRepo implements IngestionRepo {
     return this.createDocumentAndJob(doc, null, true, reference.id);
   }
 
-  async listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
-    const jobs = [...this.jobs.values()]
+  async listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+    const latest = new Map<string, JobSummary>();
+    for (const j of [...this.jobs.values()]
       .filter((j) => j.referenceId && j.specId === templateId && j.specVersion === version)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return jobs.map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))) {
+      if (!latest.has(j.referenceId!)) latest.set(j.referenceId!, j);
+    }
+    return [...latest.values()].map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {

@@ -12,6 +12,7 @@ const summary = {
   references: 3,
   draftIssues: 0,
   lastRegression: { version: 4, matched: 3, total: 3, at: '2026-10-12T10:00:00Z' },
+  regressionRunning: false,
 };
 
 const list: TemplateListItem[] = [

@@ -109,6 +109,7 @@ const template = (id: string, name: string) => ({
     references: 0,
     draftIssues: null,
     lastRegression: null,
+    regressionRunning: false,
   },
 });
 

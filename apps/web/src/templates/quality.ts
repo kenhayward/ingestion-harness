@@ -23,6 +23,7 @@ export function qualityLine(
       tone: 'warn',
     };
   }
+  if (s.regressionRunning) return { text: 'Regression running…', tone: 'muted' };
   if (s.lastRegression) {
     const { matched, total } = s.lastRegression;
     return {

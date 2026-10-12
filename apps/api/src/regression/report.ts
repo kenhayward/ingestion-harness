@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { JobDetail } from '@ih/shared';
+import type { JobDetail, Reference } from '@ih/shared';
 import { compareToReference, type RunDocument } from './compare.js';
 
 async function readJson(app: FastifyInstance, bucket: string, key: string) {
@@ -23,9 +23,15 @@ export const regressionFinished = (status: string) =>
   status === 'succeeded' || status === 'awaiting_review';
 
 /** Latest regression job per reference for a version, with its comparison once finished. */
-export async function regressionReport(app: FastifyInstance, templateId: string, version: number) {
-  const references = await app.deps.repo.listReferences(templateId);
-  const jobs = await app.deps.repo.listRegressionJobs(templateId, version);
+export async function regressionReport(
+  app: FastifyInstance,
+  templateId: string,
+  version: number,
+  /** Pass when already loaded (the templates list reads them for its summary too). */
+  known?: Reference[],
+) {
+  const references = known ?? (await app.deps.repo.listReferences(templateId));
+  const jobs = await app.deps.repo.listLatestRegressionJobs(templateId, version);
   const items = await Promise.all(
     references.map(async (reference) => {
       const job = jobs.find((j) => j.referenceId === reference.id) ?? null;
