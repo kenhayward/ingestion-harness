@@ -6,6 +6,7 @@
  *   runs bucket:    {jobId}/{extractionId}/attempt-{n}.json   (prompt + raw response audit)
  *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
  *   runs bucket:    segmentation/{projectId}/{jobId}.json   (workbench segment task)
+ *   runs bucket:    drafting/{projectId}/{jobId}.json   (workbench draft task)
  */
 export function inboxKey(specId: string, version: number, documentId: string): string {
   return `${specId}/v${version}/${documentId}.pdf`;
@@ -39,4 +40,9 @@ export function preparedTriageKey(sha256: string): string {
 /** Section-anchor preview grid of a workbench project (runs bucket, worker segment task). */
 export function segmentationKey(projectId: string, jobId: string): string {
   return `segmentation/${projectId}/${jobId}.json`;
+}
+
+/** A drafting stage's result for a workbench project (runs bucket, worker draft task). */
+export function draftingKey(projectId: string, jobId: string): string {
+  return `drafting/${projectId}/${jobId}.json`;
 }

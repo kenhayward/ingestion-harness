@@ -2,7 +2,10 @@ import { useState, type FormEvent } from 'react';
 import { EMPTY_BRIEF, type Brief, type BriefBody } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
-const FIELDS: { key: keyof BriefBody; label: string; hint: string }[] = [
+/** Brief fields edited as free text (`answers` is filled from the Survey stage). */
+type TextField = Exclude<keyof BriefBody, 'answers'>;
+
+const FIELDS: { key: TextField; label: string; hint: string }[] = [
   { key: 'purpose', label: 'Purpose', hint: 'What the outputs are for and who consumes them.' },
   {
     key: 'outputs',

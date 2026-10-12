@@ -24,6 +24,9 @@ export interface SegmentJob {
   updatedAt: string;
 }
 
+/** A document-less project job (segment previews, drafting runs). */
+export type ProjectJob = SegmentJob;
+
 /** jobs.params of a segment job (worker: workbench.SegmentParams). */
 export interface SegmentJobParams {
   samples: { sampleId: string; sha256: string }[];
@@ -71,6 +74,8 @@ export interface WorkbenchJobOptions {
   projectId: string;
   /** prepare: sample text + OCR only; process: a test run of the project's draft. */
   task: 'prepare' | 'process';
+  /** jobs.params, e.g. `{ dataPolicy }`; the worker enforces it (ADR 0007). */
+  params?: Record<string, unknown>;
 }
 
 export interface ListJobsQuery {
@@ -122,6 +127,13 @@ export interface IngestionRepo {
     params: SegmentJobParams,
   ): Promise<{ job: SegmentJob; removed: string[] }>;
   getSegmentJob(projectId: string, id: string): Promise<SegmentJob | null>;
+  /**
+   * Queue a drafting run (document-less, task 'draft'). Unlike segment previews, earlier draft
+   * jobs are kept: each one backs a proposal.
+   */
+  createDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
+  /** Draft jobs of a project, newest first. */
+  listDraftJobs(projectId: string): Promise<ProjectJob[]>;
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;

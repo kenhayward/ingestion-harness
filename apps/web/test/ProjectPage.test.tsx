@@ -7,7 +7,14 @@ import { fakeApi, projectView } from './fake-api.js';
 
 const page = (api = fakeApi(), tab: 'samples' | 'brief' | 'template' | 'runs' = 'samples') =>
   render(
-    <ProjectPage api={api} projectId="letter" tab={tab} onNavigate={vi.fn()} pollMs={60_000} />,
+    <ProjectPage
+      api={api}
+      projectId="letter"
+      tab={tab}
+      onNavigate={vi.fn()}
+      pollMs={60_000}
+      role="admin"
+    />,
   );
 
 describe('ProjectPage', () => {
@@ -47,5 +54,45 @@ describe('ProjectPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Start v2' }));
     expect(api.newDraft).toHaveBeenCalledWith('letter', 1);
     expect(getProject).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the data policy and lets an admin allow external models after confirming', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      setDataPolicy: vi.fn(async () =>
+        projectView({ project: { ...projectView().project, dataPolicy: 'external' } }),
+      ),
+    });
+    page(api);
+    expect(await screen.findByText('Local models only')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow external models' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(api.setDataPolicy).toHaveBeenCalledWith('letter', 'external');
+    expect(await screen.findByText('External models allowed')).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it('does not change the policy when the confirmation is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()) });
+    page(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow external models' }));
+    expect(api.setDataPolicy).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('hides the policy switch from users', async () => {
+    render(
+      <ProjectPage
+        api={fakeApi({ getProject: vi.fn(async () => projectView()) })}
+        projectId="letter"
+        tab="samples"
+        onNavigate={vi.fn()}
+        role="user"
+      />,
+    );
+    expect(await screen.findByText('Local models only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /external models/i })).toBeNull();
   });
 });

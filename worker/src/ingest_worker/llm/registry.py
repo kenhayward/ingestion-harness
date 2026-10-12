@@ -5,7 +5,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -13,6 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .base import LLMProvider, ModelDescriptor, ProviderKind
 
 log = logging.getLogger(__name__)
+
+
+Location = Literal["local", "external"]
 
 
 class ModelResolutionError(ValueError):
@@ -38,6 +41,8 @@ class ProviderConfig(BaseModel):
     #: Static models, always offered even when discovery fails or is disabled.
     models: list[str] = Field(default_factory=list)
     model_filter: str | None = Field(default=None, alias="modelFilter")
+    #: Where requests go (ADR 0007 data policy). Undeclared providers count as external.
+    location: Location = "external"
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -181,6 +186,11 @@ class ModelRegistry:
                 f"model {ref!r}: provider {provider_name!r} is not configured/enabled"
             )
         return provider, model_id
+
+    def location(self, provider_name: str) -> Location:
+        """Data-policy location of a configured provider; unknown names count as external."""
+        cfg = self._configs.get(provider_name)
+        return cfg.location if cfg else "external"
 
     def resolve_ocr(self, ref: str) -> tuple[LLMProvider, str]:
         """Like resolve(), but uses the provider's OCR endpoint/key when configured. The

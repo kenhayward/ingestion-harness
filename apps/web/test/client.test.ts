@@ -107,6 +107,36 @@ describe('http api: long results filter', () => {
   });
 });
 
+describe('http api: drafting', () => {
+  it('changes the data policy and starts a stage', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.setDataPolicy('letter', 'external');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/workbench/projects/letter/data-policy');
+    expect(fetchMock.mock.calls[0]![1]!.method).toBe('PUT');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual({
+      dataPolicy: 'external',
+    });
+    await api.startStage('letter', 'survey');
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/workbench/projects/letter/stages/survey');
+    await api.decideProposal('letter', 'p1', 'accepted');
+    expect(fetchMock.mock.calls[2]![0]).toBe(
+      '/api/workbench/projects/letter/proposals/p1/decision',
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[2]![1]!.body))).toEqual({
+      decision: 'accepted',
+    });
+  });
+
+  it('lists proposals', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, []));
+    vi.stubGlobal('fetch', fetchMock);
+    await createHttpApi('/api').listProposals('letter');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/workbench/projects/letter/proposals');
+  });
+});
+
 describe('http api: S3 keys (ADR 0008)', () => {
   it('lists, issues, rotates, revokes and deletes through /api/access/s3-keys', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

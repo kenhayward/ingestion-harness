@@ -1,11 +1,14 @@
 import type {
   Brief,
   BriefBody,
+  DataPolicy,
+  DraftStage,
   EditRequest,
   JobDetail,
   JobSummary,
   ModelInfo,
   PreparedText,
+  ProposalView,
   ProjectSummary,
   ProjectView,
   Reference,
@@ -292,6 +295,14 @@ export interface Api {
   createProject(id: string, name?: string): Promise<ProjectView>;
   /** Rejects with an ApiError (404 when there is no project yet). */
   getProject(id: string): Promise<ProjectView>;
+  setDataPolicy(projectId: string, dataPolicy: DataPolicy): Promise<ProjectView>;
+  startStage(projectId: string, stage: DraftStage): Promise<ProposalView>;
+  listProposals(projectId: string): Promise<ProposalView[]>;
+  decideProposal(
+    projectId: string,
+    proposalId: string,
+    decision: 'accepted' | 'rejected',
+  ): Promise<ProposalView>;
   listSamples(projectId: string): Promise<SampleView[]>;
   uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
   setSampleRole(projectId: string, sampleId: string, role: SampleRole): Promise<SampleView>;
@@ -486,6 +497,16 @@ export function createHttpApi(base = '/api'): Api {
     createProject: (id, name) =>
       post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
     getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),
+    setDataPolicy: (id, dataPolicy) =>
+      post<ProjectView>(`${base}/workbench/projects/${id}/data-policy`, { dataPolicy }, 'PUT'),
+    startStage: (id, stage) =>
+      post<ProposalView>(`${base}/workbench/projects/${id}/stages/${stage}`, {}),
+    listProposals: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/proposals`).then(json<ProposalView[]>),
+    decideProposal: (id, proposalId, decision) =>
+      post<ProposalView>(`${base}/workbench/projects/${id}/proposals/${proposalId}/decision`, {
+        decision,
+      }),
     listSamples: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/samples`).then(json<SampleView[]>),
     uploadSample: (id, file, role) => {

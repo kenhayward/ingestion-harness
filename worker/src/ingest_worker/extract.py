@@ -80,6 +80,7 @@ def run_extraction(
     max_attempts: int,
     images: tuple[bytes, ...] = (),
     max_tokens: int = 64000,
+    system: str = SYSTEM_PROMPT,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out."""
@@ -90,7 +91,7 @@ def run_extraction(
         result = provider.complete_json(
             model_id,
             CompletionRequest(
-                system=SYSTEM_PROMPT,
+                system=system,
                 prompt=current_prompt,
                 json_schema=schema,
                 schema_name=extraction_id,

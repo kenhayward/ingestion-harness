@@ -185,10 +185,11 @@ export class PgRepo implements IngestionRepo {
       projectId: null,
       task: 'process',
       priority: 0,
+      params: null,
     });
   }
 
-  async createWorkbenchJob(doc: NewDocument, { projectId, task }: WorkbenchJobOptions) {
+  async createWorkbenchJob(doc: NewDocument, { projectId, task, params }: WorkbenchJobOptions) {
     return this.insertDocumentAndJob(doc, {
       modelOverride: null,
       test: true,
@@ -196,7 +197,27 @@ export class PgRepo implements IngestionRepo {
       projectId,
       task,
       priority: WORKBENCH_PRIORITY,
+      params: params ?? null,
     });
+  }
+
+  async createDraftJob(projectId: string, params: Record<string, unknown>) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+       VALUES ($1, 'draft', true, $2, 3, $3)
+       RETURNING id, project_id, status, error, created_at, updated_at`,
+      [projectId, WORKBENCH_PRIORITY, JSON.stringify(params)],
+    );
+    return toSegmentJob(rows[0]!);
+  }
+
+  async listDraftJobs(projectId: string) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `SELECT id, project_id, status, error, created_at, updated_at FROM jobs
+        WHERE project_id = $1 AND task = 'draft' ORDER BY created_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toSegmentJob);
   }
 
   async createSegmentJob(projectId: string, params: SegmentJobParams) {
@@ -253,6 +274,7 @@ export class PgRepo implements IngestionRepo {
       projectId: string | null;
       task: 'process' | 'prepare';
       priority: number;
+      params: Record<string, unknown> | null;
     },
   ): Promise<JobSummary> {
     const client = await this.pool.connect();
@@ -273,8 +295,8 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority, params)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
         [
           doc.id,
           job.modelOverride,
@@ -283,6 +305,7 @@ export class PgRepo implements IngestionRepo {
           job.projectId,
           job.task,
           job.priority,
+          job.params === null ? null : JSON.stringify(job.params),
         ],
       );
       await client.query('COMMIT');

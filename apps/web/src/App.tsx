@@ -146,6 +146,7 @@ function SignedInApp({
         tab={route.tab}
         onNavigate={navigate}
         pollMs={pollMs}
+        role={me.role}
       />
     );
   } else {

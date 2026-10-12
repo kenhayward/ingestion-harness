@@ -7,10 +7,12 @@ import { BriefTab } from './BriefTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
+import { SurveyTab } from './SurveyTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
   brief: 'Brief',
+  survey: 'Survey',
   sections: 'Sections',
   template: 'Template',
   runs: 'Test runs',
@@ -23,6 +25,7 @@ export function ProjectPage({
   tab,
   onNavigate,
   pollMs = 3000,
+  role,
 }: {
   api: Api;
   projectId: string;
@@ -30,6 +33,7 @@ export function ProjectPage({
   onNavigate: (hash: string) => void;
   /** Poll interval for the Samples and Test runs tabs. */
   pollMs?: number;
+  role: 'admin' | 'user';
 }) {
   const [view, setView] = useState<ProjectView | null>(null);
   const [missing, setMissing] = useState(false);
@@ -56,6 +60,20 @@ export function ProjectPage({
     } catch (err) {
       setError((err as Error).message);
     }
+  };
+
+  const togglePolicy = async () => {
+    if (!view) return;
+    const next = view.project.dataPolicy === 'external' ? 'local' : 'external';
+    if (
+      next === 'external' &&
+      !window.confirm(
+        'Sample text from dev samples may be sent to external model providers. Allow?',
+      )
+    ) {
+      return;
+    }
+    await act(async () => setView(await api.setDataPolicy(view.project.id, next)));
   };
 
   if (missing) {
@@ -91,6 +109,18 @@ export function ProjectPage({
         <code>{project.id}</code> · {draft !== null ? `developing v${draft}` : 'no open draft'}
         {published !== null && ` · v${published} published`}
       </p>
+      <p className="policy">
+        <span className={`pill ${project.dataPolicy === 'external' ? 'tone-warn' : 'tone-ok'}`}>
+          {project.dataPolicy === 'external' ? 'External models allowed' : 'Local models only'}
+        </span>
+        {role === 'admin' && (
+          <button type="button" onClick={() => void togglePolicy()}>
+            {project.dataPolicy === 'external'
+              ? 'Restrict to local models'
+              : 'Allow external models'}
+          </button>
+        )}
+      </p>
       {error && <p role="alert">{error}</p>}
       <nav aria-label="Project" className="workbench-tabs">
         {PROJECT_TABS.map((t) => (
@@ -110,6 +140,16 @@ export function ProjectPage({
           projectId={project.id}
           brief={view.brief}
           onSaved={(brief) => setView({ ...view, brief })}
+        />
+      )}
+      {tab === 'survey' && (
+        <SurveyTab
+          api={api}
+          projectId={project.id}
+          dataPolicy={project.dataPolicy}
+          brief={view.brief}
+          onBriefSaved={(brief) => setView({ ...view, brief })}
+          pollMs={pollMs}
         />
       )}
       {tab === 'sections' && (
