@@ -5,6 +5,8 @@ import type {
   DraftStage,
   EditRequest,
   EvaluationModel,
+  FeedbackItem,
+  FeedbackTarget,
   IterationSummary,
   ComparisonView,
   IterationView,
@@ -327,6 +329,18 @@ export interface Api {
   listIterations(projectId: string): Promise<IterationSummary[]>;
   getIteration(projectId: string, iterationId: string): Promise<IterationView>;
   restoreIteration(projectId: string, iterationId: string): Promise<ProjectView>;
+  listFeedback(projectId: string): Promise<FeedbackItem[]>;
+  addFeedback(
+    projectId: string,
+    body: {
+      target: FeedbackTarget;
+      targetId: string;
+      body: string;
+      sampleId?: string;
+      iterationId?: string;
+    },
+  ): Promise<FeedbackItem>;
+  deleteFeedback(projectId: string, feedbackId: string): Promise<void>;
   listStages(projectId: string): Promise<StageView[]>;
   listSamples(projectId: string): Promise<SampleView[]>;
   uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
@@ -559,6 +573,12 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/workbench/projects/${id}/iterations`).then(json<IterationSummary[]>),
     getIteration: (id, iid) =>
       apiFetch(`${base}/workbench/projects/${id}/iterations/${iid}`).then(json<IterationView>),
+    listFeedback: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/feedback`).then(json<FeedbackItem[]>),
+    addFeedback: (id, body) =>
+      post<FeedbackItem>(`${base}/workbench/projects/${id}/feedback`, body),
+    deleteFeedback: (id, fid) =>
+      noContent(apiFetch(`${base}/workbench/projects/${id}/feedback/${fid}`, { method: 'DELETE' })),
     restoreIteration: (id, iid) =>
       post<ProjectView>(`${base}/workbench/projects/${id}/iterations/${iid}/restore`, {}),
     listStages: (id) => apiFetch(`${base}/workbench/projects/${id}/stages`).then(json<StageView[]>),

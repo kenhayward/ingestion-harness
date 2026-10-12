@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScorecard,
   comparisonRows,
+  FeedbackBodySchema,
+  MAX_FIELD_DIFFS,
+  failureDiffs,
   finishedJob,
   JOB_STATUSES,
   type Comparison,
@@ -167,5 +170,100 @@ describe('comparisonRows', () => {
     expect(comparisonRows([view(null, 1, [])])).toEqual([
       { id: 'score', byModel: { template: 1 } },
     ]);
+  });
+});
+
+describe('failureDiffs', () => {
+  const result = (
+    sampleId: string,
+    filename: string,
+    score: number,
+    mismatches: number,
+  ): SampleResult => ({
+    sampleId,
+    filename,
+    jobId: `j-${sampleId}`,
+    status: 'succeeded',
+    error: null,
+    comparison: {
+      score,
+      fields: [
+        { id: 'ok', expected: 'a', actual: 'a', match: true },
+        ...Array.from({ length: mismatches }, (_, i) => ({
+          id: `f${i}`,
+          expected: 'e',
+          actual: 'x',
+          match: false,
+        })),
+      ],
+      tables: [
+        {
+          id: 'items',
+          expected: 2,
+          actual: 2,
+          matched: 1,
+          missing: [{ name: 'Nut' }],
+          extra: [],
+          changed: Array.from({ length: 7 }, () => ({
+            expected: { qty: 1 },
+            actual: { qty: 2 },
+            columns: ['qty'],
+          })),
+          cells: 1,
+          cellsTotal: 2,
+          columns: {},
+        },
+      ],
+    },
+  });
+
+  it('keeps only imperfect dev samples, capped', () => {
+    const diffs = failureDiffs(
+      [result('s1', 'a.pdf', 0.5, 25), result('s2', 'b.pdf', 1, 0), result('s3', 'c.pdf', 0.2, 1)],
+      new Set(['s1', 's2']),
+    );
+    expect(diffs.map((d) => d.sample)).toEqual(['a.pdf']);
+    expect(diffs[0]!.fields).toHaveLength(MAX_FIELD_DIFFS);
+    expect(diffs[0]!.fields[0]).toEqual({ id: 'f0', expected: 'e', actual: 'x' });
+    expect(diffs[0]!.tables).toEqual([
+      expect.objectContaining({ id: 'items', missing: 1, extra: 0 }),
+    ]);
+    expect(diffs[0]!.tables[0]!.changed).toHaveLength(5);
+  });
+
+  it('skips samples without a comparison or a sample id', () => {
+    expect(
+      failureDiffs(
+        [
+          { ...result('s1', 'a.pdf', 0.5, 1), comparison: null },
+          { ...result('s1', 'a.pdf', 0.5, 1), sampleId: null },
+        ],
+        new Set(['s1']),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('FeedbackBodySchema', () => {
+  it('accepts a targeted comment and rejects bad targets and empty bodies', () => {
+    expect(
+      FeedbackBodySchema.safeParse({
+        target: 'field',
+        targetId: 'sent_on',
+        body: 'Use the executed copy',
+      }).success,
+    ).toBe(true);
+    expect(FeedbackBodySchema.safeParse({ target: 'page', targetId: 'x', body: 'b' }).success).toBe(
+      false,
+    );
+    expect(
+      FeedbackBodySchema.safeParse({ target: 'field', targetId: 'Sent On', body: 'b' }).success,
+    ).toBe(false);
+    expect(FeedbackBodySchema.safeParse({ target: 'field', targetId: 'x', body: '' }).success).toBe(
+      false,
+    );
+    expect(
+      FeedbackBodySchema.safeParse({ target: 'field', targetId: 'x', body: 'b', extra: 1 }).success,
+    ).toBe(false);
   });
 });

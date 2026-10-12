@@ -7,6 +7,7 @@ import type {
   DataPolicy,
   DraftStage,
   EvaluationModel,
+  FeedbackItem,
   ProposalDecision,
   SampleRole,
   StageSkip,
@@ -49,6 +50,8 @@ export interface ProposalRecord {
   /** The draft version and definition the proposal was made against (null for survey). */
   baseVersion: number | null;
   baseDefinition: Record<string, unknown> | null;
+  /** The open feedback a revise proposal was made from (null for other stages). */
+  feedbackIds: string[] | null;
   decidedAt: string | null;
   createdAt: string;
 }
@@ -62,6 +65,7 @@ export interface NewProposal {
   briefVersion: number | null;
   baseVersion?: number | null;
   baseDefinition?: Record<string, unknown> | null;
+  feedbackIds?: string[] | null;
 }
 
 /** One evaluation run of the draft (migration 0013); the scorecard is derived from its jobs. */
@@ -126,6 +130,15 @@ export interface WorkbenchRepo {
     decision: ProposalDecision,
     acceptedChanges?: number[] | null,
   ): Promise<ProposalRecord | null>;
+  createFeedback(
+    input: Omit<FeedbackItem, 'id' | 'createdAt' | 'resolvedBy'>,
+  ): Promise<FeedbackItem>;
+  /** Newest first. */
+  listFeedback(projectId: string): Promise<FeedbackItem[]>;
+  /** Only open items are deleted; one a proposal already answered is kept. */
+  deleteFeedback(projectId: string, id: string): Promise<'deleted' | 'resolved' | 'not-found'>;
+  /** Marks the open items among `ids` as answered by the proposal. */
+  resolveFeedback(projectId: string, ids: string[], proposalId: string): Promise<void>;
   addSkip(projectId: string, stage: DraftStage): Promise<StageSkipRecord>;
   /** Newest first. */
   listSkips(projectId: string): Promise<StageSkipRecord[]>;
@@ -146,6 +159,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
   readonly iterations: IterationRecord[] = [];
+  readonly feedback: FeedbackItem[] = [];
 
   constructor(private readonly jobs: MemoryRepo) {}
 
@@ -269,6 +283,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       acceptedChanges: null,
       baseVersion: p.baseVersion ?? null,
       baseDefinition: p.baseDefinition ?? null,
+      feedbackIds: p.feedbackIds ?? null,
       decidedAt: null,
       createdAt: this.now(),
     };
@@ -298,6 +313,39 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     };
     this.proposals[index] = decided;
     return decided;
+  }
+
+  async createFeedback(input: Omit<FeedbackItem, 'id' | 'createdAt' | 'resolvedBy'>) {
+    const record: FeedbackItem = {
+      ...input,
+      id: randomUUID(),
+      createdAt: this.now(),
+      resolvedBy: null,
+    };
+    this.feedback.push(record);
+    return record;
+  }
+
+  async listFeedback(projectId: string) {
+    // Insertion order, newest first: timestamps can tie within a millisecond.
+    return this.feedback.filter((f) => f.projectId === projectId).reverse();
+  }
+
+  async deleteFeedback(projectId: string, id: string) {
+    const index = this.feedback.findIndex((f) => f.projectId === projectId && f.id === id);
+    const current = this.feedback[index];
+    if (!current) return 'not-found' as const;
+    if (current.resolvedBy) return 'resolved' as const;
+    this.feedback.splice(index, 1);
+    return 'deleted' as const;
+  }
+
+  async resolveFeedback(projectId: string, ids: string[], proposalId: string) {
+    for (const f of this.feedback) {
+      if (f.projectId === projectId && ids.includes(f.id) && !f.resolvedBy) {
+        f.resolvedBy = proposalId;
+      }
+    }
   }
 
   async addSkip(projectId: string, stage: DraftStage) {
@@ -397,7 +445,20 @@ interface ProposalRow {
   accepted_changes: number[] | null;
   base_version: number | null;
   base_definition: Record<string, unknown> | null;
+  feedback_ids: string[] | null;
   decided_at: Date | null;
+  created_at: Date;
+}
+
+interface FeedbackRow {
+  id: string;
+  project_id: string;
+  target: FeedbackItem['target'];
+  target_id: string;
+  sample_id: string | null;
+  iteration_id: string | null;
+  body: string;
+  resolved_by: string | null;
   created_at: Date;
 }
 
@@ -452,8 +513,21 @@ const toProposal = (r: ProposalRow): ProposalRecord => ({
   acceptedChanges: r.accepted_changes,
   baseVersion: r.base_version,
   baseDefinition: r.base_definition,
+  feedbackIds: r.feedback_ids,
   decidedAt: r.decided_at?.toISOString() ?? null,
   createdAt: r.created_at.toISOString(),
+});
+
+const toFeedback = (r: FeedbackRow): FeedbackItem => ({
+  id: r.id,
+  projectId: r.project_id,
+  target: r.target,
+  targetId: r.target_id,
+  sampleId: r.sample_id,
+  iterationId: r.iteration_id,
+  body: r.body,
+  createdAt: r.created_at.toISOString(),
+  resolvedBy: r.resolved_by,
 });
 
 const toProject = (r: ProjectRow): WorkbenchProject => ({
@@ -611,8 +685,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
 
   async createProposal(p: NewProposal) {
     const { rows } = await this.pool.query<ProposalRow>(
-      `INSERT INTO workbench_proposals (id, project_id, stage, brief_version, base_version, base_definition)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO workbench_proposals (id, project_id, stage, brief_version, base_version, base_definition, feedback_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         p.id,
         p.projectId,
@@ -620,6 +694,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         p.briefVersion,
         p.baseVersion ?? null,
         p.baseDefinition ? JSON.stringify(p.baseDefinition) : null,
+        p.feedbackIds ?? null,
       ],
     );
     return toProposal(rows[0]!);
@@ -645,6 +720,47 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId, id, decision, acceptedChanges ?? null],
     );
     return rows[0] ? toProposal(rows[0]) : null;
+  }
+
+  async createFeedback(f: Omit<FeedbackItem, 'id' | 'createdAt' | 'resolvedBy'>) {
+    const { rows } = await this.pool.query<FeedbackRow>(
+      `INSERT INTO workbench_feedback (project_id, target, target_id, sample_id, iteration_id, body)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [f.projectId, f.target, f.targetId, f.sampleId, f.iterationId, f.body],
+    );
+    return toFeedback(rows[0]!);
+  }
+
+  async listFeedback(projectId: string) {
+    const { rows } = await this.pool.query<FeedbackRow>(
+      'SELECT * FROM workbench_feedback WHERE project_id = $1 ORDER BY created_at DESC, id DESC',
+      [projectId],
+    );
+    return rows.map(toFeedback);
+  }
+
+  async deleteFeedback(projectId: string, id: string) {
+    // Delete first, then explain a miss: a revision accepted concurrently can resolve the item
+    // between any read and the delete, and then nothing may be deleted.
+    const { rowCount } = await this.pool.query(
+      'DELETE FROM workbench_feedback WHERE project_id = $1 AND id = $2 AND resolved_by IS NULL',
+      [projectId, id],
+    );
+    if (rowCount) return 'deleted' as const;
+    const { rows } = await this.pool.query<{ resolved_by: string | null }>(
+      'SELECT resolved_by FROM workbench_feedback WHERE project_id = $1 AND id = $2',
+      [projectId, id],
+    );
+    return rows[0] ? ('resolved' as const) : ('not-found' as const);
+  }
+
+  async resolveFeedback(projectId: string, ids: string[], proposalId: string) {
+    if (!ids.length) return;
+    await this.pool.query(
+      `UPDATE workbench_feedback SET resolved_by = $3
+        WHERE project_id = $1 AND id = ANY($2::uuid[]) AND resolved_by IS NULL`,
+      [projectId, ids, proposalId],
+    );
   }
 
   async addSkip(projectId: string, stage: DraftStage) {

@@ -214,6 +214,22 @@ describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)
     };
     expect(parseChangeBody('sections', body)).not.toBeNull();
   });
+
+  it('a mixed revise body from the worker converter parses', () => {
+    const body = {
+      notes: '',
+      changes: [
+        { op: 'putField', field: { id: 'ref', description: 'Reference' }, reason: 'r' },
+        {
+          op: 'putStep',
+          step: { id: 'tail', type: 'extract', fields: ['ref'], sections: ['all'] },
+          reason: 'r',
+        },
+        { op: 'putSection', section: { id: 'approval', anchor: '^APPROVAL' }, reason: 'r' },
+      ],
+    };
+    expect(parseChangeBody('revise', body)?.changes).toHaveLength(3);
+  });
 });
 
 describe('references stage', () => {
@@ -280,5 +296,21 @@ describe('references stage', () => {
       state: 'skipped',
       completedAt: '2026-10-12T10:00:06.000Z',
     });
+  });
+});
+
+describe('revise stage', () => {
+  it('accepts every op and never blocks or is blocked', () => {
+    const body = {
+      notes: '',
+      changes: [
+        { op: 'putField', field: { id: 'a', type: 'text' }, reason: 'r' },
+        { op: 'removeSection', id: 'sig', reason: 'r' },
+        { op: 'setPreamble', preamble: 'x', reason: 'r' },
+      ],
+    };
+    expect(parseChangeBody('revise', body)?.changes).toHaveLength(3);
+    expect(blockingStage(stageStates([], []), 'revise')).toBeNull();
+    expect(stageStates([], []).map((s) => s.stage)).not.toContain('revise');
   });
 });

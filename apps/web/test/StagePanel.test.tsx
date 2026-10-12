@@ -87,6 +87,12 @@ describe('StagePanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides the skip button when the stage cannot be skipped', async () => {
+    panel({}, { canSkip: false });
+    await screen.findByRole('button', { name: 'Propose outputs' });
+    expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
+  });
+
   it('skips the stage', async () => {
     const { api, onSkipped } = panel({ skipStage: vi.fn(async () => []) });
     await userEvent.click(await screen.findByRole('button', { name: 'Skip this stage' }));

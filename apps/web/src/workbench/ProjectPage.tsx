@@ -6,6 +6,7 @@ import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { ReferencesTab } from './ReferencesTab.js';
+import { ReviseTab } from './ReviseTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
@@ -21,6 +22,7 @@ const TAB_LABEL: Record<ProjectTab, string> = {
   steps: 'Steps',
   references: 'References',
   evaluate: 'Evaluate',
+  revise: 'Revise',
   template: 'Template',
   runs: 'Test runs',
 };
@@ -231,6 +233,16 @@ export function ProjectPage({
           hasDraft={draft !== null}
           pollMs={pollMs}
           onRestored={changed}
+        />
+      )}
+      {tab === 'revise' && (
+        <ReviseTab
+          api={api}
+          projectId={project.id}
+          dataPolicy={project.dataPolicy}
+          hasDraft={draft !== null}
+          pollMs={pollMs}
+          onApplied={changed}
         />
       )}
       {tab === 'runs' && <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />}

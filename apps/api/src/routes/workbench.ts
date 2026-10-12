@@ -9,6 +9,7 @@ import {
   EVALUATION_MODELS,
   DraftResultSchema,
   EMPTY_BRIEF,
+  FeedbackBodySchema,
   MAX_SAMPLES,
   PreparedTextSchema,
   PreparedTriageSchema,
@@ -20,6 +21,7 @@ import {
   blockingStage,
   buildScorecard,
   conflictingChanges,
+  failureDiffs,
   draftingKey,
   finishedJob,
   firstIncomplete,
@@ -35,6 +37,8 @@ import {
   type ComparisonView,
   type DraftStage,
   type EvaluationModel,
+  type FailureDiff,
+  type FeedbackItem,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -83,6 +87,7 @@ const DecisionBody = z
   })
   .strict();
 const SkipParams = StageParams;
+const FeedbackParams = z.object({ id: Id, fid: z.string().uuid() });
 
 const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
   app.deps.access === null || req.auth?.role === 'admin';
@@ -877,6 +882,108 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send({ jobs });
   }
 
+  /**
+   * What a revision is asked to answer, or null when no open feedback remains. Holdout rule
+   * (ADR 0007): feedback naming a sample that is not a ready dev sample now is dropped, and the
+   * failures come from the latest complete dev iteration, restricted to the current dev samples.
+   * The template's own runs are preferred over model-comparison members (groupId set), which
+   * fall back only when no own run is complete; failuresFrom names the iteration used.
+   */
+  async function reviseInputs(
+    projectId: string,
+    dev: { sampleId: string; filename: string }[],
+  ): Promise<{
+    feedback: { target: string; targetId: string; sample: string | null; body: string }[];
+    failures: FailureDiff[];
+    failuresFrom?: { templateVersion: number; model: EvaluationModel | null };
+    feedbackIds: string[];
+  } | null> {
+    const names = new Map(dev.map((s) => [s.sampleId, s.filename]));
+    const open = (await workbench.listFeedback(projectId)).filter(
+      (f) => f.resolvedBy === null && (f.sampleId === null || names.has(f.sampleId)),
+    );
+    if (!open.length) return null;
+    let failures: FailureDiff[] = [];
+    let failuresFrom: { templateVersion: number; model: EvaluationModel | null } | undefined;
+    const devRuns = (await workbench.listIterations(projectId)).filter((i) => i.set === 'dev');
+    // Stable sort: own runs first, newest first within each group.
+    const candidates = [...devRuns].sort(
+      (a, b) => Number(a.groupId !== null) - Number(b.groupId !== null),
+    );
+    for (const iteration of candidates) {
+      const view = await iterationView(app, iteration);
+      if (view.status !== 'complete') continue;
+      failures = failureDiffs(view.samples, new Set(names.keys()));
+      failuresFrom = { templateVersion: iteration.templateVersion, model: iteration.model };
+      break;
+    }
+    return {
+      feedback: open.map((f) => ({
+        target: f.target,
+        targetId: f.targetId,
+        sample: f.sampleId === null ? null : (names.get(f.sampleId) ?? null),
+        body: f.body,
+      })),
+      failures,
+      ...(failuresFrom ? { failuresFrom } : {}),
+      feedbackIds: open.map((f) => f.id),
+    };
+  }
+
+  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/feedback', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const items: FeedbackItem[] = await workbench.listFeedback(req.params.id);
+    return items;
+  });
+
+  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/feedback', async (req, reply) => {
+    const projectId = req.params.id;
+    if (!(await workbench.getProject(projectId))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const body = FeedbackBodySchema.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const { sampleId, iterationId, ...rest } = body.data;
+    if (sampleId !== undefined) {
+      // Holdout rule (ADR 0007): feedback may only name a ready dev sample.
+      const sample = await findSample(projectId, sampleId);
+      if (!sample || sample.view.role !== 'dev' || sample.view.state !== 'ready') {
+        return reply.code(400).send({ error: 'feedback can only refer to dev samples' });
+      }
+    }
+    if (iterationId !== undefined) {
+      const iteration = await workbench.getIteration(projectId, iterationId);
+      if (!iteration) return reply.code(400).send({ error: 'unknown iteration' });
+      // Holdout rule (ADR 0007): feedback, which a revision sends to a model, names dev runs only.
+      if (iteration.set !== 'dev') {
+        return reply.code(400).send({ error: 'feedback can only refer to dev iterations' });
+      }
+    }
+    const item = await workbench.createFeedback({
+      projectId,
+      ...rest,
+      sampleId: sampleId ?? null,
+      iterationId: iterationId ?? null,
+    });
+    return reply.code(201).send(item);
+  });
+
+  app.delete<{ Params: { id: string; fid: string } }>(
+    '/workbench/projects/:id/feedback/:fid',
+    async (req, reply) => {
+      const params = FeedbackParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'feedback not found' });
+      const result = await workbench.deleteFeedback(params.data.id, params.data.fid);
+      if (result === 'resolved') {
+        return reply.code(409).send({ error: 'resolved feedback cannot be deleted' });
+      }
+      if (result === 'not-found') return reply.code(404).send({ error: 'feedback not found' });
+      return reply.code(204).send();
+    },
+  );
+
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage',
     async (req, reply) => {
@@ -912,7 +1019,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           sha256: s.record.sha256,
           role: 'dev' as const,
         }));
-      if (!samples.length) return reply.code(409).send({ error: 'no prepared dev samples' });
+      const revision = stage === 'revise' ? await reviseInputs(projectId, samples) : null;
+      if (stage === 'revise' && !revision) {
+        return reply.code(409).send({ error: 'add feedback before asking for a revision' });
+      }
+      // A revision can work from feedback alone; the other stages read the samples.
+      if (!samples.length && !revision) {
+        return reply.code(409).send({ error: 'no prepared dev samples' });
+      }
       const brief = await workbench.latestBrief(projectId);
       const job = await app.deps.repo.createDraftJob(projectId, {
         stage,
@@ -922,6 +1036,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         draft: record.definition,
         samples,
         ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
+        ...(revision ?? {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
@@ -930,6 +1045,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         briefVersion: brief?.version ?? null,
         baseVersion: changeStage ? record.version : null,
         baseDefinition: changeStage ? record.definition : null,
+        feedbackIds: revision?.feedbackIds ?? null,
       });
       return reply.code(202).send(await proposalView(app, proposal, job));
     },
@@ -952,6 +1068,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
     async (req, reply) => {
+      if (req.params.stage === 'revise') {
+        return reply.code(400).send({ error: 'stage revise cannot be skipped' });
+      }
       const params = SkipParams.safeParse(req.params);
       if (
         !params.success ||
@@ -1054,6 +1173,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         chosen,
       );
       if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
+      // Accepted, fully or partly: the revision answered its feedback.
+      if (record.stage === 'revise') {
+        await workbench.resolveFeedback(projectId, record.feedbackIds ?? [], pid);
+      }
       req.log.info({ projectId, proposal: pid, applied: chosen }, 'drafting changes applied');
       return proposalView(app, decided, job);
     },

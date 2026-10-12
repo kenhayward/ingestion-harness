@@ -153,6 +153,84 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     });
   });
 
+  it('stores feedback, resolves it once and only deletes open items', async () => {
+    const projectId = await newProject();
+    const item = {
+      projectId,
+      target: 'field' as const,
+      targetId: 'sender',
+      sampleId: null,
+      iterationId: null,
+      body: 'Use the letterhead',
+    };
+    const a = await workbench.createFeedback(item);
+    const b = await workbench.createFeedback({ ...item, targetId: 'date' });
+    expect(a).toMatchObject({ ...item, resolvedBy: null });
+    expect((await workbench.listFeedback(projectId)).map((f) => f.id)).toEqual([b.id, a.id]);
+    const job = await repo.createDraftJob(projectId, {});
+    const p = await workbench.createProposal({
+      id: job.id,
+      projectId,
+      stage: 'revise',
+      briefVersion: null,
+      feedbackIds: [a.id],
+    });
+    expect(p.feedbackIds).toEqual([a.id]);
+    await workbench.resolveFeedback(projectId, [a.id], job.id);
+    await workbench.resolveFeedback(projectId, [], job.id);
+    expect((await workbench.listFeedback(projectId)).find((f) => f.id === a.id)?.resolvedBy).toBe(
+      job.id,
+    );
+    expect(await workbench.deleteFeedback(projectId, a.id)).toBe('resolved');
+    expect(await workbench.deleteFeedback(projectId, b.id)).toBe('deleted');
+    expect(await workbench.deleteFeedback(projectId, b.id)).toBe('not-found');
+    expect(await workbench.deleteFeedback('other-project', a.id)).toBe('not-found');
+    const other = await repo.createDraftJob(projectId, {});
+    const q = await workbench.createProposal({
+      id: other.id,
+      projectId,
+      stage: 'outputs',
+      briefVersion: null,
+    });
+    expect(q.feedbackIds).toBeNull();
+  });
+
+  it('reports feedback resolved by a revision that lands just before its delete', async () => {
+    const projectId = await newProject();
+    const item = await workbench.createFeedback({
+      projectId,
+      target: 'field',
+      targetId: 'sender',
+      sampleId: null,
+      iterationId: null,
+      body: 'Use the letterhead',
+    });
+    const job = await repo.createDraftJob(projectId, {});
+    await workbench.createProposal({
+      id: job.id,
+      projectId,
+      stage: 'revise',
+      briefVersion: null,
+      feedbackIds: [item.id],
+    });
+    // A pool whose DELETE first lets a concurrent accept resolve the item.
+    const racing = new pg.Pool({ connectionString: url, max: 2 });
+    const query = racing.query.bind(racing) as (...args: unknown[]) => Promise<unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pg's overloaded query
+    (racing as any).query = async (...args: unknown[]) => {
+      if (String(args[0]).trimStart().startsWith('DELETE FROM workbench_feedback')) {
+        await workbench.resolveFeedback(projectId, [item.id], job.id);
+      }
+      return query(...args);
+    };
+    try {
+      expect(await new PgWorkbenchRepo(racing).deleteFeedback(projectId, item.id)).toBe('resolved');
+    } finally {
+      await racing.end();
+    }
+    expect((await workbench.listFeedback(projectId)).map((f) => f.id)).toEqual([item.id]);
+  });
+
   it('records stage skips newest first', async () => {
     const projectId = await newProject();
     const first = await workbench.addSkip(projectId, 'survey');

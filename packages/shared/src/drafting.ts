@@ -13,7 +13,7 @@ import {
  * Drafting stages that propose changes to the draft template (ADR 0007, phase 3b).
  * Mirrors worker/src/ingest_worker/draft_changes.py (apply) and draft_stages.py (ops per stage).
  */
-export const CHANGE_STAGES = ['outputs', 'sections', 'steps'] as const;
+export const CHANGE_STAGES = ['outputs', 'sections', 'steps', 'revise'] as const;
 export type ChangeStage = (typeof CHANGE_STAGES)[number];
 export const isChangeStage = (stage: DraftStage): stage is ChangeStage =>
   (CHANGE_STAGES as readonly string[]).includes(stage);
@@ -32,10 +32,16 @@ export const DraftChangeSchema = z.discriminatedUnion('op', [
 ]);
 export type DraftChange = z.infer<typeof DraftChangeSchema>;
 
+const OUTPUT_OPS = ['putField', 'putTable', 'removeOutput'] as const;
+const SECTION_OPS = ['putSection', 'removeSection', 'setCopies'] as const;
+const STEP_OPS = ['putStep', 'removeStep', 'setPreamble'] as const;
+
+/** `revise` (phase 4c) may touch anything the three authoring stages can. */
 export const STAGE_OPS: Record<ChangeStage, readonly DraftChange['op'][]> = {
-  outputs: ['putField', 'putTable', 'removeOutput'],
-  sections: ['putSection', 'removeSection', 'setCopies'],
-  steps: ['putStep', 'removeStep', 'setPreamble'],
+  outputs: OUTPUT_OPS,
+  sections: SECTION_OPS,
+  steps: STEP_OPS,
+  revise: [...OUTPUT_OPS, ...SECTION_OPS, ...STEP_OPS],
 };
 
 /** Body of an outputs/sections/steps proposal (worker draft task, runs bucket). */

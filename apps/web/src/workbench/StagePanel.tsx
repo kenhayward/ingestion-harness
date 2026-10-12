@@ -13,6 +13,7 @@ const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
   sections: 'Propose section anchors',
   steps: 'Propose extraction steps',
+  revise: 'Propose a revision',
 };
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
@@ -59,6 +60,7 @@ export function StagePanel({
   pollMs,
   onApplied,
   onSkipped,
+  canSkip = true,
 }: {
   api: Api;
   projectId: string;
@@ -68,6 +70,8 @@ export function StagePanel({
   pollMs: number;
   onApplied: () => void;
   onSkipped: () => void;
+  /** False for stages the API refuses to skip (revise). */
+  canSkip?: boolean;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -186,9 +190,11 @@ export function StagePanel({
         >
           {proposal ? 'Propose again' : PROPOSE[stage]}
         </button>
-        <button type="button" disabled={busy} onClick={() => void skip()}>
-          Skip this stage
-        </button>
+        {canSkip && (
+          <button type="button" disabled={busy} onClick={() => void skip()}>
+            Skip this stage
+          </button>
+        )}
       </div>
       {running && <p className="muted">Drafting…</p>}
       {error && <p role="alert">{error}</p>}
