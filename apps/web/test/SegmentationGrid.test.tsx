@@ -45,7 +45,9 @@ describe('SegmentationGrid', () => {
       'totals: missing ), unterminated subpattern',
     );
     const table = screen.getByRole('table', { name: 'Section anchors' });
-    expect(within(table).getByRole('columnheader', { name: /header 1\/1/ })).toBeInTheDocument();
+    expect(
+      within(table).getByRole('columnheader', { name: /header, matched in 1 of 1 samples/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'a.pdf · header' })).toHaveTextContent('p.1 · 120');
     expect(screen.getByRole('button', { name: 'a.pdf · totals' })).toHaveTextContent('missing');
     expect(within(table).getByRole('row', { name: /b\.pdf/ })).toHaveTextContent('not prepared');
@@ -59,5 +61,27 @@ describe('SegmentationGrid', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'a.pdf · header' }));
     expect(onOpen).toHaveBeenCalledWith('s1', 'header');
+  });
+
+  it('describes each cell to assistive technology with its size and flag', () => {
+    render(
+      <SegmentationGrid result={result} sections={sections} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'a.pdf · totals' })).toHaveAccessibleDescription(
+      /missing \(required\)/,
+    );
+    expect(screen.getByRole('button', { name: 'a.pdf · header' })).toHaveAccessibleDescription(
+      /p\.1 · 120/,
+    );
+  });
+
+  it('marks a section the preview has no data for as not in preview yet', () => {
+    const withNotes = [...sections, { id: 'notes', required: true }];
+    render(
+      <SegmentationGrid result={result} sections={withNotes} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    const button = screen.getByRole('button', { name: 'a.pdf · notes' });
+    expect(button).toHaveAccessibleDescription('not in preview yet');
+    expect(button.closest('td')?.className ?? '').not.toMatch(/cell-/);
   });
 });

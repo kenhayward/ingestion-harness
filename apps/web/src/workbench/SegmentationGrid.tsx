@@ -36,11 +36,15 @@ export function SegmentationGrid({
       <table aria-label="Section anchors">
         <thead>
           <tr>
-            <th>Sample</th>
+            <th scope="col">Sample</th>
             {sections.map((s) => {
               const { hits, of } = sectionHits(result, s.id);
               return (
-                <th key={s.id} aria-label={`${s.id} ${hits}/${of}`}>
+                <th
+                  key={s.id}
+                  scope="col"
+                  aria-label={`${s.id}, matched in ${hits} of ${of} samples`}
+                >
                   <code>{s.id}</code> <small>{`${hits}/${of}`}</small>
                 </th>
               );
@@ -57,26 +61,29 @@ export function SegmentationGrid({
                   {name} <small className="muted">{view?.role}</small>
                 </th>
                 {row.error !== null ? (
-                  <td colSpan={sections.length} className="muted">
+                  <td colSpan={Math.max(1, sections.length)} className="muted">
                     {row.error}
                   </td>
                 ) : (
                   sections.map((s) => {
                     const cell = row.sections.find((c) => c.id === s.id);
-                    const flag = cell
-                      ? cellFlag(cell, s.required, row, sections.length)
-                      : 'missing';
+                    const flag = cell ? cellFlag(cell, s.required, row, sections.length) : null;
+                    const descId = `seg-${row.sampleId}-${s.id}`;
                     return (
                       <td key={s.id} className={flag ? `cell-${flag}` : undefined}>
                         <button
                           type="button"
                           className="link"
                           aria-label={`${name} · ${s.id}`}
+                          aria-describedby={descId}
                           title={cell?.line ?? undefined}
                           onClick={() => onOpen(row.sampleId, s.id)}
                         >
-                          {cell?.found ? `p.${cell.page} · ${cell.chars}` : ''}
-                          {flag && <span className="flag"> {FLAG_TEXT[flag]}</span>}
+                          <span id={descId}>
+                            {cell === undefined && 'not in preview yet'}
+                            {cell?.found ? `p.${cell.page} · ${cell.chars}` : ''}
+                            {flag && <span className="flag"> {FLAG_TEXT[flag]}</span>}
+                          </span>
                         </button>
                       </td>
                     );
