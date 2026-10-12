@@ -25,7 +25,7 @@ const summary = (o: Partial<ResultSummary> = {}): ResultSummary => ({
 const preview = () => screen.getByRole('complementary', { name: 'Result preview' });
 
 describe('ResultPreview', () => {
-  it('shows the fields, the first rows of the first table and the links', async () => {
+  it('shows the fields and the first rows of the first table', async () => {
     const api = fakeApi({ getResult: vi.fn(async () => resultDetail()) });
     render(<ResultPreview api={api} summary={summary()} />);
     expect(within(preview()).getByRole('heading', { name: 'protocol.pdf' })).toBeInTheDocument();
@@ -38,14 +38,8 @@ describe('ResultPreview', () => {
     expect(within(fields).getByText('B1, B2')).toBeInTheDocument();
     const table = within(preview()).getByRole('table', { name: 'Test results' });
     expect(within(table).getAllByRole('row')).toHaveLength(3); // header + 2
-    expect(within(preview()).getByRole('link', { name: 'Open full result' })).toHaveAttribute(
-      'href',
-      '#/results/j1',
-    );
-    expect(within(preview()).getByRole('link', { name: 'View source PDF' })).toHaveAttribute(
-      'href',
-      '/api/jobs/j1/document',
-    );
+    // The row carries Open full result and View PDF; the panel has no links of its own.
+    expect(within(preview()).queryAllByRole('link')).toEqual([]);
   });
 
   it('shows at most 3 table rows', async () => {
@@ -66,23 +60,21 @@ describe('ResultPreview', () => {
     expect(within(preview()).getByText(/auto-approved/)).toBeInTheDocument();
   });
 
-  it('has no field preview for legacy spec results, but keeps the links', async () => {
+  it('has no field preview for legacy spec results', async () => {
     const api = fakeApi({
       getResult: vi.fn(async () => resultDetail({ document: null, definition: { kind: 'spec' } })),
     });
     render(<ResultPreview api={api} summary={summary()} />);
     expect(await screen.findByText('No preview for this document type.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open full result' })).toBeInTheDocument();
   });
 
   it('says when a template result has no published document', async () => {
     const api = fakeApi({ getResult: vi.fn(async () => resultDetail({ document: null })) });
     render(<ResultPreview api={api} summary={summary()} />);
     expect(await screen.findByText('No published document to preview.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open full result' })).toBeInTheDocument();
   });
 
-  it('reports a load failure and keeps the links', async () => {
+  it('reports a load failure', async () => {
     const api = fakeApi({
       getResult: vi.fn(async () => {
         throw new Error('502 Bad Gateway');
@@ -90,7 +82,6 @@ describe('ResultPreview', () => {
     });
     render(<ResultPreview api={api} summary={summary()} />);
     expect(await screen.findByText(/Couldn't load the preview: 502/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View source PDF' })).toBeInTheDocument();
   });
 
   it('reports a document missing from the target', async () => {
