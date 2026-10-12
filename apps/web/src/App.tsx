@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { JobSummary } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
-import { JobCleanup } from './components/JobCleanup.js';
-import { JobsTable } from './components/JobsTable.js';
-import { UploadForm } from './components/UploadForm.js';
+import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
-import { matchesQuery, sectionOf } from './shell/derive.js';
+import { sectionOf } from './shell/derive.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
@@ -107,7 +104,16 @@ function SignedInApp({
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
-    page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
+    // Keyed: Next document must start fresh (no reason, note or page carried over).
+    page = (
+      <ReviewPage
+        key={route.jobId}
+        api={api}
+        jobId={route.jobId}
+        jobs={jobs}
+        onDone={() => navigate('#/')}
+      />
+    );
   } else if (route.name === 'results') {
     page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {
@@ -128,12 +134,13 @@ function SignedInApp({
     );
   } else {
     page = (
-      <JobsView
+      <JobsPage
         api={api}
         jobs={jobs}
         error={error}
         refresh={refresh}
         query={query}
+        pollMs={pollMs}
         pickPending={pickPending}
         onPicked={() => setPickPending(false)}
       />
@@ -154,48 +161,5 @@ function SignedInApp({
     >
       {page}
     </AppShell>
-  );
-}
-
-function JobsView({
-  api,
-  jobs,
-  error,
-  refresh,
-  query,
-  pickPending,
-  onPicked,
-}: {
-  api: Api;
-  jobs: JobSummary[];
-  error: string | null;
-  refresh: () => Promise<void>;
-  query: string;
-  pickPending: boolean;
-  onPicked: () => void;
-}) {
-  /** The upload form's Model selection; Retry uses it too. */
-  const [retryModel, setRetryModel] = useState('');
-  const shown = jobs.filter((j) =>
-    matchesQuery(query, j.filename, j.specId, j.modelOverride, j.status, ...j.modelsUsed),
-  );
-
-  return (
-    <>
-      <UploadForm
-        api={api}
-        onUploaded={refresh}
-        onModelChange={setRetryModel}
-        pickPending={pickPending}
-        onPicked={onPicked}
-      />
-      {error && <p role="alert">Failed to load jobs: {error}</p>}
-      {jobs.length > 0 && shown.length === 0 ? (
-        <p>No jobs match “{query.trim()}”.</p>
-      ) : (
-        <JobsTable api={api} jobs={shown} onChanged={refresh} retryModel={retryModel} />
-      )}
-      <JobCleanup api={api} onChanged={refresh} />
-    </>
   );
 }

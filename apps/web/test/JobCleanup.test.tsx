@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { CleanupRequest } from '../src/api/client.js';
-import { JobCleanup } from '../src/components/JobCleanup.js';
+import { JobCleanup } from '../src/jobs/JobCleanup.js';
 import { fakeApi } from './fake-api.js';
 
 const CUTOFF = '2026-09-11T00:00:00.000Z';

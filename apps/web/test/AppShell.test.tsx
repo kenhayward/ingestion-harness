@@ -55,7 +55,7 @@ describe('app shell', () => {
       />,
     );
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    await screen.findByText('invoice.pdf');
+    await screen.findByRole('button', { name: 'Show details for invoice.pdf' });
     expect(within(nav).queryByText(/need attention/)).not.toBeInTheDocument();
   });
 
@@ -126,11 +126,13 @@ describe('search', () => {
       ]),
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByText('coa-lot-7781.pdf');
+    const shown = (name: string) =>
+      screen.queryByRole('button', { name: `Show details for ${name}` });
+    await screen.findByRole('button', { name: 'Show details for coa-lot-7781.pdf' });
     const search = screen.getByRole('searchbox', { name: SEARCH });
     await userEvent.type(search, 'acme');
-    expect(screen.getByText('inv-0042-acme.pdf')).toBeInTheDocument();
-    expect(screen.queryByText('coa-lot-7781.pdf')).not.toBeInTheDocument();
+    expect(shown('inv-0042-acme.pdf')).toBeInTheDocument();
+    expect(shown('coa-lot-7781.pdf')).not.toBeInTheDocument();
     await userEvent.clear(search);
     await userEvent.type(search, 'globex');
     expect(screen.getByText('No jobs match “globex”.')).toBeInTheDocument();
@@ -189,16 +191,16 @@ describe('Upload PDF', () => {
       click.mock.contexts.filter((c) => c instanceof HTMLInputElement && c.type === 'file').length;
     render(<App api={fakeApi()} pollMs={0} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Upload PDF' }));
-    const input = await screen.findByLabelText('PDF');
+    const input = await screen.findByLabelText('PDF files');
     await vi.waitFor(() => expect(click.mock.contexts).toContain(input));
     expect(window.location.hash).toBe('#/');
     expect(pickerOpens()).toBe(1);
     // leaving and returning to Jobs must not reopen the picker
     window.location.hash = '#/results';
     await screen.findByRole('heading', { name: 'Results' });
-    await vi.waitFor(() => expect(screen.queryByLabelText('PDF')).not.toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.queryByLabelText('PDF files')).not.toBeInTheDocument());
     window.location.hash = '#/';
-    await screen.findByLabelText('PDF');
+    await screen.findByLabelText('PDF files');
     expect(pickerOpens()).toBe(1);
     click.mockRestore();
   });

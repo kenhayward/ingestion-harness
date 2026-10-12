@@ -35,3 +35,9 @@ describe('http api: ended sessions', () => {
     off();
   });
 });
+
+describe('http api: URLs', () => {
+  it('links the uploaded PDF of a job', () => {
+    expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');
+  });
+});
