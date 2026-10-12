@@ -24,7 +24,9 @@ class CompletionRequest:
     prompt: str
     json_schema: dict[str, Any]
     schema_name: str
-    max_tokens: int = 16000
+    #: Output budget per call. Large documents need room: the Anthropic adapter streams so
+    #: budgets this size don't hit request timeouts.
+    max_tokens: int = 64000
     #: PNG page images sent alongside the prompt (vision-capable models only).
     images: tuple[bytes, ...] = ()
 

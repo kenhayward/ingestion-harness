@@ -32,7 +32,7 @@ export const ExtractionSchema = z
     /** 1-based PDF pages sent as images with the prompt (needs a vision-capable model). */
     pageImages: z.array(z.number().int().positive()).default([]),
     /** Output token budget per LLM call. */
-    maxTokens: z.number().int().min(256).max(128000).default(16000),
+    maxTokens: z.number().int().min(256).max(128000).default(64000),
     /** Run once per N pages of the (single) section and concatenate `mergePath` arrays. */
     chunkPages: z.number().int().positive().optional(),
     /** Top-level array property of the schema merged across chunks. */

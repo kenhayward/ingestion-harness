@@ -64,7 +64,7 @@ def test_chunking_and_max_tokens() -> None:
     spec = DocumentSpec.model_validate(chunked(maxTokens=32000))
     ex = spec.extractions[0]
     assert (ex.chunk_pages, ex.merge_path, ex.max_tokens) == (2, "rows", 32000)
-    assert DocumentSpec.model_validate(MINIMAL).extractions[0].max_tokens == 16000
+    assert DocumentSpec.model_validate(MINIMAL).extractions[0].max_tokens == 64000
 
 
 @pytest.mark.parametrize(

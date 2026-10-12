@@ -79,7 +79,7 @@ def run_extraction(
     schema: dict[str, Any],
     max_attempts: int,
     images: tuple[bytes, ...] = (),
-    max_tokens: int = 16000,
+    max_tokens: int = 64000,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out."""

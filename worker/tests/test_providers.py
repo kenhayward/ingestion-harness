@@ -25,6 +25,34 @@ class Recorder:
         return self.result
 
 
+class StreamRecorder:
+    """Anthropic messages stub: only streaming is allowed (large max_tokens can't be sent
+    non-streaming - the SDK raises before sending)."""
+
+    def __init__(self, result: Any) -> None:
+        self.result = result
+        self.kwargs: dict[str, Any] = {}
+
+    def create(self, **kwargs: Any) -> Any:
+        raise AssertionError("anthropic calls must stream")
+
+    def stream(self, **kwargs: Any) -> Any:
+        self.kwargs = kwargs
+        final = self.result
+
+        class _Stream:
+            def __enter__(self) -> Any:
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
+            def get_final_message(self) -> Any:
+                return final
+
+        return _Stream()
+
+
 def anthropic_message(stop_reason: str = "end_turn", text: str = '{"a": 1}') -> Any:
     return SimpleNamespace(
         id="msg_1",
@@ -37,7 +65,7 @@ def anthropic_message(stop_reason: str = "end_turn", text: str = '{"a": 1}') -> 
 
 
 def test_anthropic_uses_structured_outputs_and_server_fallbacks() -> None:
-    beta = Recorder(anthropic_message())
+    beta = StreamRecorder(anthropic_message())
     client: Any = SimpleNamespace(beta=SimpleNamespace(messages=beta))
     result = AnthropicProvider("anthropic", client, effort="high").complete_json(
         "claude-opus-5-5", REQ
@@ -55,7 +83,7 @@ def test_anthropic_uses_structured_outputs_and_server_fallbacks() -> None:
 
 
 def test_anthropic_without_fallbacks_uses_messages_api() -> None:
-    messages = Recorder(anthropic_message())
+    messages = StreamRecorder(anthropic_message())
     client: Any = SimpleNamespace(messages=messages)
     AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ)
     assert "betas" not in messages.kwargs
@@ -63,7 +91,7 @@ def test_anthropic_without_fallbacks_uses_messages_api() -> None:
 
 def test_anthropic_refusal_raises() -> None:
     client: Any = SimpleNamespace(
-        beta=SimpleNamespace(messages=Recorder(anthropic_message("refusal")))
+        beta=SimpleNamespace(messages=StreamRecorder(anthropic_message("refusal")))
     )
     with pytest.raises(RefusalError, match="cyber"):
         AnthropicProvider("a", client).complete_json("m", REQ)
@@ -191,7 +219,7 @@ def test_openai_responses_vision_uses_input_image() -> None:
 
 
 def test_anthropic_vision_sends_base64_image_block() -> None:
-    messages = Recorder(anthropic_message(text="page text"))
+    messages = StreamRecorder(anthropic_message(text="page text"))
     client: Any = SimpleNamespace(messages=messages)
     provider = AnthropicProvider("a", client, server_fallbacks=False)
     result = provider.complete_vision("claude-opus-5-5", VISION)
@@ -255,7 +283,7 @@ def test_openai_responses_json_with_images() -> None:
 
 
 def test_anthropic_json_with_images_puts_images_before_text() -> None:
-    messages = Recorder(anthropic_message())
+    messages = StreamRecorder(anthropic_message())
     client: Any = SimpleNamespace(messages=messages)
     AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ_IMG)
     content = messages.kwargs["messages"][0]["content"]
@@ -285,7 +313,7 @@ def test_truncation_is_reported_by_every_provider() -> None:
     client = SimpleNamespace(responses=Recorder(resp))
     assert OpenAIResponsesProvider("o", client).complete_json("m", REQ).truncated
 
-    client = SimpleNamespace(messages=Recorder(anthropic_message(stop_reason="max_tokens")))
+    client = SimpleNamespace(messages=StreamRecorder(anthropic_message(stop_reason="max_tokens")))
     assert AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ).truncated
 
 
@@ -312,3 +340,11 @@ def test_openai_providers_send_a_configured_temperature() -> None:
     client = SimpleNamespace(responses=responses)
     OpenAIResponsesProvider("o", client, temperature=0.0).complete_json("m", REQ)
     assert responses.kwargs["temperature"] == 0.0
+
+
+def test_anthropic_streams_with_a_large_output_budget() -> None:
+    messages = StreamRecorder(anthropic_message())
+    client: Any = SimpleNamespace(messages=messages)
+    result = AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ)
+    assert messages.kwargs["max_tokens"] == 64000 == REQ.max_tokens
+    assert result.text == '{"a": 1}' and result.output_tokens == 20

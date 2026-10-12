@@ -72,7 +72,7 @@ specs/<spec-id>/v<N>/prompts/*.md.j2
   responses are retried with the validation errors fed back, up to `maxAttempts`.
 - `extractions[].pageImages` — 1-based PDF pages rendered and sent as images with the prompt
   (vision-capable model required). Use for content OCR drops, e.g. page headers.
-- `extractions[].maxTokens` — output token budget per call (default 16000). A truncated response
+- `extractions[].maxTokens` — output token budget per call (default 64000). A truncated response
   sends the job to review instead of retrying.
 - `extractions[].chunkPages` + `mergePath` — run the extraction once per N pages of its single
   section and concatenate the `mergePath` array (top-level array property of the schema). Use
