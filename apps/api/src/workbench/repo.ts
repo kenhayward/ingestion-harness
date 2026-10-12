@@ -6,7 +6,9 @@ import type {
   BriefBody,
   DataPolicy,
   DraftStage,
+  ProposalDecision,
   SampleRole,
+  StageSkip,
   WorkbenchProject,
 } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
@@ -40,9 +42,25 @@ export interface ProposalRecord {
   projectId: string;
   stage: DraftStage;
   briefVersion: number | null;
-  decision: 'accepted' | 'rejected' | null;
+  decision: ProposalDecision | null;
+  /** Indexes of the changes taken from a partially accepted proposal. */
+  acceptedChanges: number[] | null;
+  /** The draft version and definition the proposal was made against (null for survey). */
+  baseVersion: number | null;
+  baseDefinition: Record<string, unknown> | null;
   decidedAt: string | null;
   createdAt: string;
+}
+
+export type StageSkipRecord = StageSkip & { projectId: string };
+
+export interface NewProposal {
+  id: string;
+  projectId: string;
+  stage: DraftStage;
+  briefVersion: number | null;
+  baseVersion?: number | null;
+  baseDefinition?: Record<string, unknown> | null;
 }
 
 export class WorkbenchConflictError extends Error {}
@@ -72,20 +90,19 @@ export interface WorkbenchRepo {
     policy: DataPolicy,
     by: string | null,
   ): Promise<WorkbenchProject | null>;
-  createProposal(p: {
-    id: string;
-    projectId: string;
-    stage: DraftStage;
-    briefVersion: number | null;
-  }): Promise<ProposalRecord>;
+  createProposal(p: NewProposal): Promise<ProposalRecord>;
   /** Newest first. */
   listProposals(projectId: string): Promise<ProposalRecord[]>;
   /** Null when the proposal is unknown, belongs to another project, or is already decided. */
   decideProposal(
     projectId: string,
     id: string,
-    decision: 'accepted' | 'rejected',
+    decision: ProposalDecision,
+    acceptedChanges?: number[] | null,
   ): Promise<ProposalRecord | null>;
+  addSkip(projectId: string, stage: DraftStage): Promise<StageSkipRecord>;
+  /** Newest first. */
+  listSkips(projectId: string): Promise<StageSkipRecord[]>;
 }
 
 /** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
@@ -94,6 +111,8 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly samples = new Map<string, NewSample & { id: string; createdAt: string }>();
   readonly briefs: Brief[] = [];
   readonly proposals: ProposalRecord[] = [];
+  readonly skips: StageSkipRecord[] = [];
+  private lastTime = 0;
 
   constructor(private readonly jobs: MemoryRepo) {}
 
@@ -103,6 +122,12 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
 
   async getProject(id: string) {
     return this.projects.get(id) ?? null;
+  }
+
+  /** Strictly increasing ISO times: stage states compare them, so ties would hide staleness. */
+  private now(): string {
+    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
+    return new Date(this.lastTime).toISOString();
   }
 
   async createProject(id: string, name: string) {
@@ -202,17 +227,18 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return updated;
   }
 
-  async createProposal(p: {
-    id: string;
-    projectId: string;
-    stage: DraftStage;
-    briefVersion: number | null;
-  }) {
+  async createProposal(p: NewProposal) {
     const record: ProposalRecord = {
-      ...p,
+      id: p.id,
+      projectId: p.projectId,
+      stage: p.stage,
+      briefVersion: p.briefVersion,
       decision: null,
+      acceptedChanges: null,
+      baseVersion: p.baseVersion ?? null,
+      baseDefinition: p.baseDefinition ?? null,
       decidedAt: null,
-      createdAt: new Date().toISOString(),
+      createdAt: this.now(),
     };
     this.proposals.push(record);
     return record;
@@ -223,17 +249,33 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return this.proposals.filter((p) => p.projectId === projectId).reverse();
   }
 
-  async decideProposal(projectId: string, id: string, decision: 'accepted' | 'rejected') {
+  async decideProposal(
+    projectId: string,
+    id: string,
+    decision: ProposalDecision,
+    acceptedChanges?: number[] | null,
+  ) {
     const index = this.proposals.findIndex((p) => p.id === id);
     const current = this.proposals[index];
     if (current?.projectId !== projectId || current.decision !== null) return null;
     const decided: ProposalRecord = {
       ...current,
       decision,
-      decidedAt: new Date().toISOString(),
+      acceptedChanges: acceptedChanges ?? null,
+      decidedAt: this.now(),
     };
     this.proposals[index] = decided;
     return decided;
+  }
+
+  async addSkip(projectId: string, stage: DraftStage) {
+    const skip: StageSkipRecord = { projectId, stage, skippedAt: this.now() };
+    this.skips.push(skip);
+    return skip;
+  }
+
+  async listSkips(projectId: string) {
+    return this.skips.filter((s) => s.projectId === projectId).reverse();
   }
 
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
@@ -289,10 +331,25 @@ interface ProposalRow {
   project_id: string;
   stage: DraftStage;
   brief_version: number | null;
-  decision: 'accepted' | 'rejected' | null;
+  decision: ProposalDecision | null;
+  accepted_changes: number[] | null;
+  base_version: number | null;
+  base_definition: Record<string, unknown> | null;
   decided_at: Date | null;
   created_at: Date;
 }
+
+interface SkipRow {
+  project_id: string;
+  stage: DraftStage;
+  skipped_at: Date;
+}
+
+const toSkip = (r: SkipRow): StageSkipRecord => ({
+  projectId: r.project_id,
+  stage: r.stage,
+  skippedAt: r.skipped_at.toISOString(),
+});
 
 const toProposal = (r: ProposalRow): ProposalRecord => ({
   id: r.id,
@@ -300,6 +357,9 @@ const toProposal = (r: ProposalRow): ProposalRecord => ({
   stage: r.stage,
   briefVersion: r.brief_version,
   decision: r.decision,
+  acceptedChanges: r.accepted_changes,
+  baseVersion: r.base_version,
+  baseDefinition: r.base_definition,
   decidedAt: r.decided_at?.toISOString() ?? null,
   createdAt: r.created_at.toISOString(),
 });
@@ -457,16 +517,18 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     }
   }
 
-  async createProposal(p: {
-    id: string;
-    projectId: string;
-    stage: DraftStage;
-    briefVersion: number | null;
-  }) {
+  async createProposal(p: NewProposal) {
     const { rows } = await this.pool.query<ProposalRow>(
-      `INSERT INTO workbench_proposals (id, project_id, stage, brief_version)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [p.id, p.projectId, p.stage, p.briefVersion],
+      `INSERT INTO workbench_proposals (id, project_id, stage, brief_version, base_version, base_definition)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [
+        p.id,
+        p.projectId,
+        p.stage,
+        p.briefVersion,
+        p.baseVersion ?? null,
+        p.baseDefinition ? JSON.stringify(p.baseDefinition) : null,
+      ],
     );
     return toProposal(rows[0]!);
   }
@@ -479,13 +541,36 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     return rows.map(toProposal);
   }
 
-  async decideProposal(projectId: string, id: string, decision: 'accepted' | 'rejected') {
+  async decideProposal(
+    projectId: string,
+    id: string,
+    decision: ProposalDecision,
+    acceptedChanges?: number[] | null,
+  ) {
     const { rows } = await this.pool.query<ProposalRow>(
-      `UPDATE workbench_proposals SET decision = $3, decided_at = now()
+      `UPDATE workbench_proposals SET decision = $3, accepted_changes = $4, decided_at = now()
         WHERE project_id = $1 AND id = $2 AND decision IS NULL RETURNING *`,
-      [projectId, id, decision],
+      [projectId, id, decision, acceptedChanges ?? null],
     );
     return rows[0] ? toProposal(rows[0]) : null;
+  }
+
+  async addSkip(projectId: string, stage: DraftStage) {
+    const { rows } = await this.pool.query<SkipRow>(
+      `INSERT INTO workbench_stage_skips (project_id, stage) VALUES ($1, $2)
+       RETURNING project_id, stage, skipped_at`,
+      [projectId, stage],
+    );
+    return toSkip(rows[0]!);
+  }
+
+  async listSkips(projectId: string) {
+    const { rows } = await this.pool.query<SkipRow>(
+      `SELECT project_id, stage, skipped_at FROM workbench_stage_skips
+        WHERE project_id = $1 ORDER BY skipped_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toSkip);
   }
 
   private async sample(id: string) {
