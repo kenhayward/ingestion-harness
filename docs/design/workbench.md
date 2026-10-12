@@ -335,8 +335,10 @@ Each phase is usable on its own.
 1. **Foundations:** projects, samples, `prepare`, prepared-text viewer, brief, embedded editor,
    dev test runs; `jobs.priority`; "Open in workbench".
 2. **Segmentation:** `segment` task, grid, anchor editing.
-3. **Drafting:** context assembly, `draft` alias, provider `location`, data policy, the five stages
-   with proposals.
+3. **Drafting**, split in two:
+   - **3a (done):** provider `location`, per-project data policy, `draft` alias, document-less
+     `draft` jobs, context assembly (dev samples only), the `survey` stage, proposals.
+   - **3b (next):** the outputs, sections, steps and references stages.
 4. **Evaluation loop:** reference proposals and verification, step cache, scorecard, feedback,
    `revise`, iterations.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.

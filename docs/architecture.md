@@ -80,6 +80,16 @@ document is never deleted along with a job.
 
 Anchor previews are `segment` jobs (`priority = -5`, migration 0009): project-scoped with no document, one per project, running the production `segment.section_spans` over the project's prepared samples in a child process capped at 10 s and writing a segmentation result to the runs bucket. They never appear on the Jobs page and are not retryable or cancellable there. Idle workers wake on `NOTIFY ih_jobs` rather than waiting for the poll; the UI polls the preview every 300 ms (30 s deadline).
 
+Drafting (phase 3a) uses document-less `draft` jobs (migration 0010) that send the project's brief and
+**dev** samples to the `draft` model alias (`DRAFT_MODEL`) and write the model's proposal to
+`drafting/{project}/{job}.json` in the runs bucket; `workbench_proposals` holds its status, derived from the
+job. The first stage is `survey`: questions about the document type, whose answers go back into the brief.
+Each provider declares `location: local | external` (undeclared = external) and each project carries a data
+policy (`params.dataPolicy`, missing = local). The worker refuses an external provider for a local-only
+project before any call, in extraction, OCR and template step re-runs as well as drafting; only an admin can
+allow external models. Every external drafting call is recorded as an `external model call` job event listing
+the samples actually sent (at most 8).
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an access token. The

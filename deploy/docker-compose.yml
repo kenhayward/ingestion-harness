@@ -125,6 +125,7 @@ services:
       OCR_MODEL: ${OCR_MODEL:-local/olmocr-2-7b-1025}
       OCR_BASE_URL: ${OCR_BASE_URL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
+      DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
     extra_hosts:
