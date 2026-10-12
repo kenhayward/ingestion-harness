@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
 import { AccessPage } from './access/AccessPage.js';
-import { SignIn } from './access/SignIn.js';
+import { AuthLayout, SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
 import { UploadForm } from './components/UploadForm.js';
@@ -38,15 +38,25 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
 
   if (unreachable !== null) {
     return (
-      <main className="sign-in">
-        <p role="alert">Can't reach the server ({unreachable}).</p>
-        <button type="button" onClick={check}>
-          Retry
-        </button>
-      </main>
+      <AuthLayout>
+        <div className="card auth-card">
+          <p role="alert" className="field-error">
+            Can't reach the server ({unreachable}).
+          </p>
+          <button type="button" className="primary block" onClick={check}>
+            Retry
+          </button>
+        </div>
+      </AuthLayout>
     );
   }
-  if (me === undefined) return <p>Loading…</p>;
+  if (me === undefined) {
+    return (
+      <AuthLayout>
+        <p className="auth-hint">Loading…</p>
+      </AuthLayout>
+    );
+  }
   if (me === null) {
     return (
       <SignIn
