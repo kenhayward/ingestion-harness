@@ -8,8 +8,10 @@ from typing import Any
 
 import pytest
 
+from ingest_worker.draft_stages import REVISE_SCHEMA
 from ingest_worker.drafting import (
     DRAFT_MAX_TOKENS,
+    MAX_CONTEXT_SAMPLES,
     MAX_SAMPLE_CHARS,
     SURVEY,
     DraftSample,
@@ -447,44 +449,44 @@ def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is False
 
 
-def test_revise_job_sees_feedback_and_dev_failures(fixture_specs_dir: Path) -> None:
-    provider, store, deps = make(fixture_specs_dir)
-    draft = {
-        **DRAFT,
-        "outputs": {"fields": [{"id": "sender"}], "tables": []},
-        "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
-    }
-    step = {
+REVISE_DRAFT = {
+    **DRAFT,
+    "outputs": {"fields": [{"id": "sender"}], "tables": []},
+    "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+}
+
+
+def revise_response() -> dict[str, Any]:
+    """A putStep change in the revise schema's shape: unused payloads hold empty values."""
+    props = REVISE_SCHEMA["properties"]["changes"]["items"]["properties"]
+    kinds: dict[str, Any] = {"string": "", "array": [], "integer": 0, "boolean": True}
+    change: dict[str, Any] = {"op": "putStep", "reason": "feedback"}
+    for key in ("field", "table", "section", "step"):
+        change[key] = {k: kinds[v["type"]] for k, v in props[key]["properties"].items()}
+    change["step"] |= {
         "id": "head",
         "type": "extract",
         "fields": ["sender"],
-        "table": None,
         "sections": ["all"],
         "instructions": "Use the letterhead",
-        "pageImages": None,
-        "chunkPages": None,
-        "context": None,
-        "description": None,
-        "values": None,
-        "reference": None,
-        "aliases": None,
-        "preamble": None,
     }
-    provider.responses = [
-        {
-            "notes": "",
-            "changes": [
-                {
-                    "op": "putStep",
-                    "field": None,
-                    "table": None,
-                    "section": None,
-                    "reason": "feedback",
-                    "step": step,
-                }
-            ],
-        }
-    ]
+    return {"notes": "", "changes": [change]}
+
+
+def revise_prompt(fixture_specs_dir: Path, **params: Any) -> str:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [revise_response()]
+    queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT, **params)])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    [(_, request)] = provider.calls
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert body["changes"][0]["step"]["instructions"] == "Use the letterhead"
+    assert "anchorCheck" not in body
+    return str(request.prompt)
+
+
+def test_revise_job_sees_feedback_and_dev_failures(fixture_specs_dir: Path) -> None:
     feedback = [
         {
             "target": "field",
@@ -501,22 +503,33 @@ def test_revise_job_sees_feedback_and_dev_failures(fixture_specs_dir: Path) -> N
             "tables": [],
         }
     ]
-    queue = FakeQueue(
-        jobs=[
-            draft_job(
-                stage="revise",
-                draft=draft,
-                feedback=feedback,
-                failures=failures,
-                feedbackIds=["f1"],
-            )
-        ]
+    prompt = revise_prompt(
+        fixture_specs_dir, feedback=feedback, failures=failures, feedbackIds=["f1"]
     )
-    run_once(queue, deps, "w1")
-    assert queue.completed
-    [(_, request)] = provider.calls
-    assert "<feedback>" in request.prompt and "Take the letterhead name" in request.prompt
-    assert "<evaluation_failures>" in request.prompt and '"actual": "Bob"' in request.prompt
-    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
-    assert body["changes"][0]["step"]["instructions"] == "Use the letterhead"
-    assert "anchorCheck" not in body
+    assert "<feedback>" in prompt and "Take the letterhead name" in prompt
+    assert "<evaluation_failures>" in prompt and '"actual": "Bob"' in prompt
+
+
+def test_revise_drops_feedback_and_failures_for_samples_that_are_not_dev(
+    fixture_specs_dir: Path,
+) -> None:
+    feedback = [
+        {"target": "field", "targetId": "x", "sample": "a.pdf", "body": "keep sample note"},
+        {"target": "field", "targetId": "x", "sample": "holdout.pdf", "body": "leaky note"},
+        {"target": "template", "targetId": "t", "body": "keep general note"},
+    ]
+    failures = [
+        {"sample": "a.pdf", "score": 0.1, "fields": [], "tables": []},
+        {"sample": "holdout.pdf", "score": 0.2, "fields": [], "tables": []},
+    ]
+    prompt = revise_prompt(fixture_specs_dir, feedback=feedback, failures=failures)
+    assert "keep sample note" in prompt and "keep general note" in prompt
+    assert "leaky note" not in prompt and "holdout.pdf" not in prompt
+
+
+def test_revise_caps_failures_at_the_context_sample_limit(fixture_specs_dir: Path) -> None:
+    failures = [
+        {"sample": "a.pdf", "score": i / 100, "fields": [], "tables": []} for i in range(12)
+    ]
+    prompt = revise_prompt(fixture_specs_dir, failures=failures)
+    assert prompt.count('"sample": "a.pdf"') == MAX_CONTEXT_SAMPLES

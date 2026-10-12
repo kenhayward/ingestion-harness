@@ -251,14 +251,18 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
     samples = [DraftSample(s.sample_id, s.filename, s.role, _pages(deps, s.sha256)) for s in sent]
+    # Defence in depth for the holdout rule: the API already filters, the worker re-checks.
+    names = {s.filename for s in params.samples if s.role == "dev"}
+    dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
+    dev_failures = [f for f in params.failures if f.get("sample") in names][:MAX_CONTEXT_SAMPLES]
     context = build_context(
         brief=params.brief,
         draft=params.draft,
         samples=samples,
         example_yaml=deps.example_template,
         survey=params.survey,
-        feedback=params.feedback,
-        failures=params.failures,
+        feedback=dev_feedback,
+        failures=dev_failures,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":

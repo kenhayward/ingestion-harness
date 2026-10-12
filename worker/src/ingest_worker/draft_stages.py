@@ -384,16 +384,33 @@ Return JSON only.""",
 )
 
 
+def _denull(node: Any) -> Any:
+    """A schema without union types: Anthropic strict mode allows at most 16 across a schema.
+    ["x","null"] becomes "x"; enums that allowed null allow "" instead."""
+    if not isinstance(node, dict):
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "type" and isinstance(value, list):
+            out[key] = next(t for t in value if t != "null")
+        elif key == "enum":
+            out[key] = [x for x in value if x is not None] + ([""] if None in value else [])
+        elif key == "properties":
+            out[key] = {k: _denull(v) for k, v in value.items()}
+        elif key == "items":
+            out[key] = _denull(value)
+        else:
+            out[key] = value
+    return out
+
+
 def _item_schema(stage_schema: dict[str, Any]) -> dict[str, Any]:
-    """A stage's flat change item without op/reason, nullable: the revise payload."""
+    """A stage's flat change item without op/reason, de-nulled: the revise payload."""
     item = stage_schema["properties"]["changes"]["items"]
-    props = {k: v for k, v in item["properties"].items() if k not in ("op", "reason")}
-    return {
-        "type": ["object", "null"],
-        "additionalProperties": False,
-        "required": list(props),
-        "properties": props,
-    }
+    result: dict[str, Any] = _denull(
+        _object({k: v for k, v in item["properties"].items() if k not in ("op", "reason")})
+    )
+    return result
 
 
 _OUTPUT_ITEM = _item_schema(OUTPUTS_SCHEMA)
@@ -407,6 +424,8 @@ _REVISE_GROUPS: dict[str, tuple[Stage, str]] = {
     **{op: (SECTIONS, "section") for op in ("putSection", "removeSection", "setCopies")},
     **{op: (STEPS, "step") for op in ("putStep", "removeStep", "setPreamble")},
 }
+#: Ops whose payload carries no id.
+_NO_ID_OPS = {"setCopies", "setPreamble"}
 
 REVISE_SCHEMA = _body(
     _object(
@@ -422,13 +441,29 @@ REVISE_SCHEMA = _body(
 )
 
 
+def _compact(value: Any) -> Any:
+    """Drop the empty placeholders ("", [], 0, null) the revise schema uses for 'not set'."""
+    if isinstance(value, dict):
+        items = ((k, _compact(v)) for k, v in value.items())
+        return {k: v for k, v in items if v is not None}
+    if isinstance(value, list):
+        return [_compact(v) for v in value] or None
+    if (
+        value == ""
+        or value is None
+        or (isinstance(value, int) and not isinstance(value, bool) and value == 0)
+    ):
+        return None
+    return value
+
+
 def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
     for i, c in enumerate(data["changes"]):
         stage, key = _REVISE_GROUPS[c["op"]]
-        payload = c.get(key)
-        if not isinstance(payload, dict):
+        payload = _compact(c.get(key)) if isinstance(c.get(key), dict) else None
+        if not payload or (c["op"] not in _NO_ID_OPS and "id" not in payload):
             errors.append(f"changes[{i}]: {c['op']} needs its {key} object")
             continue
         assert stage.convert is not None
@@ -461,7 +496,8 @@ failures (expected vs actual values on the dev samples).
     copiesSelect;
   - step (putStep, removeStep, setPreamble): id, type, fields, table, sections, instructions,
     pageImages, chunkPages, context, description, values, reference, aliases, preamble.
-  Set the other payload objects to null, and null for keys that do not apply.
+  Fill the payload objects you do not use, and keys that do not apply, with empty values:
+  "" for text, [] for lists, 0 for numbers (required: true unless a section may be absent).
 - The template must stay valid: every field and table filled by exactly one step; steps only
   use existing sections; context only from earlier steps.
 - Prefer clearer instructions, better anchors or more precise field descriptions over adding

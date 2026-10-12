@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ingest_worker.draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage
+import pytest
+
+from ingest_worker.draft_stages import OUTPUTS, REVISE, REVISE_SCHEMA, SECTIONS, STEPS, Stage
+from ingest_worker.drafting import SURVEY_SCHEMA
 
 DRAFT: dict[str, Any] = {
     "id": "letter",
@@ -246,17 +249,20 @@ def test_sections_remove_is_checked_against_the_draft_at_that_point() -> None:
     assert errors == []
 
 
+def _empty(schema: dict[str, Any]) -> dict[str, Any]:
+    kinds: dict[str, Any] = {"string": "", "array": [], "integer": 0, "boolean": True}
+    return {k: kinds[v["type"]] for k, v in schema["properties"].items()}
+
+
 def nested(op: str, key: str, item: dict[str, Any]) -> dict[str, Any]:
-    payload = {k: v for k, v in item.items() if k not in ("op", "reason")}
-    change: dict[str, Any] = {
-        "op": op,
-        "field": None,
-        "table": None,
-        "section": None,
-        "step": None,
-        "reason": "r",
-    }
-    change[key] = payload
+    """A revise change: the chosen payload from a flat item, the rest filled with empties."""
+    schema = REVISE_SCHEMA["properties"]["changes"]["items"]["properties"]
+    change: dict[str, Any] = {"op": op, "reason": "r"}
+    for k in ("field", "table", "section", "step"):
+        change[k] = _empty(schema[k])
+    for k, v in item.items():
+        if k not in ("op", "reason") and v is not None:
+            change[key][k] = v
     return change
 
 
@@ -283,13 +289,52 @@ def test_revise_reports_template_breakage_and_missing_payloads() -> None:
     orphan = nested("putField", "field", output_item(id="orphan"))
     _, errors = run(REVISE, {"notes": "", "changes": [orphan]}, REVISE_DRAFT)
     assert any("not filled by any step" in e for e in errors)
-    missing = {
-        "op": "putField",
-        "field": None,
-        "table": None,
-        "section": None,
-        "step": None,
-        "reason": "r",
-    }
+    missing = nested("putField", "field", {})
     _, errors = run(REVISE, {"notes": "", "changes": [missing]}, REVISE_DRAFT)
     assert any("changes[0]" in e and "field" in e for e in errors)
+
+
+def test_revise_errors_carry_the_index_of_the_change_that_caused_them() -> None:
+    good = nested("putField", "field", output_item(id="ref"))
+    bad = nested("putField", "field", output_item(id="Bad Id!"))
+    _, errors = run(REVISE, {"notes": "", "changes": [good, bad]}, REVISE_DRAFT)
+    assert any(e.startswith("changes[1]") for e in errors)
+    assert not any(e.startswith("changes[0]") for e in errors)
+
+
+def test_revise_drops_empty_placeholders_before_converting() -> None:
+    step = nested("putStep", "step", step_item(id="head", fields=["sender"]))
+    body, errors = run(REVISE, {"notes": "", "changes": [step]}, REVISE_DRAFT)
+    assert errors == []
+    assert body["changes"][0]["step"] == {
+        "type": "extract",
+        "id": "head",
+        "fields": ["sender"],
+        "sections": ["all"],
+        "instructions": "Top of page 1",
+    }
+
+
+def _union_count(node: Any) -> int:
+    if isinstance(node, dict):
+        own = int(isinstance(node.get("type"), list)) + sum(k in node for k in ("anyOf", "oneOf"))
+        return own + sum(_union_count(v) for v in node.values())
+    if isinstance(node, list):
+        return sum(_union_count(v) for v in node)
+    return 0
+
+
+@pytest.mark.parametrize(
+    ("stage_schema", "limit"),
+    [
+        (SURVEY_SCHEMA, 16),
+        (OUTPUTS.schema, 16),
+        (SECTIONS.schema, 16),
+        (STEPS.schema, 16),
+        (REVISE.schema, 0),
+    ],
+)
+def test_schemas_stay_under_the_anthropic_union_type_limit(
+    stage_schema: dict[str, Any], limit: int
+) -> None:
+    assert _union_count(stage_schema) <= limit
