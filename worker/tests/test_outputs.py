@@ -34,14 +34,14 @@ def test_render_csv_flattens_rows_and_prepends_document_id() -> None:
         "doc-1",
     )
     assert count == 1
-    assert body.decode() == 'document_id,desc,qty,sku\ndoc-1,"Widget, ""large""",2,\n'
+    assert body.decode("utf-8-sig") == 'document_id,desc,qty,sku\ndoc-1,"Widget, ""large""",2,\n'
 
 
 def test_render_csv_single_object_is_one_row() -> None:
     output = CsvOutput.model_validate(
         {"id": "h", "format": "csv", "from": "x", "columns": [{"name": "n", "path": "n"}]}
     )
-    assert render_csv(output, {"n": True}, "d")[0].decode() == "document_id,n\nd,true\n"
+    assert render_csv(output, {"n": True}, "d")[0].decode("utf-8-sig") == "document_id,n\nd,true\n"
 
 
 def test_render_outputs_builds_keys_and_json_envelope() -> None:
@@ -75,3 +75,13 @@ def test_render_outputs_builds_keys_and_json_envelope() -> None:
     envelope = json.loads(rendered[1].body)
     assert envelope["data"] == {"e": {"a": 1}}
     assert envelope["spec_version"] == 3 and envelope["models"] == {"e": "fake/m"}
+
+
+def test_csv_outputs_start_with_a_utf8_bom_so_excel_reads_utf8() -> None:
+    output = CsvOutput.model_validate(
+        {"id": "o", "format": "csv", "from": "x", "columns": [{"name": "t", "path": "t"}]}
+    )
+    body, _ = render_csv(output, {"t": "Temperature (°C)"}, "d")
+    assert body.startswith(b"\xef\xbb\xbf")
+    assert "Temperature (°C)".encode() in body  # UTF-8 bytes, not cp1252
+    assert body.decode("utf-8-sig").splitlines()[1] == "d,Temperature (°C)"

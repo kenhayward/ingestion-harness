@@ -100,7 +100,9 @@ def test_happy_path_writes_csv_and_json_outputs(setup) -> None:  # type: ignore[
         "invoice_lines": 2,
         "invoice_full": None,
     }
-    lines_csv = store.get("outputs", "example-invoice/v1/invoice_lines/doc-1.csv").decode()
+    lines_csv = store.get("outputs", "example-invoice/v1/invoice_lines/doc-1.csv").decode(
+        "utf-8-sig"
+    )
     assert lines_csv.splitlines()[0] == "document_id,sku,description,quantity,unit_price,amount"
     assert lines_csv.splitlines()[1] == "doc-1,,Widget,2,5.0,10.0"
 
@@ -339,7 +341,9 @@ def test_chunked_extraction_runs_per_page_and_merges_arrays(setup, fixture_specs
     assert "Widget" in chunk_calls[0][1].prompt and "Gadget" not in chunk_calls[0][1].prompt
     assert "Gadget" in chunk_calls[1][1].prompt and "Widget" not in chunk_calls[1][1].prompt
     assert all(req.max_tokens == 4000 for _, req in chunk_calls)
-    lines_csv = store.get("outputs", "example-invoice/v1/invoice_lines/doc-1.csv").decode()
+    lines_csv = store.get("outputs", "example-invoice/v1/invoice_lines/doc-1.csv").decode(
+        "utf-8-sig"
+    )
     assert [row.split(",")[2] for row in lines_csv.splitlines()[1:]] == ["Widget", "Gadget"]
     assert ("runs", "job-1/line_items.chunk-2/attempt-1.json") in store.objects
 
@@ -384,7 +388,7 @@ def test_checks_run_after_extraction_and_feed_outputs(setup, fixture_specs_dir: 
     run_once(queue, deps, "w1")
 
     assert queue.completed, queue.reviewed or queue.failed
-    csv = store.get("outputs", "example-invoice/v1/description_check/doc-1.csv").decode()
+    csv = store.get("outputs", "example-invoice/v1/description_check/doc-1.csv").decode("utf-8-sig")
     assert "doc-1,Widget,unmatched" in csv and "doc-1,Acme Supplies Ltd,unused" in csv
     assert ("job-1", "warn", "check descriptions: 2 unmatched") in queue.events
     full = json.loads(store.get("outputs", "example-invoice/v1/invoice_full/doc-1.json"))

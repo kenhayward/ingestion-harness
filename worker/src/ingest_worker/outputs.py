@@ -13,6 +13,20 @@ from .storage import output_key
 DOCUMENT_ID_COLUMN = "document_id"
 
 
+#: CSVs carry a UTF-8 BOM: without it Excel decodes them with the Windows code page and
+#: shows "Â°C" for "°C". Readers that honour the BOM (Excel, pandas, browsers, Python's
+#: utf-8-sig) strip it.
+CSV_CONTENT_TYPE = "text/csv; charset=utf-8"
+
+
+def encode_csv(text: str) -> bytes:
+    return text.encode("utf-8-sig")
+
+
+def content_type(fmt: str) -> str:
+    return CSV_CONTENT_TYPE if fmt == "csv" else "application/json"
+
+
 @dataclass(frozen=True)
 class RenderedOutput:
     output_id: str
@@ -62,7 +76,7 @@ def render_csv(output: CsvOutput, result: dict[str, Any], document_id: str) -> t
     writer.writerow([DOCUMENT_ID_COLUMN, *(c.name for c in output.columns)])
     for row in rows:
         writer.writerow([document_id, *(_cell(get_path(row, c.path)) for c in output.columns)])
-    return buf.getvalue().encode("utf-8"), len(rows)
+    return encode_csv(buf.getvalue()), len(rows)
 
 
 def render_json(
