@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import { Dialog } from '../src/ui/Dialog.js';
 import { FilterChips } from '../src/ui/FilterChips.js';
 import { Segmented } from '../src/ui/Segmented.js';
 import { StatusPill } from '../src/ui/StatusPill.js';
@@ -78,5 +80,67 @@ describe('FilterChips', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Needs attention 3' }));
     expect(onChange).toHaveBeenCalledWith('attention');
+  });
+});
+
+describe('Dialog', () => {
+  function Harness({ onClose = () => {} }: { onClose?: () => void }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          New document type
+        </button>
+        {open && (
+          <Dialog
+            title="New document type"
+            onClose={() => {
+              onClose();
+              setOpen(false);
+            }}
+          >
+            <label>
+              Id
+              <input />
+            </label>
+            <button type="button">Create</button>
+          </Dialog>
+        )}
+      </>
+    );
+  }
+
+  it('is a labelled modal dialog that takes focus', async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
+    const dialog = screen.getByRole('dialog', { name: 'New document type' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByLabelText('Id')).toHaveFocus();
+  });
+
+  it('closes on Escape and on Cancel, returning focus to the opener', async () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const opener = screen.getByRole('button', { name: 'New document type' });
+    await userEvent.click(opener);
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    await userEvent.click(opener);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(opener).toHaveFocus();
+  });
+
+  it('keeps Tab inside the dialog', async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
+    await userEvent.tab(); // Id -> Create
+    await userEvent.tab(); // Create -> Cancel
+    await userEvent.tab(); // Cancel -> wraps to Id
+    expect(screen.getByLabelText('Id')).toHaveFocus();
+    await userEvent.tab({ shift: true }); // Id -> back to Cancel
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
   });
 });
