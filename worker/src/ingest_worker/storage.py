@@ -53,6 +53,11 @@ def segmentation_key(project_id: str, job_id: str) -> str:
     return f"segmentation/{project_id}/{job_id}.json"
 
 
+def drafting_key(project_id: str, job_id: str) -> str:
+    """A drafting stage's result for a workbench project (runs bucket, draft task)."""
+    return f"drafting/{project_id}/{job_id}.json"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 

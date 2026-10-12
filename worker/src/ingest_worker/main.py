@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 
 from .config import Settings
+from .drafting import run_draft
 from .llm.registry import build_registry, load_llm_config
 from .ocr import OcrSettings
 from .outputs import RenderedOutput
@@ -65,6 +66,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             grid = run_segment(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s segmented %d samples", job.id, len(grid["samples"]))
+            return True
+        if job.task == "draft":
+            drafted = run_draft(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s drafted stage %s with %s", job.id, drafted["stage"], drafted["model"])
             return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
@@ -156,6 +162,11 @@ def main() -> None:
             ),
             bucket=settings.target_bucket,
             prefix=settings.target_prefix,
+        ),
+        example_template=(
+            settings.example_template.read_text(encoding="utf-8")
+            if settings.example_template.is_file()
+            else None
         ),
     )
     log.info(

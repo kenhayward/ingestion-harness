@@ -32,6 +32,8 @@ class Settings:
     target_secret_key: str
     target_bucket: str
     target_prefix: str
+    #: Worked-example template.yaml shown to drafting models.
+    example_template: Path
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -42,6 +44,7 @@ class Settings:
         ]
         if missing:
             raise ValueError(f"missing required environment variables: {', '.join(missing)}")
+        specs_dir = Path(env.get("SPECS_DIR", REPO_ROOT / "specs"))
         return cls(
             database_url=env["DATABASE_URL"],
             s3_endpoint=env["S3_ENDPOINT"],
@@ -51,7 +54,7 @@ class Settings:
             bucket_inbox=env.get("S3_BUCKET_INBOX", "ingest-inbox"),
             bucket_outputs=env.get("S3_BUCKET_OUTPUTS", "ingest-outputs"),
             bucket_runs=env.get("S3_BUCKET_RUNS", "ingest-runs"),
-            specs_dir=Path(env.get("SPECS_DIR", REPO_ROOT / "specs")),
+            specs_dir=specs_dir,
             llm_config=Path(env.get("LLM_CONFIG", REPO_ROOT / "config" / "llm-providers.yaml")),
             worker_id=env.get("WORKER_ID", f"{socket.gethostname()}-{os.getpid()}"),
             poll_interval_s=float(env.get("POLL_INTERVAL_S", "2")),
@@ -63,4 +66,10 @@ class Settings:
             target_secret_key=env.get("TARGET_S3_SECRET_KEY") or env["S3_SECRET_KEY"],
             target_bucket=env.get("TARGET_S3_BUCKET", "ingest-published"),
             target_prefix=env.get("TARGET_S3_PREFIX", ""),
+            example_template=Path(
+                env.get(
+                    "WORKBENCH_EXAMPLE_TEMPLATE",
+                    specs_dir / "process-validation-protocol" / "v3" / "template.yaml",
+                )
+            ),
         )

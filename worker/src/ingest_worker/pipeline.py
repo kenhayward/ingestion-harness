@@ -86,6 +86,8 @@ class PipelineDeps:
     render_preview: Callable[[bytes, int], bytes] = field(default=render_preview_jpeg)
     #: Where approved outputs are delivered. None: outputs stay in the outputs bucket only.
     target: Target | None = None
+    #: YAML of a worked-example template shown to drafting models (None: no example).
+    example_template: str | None = None
 
 
 @dataclass

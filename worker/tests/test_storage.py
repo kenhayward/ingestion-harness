@@ -29,3 +29,9 @@ def test_delete_removes_an_object_and_tolerates_a_missing_one() -> None:
     store.delete("b", "k")
     assert store.get_optional("b", "k") is None
     store.delete("b", "k")
+
+
+def test_drafting_key_mirrors_the_typescript_helper() -> None:
+    from ingest_worker.storage import drafting_key
+
+    assert drafting_key("letter", "j1") == "drafting/letter/j1.json"
