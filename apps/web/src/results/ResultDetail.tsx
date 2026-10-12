@@ -12,7 +12,7 @@ import { parseCsv } from './csv.js';
 
 export const PREVIEW_ROWS = 500;
 
-const DOCUMENT_ERRORS: Record<DocumentError, string> = {
+export const DOCUMENT_ERRORS: Record<DocumentError, string> = {
   'missing from target': 'The published document is missing from the target',
   'target storage unavailable': 'The target storage could not be reached',
   'invalid document': 'The published document in the target is not valid',
@@ -25,7 +25,7 @@ const label = (c: { id: string; name?: string }) => c.name ?? c.id;
 
 const isObject = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-function format(value: unknown): string {
+export function format(value: unknown): string {
   if (isObject(value)) return JSON.stringify(value);
   if (Array.isArray(value)) {
     return display(value.map((item) => (isObject(item) ? JSON.stringify(item) : item)));

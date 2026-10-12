@@ -131,6 +131,7 @@ export class MemoryRepo implements IngestionRepo {
     templateId,
     before,
     beforeId,
+    q,
   }: ListPublishedQuery): Promise<ResultSummary[]> {
     // Compare as times (cursors may carry an offset); ties break on job id, like PgRepo.
     const cursor = before === undefined ? undefined : Date.parse(before);
@@ -141,6 +142,7 @@ export class MemoryRepo implements IngestionRepo {
     };
     return [...this.jobs.values()]
       .filter((j) => !j.test && (!templateId || j.specId === templateId))
+      .filter((j) => !q || j.filename.toLowerCase().includes(q.toLowerCase()))
       .flatMap((j): ResultSummary[] => {
         const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
         const at = this.publishedAt.get(j.id) ?? j.updatedAt;
@@ -156,6 +158,14 @@ export class MemoryRepo implements IngestionRepo {
             reviewer: j.reviewer,
             reviewedAt: j.reviewedAt,
             outputCount: published.length,
+            outputs: [...published]
+              .sort((a, b) => a.outputId.localeCompare(b.outputId))
+              .map((o) => ({
+                outputId: o.outputId,
+                format: o.format,
+                name: o.key.split('/').pop() ?? o.outputId,
+                rowCount: o.rowCount,
+              })),
             issueCount: published.find((o) => o.outputId === 'issues')?.rowCount ?? null,
           },
         ];
@@ -284,11 +294,14 @@ export class MemoryRepo implements IngestionRepo {
     return this.createDocumentAndJob(doc, null, true, reference.id);
   }
 
-  async listRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
-    const jobs = [...this.jobs.values()]
+  async listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {
+    const latest = new Map<string, JobSummary>();
+    for (const j of [...this.jobs.values()]
       .filter((j) => j.referenceId && j.specId === templateId && j.specVersion === version)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return jobs.map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))) {
+      if (!latest.has(j.referenceId!)) latest.set(j.referenceId!, j);
+    }
+    return [...latest.values()].map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {

@@ -106,6 +106,15 @@ const template = (id: string, name: string) => ({
   published: 1,
   draft: null,
   versions: [],
+  summary: {
+    sections: 1,
+    fields: 1,
+    tables: 0,
+    references: 0,
+    draftIssues: null,
+    lastRegression: null,
+    regressionRunning: false,
+  },
 });
 
 const result = (filename: string): ResultSummary => ({
@@ -118,6 +127,7 @@ const result = (filename: string): ResultSummary => ({
   reviewer: null,
   reviewedAt: null,
   outputCount: 1,
+  outputs: [],
   issueCount: 0,
 });
 
@@ -172,18 +182,23 @@ describe('search', () => {
     expect(screen.queryByText('Ops station')).not.toBeInTheDocument();
   });
 
-  it('filters loaded results by file name', async () => {
+  it('sends the search to the server as the results file name filter', async () => {
     window.location.hash = '#/results';
-    const api = fakeApi({
-      listResults: vi.fn(async () => [result('a-acme.pdf'), result('b-globex.pdf')]),
-    });
-    render(<App api={api} pollMs={0} />);
-    await screen.findByText('b-globex.pdf');
+    const listResults = vi.fn(async (query?: { q?: string }) =>
+      [result('a-acme.pdf'), result('b-globex.pdf')].filter(
+        (r) => !query?.q || r.filename.includes(query.q),
+      ),
+    );
+    render(<App api={fakeApi({ listResults })} pollMs={0} />);
+    await screen.findByRole('button', { name: 'Show preview of b-globex.pdf' });
     await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'acme');
-    expect(screen.getByText('a-acme.pdf')).toBeInTheDocument();
-    expect(screen.queryByText('b-globex.pdf')).not.toBeInTheDocument();
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'x');
-    expect(screen.getByText('No results match “acmex”.')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Filter by file name' })).toHaveValue('acme');
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Show preview of b-globex.pdf' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' });
   });
 });
 

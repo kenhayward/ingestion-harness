@@ -130,6 +130,54 @@ describe('GET /api/results', () => {
     expect((await app.inject('/api/results?limit=500')).statusCode).toBe(400);
     expect((await app.inject('/api/results?before=yesterday')).statusCode).toBe(400);
     expect((await app.inject('/api/results?beforeId=nope')).statusCode).toBe(400);
+    expect((await app.inject(`/api/results?q=${'x'.repeat(101)}`)).statusCode).toBe(400);
+  });
+
+  it("lists each result's published outputs (name, format, rows), not drafts", async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    publish(ctx, job.id, '2026-10-01T00:00:00.000Z', [
+      out('results', 'published', 3),
+      out('document', 'draft', null),
+      out('document', 'published', null),
+    ]);
+    const [row] = (await ctx.app.inject('/api/results')).json();
+    expect(row.outputs).toEqual([
+      { outputId: 'document', format: 'json', name: 'doc.json', rowCount: null },
+      { outputId: 'results', format: 'csv', name: 'doc.csv', rowCount: 3 },
+    ]);
+    expect(row.outputCount).toBe(2);
+  });
+
+  it('filters by file name, case-insensitively, with % and _ literal', async () => {
+    const ctx = await testApp();
+    const names = ['Acme_Invoice.pdf', 'acme-2.pdf', '100%.pdf', 'other.pdf'];
+    for (const [i, name] of names.entries()) {
+      const job = await upload(ctx, 'tdemo', name);
+      publish(ctx, job.id, `2026-10-0${i + 1}T00:00:00.000Z`, [out('document', 'published', null)]);
+    }
+    const files = async (q: string) =>
+      (await ctx.app.inject(`/api/results?q=${encodeURIComponent(q)}`))
+        .json()
+        .map((r: { filename: string }) => r.filename)
+        .sort();
+    expect(await files('ACME')).toEqual(['Acme_Invoice.pdf', 'acme-2.pdf']);
+    expect(await files('_')).toEqual(['Acme_Invoice.pdf']);
+    expect(await files('%')).toEqual(['100%.pdf']);
+    expect(await files('  ')).toHaveLength(4);
+  });
+
+  it('pages with q and a cursor', async () => {
+    const ctx = await testApp();
+    for (const [i, name] of ['acme-1.pdf', 'other.pdf', 'acme-2.pdf'].entries()) {
+      const job = await upload(ctx, 'tdemo', name);
+      publish(ctx, job.id, `2026-10-0${i + 1}T00:00:00.000Z`, [out('document', 'published', null)]);
+    }
+    const page1 = (await ctx.app.inject('/api/results?q=acme&limit=1')).json();
+    expect(page1.map((r: { filename: string }) => r.filename)).toEqual(['acme-2.pdf']);
+    const cursor = `before=${encodeURIComponent(page1[0].publishedAt)}&beforeId=${page1[0].jobId}`;
+    const page2 = (await ctx.app.inject(`/api/results?q=acme&limit=1&${cursor}`)).json();
+    expect(page2.map((r: { filename: string }) => r.filename)).toEqual(['acme-1.pdf']);
   });
 });
 
