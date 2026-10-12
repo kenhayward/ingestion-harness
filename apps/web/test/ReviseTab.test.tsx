@@ -62,6 +62,14 @@ describe('ReviseTab', () => {
     expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
   });
 
+  it('limits feedback to what the API accepts and explains the id', async () => {
+    tab();
+    expect(await screen.findByLabelText('Id')).toHaveAccessibleDescription(
+      'lowercase id, e.g. sent_on',
+    );
+    expect(screen.getByLabelText('Feedback')).toHaveAttribute('maxlength', '2000');
+  });
+
   it('shows an error when adding fails', async () => {
     tab({ addFeedback: vi.fn(async () => Promise.reject(new Error('nope'))) });
     await userEvent.type(await screen.findByLabelText('Id'), 'x');

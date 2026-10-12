@@ -64,6 +64,38 @@ describe('EvaluateTab', () => {
     expect(await screen.findByText('Comment saved; see the Revise tab')).toBeInTheDocument();
   });
 
+  it('keeps a comment that failed to save and shows why', async () => {
+    const latest = iterationView();
+    tab({
+      listIterations: vi.fn(async () => [latest]),
+      getIteration: vi.fn(async () => latest),
+      addFeedback: vi.fn(async () =>
+        Promise.reject(new Error('feedback can only refer to dev samples')),
+      ),
+    });
+    const samples = await screen.findByRole('table', { name: 'Samples' });
+    await userEvent.click(
+      within(within(samples).getByText('a.pdf').closest('tr')!).getByRole('button', {
+        name: 'Details',
+      }),
+    );
+    const detail = screen.getByRole('table', { name: 'Fields in a.pdf' });
+    await userEvent.click(
+      within(within(detail).getByText('sent_on').closest('tr')!).getByRole('button', {
+        name: 'Comment',
+      }),
+    );
+    const box = screen.getByLabelText('Comment on sent_on');
+    expect(box).toHaveAttribute('maxlength', '2000');
+    await userEvent.type(box, 'Dates are DMY');
+    await userEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'feedback can only refer to dev samples',
+    );
+    expect(screen.getByLabelText('Comment on sent_on')).toHaveValue('Dates are DMY');
+    expect(screen.queryByText('Comment saved; see the Revise tab')).toBeNull();
+  });
+
   it('compares models side by side', async () => {
     const group = 'g1';
     const views = [

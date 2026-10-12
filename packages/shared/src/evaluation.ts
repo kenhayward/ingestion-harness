@@ -188,13 +188,15 @@ export interface ReferenceRow {
 }
 
 export const FEEDBACK_TARGETS = ['field', 'table', 'step', 'section'] as const;
+/** Longest feedback body the API accepts (the UI caps its text boxes to match). */
+export const FEEDBACK_MAX_CHARS = 2000;
 export type FeedbackTarget = (typeof FEEDBACK_TARGETS)[number];
 
 export const FeedbackBodySchema = z
   .object({
     target: z.enum(FEEDBACK_TARGETS),
     targetId: z.string().regex(/^[a-z][a-z0-9_-]*$/),
-    body: z.string().trim().min(1).max(2000),
+    body: z.string().trim().min(1).max(FEEDBACK_MAX_CHARS),
     sampleId: z.string().uuid().optional(),
     iterationId: z.string().uuid().optional(),
   })

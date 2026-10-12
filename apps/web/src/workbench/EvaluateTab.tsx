@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   EVALUATION_MODELS,
+  FEEDBACK_MAX_CHARS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
@@ -332,6 +333,7 @@ export function EvaluateTab({
                             Comment on {f.id}
                             <textarea
                               value={commentBody}
+                              maxLength={FEEDBACK_MAX_CHARS}
                               onChange={(e) => setCommentBody(e.target.value)}
                             />
                           </label>{' '}

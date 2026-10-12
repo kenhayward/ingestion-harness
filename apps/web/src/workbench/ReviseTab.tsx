@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  FEEDBACK_MAX_CHARS,
   FEEDBACK_TARGETS,
   type DataPolicy,
   type FeedbackItem,
@@ -98,11 +99,23 @@ export function ReviseTab({
           </select>
         </label>{' '}
         <label>
-          Id <input value={targetId} onChange={(e) => setTargetId(e.target.value)} />
-        </label>
+          Id{' '}
+          <input
+            value={targetId}
+            aria-describedby="feedback-id-hint"
+            onChange={(e) => setTargetId(e.target.value)}
+          />
+        </label>{' '}
+        <small id="feedback-id-hint" className="muted">
+          lowercase id, e.g. sent_on
+        </small>
         <label>
           Feedback
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} />
+          <textarea
+            value={body}
+            maxLength={FEEDBACK_MAX_CHARS}
+            onChange={(e) => setBody(e.target.value)}
+          />
         </label>
         <button
           type="submit"
