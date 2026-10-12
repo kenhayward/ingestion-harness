@@ -11,6 +11,7 @@ import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
+import { matchesQuery } from './shell/derive.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
@@ -88,13 +89,13 @@ function SignedInApp({
   if (route.name === 'review') {
     page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
   } else if (route.name === 'results') {
-    page = <ResultsPage api={api} />;
+    page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
   } else if (route.name === 'access') {
-    page = <AccessPage api={api} me={me} />;
+    page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'templates') {
-    page = <TemplatesPage api={api} onNavigate={navigate} />;
+    page = <TemplatesPage api={api} onNavigate={navigate} query={query} />;
   } else if (route.name === 'template') {
     page = (
       <TemplateEditor
@@ -106,7 +107,7 @@ function SignedInApp({
       />
     );
   } else {
-    page = <JobsView api={api} jobs={jobs} error={error} refresh={refresh} />;
+    page = <JobsView api={api} jobs={jobs} error={error} refresh={refresh} query={query} />;
   }
   return (
     <AppShell
@@ -128,20 +129,29 @@ function JobsView({
   jobs,
   error,
   refresh,
+  query,
 }: {
   api: Api;
   jobs: JobSummary[];
   error: string | null;
   refresh: () => Promise<void>;
+  query: string;
 }) {
   /** The upload form's Model selection; Retry uses it too. */
   const [retryModel, setRetryModel] = useState('');
+  const shown = jobs.filter((j) =>
+    matchesQuery(query, j.filename, j.specId, j.modelOverride, j.status, ...j.modelsUsed),
+  );
 
   return (
     <>
       <UploadForm api={api} onUploaded={refresh} onModelChange={setRetryModel} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
-      <JobsTable api={api} jobs={jobs} onChanged={refresh} retryModel={retryModel} />
+      {jobs.length > 0 && shown.length === 0 ? (
+        <p>No jobs match “{query.trim()}”.</p>
+      ) : (
+        <JobsTable api={api} jobs={shown} onChanged={refresh} retryModel={retryModel} />
+      )}
       <JobCleanup api={api} onChanged={refresh} />
     </>
   );

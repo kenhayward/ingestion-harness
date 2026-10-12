@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AccessToken, Api, Me } from '../api/client.js';
+import { matchesQuery } from '../shell/derive.js';
 
 const EXPIRY_OPTIONS: [string, string][] = [
   ['1', '1 day'],
@@ -20,7 +21,16 @@ const STATUS_LABEL: Record<AccessToken['status'], string> = {
 };
 
 /** Admin page (ADR 0006): issue user tokens (shown once), revoke and delete them. */
-export function AccessPage({ api, me }: { api: Api; me: Me }) {
+export function AccessPage({
+  api,
+  me,
+  query = '',
+}: {
+  api: Api;
+  me: Me;
+  /** Top-bar search: shows only matching tokens. */
+  query?: string;
+}) {
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [label, setLabel] = useState('');
   const [expiry, setExpiry] = useState('30');
@@ -108,27 +118,29 @@ export function AccessPage({ api, me }: { api: Api; me: Me }) {
           </tr>
         </thead>
         <tbody>
-          {tokens.map((t) => (
-            <tr key={t.id}>
-              <td>{t.label}</td>
-              <td>{t.role}</td>
-              <td>{when(t.createdAt, '—')}</td>
-              <td>{when(t.expiresAt, 'never')}</td>
-              <td>{when(t.lastUsedAt, 'never used')}</td>
-              <td>
-                <span className={`token-status token-${t.status}`}>{STATUS_LABEL[t.status]}</span>
-              </td>
-              <td>
-                {t.role === 'user' && (
-                  <TokenActions
-                    token={t}
-                    onRevoke={() => act(() => api.revokeToken(t.id))}
-                    onDelete={() => act(() => api.deleteToken(t.id))}
-                  />
-                )}
-              </td>
-            </tr>
-          ))}
+          {tokens
+            .filter((t) => matchesQuery(query, t.label, t.role))
+            .map((t) => (
+              <tr key={t.id}>
+                <td>{t.label}</td>
+                <td>{t.role}</td>
+                <td>{when(t.createdAt, '—')}</td>
+                <td>{when(t.expiresAt, 'never')}</td>
+                <td>{when(t.lastUsedAt, 'never used')}</td>
+                <td>
+                  <span className={`token-status token-${t.status}`}>{STATUS_LABEL[t.status]}</span>
+                </td>
+                <td>
+                  {t.role === 'user' && (
+                    <TokenActions
+                      token={t}
+                      onRevoke={() => act(() => api.revokeToken(t.id))}
+                      onDelete={() => act(() => api.deleteToken(t.id))}
+                    />
+                  )}
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </section>

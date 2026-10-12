@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { matchesQuery } from '../shell/derive.js';
 
 /** Must match the API's default `limit` for GET /api/results. */
 export const RESULTS_PAGE_SIZE = 50;
@@ -12,7 +13,14 @@ function reviewedBy(r: ResultSummary): string {
   return r.reviewer ?? 'unnamed reviewer';
 }
 
-export function ResultsPage({ api }: { api: Api }) {
+export function ResultsPage({
+  api,
+  query = '',
+}: {
+  api: Api;
+  /** Top-bar search: filters the loaded rows by file name (PR 4 moves this to the API). */
+  query?: string;
+}) {
   const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
   const [templateId, setTemplateId] = useState('');
   const [rows, setRows] = useState<ResultSummary[]>([]);
@@ -65,6 +73,8 @@ export function ResultsPage({ api }: { api: Api }) {
     void load();
   }, [load]);
 
+  const shown = rows.filter((r) => matchesQuery(query, r.filename, r.specId));
+
   return (
     <section className="results">
       <h2>Results</h2>
@@ -80,7 +90,9 @@ export function ResultsPage({ api }: { api: Api }) {
         </select>
       </label>
       {error && <p role="alert">Failed to load results: {error}</p>}
-      {loaded && !error && rows.length === 0 ? (
+      {loaded && !error && rows.length > 0 && shown.length === 0 ? (
+        <p>No results match “{query.trim()}”.</p>
+      ) : loaded && !error && rows.length === 0 ? (
         <p>
           {templateId
             ? 'No published results for this document type.'
@@ -99,7 +111,7 @@ export function ResultsPage({ api }: { api: Api }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <tr key={r.jobId}>
                 <td>
                   <a href={`#/results/${r.jobId}`}>{r.filename}</a>

@@ -1,12 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Api, TemplateListItem } from '../api/client.js';
+import { matchesQuery } from '../shell/derive.js';
 
 export function TemplatesPage({
   api,
   onNavigate,
+  query = '',
 }: {
   api: Api;
   onNavigate: (hash: string) => void;
+  /** Top-bar search: shows only matching document types. */
+  query?: string;
 }) {
   const [items, setItems] = useState<TemplateListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +41,8 @@ export function TemplatesPage({
     void run(() => api.importTemplate(yaml, publish));
   };
 
+  const shown = (items ?? []).filter((t) => matchesQuery(query, t.id, t.name));
+
   return (
     <section className="templates">
       <h2>Document types</h2>
@@ -45,6 +51,8 @@ export function TemplatesPage({
         <p>Loading…</p>
       ) : items.length === 0 ? (
         <p>No document types yet.</p>
+      ) : shown.length === 0 ? (
+        <p>No document types match “{query.trim()}”.</p>
       ) : (
         <table>
           <thead>
@@ -56,7 +64,7 @@ export function TemplatesPage({
             </tr>
           </thead>
           <tbody>
-            {items.map((t) => (
+            {shown.map((t) => (
               <tr key={t.id}>
                 <td>{t.name}</td>
                 <td>

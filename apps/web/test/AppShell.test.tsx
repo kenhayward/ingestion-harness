@@ -1,3 +1,4 @@
+import type { ResultSummary } from '@ih/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -80,5 +81,102 @@ describe('app shell', () => {
     expect(search).toHaveValue('acme');
     await userEvent.keyboard('{Escape}');
     expect(search).toHaveValue('');
+  });
+});
+
+const token = (id: string, label: string) => ({
+  id,
+  label,
+  role: 'user' as const,
+  createdAt: '2026-10-01T00:00:00Z',
+  expiresAt: null,
+  revokedAt: null,
+  lastUsedAt: null,
+  status: 'active' as const,
+});
+
+const template = (id: string, name: string) => ({
+  id,
+  name,
+  description: null,
+  published: 1,
+  draft: null,
+  versions: [],
+});
+
+const result = (filename: string): ResultSummary => ({
+  jobId: filename,
+  documentId: filename,
+  filename,
+  specId: 'pvp',
+  specVersion: 1,
+  publishedAt: '2026-10-02T08:00:00Z',
+  reviewer: null,
+  reviewedAt: null,
+  outputCount: 1,
+  issueCount: 0,
+});
+
+describe('search', () => {
+  it('filters jobs and says when nothing matches', async () => {
+    const api = fakeApi({
+      listJobs: vi.fn(async () => [
+        job({ filename: 'inv-0042-acme.pdf' }),
+        job({ filename: 'coa-lot-7781.pdf', specId: 'certificate' }),
+      ]),
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByText('coa-lot-7781.pdf');
+    const search = screen.getByRole('searchbox', { name: SEARCH });
+    await userEvent.type(search, 'acme');
+    expect(screen.getByText('inv-0042-acme.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('coa-lot-7781.pdf')).not.toBeInTheDocument();
+    await userEvent.clear(search);
+    await userEvent.type(search, 'globex');
+    expect(screen.getByText('No jobs match “globex”.')).toBeInTheDocument();
+    expect(screen.queryByText('No jobs yet.')).not.toBeInTheDocument();
+  });
+
+  it('filters document types by name or id', async () => {
+    window.location.hash = '#/templates';
+    const api = fakeApi({
+      listTemplates: vi.fn(async () => [
+        template('supplier-invoice', 'Supplier invoice'),
+        template('coa', 'Certificate of analysis'),
+      ]),
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByText('Certificate of analysis');
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'invoice');
+    expect(screen.getByText('Supplier invoice')).toBeInTheDocument();
+    expect(screen.queryByText('Certificate of analysis')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), ' zzz');
+    expect(screen.getByText('No document types match “invoice zzz”.')).toBeInTheDocument();
+  });
+
+  it('filters access tokens by label', async () => {
+    window.location.hash = '#/access';
+    const api = fakeApi({
+      listTokens: vi.fn(async () => [token('1', 'Ken – laptop'), token('2', 'Ops station')]),
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByText('Ops station');
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'ken');
+    expect(screen.getByText('Ken – laptop')).toBeInTheDocument();
+    expect(screen.queryByText('Ops station')).not.toBeInTheDocument();
+  });
+
+  it('filters loaded results by file name', async () => {
+    window.location.hash = '#/results';
+    const api = fakeApi({
+      listResults: vi.fn(async () => [result('a-acme.pdf'), result('b-globex.pdf')]),
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByText('b-globex.pdf');
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'acme');
+    expect(screen.getByText('a-acme.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('b-globex.pdf')).not.toBeInTheDocument();
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'x');
+    expect(screen.getByText('No results match “acmex”.')).toBeInTheDocument();
   });
 });
