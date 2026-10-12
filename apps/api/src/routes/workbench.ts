@@ -194,13 +194,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       },
       { projectId, task: 'prepare' },
     );
-    const record = await workbench.addSample({
-      projectId,
-      documentId,
-      role: role.data,
-      addedForVersion: version,
-    });
-    return reply.code(201).send(await toView(app, record, job));
+    try {
+      const record = await workbench.addSample({
+        projectId,
+        documentId,
+        role: role.data,
+        addedForVersion: version,
+      });
+      return reply.code(201).send(await toView(app, record, job));
+    } catch (err) {
+      if (err instanceof WorkbenchConflictError)
+        return reply.code(409).send({ error: err.message });
+      throw err;
+    }
   });
 
   app.patch<{ Params: { id: string; sid: string } }>(

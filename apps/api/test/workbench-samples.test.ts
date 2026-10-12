@@ -86,19 +86,41 @@ describe('workbench samples', () => {
     expect(duplicate.statusCode).toBe(409);
     expect(store.objects.size).toBe(1); // nothing stored for the refused uploads
     for (let n = 2; n <= MAX_SAMPLES; n++) expect((await upload(pdf(n))).statusCode).toBe(201);
+    const stored = store.objects.size;
     expect((await upload(pdf(99))).statusCode).toBe(409);
+    expect(store.objects.size).toBe(stored); // nothing stored for the full-project refusal
     expect((await upload(pdf(100), {}, 'nope')).statusCode).toBe(404);
   });
 
   it('allows the same PDF in two projects', async () => {
-    const { app, upload } = await withProject();
+    const { app, repo, store, upload, prepared } = await withProject();
     await app.inject({
       method: 'POST',
       url: '/api/workbench/projects',
       payload: { id: 'memo', name: 'Memo' },
     });
-    expect((await upload(pdf(1))).statusCode).toBe(201);
-    expect((await upload(pdf(1), {}, 'memo')).statusCode).toBe(201);
+    const first = await upload(pdf(1));
+    const second = await upload(pdf(1), {}, 'memo');
+    expect([first.statusCode, second.statusCode]).toEqual([201, 201]);
+    const a = first.json() as SampleView;
+    const b = second.json() as SampleView;
+    await prepared(a);
+    repo.jobs.set(b.prepareJobId!, { ...repo.jobs.get(b.prepareJobId!)!, status: 'succeeded' });
+    const stored = store.objects.size;
+    for (const [project, sample] of [
+      ['letter', a],
+      ['memo', b],
+    ] as const) {
+      const base = `/api/workbench/projects/${project}/samples`;
+      const [listed] = (await app.inject(base)).json();
+      expect(listed).toMatchObject({ state: 'ready', triage: { pageCount: 2 } });
+      const text = await app.inject(`${base}/${sample.id}/text`);
+      expect(text.json().pages.map((p: { text: string }) => p.text)).toEqual([
+        'HEADER\nbody',
+        'page two',
+      ]);
+    }
+    expect(store.objects.size).toBe(stored); // prepared text is shared by sha256
   });
 
   it('shows triage and serves text once prepared', async () => {
