@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { FilterChips } from '../ui/FilterChips.js';
+import { ResultPreview } from './ResultPreview.js';
 
 /** Must match the API's default `limit` for GET /api/results. */
 export const RESULTS_PAGE_SIZE = 50;
@@ -124,80 +125,85 @@ export function ResultsPage({
         />
       </div>
       {error && <p role="alert">Failed to load results: {error}</p>}
-      {loaded && !error && rows.length === 0 ? (
-        <p>
-          {q
-            ? `No results match “${q}”.`
-            : templateId
-              ? 'No published results for this document type.'
-              : 'No published results yet. Test runs and rejected documents never appear here.'}
-        </p>
-      ) : (
-        <div className="list-box">
-          <table className="result-list" aria-label="Published results">
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Document type</th>
-                <th>Published</th>
-                <th>Reviewed by</th>
-                <th>Issues</th>
-                <th>Download</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.jobId} className={r === selected ? 'selected' : undefined}>
-                  <td className="doc-cell">
-                    <button
-                      type="button"
-                      className="doc-button"
-                      aria-label={`Show preview of ${r.filename}`}
-                      aria-pressed={r === selected}
-                      onClick={() => setSelectedId(r.jobId)}
-                    >
-                      {r.filename}
-                    </button>
-                  </td>
-                  <td>
-                    {r.specId} v{r.specVersion}
-                  </td>
-                  <td className="muted">{when(r.publishedAt)}</td>
-                  <td>{reviewedBy(r)}</td>
-                  <td className={r.issueCount ? 'issues-count' : 'muted'}>
-                    {r.issueCount ? r.issueCount : '—'}
-                  </td>
-                  <td className="downloads-cell">
-                    {r.outputs.map((o) => (
-                      <a
-                        key={o.outputId}
-                        className="dl"
-                        href={api.outputUrl(r.jobId, o.outputId, { stage: 'published' })}
-                        aria-label={`Download ${o.name} for ${r.filename}`}
-                        title={o.name}
-                      >
-                        {o.format.toUpperCase()}
-                      </a>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="results-layout">
+        <div className="results-main">
+          {loaded && !error && rows.length === 0 ? (
+            <p>
+              {q
+                ? `No results match “${q}”.`
+                : templateId
+                  ? 'No published results for this document type.'
+                  : 'No published results yet. Test runs and rejected documents never appear here.'}
+            </p>
+          ) : (
+            <div className="list-box">
+              <table className="result-list" aria-label="Published results">
+                <thead>
+                  <tr>
+                    <th>Document</th>
+                    <th>Document type</th>
+                    <th>Published</th>
+                    <th>Reviewed by</th>
+                    <th>Issues</th>
+                    <th>Download</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.jobId} className={r === selected ? 'selected' : undefined}>
+                      <td className="doc-cell">
+                        <button
+                          type="button"
+                          className="doc-button"
+                          aria-label={`Show preview of ${r.filename}`}
+                          aria-pressed={r === selected}
+                          onClick={() => setSelectedId(r.jobId)}
+                        >
+                          {r.filename}
+                        </button>
+                      </td>
+                      <td>
+                        {r.specId} v{r.specVersion}
+                      </td>
+                      <td className="muted">{when(r.publishedAt)}</td>
+                      <td>{reviewedBy(r)}</td>
+                      <td className={r.issueCount ? 'issues-count' : 'muted'}>
+                        {r.issueCount ? r.issueCount : '—'}
+                      </td>
+                      <td className="downloads-cell">
+                        {r.outputs.map((o) => (
+                          <a
+                            key={o.outputId}
+                            className="dl"
+                            href={api.outputUrl(r.jobId, o.outputId, { stage: 'published' })}
+                            aria-label={`Download ${o.name} for ${r.filename}`}
+                            title={o.name}
+                          >
+                            {o.format.toUpperCase()}
+                          </a>
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {hasMore && (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                const last = rows.at(-1);
+                if (last) void load({ before: last.publishedAt, beforeId: last.jobId });
+              }}
+            >
+              Load more
+            </button>
+          )}
         </div>
-      )}
-      {hasMore && (
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => {
-            const last = rows.at(-1);
-            if (last) void load({ before: last.publishedAt, beforeId: last.jobId });
-          }}
-        >
-          Load more
-        </button>
-      )}
+        {selected && <ResultPreview key={selected.jobId} api={api} summary={selected} />}
+      </div>
     </div>
   );
 }
