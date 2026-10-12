@@ -64,8 +64,11 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
      (`worker/tests/fakes.py`). Provider adapters are tested against stub SDK clients
      (`tests/test_providers.py`) that assert the exact request shape.
    - Code needing real infra (PgRepo, PgJobQueue, S3 stores) gets integration tests marked
-     `@pytest.mark.integration` (excluded by default) or under `apps/api/test/integration/`,
-     run against `dev-infra`.
+     `@pytest.mark.integration` (excluded by default) or under `apps/api/test/integration/`.
+     The API ones skip unless `IH_TEST_DATABASE_URL` is set; point it at a throwaway Postgres
+     (they apply `db/migrations` and write rows), e.g. `docker run --rm -d --name ih-test-pg -e
+     POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine`, then
+     `IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres npx vitest run apps/api/test/integration`.
 5. **Contract tests stay green**: both `apps/api/test/spec-registry.test.ts` and
    `worker/tests/test_specs.py` load every spec in `specs/`. A new spec is not done until both pass.
 6. New pure logic (segmentation, CSV flattening, retry policy, alias resolution) should be
@@ -111,8 +114,12 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   project job carries `params.dataPolicy` (missing = local); the worker refuses an external provider
   for a local-only project before any call, in extraction, OCR (after `resolve_ocr`; the OCR clone
   inherits its named provider's `location`, so an `OCR_BASE_URL` pointing a local-marked provider at a
-  remote host is the operator's responsibility), template step re-runs and drafting. The `draft` alias
-  (`DRAFT_MODEL`, default the local model) is the Workbench drafting model.
+  remote host is the operator's responsibility), template step re-runs and drafting. Switching a
+  project to `local` (`setDataPolicy`) also sets `params.dataPolicy = 'local'` on every existing job
+  of the project except segment previews (no model call; strict params), so queued jobs, Retry and
+  step re-runs (which reuse the row) cannot go external after a revocation; switching to `external`
+  never upgrades old jobs. The `draft` alias (`DRAFT_MODEL`, default the local model) is the
+  Workbench drafting model; a drafting call's output budget is `drafting.DRAFT_MAX_TOKENS`.
 - Anthropic calls use structured outputs (`output_config.format` json_schema) plus
   `output_config.effort`; refusals (`stop_reason == "refusal"`) raise `RefusalError` → job goes to
   `needs_review`. Don't send `temperature`/`top_p`/`budget_tokens` or assistant prefill — current
