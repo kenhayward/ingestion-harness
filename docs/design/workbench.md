@@ -244,7 +244,14 @@ Rules:
 - Holdout failures **are** visible to the user (ADR 0007). A sample's `added_for_version` and its
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
 - The publish gate uses the holdout score: at or above `publish_threshold` publishes directly;
-  below it, publishing needs an override reason, recorded on the iteration.
+  below it, publishing needs an override reason, recorded on the publication.
+- Only an honest holdout run counts: the newest complete holdout iteration of the current draft
+  that ran the template's own models (iterations with a model override are for exploration and
+  never count), covered every ready holdout sample, and compared every sample it evaluated (a
+  job that failed, needs review, was cancelled or deleted fails the gate). Its score is always
+  recomputed from the raw model output, so review edits on a holdout job cannot raise it.
+- Holdout history is a count of the holdout iterations that evaluated the sample, recorded by
+  sha256 on the iteration (`sample_shas`, migration 0017) so it survives deleted jobs.
 
 ### References across versions
 
