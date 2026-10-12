@@ -23,8 +23,15 @@ protected from strangers and scanners.
   - Every `/api/*` route needs a session except sign-in and sign-out. The check is made on the
     *matched route*, not the raw URL.
   - Tokens are required on the LAN too.
-- **Sign-in limits:** at most 10 failed sign-ins per client IP and 100 in total per 15 minutes.
-  The client IP comes from `X-Forwarded-For`, trusted only from private networks (`TRUST_PROXY`).
+- **Sign-in limits:** at most 10 failed sign-ins per client (an IP, or an IPv6 /64) per 15
+  minutes.
+  - There's no global block (that would let anyone lock everyone out); a surge is only logged.
+  - The client IP comes from `X-Forwarded-For`, trusted only from private networks plus anything
+    in `TRUST_PROXY`.
+- **Cookie lifetime:** the session cookie persists until its token expires (at most 400 days).
+- **Admin token output:** the admin token line goes straight to stdout, whatever `LOG_LEVEL` is.
+  Scripts match only that exact line, which a request URL can't forge, and it's masked in GitHub
+  Actions.
 
 ## Threat model
 - **Covered:** strangers, scanners and token guessing, through 256-bit tokens, rate limits and a

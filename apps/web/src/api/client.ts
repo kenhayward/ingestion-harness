@@ -267,13 +267,17 @@ export interface Me {
 
 const unauthorizedListeners = new Set<() => void>();
 
+/** 401s that mean "not signed in yet / wrong token", not "your session ended". */
+const SIGN_IN_CALLS = ['/auth/login', '/auth/me'];
+
 /**
- * fetch for API calls: a 401 from anything but /auth/* means the session ended (expired,
- * revoked, admin token rotated), so listeners can send the user back to sign-in.
+ * fetch for API calls: a 401 from any other call (token management included) means the session
+ * ended (expired, revoked, admin token rotated), so listeners can send the user back to sign-in.
  */
 const apiFetch: typeof fetch = async (input, init) => {
   const res = await fetch(input, init);
-  if (res.status === 401 && !String(input).includes('/auth/')) {
+  const url = String(input);
+  if (res.status === 401 && !SIGN_IN_CALLS.some((path) => url.endsWith(path))) {
     for (const listener of unauthorizedListeners) listener();
   }
   return res;

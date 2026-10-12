@@ -17,15 +17,32 @@ import { TemplatesPage } from './templates/TemplatesPage.js';
 export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [ended, setEnded] = useState(false);
+  /** The session check failed for another reason (API restarting, proxy error): not "signed out". */
+  const [unreachable, setUnreachable] = useState<string | null>(null);
+
+  const check = useCallback(() => {
+    setUnreachable(null);
+    api.me().then(setMe, (err: Error) => setUnreachable(err.message));
+  }, [api]);
 
   useEffect(() => {
-    api.me().then(setMe, () => setMe(null));
+    check();
     return api.onUnauthorized(() => {
       setMe(null);
       setEnded(true);
     });
-  }, [api]);
+  }, [api, check]);
 
+  if (unreachable !== null) {
+    return (
+      <main className="sign-in">
+        <p role="alert">Can't reach the server ({unreachable}).</p>
+        <button type="button" onClick={check}>
+          Retry
+        </button>
+      </main>
+    );
+  }
   if (me === undefined) return <p>Loading…</p>;
   if (me === null) {
     return (

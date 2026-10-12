@@ -121,4 +121,20 @@ describe('AccessPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('label (1-100 chars)');
   });
+
+  it('explains manual copying when the clipboard is unavailable (plain-HTTP LAN)', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+    try {
+      const createToken = vi.fn(async () => ({ token: 'ih_secret', record: token() }));
+      render(<AccessPage api={fakeApi({ createToken })} me={ADMIN} />);
+      await userEvent.type(await screen.findByLabelText('Label'), 'Phone');
+      await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Copy' }));
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Copying needs HTTPS here: select the token and copy it manually.',
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

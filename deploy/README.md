@@ -66,9 +66,12 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
    on `127.0.0.1` (the defaults). Postgres and the API container are never published.
 5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
    NGINX Proxy Manager and the app's nginx live. If your proxy reaches the host from a public
-   address, set `TRUST_PROXY` to its address.
+   address, set `TRUST_PROXY` to that address. It *adds* to the private networks, so the app's
+   own nginx stays trusted. Note that LAN clients are trusted proxies too, so they can choose the
+   IP the sign-in limiter sees.
 
-The browser session lasts until the token expires or is revoked, and ends after 7 idle days.
+The browser session lasts until the token expires or is revoked (it survives browser restarts),
+and ends after 7 idle days. The admin token line is printed whatever `LOG_LEVEL` is.
 Session cookies are `Secure` over HTTPS and still work over plain HTTP on the LAN.
 
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`

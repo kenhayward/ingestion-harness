@@ -68,4 +68,16 @@ describe('sign-in gate', () => {
     await screen.findByText('Ken · user');
     expect(screen.queryByRole('link', { name: 'Access' })).not.toBeInTheDocument();
   });
+
+  it('says the server is unreachable (not "sign in") when the check fails, and retries', async () => {
+    const me = vi
+      .fn()
+      .mockRejectedValueOnce(statusError(502, 'Bad Gateway'))
+      .mockResolvedValueOnce({ role: 'admin', label: 'admin', expiresAt: null });
+    render(<App api={fakeApi({ me })} pollMs={0} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent("Can't reach the server");
+    expect(screen.queryByLabelText('Access token')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
+  });
 });

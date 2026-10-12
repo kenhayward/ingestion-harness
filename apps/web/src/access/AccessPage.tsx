@@ -136,7 +136,7 @@ export function AccessPage({ api, me }: { api: Api; me: Me }) {
 }
 
 function NewToken({ label, token, onDone }: { label: string; token: string; onDone: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   return (
     <div className="new-token" role="region" aria-label="New token">
       <label>
@@ -146,18 +146,24 @@ function NewToken({ label, token, onDone }: { label: string; token: string; onDo
       <p className="hint">This is the only time it will be shown.</p>
       <button
         type="button"
-        onClick={() =>
-          void navigator.clipboard?.writeText(token).then(
-            () => setCopied(true),
-            () => setCopied(false),
-          )
-        }
+        onClick={() => {
+          // The clipboard API needs a secure context: on plain-HTTP LAN access it doesn't exist.
+          if (!navigator.clipboard) {
+            setNote('Copying needs HTTPS here: select the token and copy it manually.');
+            return;
+          }
+          navigator.clipboard.writeText(token).then(
+            () => setNote('Copied.'),
+            () => setNote('Copy failed: select the token and copy it manually.'),
+          );
+        }}
       >
-        {copied ? 'Copied' : 'Copy'}
+        Copy
       </button>
       <button type="button" onClick={onDone}>
         Done
       </button>
+      {note && <p role="status">{note}</p>}
     </div>
   );
 }

@@ -65,12 +65,18 @@ in the API log. Tokens are required everywhere, including the LAN.
     `{token, record}` and always creates a `user` token.
   - `POST /api/auth/tokens/:id/revoke` and `DELETE /api/auth/tokens/:id` (admin): 404 if the
     token is unknown, 409 for the admin token.
-- **Brute-force limit:** in memory, at most 10 failed logins per client IP and 100 in total per
-  15 minutes, then **429** `{error: 'too many attempts, try again later'}`.
-  - The client IP comes from Fastify `trustProxy`, which defaults to loopback and private ranges
-    (`TRUST_PROXY` overrides it).
+- **Brute-force limit:** in memory, at most 10 failed logins per client within 15 minutes, then
+  **429** `{error: 'too many attempts, try again later'}`.
+  - A client is an IP address, or a whole IPv6 /64.
+  - *Revised after review:* there's no global block, because it would let anyone lock every user
+    out. More than 100 failures across all clients is only logged, as a possible scan.
+  - The client IP comes from Fastify `trustProxy`: loopback and private ranges, plus anything set
+    in `TRUST_PROXY`, which *adds* to them.
 - **Cookie:** `ih_session` with `HttpOnly; SameSite=Strict; Path=/`.
   - `Secure` is added when `req.protocol === 'https'`, so plain-HTTP LAN access keeps working.
+  - *Revised after review:* the cookie is persistent. `Max-Age` is the token's remaining lifetime
+    (400 days for tokens that never expire), so sessions survive browser restarts; the 7-day idle
+    limit is still enforced by the server.
   - Cookies are parsed with `@fastify/cookie`.
 
 ## 3. Web UI
