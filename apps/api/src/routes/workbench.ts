@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   AVAILABLE_STAGES,
@@ -19,11 +19,13 @@ import {
   blockingStage,
   conflictingChanges,
   draftingKey,
+  firstIncomplete,
   inboxKey,
   isChangeStage,
   parseChangeBody,
   preparedTextKey,
   preparedTriageKey,
+  referencesStage,
   segmentationKey,
   stageStates,
   type ChangeBody,
@@ -33,6 +35,7 @@ import {
   type ProjectView,
   type ProposalStatus,
   type ProposalView,
+  type ReferenceRow,
   type SampleState,
   type SampleView,
   type SegmentationView,
@@ -40,7 +43,7 @@ import {
   type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
-import type { ProjectJob, SegmentJob } from '../repositories/types.js';
+import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { validateTemplate } from '../templates/definitions.js';
@@ -238,6 +241,82 @@ async function toView(
   };
 }
 
+/** A new document for a test run of `sample` against template version `version`. */
+function sampleDocument(sample: SampleRecord, projectId: string, version: number): NewDocument {
+  return {
+    id: randomUUID(),
+    filename: sample.filename,
+    sha256: sample.sha256,
+    sizeBytes: sample.sizeBytes,
+    specId: projectId,
+    specVersion: version,
+    bucket: sample.bucket,
+    objectKey: sample.objectKey,
+  };
+}
+
+/** Ready dev samples with their newest reference (by PDF sha256) and newest non-evaluation run. */
+async function referenceRows(app: FastifyInstance, projectId: string): Promise<ReferenceRow[]> {
+  const samples = (await sampleViews(app, projectId))
+    .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+    .map((s) => s.record)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const references = await app.deps.repo.listReferencesWithSha(projectId);
+  const runs = (await app.deps.repo.listProjectRuns(projectId)).filter(
+    (r) => r.job.referenceId === null,
+  );
+  return samples.map((s) => {
+    const reference = references.find((r) => r.sha256 === s.sha256) ?? null;
+    const run = runs.find((r) => r.sha256 === s.sha256)?.job ?? null;
+    return {
+      sampleId: s.id,
+      filename: s.filename,
+      sha256: s.sha256,
+      reference: reference && {
+        id: reference.id,
+        name: reference.name,
+        createdAt: reference.createdAt,
+      },
+      run: run && {
+        jobId: run.id,
+        status: run.status,
+        error: run.error,
+        modelOverride: run.modelOverride,
+      },
+    };
+  });
+}
+
+async function referencesView(
+  app: FastifyInstance,
+  projectId: string,
+  earlier: StageView[],
+): Promise<StageView> {
+  const rows = await referenceRows(app, projectId);
+  const verified = rows.filter((r) => r.reference !== null);
+  const skips = await app.deps.workbench.listSkips(projectId);
+  return referencesStage(earlier, {
+    devSamples: rows.length,
+    verified: verified.length,
+    lastVerifiedAt:
+      verified
+        .map((r) => r.reference!.createdAt)
+        .sort()
+        .at(-1) ?? null,
+    running: rows.some(
+      (r) => r.run !== null && (r.run.status === 'queued' || r.run.status === 'running'),
+    ),
+    hasRuns: rows.some((r) => r.run !== null),
+    skippedAt: skips.find((s) => s.stage === 'references')?.skippedAt ?? null,
+  });
+}
+
+/** All five stages: the four proposal stages, then references (derived separately). */
+async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
+  const earlier = await stagesOf(app, projectId);
+  return [...earlier, await referencesView(app, projectId, earlier)];
+}
+
 /** /api/workbench (ADR 0007, phase 1): projects, samples, brief, dev test runs. */
 export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   const { workbench, templates } = app.deps;
@@ -420,19 +499,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
     const jobs = await Promise.all(
       ready.map(({ record }) =>
-        app.deps.repo.createWorkbenchJob(
-          {
-            id: randomUUID(),
-            filename: record.filename,
-            sha256: record.sha256,
-            sizeBytes: record.sizeBytes,
-            specId: projectId,
-            specVersion: draft,
-            bucket: record.bucket,
-            objectKey: record.objectKey,
-          },
-          { projectId, task: 'process', params: { dataPolicy: project.dataPolicy } },
-        ),
+        app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
+          projectId,
+          task: 'process',
+          params: { dataPolicy: project.dataPolicy },
+        }),
       ),
     );
     return reply.code(201).send({ jobs });
@@ -518,9 +589,51 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     return projectView(app, project);
   });
 
+  /** References stage: run the draft model on every ready dev sample that has no reference. */
+  async function startReferences(projectId: string, reply: FastifyReply) {
+    const project = await workbench.getProject(projectId);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    const blocking = firstIncomplete(await stagesOf(app, projectId));
+    if (blocking) {
+      return reply
+        .code(409)
+        .send({ error: `finish the ${blocking} stage first (accept or skip it)` });
+    }
+    const { draft } = await versionsOf(templates, projectId);
+    if (draft === null) {
+      return reply
+        .code(409)
+        .send({ error: 'no open draft; start the next version on the Template tab' });
+    }
+    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+    const todo = (await referenceRows(app, projectId)).filter((r) => r.reference === null);
+    if (!todo.length) {
+      return reply.code(409).send({ error: 'every dev sample already has a reference' });
+    }
+    const records = new Map(
+      (await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]),
+    );
+    const jobs = await Promise.all(
+      todo.map((row) =>
+        app.deps.repo.createWorkbenchJob(
+          sampleDocument(records.get(row.sampleId)!, projectId, draft),
+          {
+            projectId,
+            task: 'process',
+            params: { dataPolicy: project.dataPolicy },
+            modelOverride: 'draft',
+          },
+        ),
+      ),
+    );
+    return reply.code(201).send({ jobs });
+  }
+
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage',
     async (req, reply) => {
+      if (req.params.stage === 'references') return startReferences(req.params.id, reply);
       const params = StageParams.safeParse(req.params);
       if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
         return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
@@ -579,28 +692,40 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (!(await workbench.getProject(req.params.id))) {
       return reply.code(404).send({ error: 'project not found' });
     }
-    return stagesOf(app, req.params.id);
+    return allStages(app, req.params.id);
+  });
+
+  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/references', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    return referenceRows(app, req.params.id);
   });
 
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
     async (req, reply) => {
       const params = SkipParams.safeParse(req.params);
-      if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
+      if (
+        !params.success ||
+        !(params.data.stage === 'references' || AVAILABLE_STAGES.includes(params.data.stage))
+      ) {
         return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
       }
       const { id: projectId, stage } = params.data;
       if (!(await workbench.getProject(projectId))) {
         return reply.code(404).send({ error: 'project not found' });
       }
-      const blocking = blockingStage(await stagesOf(app, projectId), stage);
+      const states = await stagesOf(app, projectId);
+      const blocking =
+        stage === 'references' ? firstIncomplete(states) : blockingStage(states, stage);
       if (blocking) {
         return reply
           .code(409)
           .send({ error: `finish the ${blocking} stage first (accept or skip it)` });
       }
       await workbench.addSkip(projectId, stage);
-      return reply.code(201).send(await stagesOf(app, projectId));
+      return reply.code(201).send(await allStages(app, projectId));
     },
   );
 

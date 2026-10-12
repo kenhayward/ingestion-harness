@@ -48,6 +48,16 @@ export class MemoryRepo implements IngestionRepo {
   readonly publishedAt = new Map<string, string>();
   readonly documents = new Map<string, NewDocument>();
   readonly edits = new Map<string, ReviewEdit[]>();
+  private lastTime = 0;
+
+  /**
+   * Strictly increasing ISO times, shared with MemoryWorkbenchRepo: stage states compare
+   * reference times with skip and decision times, so ties or clock skew would hide staleness.
+   */
+  now(): string {
+    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
+    return new Date(this.lastTime).toISOString();
+  }
   readonly stepRuns = new Map<string, StepRun[]>();
   readonly references = new Map<string, Reference>();
   readonly reruns = new Map<string, { step: string } & RerunRequest>();
@@ -366,7 +376,7 @@ export class MemoryRepo implements IngestionRepo {
       (r) => r.templateId === input.templateId && r.name === input.name,
     );
     if (taken) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
-    const ref: Reference = { ...input, id: randomUUID(), createdAt: new Date().toISOString() };
+    const ref: Reference = { ...input, id: randomUUID(), createdAt: this.now() };
     this.references.set(ref.id, ref);
     return ref;
   }

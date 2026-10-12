@@ -136,7 +136,6 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
   readonly iterations: IterationRecord[] = [];
-  private lastTime = 0;
 
   constructor(private readonly jobs: MemoryRepo) {}
 
@@ -148,10 +147,9 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return this.projects.get(id) ?? null;
   }
 
-  /** Strictly increasing ISO times: stage states compare them, so ties would hide staleness. */
+  /** Strictly increasing ISO times (the MemoryRepo's clock): stage states compare them. */
   private now(): string {
-    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
-    return new Date(this.lastTime).toISOString();
+    return this.jobs.now();
   }
 
   async createProject(id: string, name: string) {

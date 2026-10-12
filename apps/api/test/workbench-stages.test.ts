@@ -83,8 +83,11 @@ describe('stage order', () => {
       'outputs:running',
       'sections:pending',
       'steps:pending',
+      'references:pending',
     ]);
-    expect((await start('references')).statusCode).toBe(400);
+    const references = await start('references');
+    expect(references.statusCode).toBe(409);
+    expect(references.json().error).toBe('finish the outputs stage first (accept or skip it)');
   });
 
   it('marks later stages stale when an earlier stage is accepted again', async () => {
@@ -101,6 +104,7 @@ describe('stage order', () => {
       'outputs:stale',
       'sections:pending',
       'steps:pending',
+      'references:pending',
     ]);
   });
 });
