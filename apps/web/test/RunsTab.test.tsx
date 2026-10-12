@@ -10,13 +10,19 @@ describe('RunsTab', () => {
     const done = job({ filename: 's1.pdf', status: 'awaiting_review', test: true, specVersion: 2 });
     const queued = job({ filename: 's2.pdf', status: 'queued', test: true, specVersion: 2 });
     const listTestRuns = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([done, queued]);
-    const api = fakeApi({ listTestRuns, runDevTests: vi.fn(async () => ({ jobs: [done, queued] })) });
+    const api = fakeApi({
+      listTestRuns,
+      runDevTests: vi.fn(async () => ({ jobs: [done, queued] })),
+    });
     render(<RunsTab api={api} projectId="letter" draft={2} pollMs={60_000} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples' }));
     expect(api.runDevTests).toHaveBeenCalledWith('letter');
     const table = await screen.findByRole('table', { name: 'Test runs' });
     const row = within(table).getByRole('cell', { name: 's1.pdf' }).closest('tr')!;
-    expect(within(row).getByRole('link', { name: 'Review' })).toHaveAttribute('href', `#/review/${done.id}`);
+    expect(within(row).getByRole('link', { name: 'Review' })).toHaveAttribute(
+      'href',
+      `#/review/${done.id}`,
+    );
     const pending = within(table).getByRole('cell', { name: 's2.pdf' }).closest('tr')!;
     expect(within(pending).queryByRole('link')).toBeNull();
   });

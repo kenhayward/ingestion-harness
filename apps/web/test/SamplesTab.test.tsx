@@ -44,7 +44,12 @@ describe('SamplesTab', () => {
   });
 
   it('changes a role, retries a failed preparation and removes a sample', async () => {
-    const failed = sampleView({ filename: 'bad.pdf', state: 'failed', error: 'OCR down', triage: null });
+    const failed = sampleView({
+      filename: 'bad.pdf',
+      state: 'failed',
+      error: 'OCR down',
+      triage: null,
+    });
     const good = sampleView({ filename: 'good.pdf' });
     const api = fakeApi({
       listSamples: vi.fn(async () => [good, failed]),

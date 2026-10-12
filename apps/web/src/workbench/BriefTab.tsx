@@ -4,11 +4,23 @@ import type { Api } from '../api/client.js';
 
 const FIELDS: { key: keyof BriefBody; label: string; hint: string }[] = [
   { key: 'purpose', label: 'Purpose', hint: 'What the outputs are for and who consumes them.' },
-  { key: 'outputs', label: 'Outputs wanted', hint: 'Must-have and nice-to-have values, in plain words.' },
+  {
+    key: 'outputs',
+    label: 'Outputs wanted',
+    hint: 'Must-have and nice-to-have values, in plain words.',
+  },
   { key: 'exampleOutput', label: 'Example output', hint: 'A mock CSV or a few example rows.' },
   { key: 'glossary', label: 'Glossary', hint: 'Domain terms and abbreviations.' },
-  { key: 'variants', label: 'Variants', hint: 'Known issuers, layouts, languages, blank vs executed copies.' },
-  { key: 'rules', label: 'Rules', hint: 'For example: placeholders are null; use the executed copy; dates are DMY.' },
+  {
+    key: 'variants',
+    label: 'Variants',
+    hint: 'Known issuers, layouts, languages, blank vs executed copies.',
+  },
+  {
+    key: 'rules',
+    label: 'Rules',
+    hint: 'For example: placeholders are null; use the executed copy; dates are DMY.',
+  },
 ];
 
 /** The user's product knowledge for this document type; every save is a new version. */

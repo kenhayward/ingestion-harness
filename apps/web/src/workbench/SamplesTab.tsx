@@ -65,9 +65,9 @@ export function SamplesTab({
   return (
     <div className="samples">
       <p className="muted">
-        Add 3–8 sample PDFs to develop with, plus a few held out for testing (at most{' '}
-        {MAX_SAMPLES}). Each is prepared in the background: text extraction, then OCR for pages
-        without a text layer.
+        Add 3–8 sample PDFs to develop with, plus a few held out for testing (at most {MAX_SAMPLES}
+        ). Each is prepared in the background: text extraction, then OCR for pages without a text
+        layer.
       </p>
       <label className="file-pick">
         Add sample PDFs

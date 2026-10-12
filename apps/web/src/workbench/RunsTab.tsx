@@ -54,7 +54,12 @@ export function RunsTab({
         Runs the draft{draft !== null ? ` v${draft}` : ''} on every prepared dev sample. Holdout
         samples are not used. Workbench runs queue behind production jobs.
       </p>
-      <button type="button" className="primary" disabled={draft === null} onClick={() => void run()}>
+      <button
+        type="button"
+        className="primary"
+        disabled={draft === null}
+        onClick={() => void run()}
+      >
         Run on dev samples
       </button>
       {error && <p role="alert">{error}</p>}

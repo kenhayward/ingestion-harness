@@ -110,9 +110,7 @@ export function ProjectPage({
           onSaved={(brief) => setView({ ...view, brief })}
         />
       )}
-      {tab === 'runs' && (
-        <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />
-      )}
+      {tab === 'runs' && <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />}
       {tab === 'template' &&
         (draft !== null ? (
           <TemplateEditor

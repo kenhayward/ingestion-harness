@@ -20,7 +20,10 @@ describe('BriefTab', () => {
     expect(save).toBeDisabled();
     await userEvent.type(screen.getByLabelText('Purpose'), 'QA batch records');
     await userEvent.click(save);
-    expect(api.saveBrief).toHaveBeenCalledWith('letter', { ...EMPTY_BRIEF, purpose: 'QA batch records' });
+    expect(api.saveBrief).toHaveBeenCalledWith('letter', {
+      ...EMPTY_BRIEF,
+      purpose: 'QA batch records',
+    });
     expect(onSaved).toHaveBeenCalledWith(saved);
     expect(await screen.findByRole('status')).toHaveTextContent('Saved as version 3');
   });
@@ -30,7 +33,12 @@ describe('BriefTab', () => {
       <BriefTab
         api={fakeApi()}
         projectId="letter"
-        brief={{ projectId: 'letter', version: 2, body: { ...EMPTY_BRIEF, rules: 'Dates are DMY' }, createdAt: '' }}
+        brief={{
+          projectId: 'letter',
+          version: 2,
+          body: { ...EMPTY_BRIEF, rules: 'Dates are DMY' },
+          createdAt: '',
+        }}
         onSaved={vi.fn()}
       />,
     );
