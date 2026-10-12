@@ -231,6 +231,8 @@ describe('document type summaries (GET /api/templates)', () => {
     ctx.repo.jobs.set(run.id, {
       ...ctx.repo.jobs.get(run.id)!,
       status: 'succeeded',
+      // An earlier run: a later re-run must sort after it even within the same millisecond.
+      createdAt: '2026-10-12T09:00:00.000Z',
       updatedAt: '2026-10-12T10:00:00.000Z',
     });
   }
