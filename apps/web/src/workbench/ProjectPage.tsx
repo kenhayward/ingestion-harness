@@ -7,6 +7,7 @@ import { BriefTab } from './BriefTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
+import { SurveyTab } from './SurveyTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
@@ -139,6 +140,16 @@ export function ProjectPage({
           projectId={project.id}
           brief={view.brief}
           onSaved={(brief) => setView({ ...view, brief })}
+        />
+      )}
+      {tab === 'survey' && (
+        <SurveyTab
+          api={api}
+          projectId={project.id}
+          dataPolicy={project.dataPolicy}
+          brief={view.brief}
+          onBriefSaved={(brief) => setView({ ...view, brief })}
+          pollMs={pollMs}
         />
       )}
       {tab === 'sections' && (

@@ -45,4 +45,36 @@ describe('BriefTab', () => {
     expect(screen.getByLabelText('Rules')).toHaveValue('Dates are DMY');
     expect(screen.getByText('Version 2')).toBeInTheDocument();
   });
+
+  it('keeps survey answers when the brief is edited and saved', async () => {
+    const answers = [{ question: 'Which copy?', answer: 'Executed' }];
+    const api = fakeApi({
+      saveBrief: vi.fn(async () => ({
+        projectId: 'letter',
+        version: 4,
+        body: { ...EMPTY_BRIEF, answers },
+        createdAt: '',
+      })),
+    });
+    render(
+      <BriefTab
+        api={api}
+        projectId="letter"
+        brief={{
+          projectId: 'letter',
+          version: 3,
+          body: { ...EMPTY_BRIEF, answers },
+          createdAt: '',
+        }}
+        onSaved={vi.fn()}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText('Purpose'), 'QA');
+    await userEvent.click(screen.getByRole('button', { name: 'Save brief' }));
+    expect(api.saveBrief).toHaveBeenCalledWith('letter', {
+      ...EMPTY_BRIEF,
+      purpose: 'QA',
+      answers,
+    });
+  });
 });
