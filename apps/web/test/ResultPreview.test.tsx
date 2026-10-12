@@ -75,6 +75,13 @@ describe('ResultPreview', () => {
     expect(screen.getByRole('link', { name: 'Open full result' })).toBeInTheDocument();
   });
 
+  it('says when a template result has no published document', async () => {
+    const api = fakeApi({ getResult: vi.fn(async () => resultDetail({ document: null })) });
+    render(<ResultPreview api={api} summary={summary()} />);
+    expect(await screen.findByText('No published document to preview.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open full result' })).toBeInTheDocument();
+  });
+
   it('reports a load failure and keeps the links', async () => {
     const api = fakeApi({
       getResult: vi.fn(async () => {

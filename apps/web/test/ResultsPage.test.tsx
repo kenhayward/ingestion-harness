@@ -207,3 +207,30 @@ describe('ResultsPage list', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('ResultsPage while a filter loads', () => {
+  it('keeps the current rows (no false empty state) until the filtered page arrives', async () => {
+    let resolveFiltered!: (rows: ResultSummary[]) => void;
+    const listResults = vi.fn((query?: { q?: string }) =>
+      query?.q
+        ? new Promise<ResultSummary[]>((resolve) => (resolveFiltered = resolve))
+        : Promise.resolve([result({ filename: 'a.pdf' })]),
+    );
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    await screen.findByRole('button', { name: 'Show preview of a.pdf' });
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Filter by file name' }), 'acme');
+    await vi.waitFor(() => expect(listResults).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/No results match/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show preview of a.pdf' })).toBeInTheDocument();
+    await act(async () => resolveFiltered([result({ filename: 'acme.pdf' })]));
+    expect(screen.getByRole('button', { name: 'Show preview of acme.pdf' })).toBeInTheDocument();
+  });
+
+  it('limits the file name filter to 100 characters', () => {
+    render(<ResultsPage api={fakeApi()} />);
+    expect(screen.getByRole('searchbox', { name: 'Filter by file name' })).toHaveAttribute(
+      'maxLength',
+      '100',
+    );
+  });
+});

@@ -87,9 +87,9 @@ export function ResultsPage({
     [api, templateId, q],
   );
 
+  // The current rows stay until the new page arrives (load replaces them): clearing first would
+  // flash a false "No results" and remount the preview on every filter change.
   useEffect(() => {
-    setRows([]);
-    setHasMore(false);
     void load();
   }, [load]);
 
@@ -121,6 +121,7 @@ export function ResultsPage({
           type="search"
           className="filter-field"
           aria-label="Filter by file name"
+          maxLength={100}
           placeholder="Filter by file name"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}

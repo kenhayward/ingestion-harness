@@ -58,3 +58,12 @@ describe('http api: results query', () => {
     );
   });
 });
+
+describe('http api: long results filter', () => {
+  it('clamps q to the 100 characters the API accepts', async () => {
+    const fetch = vi.fn(async () => respond(200, []));
+    vi.stubGlobal('fetch', fetch);
+    await createHttpApi('/api').listResults({ q: 'x'.repeat(150) });
+    expect(fetch).toHaveBeenCalledWith(`/api/results?q=${'x'.repeat(100)}`, undefined);
+  });
+});

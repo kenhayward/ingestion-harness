@@ -63,6 +63,9 @@ export function ResultPreview({
       {definition && definition.kind !== 'template' && (
         <p className="muted">No preview for this document type.</p>
       )}
+      {definition?.kind === 'template' && !document && !detail?.documentError && (
+        <p className="muted">No published document to preview.</p>
+      )}
       {definition?.kind === 'template' && document && (
         <>
           <dl className="meta preview-fields" aria-label="Fields" role="list">
