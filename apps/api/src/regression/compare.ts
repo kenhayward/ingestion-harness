@@ -73,9 +73,11 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       cellsTotal: 0,
       columns: {},
     };
+    // A Map, not an object: a column may be named `constructor` or `toString`.
+    const perColumn = new Map<string, { matched: number; total: number }>();
     const count = (column: string, equal: boolean) => {
-      const c = result.columns[column] ?? { matched: 0, total: 0 };
-      result.columns[column] = { matched: c.matched + (equal ? 1 : 0), total: c.total + 1 };
+      const c = perColumn.get(column) ?? { matched: 0, total: 0 };
+      perColumn.set(column, { matched: c.matched + (equal ? 1 : 0), total: c.total + 1 });
     };
     for (const row of rows) {
       let best = -1;
@@ -110,6 +112,7 @@ export function compareToReference(expected: Expected, actual: RunDocument): Com
       result.cellsTotal += Object.keys(candidate).length;
       for (const column of Object.keys(candidate)) count(column, false);
     });
+    result.columns = Object.fromEntries(perColumn);
     return result;
   });
 
