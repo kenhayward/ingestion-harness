@@ -40,6 +40,24 @@ login() { # token jar
 check /healthz
 check /readyz
 
+# Caching and security headers from the app's nginx: the page must be revalidated (or a deploy
+# keeps showing the old build), assets are immutable, and both carry the security headers.
+headers() { curl -fsSI "$BASE_URL$1" | tr -d ''; }
+security_headers() { # path label
+  local h
+  h="$(headers "$1")"
+  for want in 'X-Content-Type-Options: nosniff' 'X-Frame-Options: DENY'     'Referrer-Policy: no-referrer' "Content-Security-Policy: frame-ancestors 'none'"; do
+    grep -qiF "$want" <<<"$h" || fail "$2 is missing '$want'"
+  done
+}
+grep -qi '^Cache-Control: no-cache' <<<"$(headers /)" || fail "index.html must be no-cache"
+security_headers / "index.html"
+asset="$(curl -fsS "$BASE_URL/" | grep -o 'assets/[^"]*\.js' | head -1)"
+[[ -n "$asset" ]] || fail "index.html references no script asset"
+grep -qi 'immutable' <<<"$(headers "/$asset")" || fail "assets must be cached as immutable"
+security_headers "/$asset" "/$asset"
+echo "ok   caching and security headers on the page and its assets"
+
 [[ "$(status "$BASE_URL/api/specs")" == 401 ]] || fail "/api/specs must need a session"
 echo "ok   /api/specs without a session -> 401"
 
