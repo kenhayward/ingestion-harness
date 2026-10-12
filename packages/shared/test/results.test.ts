@@ -63,6 +63,7 @@ describe('result schemas', () => {
         reviewer: null,
         reviewedAt: null,
         outputCount: 4,
+        outputs: [],
         issueCount: null,
       }).outputCount,
     ).toBe(4);

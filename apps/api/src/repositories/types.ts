@@ -57,6 +57,8 @@ export interface ListPublishedQuery {
   before?: string;
   /** Tie-breaker for `before`: results at exactly `before` with a job id lower than this. */
   beforeId?: string;
+  /** Case-insensitive file name substring (matched literally). */
+  q?: string;
 }
 
 export interface NewEdit {

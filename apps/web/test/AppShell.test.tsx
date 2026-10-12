@@ -114,6 +114,7 @@ const result = (filename: string): ResultSummary => ({
   reviewer: null,
   reviewedAt: null,
   outputCount: 1,
+  outputs: [],
   issueCount: 0,
 });
 

@@ -2,6 +2,16 @@ import { z } from 'zod';
 import { JobOutputSchema, JobSummarySchema } from './jobs.js';
 import { TableDefSchema, ValueDefSchema } from './template.js';
 
+/** A published file of a result (GET /api/results rows link their downloads with it). */
+export const ResultOutputSchema = z.object({
+  outputId: z.string(),
+  format: z.enum(['csv', 'json']),
+  /** The object key's base name, e.g. `line_items.csv`. */
+  name: z.string(),
+  rowCount: z.number().int().nullable(),
+});
+export type ResultOutput = z.infer<typeof ResultOutputSchema>;
+
 /** One published (non-test) job in GET /api/results, newest publish first. */
 export const ResultSummarySchema = z.object({
   jobId: z.string(),
@@ -14,6 +24,8 @@ export const ResultSummarySchema = z.object({
   reviewer: z.string().nullable(),
   reviewedAt: z.string().nullable(),
   outputCount: z.number().int(),
+  /** Published outputs, by outputId. */
+  outputs: z.array(ResultOutputSchema),
   /** row_count of the published `issues` output; null when there is none (legacy specs). */
   issueCount: z.number().int().nullable(),
 });

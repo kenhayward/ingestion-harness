@@ -18,6 +18,13 @@ const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   before: z.string().datetime({ offset: true }).optional(),
   beforeId: z.string().uuid().optional(),
+  /** File name substring (case-insensitive); blank = no filter. */
+  q: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((s) => (s ? s : undefined)),
 });
 
 /** Published results: what each document delivered to the final target. */

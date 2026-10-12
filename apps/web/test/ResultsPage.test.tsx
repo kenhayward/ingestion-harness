@@ -15,6 +15,7 @@ const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
   reviewer: null,
   reviewedAt: null,
   outputCount: 5,
+  outputs: [],
   issueCount: 2,
   ...o,
 });
