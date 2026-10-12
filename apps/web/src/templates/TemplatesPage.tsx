@@ -61,6 +61,7 @@ export function TemplatesPage({
               <th>Id</th>
               <th>Published</th>
               <th>Draft</th>
+              <th>Workbench</th>
             </tr>
           </thead>
           <tbody>
@@ -83,6 +84,9 @@ export function TemplatesPage({
                   ) : (
                     '—'
                   )}
+                </td>
+                <td>
+                  <a href={`#/workbench/${t.id}`}>Open in workbench</a>
                 </td>
               </tr>
             ))}

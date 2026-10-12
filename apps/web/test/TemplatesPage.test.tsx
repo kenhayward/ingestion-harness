@@ -43,6 +43,26 @@ describe('TemplatesPage', () => {
     );
   });
 
+  it('links each document type to its workbench project', async () => {
+    const api = fakeApi({
+      listTemplates: vi.fn(async () => [
+        {
+          id: 'letter',
+          name: 'Letter',
+          description: null,
+          published: 1,
+          draft: null,
+          versions: [],
+        },
+      ]),
+    });
+    render(<TemplatesPage api={api} onNavigate={vi.fn()} />);
+    expect(await screen.findByRole('link', { name: 'Open in workbench' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter',
+    );
+  });
+
   it('creates a document type and opens its v1 draft', async () => {
     const onNavigate = vi.fn();
     const api = fakeApi({ listTemplates: vi.fn(async () => []) });
