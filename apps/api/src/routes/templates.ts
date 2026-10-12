@@ -204,6 +204,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     if (!ident.success) {
       return reply.code(400).send({ error: 'definition needs a valid id and version' });
     }
+    if (body.data.publish && (await app.deps.workbench.getProject(ident.data.id))) {
+      // Importing as a draft is fine; publishing must go through the holdout gate (ADR 0007).
+      return reply
+        .code(409)
+        .send({ error: `publish ${ident.data.id} from the Workbench (holdout gate)` });
+    }
     const issues = validateTemplate(definition);
     if (body.data.publish && issues.length) {
       return reply.code(400).send({ error: 'template is not valid', issues });

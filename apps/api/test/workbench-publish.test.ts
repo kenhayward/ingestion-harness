@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { stringify } from 'yaml';
 import { outputKey, preparedTriageKey, type SampleView } from '@ih/shared';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -179,5 +180,76 @@ describe('publish gate', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('publish letter from the Workbench (holdout gate)');
+  });
+
+  it('refuses importing a workbench type straight to published, but imports a draft', async () => {
+    const ctx = await project();
+    const yaml = (version: number) => stringify(letter(version));
+    const published = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/templates/import',
+      payload: { yaml: yaml(2), publish: true },
+    });
+    expect(published.statusCode).toBe(409);
+    expect(published.json().error).toBe('publish letter from the Workbench (holdout gate)');
+    expect(await ctx.templates.get('letter', 2)).toBeNull();
+    const draft = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/templates/import',
+      payload: { yaml: yaml(3) },
+    });
+    expect(draft.statusCode).toBe(201);
+    expect(draft.json().record).toMatchObject({ version: 3, status: 'draft' });
+  });
+
+  it('has no gate and refuses publishing without an open draft', async () => {
+    const ctx = await project();
+    await ctx.templates.publish('letter', 1);
+    const gate = (await ctx.app.inject('/api/workbench/projects/letter/publish-gate')).json();
+    expect(gate).toEqual({
+      threshold: 0.9,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no open draft to publish',
+    });
+    const res = await publish(ctx, { overrideReason: 'An override cannot help here' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('no open draft to publish');
+  });
+
+  it('refuses publishing an invalid draft, even with an override', async () => {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, { ...letter(1), pipeline: [] });
+    const res = await publish(ctx, { overrideReason: 'An override cannot help here' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('the draft is not valid');
+    expect((await ctx.templates.get('letter', 1))!.status).toBe('draft');
+    expect((await ctx.app.inject('/api/workbench/projects/letter/publications')).json()).toEqual(
+      [],
+    );
+  });
+
+  it('does not count a holdout run of another version with the same definition', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    await ctx.templates.publish('letter', 1);
+    await ctx.templates.create('letter', 2, letter(1), 'draft'); // identical definition
+    const gate = (await ctx.app.inject('/api/workbench/projects/letter/publish-gate')).json();
+    expect(gate).toMatchObject({
+      iterationId: null,
+      passes: false,
+      reason: 'no complete holdout evaluation of the current draft',
+    });
+  });
+
+  it('returns 404 for the settings of an unknown project', async () => {
+    const ctx = await project();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/workbench/projects/nope',
+      payload: { publishThreshold: 0.5 },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

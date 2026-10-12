@@ -500,7 +500,8 @@ async function gateFor(
     holdout.map(async (i) => {
       const matchesDraft = i.templateVersion === draft && stableJson(i.definition) === current;
       // Cached scores when present; runs of another draft never count, so only runs of this
-      // draft are worth scoring.
+      // draft are worth scoring. An uncached run of another draft gets a placeholder
+      // (running, no score): publishGate ignores it because matchesDraft is false.
       const summary =
         i.scores || !matchesDraft
           ? {
