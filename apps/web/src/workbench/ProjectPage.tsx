@@ -10,6 +10,7 @@ import { SamplesTab } from './SamplesTab.js';
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
   brief: 'Brief',
+  sections: 'Sections',
   template: 'Template',
   runs: 'Test runs',
 };
