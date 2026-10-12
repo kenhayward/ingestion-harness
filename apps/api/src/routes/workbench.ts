@@ -451,19 +451,25 @@ function summaryOf(
   };
 }
 
+/** What an evaluation needs, checked once per request (a comparison starts three). */
+interface EvaluationInputs {
+  project: WorkbenchProject;
+  draft: number;
+  record: TemplateRecord;
+  rows: ReferenceRow[];
+  samples: Map<string, SampleRecord>;
+}
+
 /**
- * Starts an evaluation of the open draft against the verified dev references: one job per
- * reference, recorded as an iteration. Sends the error reply and returns null when the project,
- * draft or references are not ready.
+ * Checks that the project, its open draft and the verified dev references are ready for an
+ * evaluation. Sends the error reply and returns null when they are not.
  */
-async function startIteration(
+async function evaluationInputs(
   app: FastifyInstance,
-  req: FastifyRequest<{ Params: ProjectParams }>,
+  projectId: string,
   reply: FastifyReply,
-  options: { model: EvaluationModel | null; uncached: boolean; groupId: string | null },
-): Promise<IterationRecord | null> {
+): Promise<EvaluationInputs | null> {
   const { workbench, templates } = app.deps;
-  const projectId = req.params.id;
   const project = await workbench.getProject(projectId);
   if (!project) {
     await reply.code(404).send({ error: 'project not found' });
@@ -489,12 +495,28 @@ async function startIteration(
     });
     return null;
   }
-  const records = new Map((await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]));
+  const samples = new Map((await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]));
+  return { project, draft, record, rows, samples };
+}
+
+/**
+ * Starts an evaluation of the open draft against the verified dev references: one job per
+ * reference, recorded as an iteration.
+ */
+async function startIteration(
+  app: FastifyInstance,
+  req: FastifyRequest<{ Params: ProjectParams }>,
+  inputs: EvaluationInputs,
+  options: { model: EvaluationModel | null; uncached: boolean; groupId: string | null },
+): Promise<IterationRecord> {
+  const { workbench } = app.deps;
+  const projectId = req.params.id;
+  const { project, draft, record, rows, samples } = inputs;
   const { model, uncached, groupId } = options;
   const jobs = await Promise.all(
     rows.map((row) =>
       app.deps.repo.createWorkbenchJob(
-        sampleDocument(records.get(row.sampleId)!, projectId, draft),
+        sampleDocument(samples.get(row.sampleId)!, projectId, draft),
         {
           projectId,
           task: 'process',
@@ -1040,12 +1062,13 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/evaluations', async (req, reply) => {
     const body = EvaluateBody.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const iteration = await startIteration(app, req, reply, {
+    const inputs = await evaluationInputs(app, req.params.id, reply);
+    if (!inputs) return reply;
+    const iteration = await startIteration(app, req, inputs, {
       model: body.data.model ?? null,
       uncached: body.data.uncached ?? false,
       groupId: null,
     });
-    if (!iteration) return reply;
     return reply.code(201).send(await iterationView(app, iteration));
   });
 
@@ -1054,16 +1077,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const body = CompareBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const inputs = await evaluationInputs(app, req.params.id, reply);
+      if (!inputs) return reply;
       const groupId = randomUUID();
       const records: IterationRecord[] = [];
       for (const model of EVALUATION_MODELS) {
-        const iteration = await startIteration(app, req, reply, {
-          model,
-          uncached: body.data.uncached ?? false,
-          groupId,
-        });
-        if (!iteration) return reply;
-        records.push(iteration);
+        records.push(
+          await startIteration(app, req, inputs, {
+            model,
+            uncached: body.data.uncached ?? false,
+            groupId,
+          }),
+        );
       }
       const view: ComparisonView = {
         groupId,

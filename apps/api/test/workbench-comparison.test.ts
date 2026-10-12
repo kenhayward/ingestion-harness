@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   outputKey,
   preparedTriageKey,
@@ -123,6 +123,42 @@ describe('model comparison and uncached evaluations', () => {
       (await app.inject(`/api/workbench/projects/letter/comparisons/${crypto.randomUUID()}`))
         .statusCode,
     ).toBe(404);
+  });
+
+  it('checks the project, draft and references once for the whole comparison', async () => {
+    const { app, add, verify, workbench } = await project();
+    await verify(await add(1), 'Acme');
+    const getProject = vi.spyOn(workbench, 'getProject');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/evaluations/compare',
+      payload: {},
+    });
+    expect(res.statusCode).toBe(201);
+    expect(getProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a comparison exactly like an evaluation, and starts nothing', async () => {
+    const { app, add, evaluate, workbench } = await project();
+    await add(1); // a dev sample without a verified reference
+    const compare = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/workbench/projects/letter/evaluations/compare',
+        payload,
+      });
+    const refused = await compare({});
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toEqual((await evaluate()).json());
+    expect(refused.json().error).toMatch(/no verified references/);
+    expect(await workbench.listIterations('letter')).toEqual([]);
+    expect((await compare({ uncached: true, model: 'fast' })).statusCode).toBe(400);
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/nope/evaluations/compare',
+      payload: {},
+    });
+    expect([missing.statusCode, missing.json()]).toEqual([404, { error: 'project not found' }]);
   });
 
   it('still completes when one model is refused by the data policy', async () => {
