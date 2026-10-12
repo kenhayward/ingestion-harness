@@ -23,7 +23,7 @@ const cases = JSON.parse(
 describe('applyChanges (fixture shared with worker/tests/test_draft_changes.py)', () => {
   it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
     for (const change of c.changes) expect(DraftChangeSchema.safeParse(change).success).toBe(true);
-    expect(applyChanges(c.definition, c.changes as DraftChange[])).toEqual(c.expected);
+    expect(applyChanges(c.definition, c.changes as DraftChange[])).toStrictEqual(c.expected);
   });
 
   it('never mutates its input', () => {

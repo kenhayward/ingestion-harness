@@ -5,14 +5,41 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
-      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
     },
     "changes": [
       {
         "op": "putField",
-        "field": { "id": "sent_on", "type": "date", "description": "Date of the letter" },
+        "field": {
+          "id": "sent_on",
+          "type": "date",
+          "description": "Date of the letter"
+        },
         "reason": "r"
       }
     ],
@@ -20,15 +47,37 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
       "outputs": {
         "fields": [
-          { "id": "sender", "type": "text" },
-          { "id": "sent_on", "type": "date", "description": "Date of the letter" }
+          {
+            "id": "sender",
+            "type": "text"
+          },
+          {
+            "id": "sent_on",
+            "type": "date",
+            "description": "Date of the letter"
+          }
         ],
         "tables": []
       },
-      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
     }
   },
   {
@@ -37,26 +86,68 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
       "outputs": {
         "fields": [
-          { "id": "sender", "type": "text" },
-          { "id": "ref", "type": "text" }
+          {
+            "id": "sender",
+            "type": "text"
+          },
+          {
+            "id": "ref",
+            "type": "text"
+          }
         ],
-        "tables": [{ "id": "items", "columns": [{ "id": "name", "type": "text" }] }]
+        "tables": [
+          {
+            "id": "items",
+            "columns": [
+              {
+                "id": "name",
+                "type": "text"
+              }
+            ]
+          }
+        ]
       },
       "pipeline": []
     },
     "changes": [
       {
         "op": "putField",
-        "field": { "id": "sender", "type": "text", "description": "Who wrote it" },
+        "field": {
+          "id": "sender",
+          "type": "text",
+          "description": "Who wrote it"
+        },
         "reason": "r"
       },
-      { "op": "putField", "field": { "id": "items", "type": "list" }, "reason": "r" },
+      {
+        "op": "putField",
+        "field": {
+          "id": "items",
+          "type": "list"
+        },
+        "reason": "r"
+      },
       {
         "op": "putTable",
-        "table": { "id": "ref", "columns": [{ "id": "code", "type": "text" }] },
+        "table": {
+          "id": "ref",
+          "columns": [
+            {
+              "id": "code",
+              "type": "text"
+            }
+          ]
+        },
         "reason": "r"
       }
     ],
@@ -64,13 +155,37 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
       "outputs": {
         "fields": [
-          { "id": "sender", "type": "text", "description": "Who wrote it" },
-          { "id": "items", "type": "list" }
+          {
+            "id": "sender",
+            "type": "text",
+            "description": "Who wrote it"
+          },
+          {
+            "id": "items",
+            "type": "list"
+          }
         ],
-        "tables": [{ "id": "ref", "columns": [{ "id": "code", "type": "text" }] }]
+        "tables": [
+          {
+            "id": "ref",
+            "columns": [
+              {
+                "id": "code",
+                "type": "text"
+              }
+            ]
+          }
+        ]
       },
       "pipeline": []
     }
@@ -81,20 +196,53 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
       "pipeline": []
     },
     "changes": [
-      { "op": "removeOutput", "id": "sender", "reason": "r" },
-      { "op": "removeOutput", "id": "nope", "reason": "r" }
+      {
+        "op": "removeOutput",
+        "id": "sender",
+        "reason": "r"
+      },
+      {
+        "op": "removeOutput",
+        "id": "nope",
+        "reason": "r"
+      }
     ],
     "expected": {
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     }
   },
@@ -104,18 +252,47 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "ocr": "auto", "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     },
     "changes": [
-      { "op": "putSection", "section": { "id": "all", "anchor": "^Dear" }, "reason": "r" },
       {
         "op": "putSection",
-        "section": { "id": "sig", "anchor": "^Yours", "required": false },
+        "section": {
+          "id": "all",
+          "anchor": "^Dear"
+        },
         "reason": "r"
       },
-      { "op": "setCopies", "copies": { "anchor": "^LETTER", "select": "last" }, "reason": "r" }
+      {
+        "op": "putSection",
+        "section": {
+          "id": "sig",
+          "anchor": "^Yours",
+          "required": false
+        },
+        "reason": "r"
+      },
+      {
+        "op": "setCopies",
+        "copies": {
+          "anchor": "^LETTER",
+          "select": "last"
+        },
+        "reason": "r"
+      }
     ],
     "expected": {
       "id": "letter",
@@ -124,12 +301,25 @@
       "document": {
         "ocr": "auto",
         "sections": [
-          { "id": "all", "anchor": "^Dear" },
-          { "id": "sig", "anchor": "^Yours", "required": false }
+          {
+            "id": "all",
+            "anchor": "^Dear"
+          },
+          {
+            "id": "sig",
+            "anchor": "^Yours",
+            "required": false
+          }
         ],
-        "copies": { "anchor": "^LETTER", "select": "last" }
+        "copies": {
+          "anchor": "^LETTER",
+          "select": "last"
+        }
       },
-      "outputs": { "fields": [], "tables": [] },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     }
   },
@@ -141,24 +331,54 @@
       "name": "Letter",
       "document": {
         "sections": [
-          { "id": "all", "anchor": "\\A" },
-          { "id": "sig", "anchor": "^Yours" }
+          {
+            "id": "all",
+            "anchor": "\\A"
+          },
+          {
+            "id": "sig",
+            "anchor": "^Yours"
+          }
         ],
-        "copies": { "anchor": "^LETTER", "select": "first" }
+        "copies": {
+          "anchor": "^LETTER",
+          "select": "first"
+        }
       },
-      "outputs": { "fields": [], "tables": [] },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     },
     "changes": [
-      { "op": "removeSection", "id": "sig", "reason": "r" },
-      { "op": "setCopies", "copies": null, "reason": "r" }
+      {
+        "op": "removeSection",
+        "id": "sig",
+        "reason": "r"
+      },
+      {
+        "op": "setCopies",
+        "copies": null,
+        "reason": "r"
+      }
     ],
     "expected": {
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     }
   },
@@ -168,14 +388,41 @@
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
-      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
     },
     "changes": [
       {
         "op": "putStep",
-        "step": { "type": "check", "id": "c1", "values": "sender", "reference": "sender" },
+        "step": {
+          "type": "check",
+          "id": "c1",
+          "values": "sender",
+          "reference": "sender"
+        },
         "reason": "r"
       },
       {
@@ -189,15 +436,34 @@
         },
         "reason": "r"
       },
-      { "op": "setPreamble", "preamble": "Letters to QA.", "reason": "r" }
+      {
+        "op": "setPreamble",
+        "preamble": "Letters to QA.",
+        "reason": "r"
+      }
     ],
     "expected": {
       "id": "letter",
       "version": 2,
       "name": "Letter",
       "preamble": "Letters to QA.",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
       "pipeline": [
         {
           "type": "extract",
@@ -206,7 +472,12 @@
           "sections": ["all"],
           "instructions": "Top of page 1"
         },
-        { "type": "check", "id": "c1", "values": "sender", "reference": "sender" }
+        {
+          "type": "check",
+          "id": "c1",
+          "values": "sender",
+          "reference": "sender"
+        }
       ]
     }
   },
@@ -217,34 +488,407 @@
       "version": 2,
       "name": "Letter",
       "preamble": "Old.",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
-      "pipeline": [{ "type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"] }]
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
     },
     "changes": [
-      { "op": "removeStep", "id": "head", "reason": "r" },
-      { "op": "setPreamble", "preamble": "", "reason": "r" }
+      {
+        "op": "removeStep",
+        "id": "head",
+        "reason": "r"
+      },
+      {
+        "op": "setPreamble",
+        "preamble": "",
+        "reason": "r"
+      }
     ],
     "expected": {
       "id": "letter",
       "version": 2,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
     }
   },
   {
     "name": "missing blocks are created",
-    "definition": { "id": "letter", "version": 1, "name": "Letter" },
-    "changes": [{ "op": "putSection", "section": { "id": "all", "anchor": "\\A" }, "reason": "r" }],
+    "definition": {
+      "id": "letter",
+      "version": 1,
+      "name": "Letter"
+    },
+    "changes": [
+      {
+        "op": "putSection",
+        "section": {
+          "id": "all",
+          "anchor": "\\A"
+        },
+        "reason": "r"
+      }
+    ],
     "expected": {
       "id": "letter",
       "version": 1,
       "name": "Letter",
-      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
-      "outputs": { "fields": [], "tables": [] },
+      "document": {
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": []
+      },
       "pipeline": []
+    }
+  },
+  {
+    "name": "removeOutput removes a table",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "items",
+            "columns": [
+              {
+                "id": "desc",
+                "type": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
+    },
+    "changes": [
+      {
+        "op": "removeOutput",
+        "id": "items",
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a non-preamble change keeps the preamble",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ],
+      "preamble": "Keep me."
+    },
+    "changes": [
+      {
+        "op": "putField",
+        "field": {
+          "id": "sent_on",
+          "type": "date"
+        },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          },
+          {
+            "id": "sent_on",
+            "type": "date"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ],
+      "preamble": "Keep me."
+    }
+  },
+  {
+    "name": "setCopies null without copies leaves no copies key",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
+    },
+    "changes": [
+      {
+        "op": "setCopies",
+        "copies": null,
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
+    }
+  },
+  {
+    "name": "an empty preamble is dropped by an unrelated change",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ],
+      "preamble": ""
+    },
+    "changes": [
+      {
+        "op": "putField",
+        "field": {
+          "id": "sent_on",
+          "type": "date"
+        },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          },
+          {
+            "id": "sent_on",
+            "type": "date"
+          }
+        ],
+        "tables": []
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        }
+      ]
     }
   }
 ]
