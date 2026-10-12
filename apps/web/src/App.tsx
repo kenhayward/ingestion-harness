@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
+import { AccessPage } from './access/AccessPage.js';
 import { SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
 import { JobsTable } from './components/JobsTable.js';
@@ -69,6 +70,8 @@ function SignedInApp({
     page = <ResultsPage api={api} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
+  } else if (route.name === 'access') {
+    page = <AccessPage api={api} me={me} />;
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} />;
   } else if (route.name === 'template') {
@@ -108,7 +111,11 @@ function SignedInApp({
         >
           Document types
         </a>
-        {me.role === 'admin' && <a href="#/access">Access</a>}
+        {me.role === 'admin' && (
+          <a href="#/access" aria-current={route.name === 'access' ? 'page' : undefined}>
+            Access
+          </a>
+        )}
         <span className="identity">
           {me.label} · {me.role}
         </span>

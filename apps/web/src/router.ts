@@ -4,6 +4,7 @@ export type Route =
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
+  | { name: 'access' }
   | { name: 'results' }
   | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number };
@@ -23,6 +24,7 @@ export function parseHash(hash: string): Route {
   if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
+  if (hash === '#/access') return { name: 'access' };
   return { name: 'jobs' };
 }
 

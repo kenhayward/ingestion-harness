@@ -187,6 +187,14 @@ export interface Api {
   logout(): Promise<void>;
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
+  listTokens(): Promise<AccessToken[]>;
+  /** A new user token: the plaintext `token` is only ever returned here. */
+  createToken(
+    label: string,
+    expiresInDays: number | null,
+  ): Promise<{ token: string; record: AccessToken }>;
+  revokeToken(id: string): Promise<void>;
+  deleteToken(id: string): Promise<void>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
   listJobs(): Promise<JobSummary[]>;
@@ -238,6 +246,18 @@ export interface Api {
   testRun(file: File, id: string, version: number): Promise<JobSummary>;
 }
 
+/** An access token as listed to admins (never the token itself). */
+export interface AccessToken {
+  id: string;
+  label: string;
+  role: 'admin' | 'user';
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  status: 'active' | 'expired' | 'revoked' | 'current-admin';
+}
+
 /** Signed-in identity (GET /api/auth/me). */
 export interface Me {
   role: 'admin' | 'user';
@@ -280,6 +300,18 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** For 204 responses: throws the API error like json() does. */
+async function noContent(response: Promise<Response>): Promise<void> {
+  const res = await response;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(
+      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
+      res.status,
+    );
+  }
+}
+
 function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
   return apiFetch(url, {
     method,
@@ -297,6 +329,18 @@ export function createHttpApi(base = '/api'): Api {
     login: (token) => post<Me>(`${base}/auth/login`, { token }),
     logout: async () => {
       await apiFetch(`${base}/auth/logout`, { method: 'POST' });
+    },
+    listTokens: () => apiFetch(`${base}/auth/tokens`).then(json<AccessToken[]>),
+    createToken: (label, expiresInDays) =>
+      post<{ token: string; record: AccessToken }>(`${base}/auth/tokens`, {
+        label,
+        expiresInDays,
+      }),
+    revokeToken: async (id) => {
+      await noContent(apiFetch(`${base}/auth/tokens/${id}/revoke`, { method: 'POST' }));
+    },
+    deleteToken: async (id) => {
+      await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
     },
     onUnauthorized: (listener) => {
       unauthorizedListeners.add(listener);

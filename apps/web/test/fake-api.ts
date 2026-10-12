@@ -60,6 +60,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     me: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
     login: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
     logout: vi.fn(async () => undefined),
+    listTokens: vi.fn(async () => []),
+    createToken: vi.fn(async () => {
+      throw new Error('createToken not stubbed');
+    }),
+    revokeToken: vi.fn(async () => undefined),
+    deleteToken: vi.fn(async () => undefined),
     onUnauthorized: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
