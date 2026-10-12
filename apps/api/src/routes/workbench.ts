@@ -13,11 +13,13 @@ import {
   FeedbackBodySchema,
   MAX_SAMPLES,
   PreparedTextSchema,
+  PublishBodySchema,
   PreparedTriageSchema,
   SampleRoleSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
   SurveyBodySchema,
+  ThresholdBodySchema,
   applyChanges,
   blockingStage,
   buildScorecard,
@@ -31,8 +33,10 @@ import {
   parseChangeBody,
   preparedTextKey,
   preparedTriageKey,
+  publishGate,
   referencesStage,
   segmentationKey,
+  stableJson,
   stageStates,
   type ChangeBody,
   type ComparisonView,
@@ -41,6 +45,7 @@ import {
   type EvaluationSet,
   type FailureDiff,
   type FeedbackItem,
+  type GateView,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -50,6 +55,7 @@ import {
   type ProjectView,
   type ProposalStatus,
   type ProposalView,
+  type Publication,
   type Reference,
   type ReferenceRow,
   type SampleResult,
@@ -467,6 +473,47 @@ async function iterationView(
   };
 }
 
+/**
+ * The publish gate for the open draft (ADR 0007): only holdout iterations that ran exactly this
+ * draft (version and definition) count; scores are computed only for those.
+ */
+async function gateFor(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+): Promise<GateView & { draft: number | null }> {
+  const { draft } = await versionsOf(app.deps.templates, project.id);
+  if (draft === null) {
+    return {
+      threshold: project.publishThreshold,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no open draft to publish',
+      draft,
+    };
+  }
+  const current = stableJson((await app.deps.templates.get(project.id, draft))!.definition);
+  const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
+    (i) => i.set === 'holdout',
+  );
+  const candidates = await Promise.all(
+    holdout.map(async (i) => {
+      const matchesDraft = i.templateVersion === draft && stableJson(i.definition) === current;
+      // Cached scores when present; runs of another draft never count, so only runs of this
+      // draft are worth scoring.
+      const summary =
+        i.scores || !matchesDraft
+          ? {
+              status: i.scores ? ('complete' as const) : ('running' as const),
+              score: i.scores?.score ?? null,
+            }
+          : await iterationView(app, i).then((v) => ({ status: v.status, score: v.score }));
+      return { id: i.id, createdAt: i.createdAt, matchesDraft, ...summary };
+    }),
+  );
+  return { ...publishGate({ threshold: project.publishThreshold, candidates }), draft };
+}
+
 function summaryOf(
   iteration: IterationRecord,
 ): Omit<IterationSummary, 'status' | 'score' | 'completed' | 'total'> {
@@ -643,6 +690,82 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (!project) return reply.code(404).send({ error: 'project not found' });
     return projectView(app, project);
   });
+
+  /** Project settings: the holdout score a draft needs to publish without an override. */
+  app.patch<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
+    const body = ThresholdBodySchema.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const project = await workbench.setPublishThreshold(req.params.id, body.data.publishThreshold);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    req.log.info(
+      { projectId: project.id, publishThreshold: project.publishThreshold },
+      'publish threshold changed',
+    );
+    return projectView(app, project);
+  });
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/publish-gate',
+    async (req, reply): Promise<GateView> => {
+      const project = await workbench.getProject(req.params.id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { threshold, iterationId, score, passes, reason } = await gateFor(app, project);
+      return { threshold, iterationId, score, passes, reason };
+    },
+  );
+
+  /** Publish the open draft through the holdout gate; below it, only with an override reason. */
+  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/publish', async (req, reply) => {
+    const body = PublishBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const projectId = req.params.id;
+    const project = await workbench.getProject(projectId);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    const { draft, ...gate } = await gateFor(app, project);
+    if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
+    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+    const { overrideReason } = body.data;
+    if (!gate.passes && !overrideReason) {
+      return reply
+        .code(409)
+        .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
+    }
+    const published = await templates.publish(projectId, draft);
+    if (!published) return reply.code(409).send({ error: 'the draft is no longer open' });
+    const publication = await workbench.recordPublication({
+      projectId,
+      version: draft,
+      iterationId: gate.iterationId,
+      score: gate.score,
+      threshold: gate.threshold,
+      // An override is recorded only when it was needed.
+      overrideReason: gate.passes ? null : overrideReason!,
+      publishedBy: req.auth?.label ?? null,
+    });
+    req.log.info(
+      {
+        projectId,
+        version: draft,
+        iterationId: gate.iterationId,
+        score: gate.score,
+        threshold: gate.threshold,
+        override: publication.overrideReason !== null,
+      },
+      'workbench draft published',
+    );
+    return reply.code(201).send({ publication, project: await projectView(app, project) });
+  });
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/publications',
+    async (req, reply): Promise<Publication[]> => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return workbench.listPublications(req.params.id);
+    },
+  );
 
   const findSample = async (projectId: string, sampleId: string) =>
     (await sampleViews(app, projectId)).find((s) => s.record.id === sampleId) ?? null;

@@ -147,6 +147,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     const version = versionOf(req.params);
     const existing = await repo().get(id, version);
     if (!existing) return notFound(reply);
+    if (await app.deps.workbench.getProject(id)) {
+      // A Workbench type publishes only through its holdout gate (ADR 0007).
+      return reply.code(409).send({ error: `publish ${id} from the Workbench (holdout gate)` });
+    }
     if (existing.status !== 'draft') {
       return reply.code(409).send({ error: `${id} v${version} is already published` });
     }
