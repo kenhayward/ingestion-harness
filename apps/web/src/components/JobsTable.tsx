@@ -72,6 +72,8 @@ const DELETABLE = new Set<JobStatus>([
   'rejected',
   'cancelled',
 ]);
+/** awaiting_review: decide; succeeded: read-only view (evidence, edits, save as reference). */
+const REVIEWABLE = new Set<JobStatus>(['awaiting_review', 'succeeded']);
 const RETRYABLE = new Set<JobStatus>(['failed', 'needs_review', 'cancelled']);
 
 /** Row actions; Cancel and Delete ask for an inline confirmation first. */
@@ -153,7 +155,7 @@ function JobActions({
   }
   return (
     <>
-      {job.status === 'awaiting_review' && <a href={`#/review/${job.id}`}>Review</a>}
+      {REVIEWABLE.has(job.status) && <a href={`#/review/${job.id}`}>Review</a>}
       {RETRYABLE.has(job.status) && (
         <button
           type="button"
