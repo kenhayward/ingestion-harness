@@ -50,8 +50,20 @@ export function templateView(
   };
 }
 
-export function fakeApi(overrides: Partial<Api> = {}): Api {
+/** fakeApi() plus a way to simulate the session ending (a 401 mid-use). */
+export type FakeApi = Api & { expireSession(): void };
+
+export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
+  const listeners = new Set<() => void>();
   return {
+    expireSession: () => listeners.forEach((l) => l()),
+    me: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
+    login: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
+    logout: vi.fn(async () => undefined),
+    onUnauthorized: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     listSpecs: vi.fn(async () => [
       { id: 'process-validation-protocol', version: 1, title: 'Process Validation Protocol' },
     ]),
