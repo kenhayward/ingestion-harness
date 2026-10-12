@@ -1,5 +1,5 @@
 import type { JobStatus, JobSummary, ModelInfo } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -102,6 +102,16 @@ describe('JobList main action', () => {
     expect(more).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('link', { name: 'Open PDF' })).not.toBeInTheDocument();
     expect(more).toHaveFocus();
+  });
+});
+
+describe('JobList menu position', () => {
+  it('closes the menu when the page scrolls under it', async () => {
+    renderList([job({ filename: 'a.pdf', status: 'failed' })]);
+    const more = screen.getByRole('button', { name: 'More actions for a.pdf' });
+    await userEvent.click(more);
+    fireEvent.scroll(window);
+    expect(more).toHaveAttribute('aria-expanded', 'false');
   });
 });
 

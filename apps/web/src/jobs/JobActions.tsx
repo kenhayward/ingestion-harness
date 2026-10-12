@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
 import { primaryAction } from './derive.js';
 
 type Action = 'cancel' | 'delete' | 're-process' | 'retry-model';
@@ -42,6 +43,8 @@ export function JobActions({
 }) {
   const [confirm, setConfirm] = useState<Action | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** Fixed position under the ⋯ button: the list box scrolls, so an absolute menu would be clipped. */
+  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
   const [picked, setPicked] = useState('');
   const [error, setError] = useState<string | null>(null);
   const menuId = useId();
@@ -65,14 +68,21 @@ export function JobActions({
     }
   }, [confirm, returnFocus, variant]);
 
-  // The menu closes on a click anywhere else.
+  // The menu closes on a click anywhere else, and when the page scrolls or resizes under it.
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
       if (!wrapper.current?.contains(e.target as Node)) setMenuOpen(false);
     };
+    const close = () => setMenuOpen(false);
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
   }, [menuOpen]);
 
   const file = job.filename;
@@ -259,12 +269,22 @@ export function JobActions({
         aria-label={`More actions for ${file}`}
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
-        onClick={() => setMenuOpen((o) => !o)}
+        onClick={() => {
+          const r = moreButton.current?.getBoundingClientRect();
+          setMenuAt(r ? { top: r.bottom + 4, right: window.innerWidth - r.right } : null);
+          setMenuOpen((o) => !o);
+        }}
       >
-        ⋯
+        <Icon name="more" />
       </button>
       {menuOpen && (
-        <div id={menuId} className="menu" role="group" aria-label={`Actions for ${file}`}>
+        <div
+          id={menuId}
+          className="menu"
+          role="group"
+          aria-label={`Actions for ${file}`}
+          style={menuAt ? { top: menuAt.top, right: menuAt.right } : undefined}
+        >
           {secondary}
         </div>
       )}

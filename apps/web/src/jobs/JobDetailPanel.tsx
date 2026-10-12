@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { JobOutput, JobSummary, ModelInfo, StepRun } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { JobActions } from './JobActions.js';
 import { modelLabel, progressSteps, relativeTime } from './derive.js';
@@ -121,6 +122,7 @@ export function JobDetailPanel({
               key={`${o.stage}:${o.outputId}`}
               href={api.outputUrl(job.id, o.outputId, { stage: o.stage })}
             >
+              <Icon name="download" />
               <span className="mono">{fileName(o)}</span>
               {o.format === 'csv' && o.rowCount !== null && <span>{o.rowCount} rows</span>}
             </a>
