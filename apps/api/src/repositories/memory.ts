@@ -60,7 +60,8 @@ export class MemoryRepo implements IngestionRepo {
     this.lastTime = Math.max(Date.now(), this.lastTime + 1);
     return new Date(this.lastTime).toISOString();
   }
-  readonly stepRuns = new Map<string, StepRun[]>();
+  /** Seeded by tests; `cached` defaults to false (runs written before phase 4b). */
+  readonly stepRuns = new Map<string, (Omit<StepRun, 'cached'> & { cached?: boolean })[]>();
   readonly references = new Map<string, Reference>();
   readonly reruns = new Map<string, { step: string } & RerunRequest>();
   /** jobs.priority; absent = 0 (production). */
@@ -422,7 +423,7 @@ export class MemoryRepo implements IngestionRepo {
         ),
       stepRuns: [...this.stepRuns.entries()]
         .filter(([jobId]) => ids.has(jobId))
-        .flatMap(([jobId, runs]) => runs.map((r) => ({ ...r, jobId }))),
+        .flatMap(([jobId, runs]) => runs.map((r) => ({ ...r, cached: r.cached ?? false, jobId }))),
     };
   }
 
@@ -449,7 +450,7 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async listStepRuns(jobId: string): Promise<StepRun[]> {
-    return this.stepRuns.get(jobId) ?? [];
+    return (this.stepRuns.get(jobId) ?? []).map((r) => ({ ...r, cached: r.cached ?? false }));
   }
 
   async requestRerun(jobId: string, step: string, params: RerunRequest) {

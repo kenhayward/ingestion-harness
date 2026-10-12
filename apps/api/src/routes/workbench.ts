@@ -32,7 +32,9 @@ import {
   segmentationKey,
   stageStates,
   type ChangeBody,
+  type ComparisonView,
   type DraftStage,
+  type EvaluationModel,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -353,8 +355,12 @@ async function allStages(app: FastifyInstance, projectId: string): Promise<Stage
   return [...earlier, await referencesView(app, projectId, earlier)];
 }
 
-const EvaluateBody = z.object({ model: z.enum(EVALUATION_MODELS).optional() }).strict();
+const EvaluateBody = z
+  .object({ model: z.enum(EVALUATION_MODELS).optional(), uncached: z.boolean().optional() })
+  .strict();
+const CompareBody = z.object({ uncached: z.boolean().optional() }).strict();
 const IterationParams = z.object({ id: Id, iid: z.string().uuid() });
+const ComparisonParams = z.object({ id: Id, groupId: z.string().uuid() });
 
 /**
  * A finished job's comparison with its reference; null when the job has no readable document
@@ -416,11 +422,14 @@ async function iterationView(
   if (status === 'complete' && changed) {
     await app.deps.workbench.setIterationScores(iteration.id, scores);
   }
+  const runs = (await Promise.all(iteration.jobIds.map((id) => app.deps.repo.listStepRuns(id))))
+    .flat()
+    .filter((r) => r.status === 'succeeded');
   return {
     ...summaryOf(iteration),
     status,
     ...scores,
-    cache: { reused: 0, total: 0 },
+    cache: { reused: runs.filter((r) => r.cached).length, total: runs.length },
     scorecard,
     samples: results,
   };
@@ -436,10 +445,91 @@ function summaryOf(
     briefVersion: iteration.briefVersion,
     set: iteration.set,
     model: iteration.model,
-    groupId: null,
-    uncached: false,
+    groupId: iteration.groupId,
+    uncached: iteration.uncached,
     createdAt: iteration.createdAt,
   };
+}
+
+/**
+ * Starts an evaluation of the open draft against the verified dev references: one job per
+ * reference, recorded as an iteration. Sends the error reply and returns null when the project,
+ * draft or references are not ready.
+ */
+async function startIteration(
+  app: FastifyInstance,
+  req: FastifyRequest<{ Params: ProjectParams }>,
+  reply: FastifyReply,
+  options: { model: EvaluationModel | null; uncached: boolean; groupId: string | null },
+): Promise<IterationRecord | null> {
+  const { workbench, templates } = app.deps;
+  const projectId = req.params.id;
+  const project = await workbench.getProject(projectId);
+  if (!project) {
+    await reply.code(404).send({ error: 'project not found' });
+    return null;
+  }
+  const { draft } = await versionsOf(templates, projectId);
+  if (draft === null) {
+    await reply
+      .code(409)
+      .send({ error: 'no open draft; start the next version on the Template tab' });
+    return null;
+  }
+  const record = (await templates.get(projectId, draft))!;
+  const issues = validateTemplate(record.definition);
+  if (issues.length) {
+    await reply.code(400).send({ error: 'the draft is not valid', issues });
+    return null;
+  }
+  const rows = (await referenceRows(app, projectId)).filter((r) => r.reference !== null);
+  if (!rows.length) {
+    await reply.code(409).send({
+      error: 'no verified references for the dev samples; verify some on the References tab first',
+    });
+    return null;
+  }
+  const records = new Map((await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]));
+  const { model, uncached, groupId } = options;
+  const jobs = await Promise.all(
+    rows.map((row) =>
+      app.deps.repo.createWorkbenchJob(
+        sampleDocument(records.get(row.sampleId)!, projectId, draft),
+        {
+          projectId,
+          task: 'process',
+          params: { dataPolicy: project.dataPolicy, ...(uncached ? { uncached: true } : {}) },
+          referenceId: row.reference!.id,
+          modelOverride: model,
+        },
+      ),
+    ),
+  );
+  const brief = await workbench.latestBrief(projectId);
+  const iteration = await workbench.createIteration({
+    projectId,
+    templateVersion: draft,
+    definition: record.definition,
+    briefVersion: brief?.version ?? null,
+    set: 'dev',
+    model,
+    jobIds: jobs.map((j) => j.id),
+    groupId,
+    uncached,
+  });
+  req.log.info(
+    {
+      projectId,
+      iteration: iteration.id,
+      version: draft,
+      model,
+      uncached,
+      groupId,
+      jobs: jobs.length,
+    },
+    'evaluation started',
+  );
+  return iteration;
 }
 
 /** /api/workbench (ADR 0007, phase 1): projects, samples, brief, dev test runs. */
@@ -948,61 +1038,58 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/evaluations', async (req, reply) => {
-    const projectId = req.params.id;
-    const project = await workbench.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
     const body = EvaluateBody.safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const { draft } = await versionsOf(templates, projectId);
-    if (draft === null) {
-      return reply
-        .code(409)
-        .send({ error: 'no open draft; start the next version on the Template tab' });
-    }
-    const record = (await templates.get(projectId, draft))!;
-    const issues = validateTemplate(record.definition);
-    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const rows = (await referenceRows(app, projectId)).filter((r) => r.reference !== null);
-    if (!rows.length) {
-      return reply.code(409).send({
-        error:
-          'no verified references for the dev samples; verify some on the References tab first',
-      });
-    }
-    const records = new Map(
-      (await sampleViews(app, projectId)).map((s) => [s.record.id, s.record]),
-    );
-    const model = body.data.model ?? null;
-    const jobs = await Promise.all(
-      rows.map((row) =>
-        app.deps.repo.createWorkbenchJob(
-          sampleDocument(records.get(row.sampleId)!, projectId, draft),
-          {
-            projectId,
-            task: 'process',
-            params: { dataPolicy: project.dataPolicy },
-            referenceId: row.reference!.id,
-            modelOverride: model,
-          },
-        ),
-      ),
-    );
-    const brief = await workbench.latestBrief(projectId);
-    const iteration = await workbench.createIteration({
-      projectId,
-      templateVersion: draft,
-      definition: record.definition,
-      briefVersion: brief?.version ?? null,
-      set: 'dev',
-      model,
-      jobIds: jobs.map((j) => j.id),
+    const iteration = await startIteration(app, req, reply, {
+      model: body.data.model ?? null,
+      uncached: body.data.uncached ?? false,
+      groupId: null,
     });
-    req.log.info(
-      { projectId, iteration: iteration.id, version: draft, model, jobs: jobs.length },
-      'evaluation started',
-    );
+    if (!iteration) return reply;
     return reply.code(201).send(await iterationView(app, iteration));
   });
+
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/evaluations/compare',
+    async (req, reply) => {
+      const body = CompareBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const groupId = randomUUID();
+      const records: IterationRecord[] = [];
+      for (const model of EVALUATION_MODELS) {
+        const iteration = await startIteration(app, req, reply, {
+          model,
+          uncached: body.data.uncached ?? false,
+          groupId,
+        });
+        if (!iteration) return reply;
+        records.push(iteration);
+      }
+      const view: ComparisonView = {
+        groupId,
+        iterations: await Promise.all(records.map((r) => iterationView(app, r))),
+      };
+      return reply.code(201).send(view);
+    },
+  );
+
+  app.get<{ Params: { id: string; groupId: string } }>(
+    '/workbench/projects/:id/comparisons/:groupId',
+    async (req, reply) => {
+      const params = ComparisonParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'comparison not found' });
+      const { id: projectId, groupId } = params.data;
+      const records = await workbench.listGroup(projectId, groupId);
+      if (!records.length) return reply.code(404).send({ error: 'comparison not found' });
+      const rank = (r: IterationRecord) => (r.model ? EVALUATION_MODELS.indexOf(r.model) : -1);
+      const sorted = [...records].sort((a, b) => rank(a) - rank(b));
+      const view: ComparisonView = {
+        groupId,
+        iterations: await Promise.all(sorted.map((r) => iterationView(app, r))),
+      };
+      return view;
+    },
+  );
 
   app.get<{ Params: ProjectParams }>('/workbench/projects/:id/iterations', async (req, reply) => {
     if (!(await workbench.getProject(req.params.id))) {

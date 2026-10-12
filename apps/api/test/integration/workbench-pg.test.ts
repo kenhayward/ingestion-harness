@@ -251,5 +251,48 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       definition: input.definition,
     });
     expect(await workbench.getIteration('it-other', a.id)).toBeNull();
+    expect(a).toMatchObject({ groupId: null, uncached: false });
+  });
+
+  it('groups comparison iterations and records uncached runs', async () => {
+    const projectId = await newProject();
+    const input = {
+      projectId,
+      templateVersion: 1,
+      definition: { id: projectId, version: 1 },
+      briefVersion: null,
+      set: 'dev' as const,
+      jobIds: [],
+    };
+    const groupId = randomUUID();
+    const a = await workbench.createIteration({ ...input, model: 'default', groupId });
+    const b = await workbench.createIteration({
+      ...input,
+      model: 'fast',
+      groupId,
+      uncached: true,
+    });
+    await workbench.createIteration({ ...input, model: 'draft' });
+    expect(await workbench.getIteration(projectId, b.id)).toMatchObject({
+      groupId,
+      uncached: true,
+    });
+    expect((await workbench.listGroup(projectId, groupId)).map((i) => i.id)).toEqual([a.id, b.id]);
+    expect(await workbench.listGroup('it-other', groupId)).toEqual([]);
+  });
+
+  it('reads step runs served from the step cache', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    await pool.query(
+      `INSERT INTO step_runs (job_id, step_id, trigger, status, started_at, cached)
+       VALUES ($1, 'head', 'process', 'succeeded', now(), true),
+              ($1, 'tail', 'process', 'succeeded', now(), false)`,
+      [job.id],
+    );
+    expect((await repo.listStepRuns(job.id)).map((r) => [r.stepId, r.cached])).toEqual([
+      ['head', true],
+      ['tail', false],
+    ]);
   });
 });
