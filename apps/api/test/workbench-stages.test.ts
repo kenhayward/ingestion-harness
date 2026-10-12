@@ -55,7 +55,7 @@ async function project() {
       'application/json',
     );
   };
-  const decide = (id: string, payload: unknown) =>
+  const decide = (id: string, payload: Record<string, unknown>) =>
     ctx.app.inject({
       method: 'POST',
       url: `/api/workbench/projects/letter/proposals/${id}/decision`,
