@@ -13,4 +13,5 @@ RUN npm run build -w @ih/web
 
 FROM nginx:1.31-alpine
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
