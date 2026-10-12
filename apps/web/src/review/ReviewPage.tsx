@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EditRequest, JobSummary, StepRun } from '@ih/shared';
 import type { Api, ReviewData } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { DecisionBar } from './DecisionBar.js';
 import { EditableValue } from './EditableValue.js';
 import { FieldsGrid } from './FieldsGrid.js';
 import { display, effectiveView } from './effective.js';
@@ -55,8 +56,6 @@ export function ReviewPage({
   const [tab, setTab] = useState('fields');
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [reviewer, setReviewer] = useState(loadReviewer);
-  const [note, setNote] = useState('');
-  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [referenceName, setReferenceName] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -403,55 +402,30 @@ export function ReviewPage({
       </div>
 
       {editable ? (
-        <footer className="decision">
-          <label>
-            Reviewer
-            <input
-              value={reviewer}
-              onChange={(e) => {
-                setReviewer(e.target.value);
-                saveReviewer(e.target.value);
-              }}
-            />
-          </label>
-          <label>
-            Note
-            <input value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              decide(() =>
-                api.approve(jobId, {
-                  ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
-                  ...(note.trim() ? { note: note.trim() } : {}),
-                }),
-              )
-            }
-          >
-            Approve and publish
-          </button>
-          <label>
-            Rejection reason
-            <input value={reason} onChange={(e) => setReason(e.target.value)} />
-          </label>
-          <button
-            type="button"
-            className="danger"
-            disabled={busy || !reason.trim()}
-            onClick={() =>
-              decide(() =>
-                api.reject(jobId, {
-                  reason: reason.trim(),
-                  ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
-                }),
-              )
-            }
-          >
-            Reject
-          </button>
-        </footer>
+        <DecisionBar
+          busy={busy}
+          reviewer={reviewer}
+          onReviewer={(name) => {
+            setReviewer(name);
+            saveReviewer(name);
+          }}
+          onApprove={(note) =>
+            void decide(() =>
+              api.approve(jobId, {
+                ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
+                ...(note ? { note } : {}),
+              }),
+            )
+          }
+          onReject={(reason) =>
+            void decide(() =>
+              api.reject(jobId, {
+                reason,
+                ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
+              }),
+            )
+          }
+        />
       ) : job.status === 'succeeded' ? (
         <form
           className="decision"

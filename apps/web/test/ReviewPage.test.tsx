@@ -225,7 +225,7 @@ describe('ReviewPage', () => {
     const { api, onDone } = setup();
     await screen.findByRole('heading', { name: /scan\.pdf/ });
     await userEvent.type(screen.getByLabelText('Reviewer'), 'kh');
-    await userEvent.type(screen.getByLabelText('Note'), 'checked against scan');
+    await userEvent.type(screen.getByLabelText('Note (optional)'), 'checked against scan');
     await userEvent.click(screen.getByRole('button', { name: 'Approve and publish' }));
     expect(api.approve).toHaveBeenCalledWith(JOB_ID, {
       reviewer: 'kh',
@@ -234,15 +234,42 @@ describe('ReviewPage', () => {
     expect(onDone).toHaveBeenCalled();
   });
 
-  it('rejects only with a reason', async () => {
+  it('rejects only with a reason, after Reject…', async () => {
     const { api, onDone } = setup();
-    await screen.findByRole('heading', { name: /scan\.pdf/ });
-    const reject = screen.getByRole('button', { name: 'Reject' });
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Reject…' }));
+    expect(screen.queryByLabelText('Note (optional)')).not.toBeInTheDocument();
+    const reason = screen.getByLabelText('Rejection reason (required — rejecting is final)');
+    expect(reason).toHaveFocus();
+    const reject = screen.getByRole('button', { name: 'Reject document' });
     expect(reject).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('Rejection reason'), 'wrong document');
+    await userEvent.type(reason, 'wrong document');
     await userEvent.click(reject);
     expect(api.reject).toHaveBeenCalledWith(JOB_ID, { reason: 'wrong document' });
     expect(onDone).toHaveBeenCalled();
+  });
+
+  it('never approves or rejects on Enter (both are final)', async () => {
+    const { api } = setup();
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    await userEvent.type(screen.getByLabelText('Reviewer'), 'kh{Enter}');
+    await userEvent.type(screen.getByLabelText('Note (optional)'), 'ok{Enter}');
+    await userEvent.click(screen.getByRole('button', { name: 'Reject…' }));
+    await userEvent.type(screen.getByLabelText(/Rejection reason/), 'bad{Enter}');
+    expect(api.approve).not.toHaveBeenCalled();
+    expect(api.reject).not.toHaveBeenCalled();
+  });
+
+  it('keeps reviewing without sending anything', async () => {
+    const { api } = setup();
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Reject…' }));
+    await userEvent.type(screen.getByLabelText(/Rejection reason/), 'oops');
+    await userEvent.click(screen.getByRole('button', { name: 'Keep reviewing' }));
+    expect(api.reject).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Note (optional)')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reject…' }));
+    expect(screen.getByLabelText(/Rejection reason/)).toHaveValue('');
   });
 
   it('lists step runs and re-runs a step with a different model and guidance', async () => {
