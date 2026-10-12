@@ -180,3 +180,26 @@ describe('search', () => {
     expect(screen.getByText('No results match “acmex”.')).toBeInTheDocument();
   });
 });
+
+describe('Upload PDF', () => {
+  it('goes to Jobs and opens the file picker once', async () => {
+    window.location.hash = '#/results';
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click');
+    const pickerOpens = () =>
+      click.mock.contexts.filter((c) => c instanceof HTMLInputElement && c.type === 'file').length;
+    render(<App api={fakeApi()} pollMs={0} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Upload PDF' }));
+    const input = await screen.findByLabelText('PDF');
+    await vi.waitFor(() => expect(click.mock.contexts).toContain(input));
+    expect(window.location.hash).toBe('#/');
+    expect(pickerOpens()).toBe(1);
+    // leaving and returning to Jobs must not reopen the picker
+    window.location.hash = '#/results';
+    await screen.findByRole('heading', { name: 'Results' });
+    await vi.waitFor(() => expect(screen.queryByLabelText('PDF')).not.toBeInTheDocument());
+    window.location.hash = '#/';
+    await screen.findByLabelText('PDF');
+    expect(pickerOpens()).toBe(1);
+    click.mockRestore();
+  });
+});

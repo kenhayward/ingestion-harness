@@ -85,6 +85,8 @@ function SignedInApp({
   const route = useHashRoute();
   const { jobs, error, refresh } = useJobs(api, pollMs);
   const [query, setQuery] = useState('');
+  /** Upload PDF was pressed: the Jobs page opens the file picker once, then clears this. */
+  const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
     page = <ReviewPage api={api} jobId={route.jobId} onDone={() => navigate('#/')} />;
@@ -107,7 +109,17 @@ function SignedInApp({
       />
     );
   } else {
-    page = <JobsView api={api} jobs={jobs} error={error} refresh={refresh} query={query} />;
+    page = (
+      <JobsView
+        api={api}
+        jobs={jobs}
+        error={error}
+        refresh={refresh}
+        query={query}
+        pickPending={pickPending}
+        onPicked={() => setPickPending(false)}
+      />
+    );
   }
   return (
     <AppShell
@@ -116,7 +128,10 @@ function SignedInApp({
       jobs={jobs}
       query={query}
       onQuery={setQuery}
-      onUpload={() => navigate('#/')}
+      onUpload={() => {
+        navigate('#/');
+        setPickPending(true);
+      }}
       onSignOut={onSignOut}
     >
       {page}
@@ -130,12 +145,16 @@ function JobsView({
   error,
   refresh,
   query,
+  pickPending,
+  onPicked,
 }: {
   api: Api;
   jobs: JobSummary[];
   error: string | null;
   refresh: () => Promise<void>;
   query: string;
+  pickPending: boolean;
+  onPicked: () => void;
 }) {
   /** The upload form's Model selection; Retry uses it too. */
   const [retryModel, setRetryModel] = useState('');
@@ -145,7 +164,13 @@ function JobsView({
 
   return (
     <>
-      <UploadForm api={api} onUploaded={refresh} onModelChange={setRetryModel} />
+      <UploadForm
+        api={api}
+        onUploaded={refresh}
+        onModelChange={setRetryModel}
+        pickPending={pickPending}
+        onPicked={onPicked}
+      />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       {jobs.length > 0 && shown.length === 0 ? (
         <p>No jobs match “{query.trim()}”.</p>

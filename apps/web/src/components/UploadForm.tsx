@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ModelInfo, SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
@@ -26,11 +26,16 @@ export function UploadForm({
   api,
   onUploaded,
   onModelChange,
+  pickPending = false,
+  onPicked,
 }: {
   api: Api;
   onUploaded: () => void;
   /** Reports the Model selection ('' = spec default), e.g. so Retry can use it. */
   onModelChange?: (model: string) => void;
+  /** Upload PDF (top bar) was pressed: open the file picker, then report it with onPicked. */
+  pickPending?: boolean;
+  onPicked?: () => void;
 }) {
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -39,6 +44,23 @@ export function UploadForm({
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /** StrictMode re-runs effects before onPicked lands: open the picker once per request. */
+  const picking = useRef(false);
+
+  useEffect(() => {
+    if (!pickPending) {
+      picking.current = false;
+      return;
+    }
+    if (picking.current) return;
+    picking.current = true;
+    fileInput.current?.click();
+    onPicked?.();
+    // onPicked is a callback prop: the picker opens once per request, not per render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickPending]);
 
   useEffect(() => {
     api.listSpecs().then(
@@ -122,6 +144,7 @@ export function UploadForm({
       <label>
         PDF
         <input
+          ref={fileInput}
           type="file"
           accept="application/pdf"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
