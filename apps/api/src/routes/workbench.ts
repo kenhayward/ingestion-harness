@@ -15,22 +15,33 @@ import {
   SegmentDocumentSchema,
   SegmentationResultSchema,
   SurveyBodySchema,
+  applyChanges,
+  blockingStage,
+  conflictingChanges,
   draftingKey,
   inboxKey,
+  isChangeStage,
+  parseChangeBody,
   preparedTextKey,
   preparedTriageKey,
   segmentationKey,
+  stageStates,
+  type ChangeBody,
+  type DraftStage,
   type JobSummary,
   type ProjectSummary,
   type ProjectView,
+  type ProposalStatus,
   type ProposalView,
   type SampleState,
   type SampleView,
   type SegmentationView,
+  type StageView,
+  type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
 import type { ProjectJob, SegmentJob } from '../repositories/types.js';
-import { createNextDraft, skeleton } from '../templates/drafts.js';
+import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { validateTemplate } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
@@ -48,7 +59,13 @@ type ProjectParams = { id: string };
 const PolicyBody = z.object({ dataPolicy: DataPolicySchema }).strict();
 const StageParams = z.object({ id: Id, stage: z.enum(DRAFT_STAGES) });
 const ProposalParams = z.object({ id: Id, pid: z.string().uuid() });
-const DecisionBody = z.object({ decision: z.enum(['accepted', 'rejected']) }).strict();
+const DecisionBody = z
+  .object({
+    decision: z.enum(['accepted', 'rejected']),
+    changes: z.array(z.number().int().min(0)).min(1).optional(),
+  })
+  .strict();
+const SkipParams = StageParams;
 
 const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
   app.deps.access === null || req.auth?.role === 'admin';
@@ -102,6 +119,44 @@ async function readJsonSafe(
   }
 }
 
+function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | null {
+  if (stage === 'survey') {
+    const survey = SurveyBodySchema.safeParse(body);
+    return survey.success ? survey.data : null;
+  }
+  return isChangeStage(stage) ? parseChangeBody(stage, body) : null;
+}
+
+/** Proposal status without reading its body (stage rail; order checks). */
+function statusOf(p: ProposalRecord, job: ProjectJob | null): ProposalStatus {
+  if (p.decision) return p.decision;
+  if (!job || job.status === 'queued' || job.status === 'running') return 'running';
+  return job.status === 'succeeded' ? 'ready' : 'failed';
+}
+
+async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageView[]> {
+  const jobs = new Map((await app.deps.repo.listDraftJobs(projectId)).map((j) => [j.id, j]));
+  const proposals = (await app.deps.workbench.listProposals(projectId)).map((p) => ({
+    stage: p.stage,
+    createdAt: p.createdAt,
+    decidedAt: p.decidedAt,
+    status: statusOf(p, jobs.get(p.id) ?? null),
+  }));
+  return stageStates(proposals, await app.deps.workbench.listSkips(projectId));
+}
+
+/** The body of the latest accepted survey, or null (context for the change stages). */
+async function acceptedSurvey(app: FastifyInstance, projectId: string): Promise<SurveyBody | null> {
+  const p = (await app.deps.workbench.listProposals(projectId)).find(
+    (x) => x.stage === 'survey' && x.decision === 'accepted',
+  );
+  if (!p) return null;
+  const raw = await readJsonSafe(app, draftingKey(projectId, p.id));
+  const parsed = raw == null ? null : DraftResultSchema.safeParse(raw);
+  const body = parsed?.success ? SurveyBodySchema.safeParse(parsed.data.body) : null;
+  return body?.success ? body.data : null;
+}
+
 async function proposalView(
   app: FastifyInstance,
   p: ProposalRecord,
@@ -113,7 +168,7 @@ async function proposalView(
     briefVersion: p.briefVersion,
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
-    acceptedChanges: null,
+    acceptedChanges: p.acceptedChanges,
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {
@@ -124,9 +179,8 @@ async function proposalView(
   }
   const raw = await readJsonSafe(app, draftingKey(job.projectId, job.id));
   const parsed = raw == null ? null : DraftResultSchema.safeParse(raw);
-  const body =
-    parsed?.success && p.stage === 'survey' ? SurveyBodySchema.safeParse(parsed.data.body) : null;
-  if (!parsed?.success || !body?.success) {
+  const body = parsed?.success ? parseBody(p.stage, parsed.data.body) : null;
+  if (!parsed?.success || !body) {
     return {
       ...empty,
       status: p.decision ?? 'failed',
@@ -138,7 +192,7 @@ async function proposalView(
     status: p.decision ?? 'ready',
     error: null,
     model: parsed.data.model,
-    body: body.data,
+    body,
   };
 }
 
@@ -474,7 +528,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const { id: projectId, stage } = params.data;
       const project = await workbench.getProject(projectId);
       if (!project) return reply.code(404).send({ error: 'project not found' });
+      const blocking = blockingStage(await stagesOf(app, projectId), stage);
+      if (blocking) {
+        return reply
+          .code(409)
+          .send({ error: `finish the ${blocking} stage first (accept or skip it)` });
+      }
       const { draft, latest } = await versionsOf(templates, projectId);
+      const changeStage = isChangeStage(stage);
+      if (changeStage && draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft; start the next version on the Template tab' });
+      }
       const record = draft !== null ? await templates.get(projectId, draft) : latest;
       if (!record) return reply.code(409).send({ error: 'the project has no template version' });
       // Holdout rule (ADR 0007): only dev samples ever reach a drafting model.
@@ -495,14 +561,46 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         brief: brief?.body ?? EMPTY_BRIEF,
         draft: record.definition,
         samples,
+        ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
         projectId,
         stage,
         briefVersion: brief?.version ?? null,
+        baseVersion: changeStage ? record.version : null,
+        baseDefinition: changeStage ? record.definition : null,
       });
       return reply.code(202).send(await proposalView(app, proposal, job));
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/stages', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    return stagesOf(app, req.params.id);
+  });
+
+  app.post<{ Params: { id: string; stage: string } }>(
+    '/workbench/projects/:id/stages/:stage/skip',
+    async (req, reply) => {
+      const params = SkipParams.safeParse(req.params);
+      if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
+        return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
+      }
+      const { id: projectId, stage } = params.data;
+      if (!(await workbench.getProject(projectId))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const blocking = blockingStage(await stagesOf(app, projectId), stage);
+      if (blocking) {
+        return reply
+          .code(409)
+          .send({ error: `finish the ${blocking} stage first (accept or skip it)` });
+      }
+      await workbench.addSkip(projectId, stage);
+      return reply.code(201).send(await stagesOf(app, projectId));
     },
   );
 
@@ -530,8 +628,54 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (current.status !== 'ready') {
         return reply.code(409).send({ error: `proposal is ${current.status}` });
       }
-      const decided = await workbench.decideProposal(projectId, pid, body.data.decision);
+      const { decision, changes } = body.data;
+      if (!isChangeStage(record.stage) || decision === 'rejected') {
+        if (changes) {
+          return reply.code(400).send({
+            error: 'changes can only be chosen when accepting a drafting change proposal',
+          });
+        }
+        const decided = await workbench.decideProposal(projectId, pid, decision);
+        if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
+        return proposalView(app, decided, job);
+      }
+      const proposed = (current.body as ChangeBody).changes;
+      if (!changes) return reply.code(400).send({ error: 'choose the changes to accept' });
+      const chosen = [...new Set(changes)].sort((a, b) => a - b);
+      if (chosen.some((i) => i >= proposed.length)) {
+        return reply.code(400).send({ error: 'no such change' });
+      }
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null || draft !== record.baseVersion) {
+        return reply
+          .code(409)
+          .send({ error: 'the draft version changed since this proposal; re-run the stage' });
+      }
+      const draftRecord = (await templates.get(projectId, draft))!;
+      const selected = chosen.map((i) => proposed[i]!);
+      const clashes = conflictingChanges(
+        record.baseDefinition ?? {},
+        draftRecord.definition,
+        selected,
+      ).map((k) => chosen[k]! + 1);
+      if (clashes.length) {
+        return reply.code(409).send({
+          error: `the draft changed since this proposal where these changes apply: ${clashes.join(', ')}; re-run the stage or accept the others`,
+        });
+      }
+      const decided = await workbench.decideProposal(
+        projectId,
+        pid,
+        chosen.length === proposed.length ? 'accepted' : 'partially_accepted',
+        chosen,
+      );
       if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
+      await templates.updateDraft(
+        projectId,
+        draft,
+        pinned(applyChanges(draftRecord.definition, selected), projectId, draft),
+      );
+      req.log.info({ projectId, proposal: pid, applied: chosen }, 'drafting changes applied');
       return proposalView(app, decided, job);
     },
   );
