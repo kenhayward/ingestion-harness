@@ -41,3 +41,20 @@ describe('http api: URLs', () => {
     expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');
   });
 });
+
+describe('http api: results query', () => {
+  it('sends the file name filter with the other parameters', async () => {
+    const fetch = vi.fn(async () => respond(200, []));
+    vi.stubGlobal('fetch', fetch);
+    await createHttpApi('/api').listResults({
+      templateId: 't',
+      q: 'a b%',
+      before: 'x',
+      beforeId: 'y',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/results?templateId=t&q=a+b%25&before=x&beforeId=y',
+      undefined,
+    );
+  });
+});
