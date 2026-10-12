@@ -104,7 +104,20 @@ export const SegmentDocumentSchema = z
     copies: CopySelectionSchema.optional(),
     pageMarkers: z.boolean().default(true),
   })
-  .strict();
+  .strict()
+  .superRefine((doc, ctx) => {
+    const seen = new Set<string>();
+    doc.sections.forEach((section, index) => {
+      if (seen.has(section.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sections', index, 'id'],
+          message: `duplicate section id ${section.id}`,
+        });
+      }
+      seen.add(section.id);
+    });
+  });
 export type SegmentDocument = z.infer<typeof SegmentDocumentSchema>;
 
 /** One sample × section cell of the preview grid. */

@@ -67,6 +67,17 @@ describe('segmentation contracts', () => {
     ).toBe(false);
   });
 
+  it('rejects duplicate section ids', () => {
+    const result = SegmentDocumentSchema.safeParse({
+      sections: [
+        { id: 'a', anchor: 'x' },
+        { id: 'a', anchor: 'y' },
+      ],
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('duplicate section id a');
+  });
+
   it('parses the grid the worker writes', () => {
     const result = SegmentationResultSchema.parse({
       anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },

@@ -12,7 +12,7 @@ import re
 from bisect import bisect_right
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .ocr import pages_needing_ocr
 from .pipeline import DocumentError, PipelineDeps, check_cancelled, mark_pages, ocr_pages
@@ -72,6 +72,15 @@ class SegmentDocument(BaseModel):
     copies: CopySelection | None = None
     page_markers: bool = Field(default=True, alias="pageMarkers")
 
+    @model_validator(mode="after")
+    def _unique_section_ids(self) -> SegmentDocument:
+        seen: set[str] = set()
+        for section in self.sections:
+            if section.id in seen:
+                raise ValueError(f"duplicate section id {section.id}")
+            seen.add(section.id)
+        return self
+
 
 def _regex_error(pattern: str) -> str | None:
     try:
@@ -108,13 +117,13 @@ def segment_samples(
 
     rows: list[dict[str, Any]] = []
     for sample_id, pages in samples:
-        if pages is None:
+        if not pages:
             rows.append(
                 {
                     "sampleId": sample_id,
                     "firstPage": 1,
                     "pageCount": 0,
-                    "error": "not prepared",
+                    "error": "not prepared" if pages is None else "no pages",
                     "missingRequired": [],
                     "sections": [],
                 }

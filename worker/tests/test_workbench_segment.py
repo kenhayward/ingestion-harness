@@ -92,6 +92,23 @@ def test_unprepared_samples_get_an_error_row_and_others_still_segment() -> None:
     assert cells(result, 1)["purpose"]["found"] is True
 
 
+def test_sample_with_no_pages_gets_an_error_row() -> None:
+    result = segment_samples([("s1", [])], doc())
+    assert result["samples"][0] == {
+        "sampleId": "s1",
+        "firstPage": 1,
+        "pageCount": 0,
+        "error": "no pages",
+        "missingRequired": [],
+        "sections": [],
+    }
+
+
+def test_duplicate_section_ids_are_rejected() -> None:
+    with pytest.raises(ValueError, match="duplicate section id a"):
+        doc(sections=[{"id": "a", "anchor": "x"}, {"id": "a", "anchor": "y"}])
+
+
 def test_copy_selection_keeps_the_last_copy_and_numbers_original_pages() -> None:
     pages = [
         "PROTOCOL APPROVAL\nblank",
