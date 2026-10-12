@@ -110,6 +110,52 @@ describe('data policy', () => {
     const [job] = run.json().jobs as { id: string }[];
     expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local' });
   });
+
+  it('revoking to local downgrades the project jobs already created; allowing never upgrades', async () => {
+    const { app, repo, add, start } = await project();
+    const setPolicy = (dataPolicy: string) =>
+      app.inject({
+        method: 'PUT',
+        url: '/api/workbench/projects/letter/data-policy',
+        payload: { dataPolicy },
+      });
+    expect((await setPolicy('external')).statusCode).toBe(200);
+    const s = await add(1);
+    const run = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/test-runs',
+    });
+    const [testJob] = run.json().jobs as { id: string }[];
+    const draft = (await start()).json() as ProposalView;
+    expect(repo.jobParams.get(s.prepareJobId!)).toEqual({ dataPolicy: 'external' });
+    expect(repo.draftJobs.get(draft.id)!.params).toMatchObject({ dataPolicy: 'external' });
+
+    expect((await setPolicy('local')).statusCode).toBe(200);
+    const policies = () => [
+      repo.jobParams.get(s.prepareJobId!)?.dataPolicy,
+      repo.jobParams.get(testJob!.id)?.dataPolicy,
+      repo.draftJobs.get(draft.id)!.params.dataPolicy,
+    ];
+    expect(policies()).toEqual(['local', 'local', 'local']);
+    // The rest of the draft job's params is untouched.
+    expect(repo.draftJobs.get(draft.id)!.params).toMatchObject({ stage: 'survey' });
+
+    expect((await setPolicy('external')).statusCode).toBe(200);
+    expect(policies()).toEqual(['local', 'local', 'local']);
+  });
+
+  it('revoking leaves other projects jobs alone', async () => {
+    const { app, repo, workbench, add } = await project();
+    await workbench.createProject('other', 'Other');
+    await app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/data-policy',
+      payload: { dataPolicy: 'external' },
+    });
+    const s = await add(1);
+    await workbench.setDataPolicy('other', 'local', null);
+    expect(repo.jobParams.get(s.prepareJobId!)).toEqual({ dataPolicy: 'external' });
+  });
 });
 
 describe('survey stage', () => {

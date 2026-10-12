@@ -186,6 +186,19 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       dataPolicyChangedBy: by,
     };
     this.projects.set(id, updated);
+    if (policy === 'local') {
+      // Revocation reaches jobs already queued (retries and step re-runs reuse their row).
+      for (const job of this.jobs.jobs.values()) {
+        if (job.projectId !== id) continue;
+        this.jobs.jobParams.set(job.id, {
+          ...this.jobs.jobParams.get(job.id),
+          dataPolicy: 'local',
+        });
+      }
+      for (const job of this.jobs.draftJobs.values()) {
+        if (job.projectId === id) job.params = { ...job.params, dataPolicy: 'local' };
+      }
+    }
     return updated;
   }
 
@@ -416,12 +429,32 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
   }
 
   async setDataPolicy(id: string, policy: DataPolicy, by: string | null) {
-    const { rows } = await this.pool.query<ProjectRow>(
-      `UPDATE workbench_projects SET data_policy = $2, data_policy_changed_at = now(),
-              data_policy_changed_by = $3 WHERE id = $1 RETURNING *`,
-      [id, policy, by],
-    );
-    return rows[0] ? toProject(rows[0]) : null;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<ProjectRow>(
+        `UPDATE workbench_projects SET data_policy = $2, data_policy_changed_at = now(),
+                data_policy_changed_by = $3 WHERE id = $1 RETURNING *`,
+        [id, policy, by],
+      );
+      if (rows[0] && policy === 'local') {
+        // Revocation reaches jobs already created (retries and step re-runs reuse their row).
+        // Never the reverse. Segment previews are skipped: no model call, and their params are
+        // validated strictly by the worker (SegmentParams, extra="forbid").
+        await client.query(
+          `UPDATE jobs SET params = jsonb_set(COALESCE(params, '{}'::jsonb), '{dataPolicy}', '"local"')
+            WHERE project_id = $1 AND task <> 'segment'`,
+          [id],
+        );
+      }
+      await client.query('COMMIT');
+      return rows[0] ? toProject(rows[0]) : null;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async createProposal(p: {
