@@ -8,18 +8,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
 import re
 from bisect import bisect_right
+from multiprocessing.connection import Connection
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .ocr import pages_needing_ocr
 from .pipeline import DocumentError, PipelineDeps, check_cancelled, mark_pages, ocr_pages
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, section_spans, select_copy
 from .specs import CopySelection, Section
-from .storage import prepared_text_key, prepared_triage_key
+from .storage import prepared_text_key, prepared_triage_key, segmentation_key
 
 #: Longest matched line returned to the UI.
 LINE_LIMIT = 200
@@ -169,3 +171,96 @@ def segment_samples(
             }
         )
     return {"anchorErrors": anchor_errors, "samples": rows}
+
+
+class SegmentSample(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    sample_id: str = Field(alias="sampleId")
+    sha256: str
+
+
+class SegmentParams(BaseModel):
+    """jobs.params of a segment job (written by the API)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    samples: list[SegmentSample]
+    document: SegmentDocument
+
+
+#: Longest a segmentation preview may run before its child process is killed.
+SEGMENT_TIMEOUT_S = 10.0
+
+
+def _segment_child(
+    conn: Connection, samples: list[tuple[str, list[str] | None]], document: dict[str, Any]
+) -> None:
+    """Child-process entry point (module level so 'spawn' can import it)."""
+    conn.send(segment_samples(samples, SegmentDocument.model_validate(document)))
+    conn.close()
+
+
+def segment_with_timeout(
+    samples: list[tuple[str, list[str] | None]],
+    document: SegmentDocument,
+    timeout_s: float = SEGMENT_TIMEOUT_S,
+) -> dict[str, Any]:
+    """segment_samples in a child process; a runaway regex is killed after `timeout_s`."""
+    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    ctx: Any = multiprocessing.get_context(method)  # typeshed: BaseContext has no Process
+    parent, child = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_segment_child,
+        args=(child, samples, document.model_dump(by_alias=True)),
+        daemon=True,
+    )
+    proc.start()
+    child.close()
+    try:
+        if not parent.poll(timeout_s):
+            raise DocumentError(
+                f"preview took longer than {timeout_s:g}s; an anchor may backtrack catastrophically"
+            )
+        try:
+            result: dict[str, Any] = parent.recv()
+        except EOFError as exc:
+            raise DocumentError("preview process failed") from exc
+        return result
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+        proc.join(5)
+        parent.close()
+
+
+def _prepared_pages(deps: PipelineDeps, sha256: str) -> list[str] | None:
+    raw = deps.store.get_optional(deps.buckets.runs, prepared_text_key(sha256))
+    if raw is None:
+        return None
+    pages: list[dict[str, Any]] = json.loads(raw)["pages"]
+    return [str(p["text"]) for p in pages]
+
+
+def run_segment(
+    job: ClaimedJob, deps: PipelineDeps, *, timeout_s: float = SEGMENT_TIMEOUT_S
+) -> dict[str, Any]:
+    """Apply the job's candidate anchors to every listed sample; write and return the grid."""
+    try:
+        params = SegmentParams.model_validate(job.params or {})
+    except ValidationError as exc:
+        raise DocumentError(f"invalid segment parameters: {exc}") from exc
+    if job.project_id is None:
+        raise DocumentError("segment job without a project")
+    grid = segment_with_timeout(
+        [(s.sample_id, _prepared_pages(deps, s.sha256)) for s in params.samples],
+        params.document,
+        timeout_s,
+    )
+    deps.store.put(
+        deps.buckets.runs,
+        segmentation_key(job.project_id, job.id),
+        json.dumps(grid).encode(),
+        "application/json",
+    )
+    return grid

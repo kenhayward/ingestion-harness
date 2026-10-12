@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import time
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from ingest_worker.llm.registry import ModelRegistry
+from ingest_worker.main import run_once
+from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
+from ingest_worker.queue import ClaimedJob
 from ingest_worker.segment import segment
-from ingest_worker.workbench import SegmentDocument, segment_samples
+from ingest_worker.specs import load_specs
+from ingest_worker.storage import MemoryObjectStore, prepared_text_key, segmentation_key
+from ingest_worker.workbench import SegmentDocument, segment_samples, segment_with_timeout
+
+from .fakes import FakeQueue
 
 PAGES = [
     "PROTOCOL APPROVAL\nPrepared by: A\n",
@@ -143,3 +155,79 @@ def test_matched_lines_are_trimmed(long_line: str) -> None:
         [("s1", [long_line])], doc(sections=[{"id": "all", "anchor": r"\A"}], pageMarkers=False)
     )
     assert len(cells(result)["all"]["line"]) == 200
+
+
+def segment_job(params: dict[str, Any]) -> ClaimedJob:
+    return ClaimedJob(
+        id="job-seg",
+        document_id="",
+        spec_id="letter",
+        spec_version=0,
+        bucket="",
+        object_key="",
+        model_override=None,
+        attempts=1,
+        max_attempts=1,
+        task="segment",
+        test=True,
+        project_id="letter",
+        params=params,
+    )
+
+
+def deps_with(store: MemoryObjectStore, specs_dir: Path) -> PipelineDeps:
+    return PipelineDeps(
+        store=store,
+        specs=load_specs(specs_dir),
+        models=ModelRegistry({}, {}, {}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+    )
+
+
+def put_prepared(store: MemoryObjectStore, sha: str, pages: list[str]) -> None:
+    text = {
+        "sha256": sha,
+        "pages": [{"number": i + 1, "text": t, "ocr": False} for i, t in enumerate(pages)],
+    }
+    store.put("runs", prepared_text_key(sha), json.dumps(text).encode(), "application/json")
+
+
+def test_segment_job_writes_the_grid_and_completes(fixture_specs_dir: Path) -> None:
+    store = MemoryObjectStore()
+    sha = hashlib.sha256(b"a").hexdigest()
+    put_prepared(store, sha, PAGES)
+    params = {
+        "samples": [{"sampleId": "s1", "sha256": sha}, {"sampleId": "s2", "sha256": "missing"}],
+        "document": {"sections": [{"id": "purpose", "anchor": r"^\d+\.0 PURPOSE"}]},
+    }
+    queue = FakeQueue(jobs=[segment_job(params)])
+
+    assert run_once(queue, deps_with(store, fixture_specs_dir), "w1") is True
+
+    assert queue.completed == [("job-seg", [])]
+    grid = json.loads(store.get("runs", segmentation_key("letter", "job-seg")))
+    assert grid["samples"][0]["sections"][0]["page"] == 2
+    assert grid["samples"][1]["error"] == "not prepared"
+
+
+def test_segment_job_with_bad_params_needs_review(fixture_specs_dir: Path) -> None:
+    queue = FakeQueue(jobs=[segment_job({"samples": [], "document": {"sections": []}})])
+    run_once(queue, deps_with(MemoryObjectStore(), fixture_specs_dir), "w1")
+    [(_, reason)] = queue.reviewed
+    assert "segment parameters" in reason
+
+
+def test_segment_with_timeout_returns_the_grid() -> None:
+    document = doc()
+    assert segment_with_timeout([("s1", PAGES)], document) == segment_samples(
+        [("s1", PAGES)], document
+    )
+
+
+def test_runaway_anchor_is_killed_and_reported() -> None:
+    document = SegmentDocument.model_validate({"sections": [{"id": "x", "anchor": "(a+)+$"}]})
+    started = time.monotonic()
+    with pytest.raises(DocumentError, match="backtrack"):
+        segment_with_timeout([("s1", ["a" * 40 + "!"])], document, timeout_s=3)
+    assert time.monotonic() - started < 3 + 5

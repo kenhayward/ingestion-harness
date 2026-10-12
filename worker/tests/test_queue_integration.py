@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections.abc import Iterator
@@ -121,3 +122,30 @@ def test_production_jobs_are_claimed_before_workbench_jobs(
         assert claimed is not None and claimed.id == production_job
     finally:
         q._conn.execute("DELETE FROM documents WHERE id = %s", (doc,))
+
+
+def test_a_document_less_project_job_is_claimed_with_its_params(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, production_job = queue_with_queued_job
+    # Push the fixture's production job back so the segment job is next.
+    q._conn.execute(
+        "UPDATE jobs SET run_after = now() + interval '1 day' WHERE id = %s", (production_job,)
+    )
+    project = f"p{uuid.uuid4().hex[:8]}"
+    q._conn.execute("INSERT INTO workbench_projects (id, name) VALUES (%s, 'P')", (project,))
+    job_id = str(uuid.uuid4())
+    q._conn.execute(
+        """INSERT INTO jobs (id, project_id, task, test, priority, max_attempts, params)
+           VALUES (%s, %s, 'segment', true, -5, 1, %s)""",
+        (job_id, project, json.dumps({"samples": [], "document": {"sections": []}})),
+    )
+    try:
+        claimed = q.claim("w1")
+        assert claimed is not None and claimed.id == job_id
+        assert claimed.task == "segment" and claimed.document_id == ""
+        assert claimed.project_id == project
+        assert claimed.params == {"samples": [], "document": {"sections": []}}
+    finally:
+        q._conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+        q._conn.execute("DELETE FROM workbench_projects WHERE id = %s", (project,))

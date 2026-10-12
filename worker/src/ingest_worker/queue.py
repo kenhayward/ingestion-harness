@@ -31,7 +31,7 @@ class ClaimedJob:
     attempts: int
     max_attempts: int
     #: "process" (extract), "publish" (apply review edits, deliver), "rerun" (one step) or
-    #: "prepare" (workbench: text + OCR only).
+    #: "prepare" (workbench: text + OCR only) or "segment" (workbench anchor preview; no document).
     task: str = "process"
     #: Test run of a (draft) template: processed and reviewable, never published.
     test: bool = False
@@ -40,6 +40,10 @@ class ClaimedJob:
     #: jobs.locked_at of this claim: identifies *this* run. A cancel, delete, retry or stale-lock
     #: reap changes or removes it, after which the run must stop and write nothing.
     claimed_at: datetime | None = None
+    #: Workbench project of a project-scoped job (prepare, test runs, segment).
+    project_id: str | None = None
+    #: Task parameters (segment: samples + candidate document block).
+    params: dict[str, Any] | None = None
 
 
 class JobQueue(Protocol):
@@ -102,6 +106,7 @@ class JobQueue(Protocol):
     def reap_stale(self, older_than_s: float) -> int: ...
 
 
+# Project-scoped jobs (task segment) have no document: its columns come back as ''/0.
 CLAIM_SQL = """
 WITH next AS (
   SELECT id FROM jobs
@@ -116,9 +121,11 @@ WITH next AS (
     FROM next WHERE j.id = next.id
   RETURNING j.*
 )
-SELECT c.id::text, c.document_id::text, d.spec_id, d.spec_version, d.bucket, d.object_key,
-       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at
-  FROM claimed c JOIN documents d ON d.id = c.document_id
+SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.project_id, ''),
+       COALESCE(d.spec_version, 0), COALESCE(d.bucket, ''), COALESCE(d.object_key, ''),
+       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at,
+       c.project_id, c.params
+  FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 
 
