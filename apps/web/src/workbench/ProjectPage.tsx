@@ -3,6 +3,8 @@ import type { ProjectView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import { PROJECT_TABS, type ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
+import { BriefTab } from './BriefTab.js';
+import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
@@ -100,6 +102,17 @@ export function ProjectPage({
         ))}
       </nav>
       {tab === 'samples' && <SamplesTab api={api} projectId={project.id} pollMs={pollMs} />}
+      {tab === 'brief' && (
+        <BriefTab
+          api={api}
+          projectId={project.id}
+          brief={view.brief}
+          onSaved={(brief) => setView({ ...view, brief })}
+        />
+      )}
+      {tab === 'runs' && (
+        <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />
+      )}
       {tab === 'template' &&
         (draft !== null ? (
           <TemplateEditor
