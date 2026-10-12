@@ -2125,3 +2125,20 @@ a.button.icon.bordered {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.segmentation-grid td.cell-missing-required,
+.segmentation-grid td.cell-empty {
+  background: var(--ih-danger-bg);
+  color: var(--ih-danger-fg);
+}
+.segmentation-grid td.cell-large,
+.segmentation-grid td.cell-missing {
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+}
+.segmentation-grid .anchor-errors {
+  background: var(--ih-alert-bg);
+  color: var(--ih-alert-fg);
+  border-radius: var(--ih-radius-md);
+  padding: 8px 12px 8px 28px;
+}
