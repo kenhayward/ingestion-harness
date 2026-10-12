@@ -75,7 +75,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     ]),
     listModels: vi.fn(async () => []),
     listJobs: vi.fn(async () => []),
-    getJob: vi.fn(),
+    getJob: vi.fn(async (id: string) => ({ ...job({ id }), outputs: [] })),
     retryJob: vi.fn(async () => job()),
     cancelJob: vi.fn(async (id: string) => job({ id, status: 'cancelled' })),
     deleteJob: vi.fn(async () => undefined),
