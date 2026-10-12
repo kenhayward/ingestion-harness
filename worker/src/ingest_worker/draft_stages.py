@@ -184,7 +184,11 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                         _clean({"type": "check", **{k: c.get(k) for k in keys}})
                     )
                 else:
-                    context = {x["name"]: x["path"] for x in c.get("context") or []}
+                    items = c.get("context") or []
+                    if any(not x.get("name") or not x.get("path") for x in items):
+                        errors.append(f"changes[{i}]: context item needs name and path")
+                        continue
+                    context = {x["name"]: x["path"] for x in items}
                     step = ExtractStep.model_validate(
                         _clean(
                             {
@@ -463,7 +467,9 @@ def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     for i, c in enumerate(data["changes"]):
         stage, key = _REVISE_GROUPS[c["op"]]
         payload = _compact(c.get(key)) if isinstance(c.get(key), dict) else None
-        if not payload or (c["op"] not in _NO_ID_OPS and "id" not in payload):
+        if c["op"] in _NO_ID_OPS:
+            payload = payload or {}  # empty means clear the preamble / the copy selection
+        elif not payload or "id" not in payload:
             errors.append(f"changes[{i}]: {c['op']} needs its {key} object")
             continue
         assert stage.convert is not None

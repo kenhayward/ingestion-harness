@@ -338,3 +338,16 @@ def test_schemas_stay_under_the_anthropic_union_type_limit(
     stage_schema: dict[str, Any], limit: int
 ) -> None:
     assert _union_count(stage_schema) <= limit
+
+
+def test_revise_context_item_without_a_path_is_an_error_not_an_exception() -> None:
+    step = nested("putStep", "step", step_item(context=[{"name": "n", "path": ""}]))
+    _, errors = run(REVISE, {"notes": "", "changes": [step]}, REVISE_DRAFT)
+    assert any("changes[0]" in e and "context item needs name and path" in e for e in errors)
+
+
+def test_revise_set_preamble_with_empty_text_clears_the_preamble() -> None:
+    clear = nested("setPreamble", "step", {})
+    body, errors = run(REVISE, {"notes": "", "changes": [clear]}, REVISE_DRAFT)
+    assert errors == []
+    assert body["changes"] == [{"op": "setPreamble", "preamble": "", "reason": "r"}]
