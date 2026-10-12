@@ -60,6 +60,8 @@ class ObjectStore(Protocol):
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None: ...
 
+    def delete(self, bucket: str, key: str) -> None: ...
+
 
 class MemoryObjectStore:
     def __init__(self) -> None:
@@ -77,6 +79,9 @@ class MemoryObjectStore:
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self.objects[(bucket, key)] = (body, content_type)
+
+    def delete(self, bucket: str, key: str) -> None:
+        self.objects.pop((bucket, key), None)
 
 
 class S3ObjectStore:
@@ -106,3 +111,6 @@ class S3ObjectStore:
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self._client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+
+    def delete(self, bucket: str, key: str) -> None:
+        self._client.delete_object(Bucket=bucket, Key=key)

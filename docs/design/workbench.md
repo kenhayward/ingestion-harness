@@ -357,5 +357,6 @@ fast, users will go back to editing YAML by hand.
   phase 3.
 - **Proposal conflicts** when the user edits the draft while a proposal is pending. The first
   version rejects conflicting changes; per-change rebase can come later.
-- Decided in phase 2: the worker wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
+- Decided in phase 2, on design grounds (real timings are still to be measured): the worker
+  wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
 - **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).

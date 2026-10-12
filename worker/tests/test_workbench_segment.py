@@ -214,6 +214,43 @@ def test_segment_job_writes_the_grid_and_completes(fixture_specs_dir: Path) -> N
     assert grid["samples"][1]["error"] == "not prepared"
 
 
+SEGMENT_PARAMS: dict[str, Any] = {
+    "samples": [{"sampleId": "s1", "sha256": "a" * 64}],
+    "document": {"sections": [{"id": "purpose", "anchor": r"^\d+\.0 PURPOSE"}]},
+}
+
+
+def test_segment_job_cancelled_before_the_write_writes_nothing(fixture_specs_dir: Path) -> None:
+    store = MemoryObjectStore()
+    put_prepared(store, "a" * 64, PAGES)
+    queue = FakeQueue(jobs=[segment_job(SEGMENT_PARAMS)], cancel_when=lambda: True)
+
+    run_once(queue, deps_with(store, fixture_specs_dir), "w1")
+
+    assert store.get_optional("runs", segmentation_key("letter", "job-seg")) is None
+    assert queue.completed == []
+
+
+def test_segment_job_cancelled_during_the_write_removes_its_object(
+    fixture_specs_dir: Path,
+) -> None:
+    store = MemoryObjectStore()
+    put_prepared(store, "a" * 64, PAGES)
+    calls: list[int] = []
+
+    def cancel_after_first_check() -> bool:
+        calls.append(1)
+        return len(calls) > 1
+
+    queue = FakeQueue(jobs=[segment_job(SEGMENT_PARAMS)], cancel_when=cancel_after_first_check)
+
+    run_once(queue, deps_with(store, fixture_specs_dir), "w1")
+
+    assert len(calls) == 2
+    assert store.get_optional("runs", segmentation_key("letter", "job-seg")) is None
+    assert queue.completed == []
+
+
 def test_segment_job_with_bad_params_needs_review(fixture_specs_dir: Path) -> None:
     queue = FakeQueue(jobs=[segment_job({"samples": [], "document": {"sections": []}})])
     run_once(queue, deps_with(MemoryObjectStore(), fixture_specs_dir), "w1")

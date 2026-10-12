@@ -43,6 +43,41 @@ describe('useSegmentPreview', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('re-issues the preview once when its own job was replaced on the server', async () => {
+    const api = fakeApi({
+      startSegmentation: vi
+        .fn()
+        .mockResolvedValueOnce(segmentationView({ jobId: 'j1', status: 'queued' }))
+        .mockResolvedValueOnce(segmentationView({ jobId: 'j2', status: 'queued' })),
+      getSegmentation: vi.fn(async (_p: string, jobId: string) => {
+        if (jobId === 'j1') throw new ApiError('segmentation not found', 404);
+        return segmentationView({ jobId: 'j2', status: 'succeeded', result: grid });
+      }),
+    });
+    const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
+    act(() => result.current.preview());
+    await waitFor(() => expect(result.current.view?.jobId).toBe('j2'));
+    expect(api.startSegmentation).toHaveBeenCalledTimes(2);
+    expect(result.current.error).toBeNull();
+    expect(result.current.running).toBe(false);
+  });
+
+  it('asks for a manual retry when the re-issued preview is replaced too', async () => {
+    const api = fakeApi({
+      startSegmentation: vi.fn(async () => segmentationView({ jobId: 'j1', status: 'queued' })),
+      getSegmentation: vi.fn(async () => {
+        throw new ApiError('segmentation not found', 404);
+      }),
+    });
+    const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
+    act(() => result.current.preview());
+    await waitFor(() =>
+      expect(result.current.error).toBe('Preview was replaced; click Preview to try again'),
+    );
+    expect(api.startSegmentation).toHaveBeenCalledTimes(2);
+    expect(result.current.running).toBe(false);
+  });
+
   it('reports a refused preview', async () => {
     const api = fakeApi({
       startSegmentation: vi.fn(async () => {

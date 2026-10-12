@@ -62,7 +62,7 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             log.info("job %s prepared %d pages", job.id, triage["pageCount"])
             return True
         if job.task == "segment":
-            grid = run_segment(job, deps)
+            grid = run_segment(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s segmented %d samples", job.id, len(grid["samples"]))
             return True

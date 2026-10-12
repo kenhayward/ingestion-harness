@@ -18,7 +18,14 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .ocr import pages_needing_ocr
-from .pipeline import DocumentError, PipelineDeps, check_cancelled, mark_pages, ocr_pages
+from .pipeline import (
+    DocumentError,
+    JobCancelled,
+    PipelineDeps,
+    check_cancelled,
+    mark_pages,
+    ocr_pages,
+)
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, section_spans, select_copy
 from .specs import CopySelection, Section
@@ -253,9 +260,12 @@ def _prepared_pages(deps: PipelineDeps, sha256: str) -> list[str] | None:
 
 
 def run_segment(
-    job: ClaimedJob, deps: PipelineDeps, *, timeout_s: float = SEGMENT_TIMEOUT_S
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, *, timeout_s: float = SEGMENT_TIMEOUT_S
 ) -> dict[str, Any]:
-    """Apply the job's candidate anchors to every listed sample; write and return the grid."""
+    """Apply the job's candidate anchors to every listed sample; write and return the grid.
+
+    A newer preview deletes this job's row and result object while it runs, so cancellation is
+    checked before the write and again after it (removing the object this run just wrote)."""
     try:
         params = SegmentParams.model_validate(job.params or {})
     except ValidationError as exc:
@@ -267,10 +277,10 @@ def run_segment(
         params.document,
         timeout_s,
     )
-    deps.store.put(
-        deps.buckets.runs,
-        segmentation_key(job.project_id, job.id),
-        json.dumps(grid).encode(),
-        "application/json",
-    )
+    check_cancelled(job, queue)
+    key = segmentation_key(job.project_id, job.id)
+    deps.store.put(deps.buckets.runs, key, json.dumps(grid).encode(), "application/json")
+    if queue.is_cancelled(job):
+        deps.store.delete(deps.buckets.runs, key)
+        raise JobCancelled(job.id)
     return grid

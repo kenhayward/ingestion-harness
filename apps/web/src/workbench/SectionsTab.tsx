@@ -7,7 +7,7 @@ import { useSegmentPreview } from './useSegmentPreview.js';
 
 export const PREVIEW_DEBOUNCE_MS = 600;
 
-type Row = { key: number; id: string; anchor: string; required: boolean };
+type Row = { key: number; id: string; anchor: string; required: boolean; description?: string };
 type Copies = { anchor: string; select: 'first' | 'last' } | null;
 
 /** Every row has a filled anchor and a non-empty id, and ids are unique. */
@@ -21,7 +21,12 @@ function isComplete(rows: Row[]): boolean {
 
 function candidate(rows: Row[], copies: Copies, pageMarkers: boolean): SegmentDocument {
   return {
-    sections: rows.map((r) => ({ id: r.id, anchor: r.anchor, required: r.required })),
+    sections: rows.map((r) => ({
+      id: r.id,
+      anchor: r.anchor,
+      required: r.required,
+      ...(r.description !== undefined ? { description: r.description } : {}),
+    })),
     ...(copies && copies.anchor ? { copies } : {}),
     pageMarkers,
   };
@@ -63,7 +68,7 @@ export function SectionsTab({
         ]);
         if (cancelled) return;
         const block = (record.definition.document ?? {}) as {
-          sections?: { id: string; anchor: string; required?: boolean }[];
+          sections?: { id: string; anchor: string; required?: boolean; description?: string }[];
           copies?: Copies;
           pageMarkers?: boolean;
         };
@@ -72,6 +77,7 @@ export function SectionsTab({
           id: s.id,
           anchor: s.anchor,
           required: s.required ?? true,
+          ...(s.description !== undefined ? { description: s.description } : {}),
         }));
         const loadedCopies = block.copies ?? null;
         const loadedMarkers = block.pageMarkers ?? true;
@@ -105,6 +111,8 @@ export function SectionsTab({
   const current = candidate(rows, copies, pageMarkers);
   const dirty = JSON.stringify(current) !== saved;
   const complete = isComplete(rows);
+  // A preview that timed out means an anchor backtracks; production segmentation has no such cap.
+  const slowAnchor = previewError?.includes('backtrack') ?? false;
 
   const edit = (nextRows: Row[], nextCopies: Copies = copies) => {
     setRows(nextRows);
@@ -265,10 +273,11 @@ export function SectionsTab({
           type="button"
           className="primary"
           onClick={() => void save()}
-          disabled={!dirty || !complete || saving}
+          disabled={!dirty || !complete || saving || slowAnchor}
         >
           Save to draft
         </button>
+        {slowAnchor && <span className="muted">Fix the slow anchor to save.</span>}
         {running && <span className="muted">Previewing…</span>}
         {message && <span role="status">{message}</span>}
       </div>

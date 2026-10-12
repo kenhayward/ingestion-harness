@@ -125,6 +125,49 @@ describe('SectionsTab', () => {
     });
   });
 
+  it('keeps a section description through an anchor edit and save', async () => {
+    const described = {
+      ...definition,
+      document: {
+        ...definition.document,
+        sections: [{ id: 'all', anchor: '\\A', description: 'Cover page' }],
+      },
+    };
+    const api = setup({ getTemplate: vi.fn(async () => templateView(described)) });
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save to draft' }));
+    expect(api.saveTemplate).toHaveBeenCalledWith('letter', 2, {
+      ...described,
+      document: {
+        ...described.document,
+        sections: [{ id: 'all', anchor: '\\Ax', required: true, description: 'Cover page' }],
+      },
+    });
+  });
+
+  it('blocks saving while the latest preview reports a catastrophic anchor', async () => {
+    const api = setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    api.startSegmentation = vi.fn(async () =>
+      segmentationView({
+        jobId: 'j2',
+        status: 'needs_review',
+        error: 'preview took longer than 10s; an anchor may backtrack catastrophically',
+      }),
+    );
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), '+');
+    expect(await screen.findByRole('alert', {}, { timeout: 2000 })).toHaveTextContent('backtrack');
+    expect(screen.getByRole('button', { name: 'Save to draft' })).toBeDisabled();
+    expect(screen.getByText(/Fix the slow anchor/)).toBeInTheDocument();
+
+    api.startSegmentation = vi.fn(async () => segmentationView({ jobId: 'j3', status: 'queued' }));
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), '?');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save to draft' })).toBeEnabled(),
+    );
+  });
+
   it('asks for a draft when every version is published', () => {
     render(<SectionsTab api={fakeApi()} projectId="letter" draft={null} pollMs={1} />);
     expect(screen.getByText(/Start the next version on the Template tab/)).toBeInTheDocument();

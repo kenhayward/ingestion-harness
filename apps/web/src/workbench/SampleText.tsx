@@ -11,14 +11,23 @@ function PageBody({ text, marks }: { text: string; marks: { line: string; label:
   if (!marks.length) return <pre>{text}</pre>;
   const lines = text.split('\n');
   const used = new Set<string>();
+  const usable = marks.filter((m) => m.line.trim() !== '');
+  // Each mark lands on the first line equal to it, else the first line that starts with it.
+  const landing = new Map<string, number>();
+  for (const m of usable) {
+    const wanted = m.line.trim();
+    if (PAGE_MARKER.test(wanted)) {
+      landing.set(m.label, 0);
+      continue;
+    }
+    const exact = lines.findIndex((l) => l.trim() === wanted);
+    const index = exact !== -1 ? exact : lines.findIndex((l) => l.trim().startsWith(wanted));
+    if (index !== -1) landing.set(m.label, index);
+  }
   return (
     <pre>
       {lines.map((line, i) => {
-        const mark = marks.find(
-          (m) =>
-            !used.has(m.label) &&
-            (PAGE_MARKER.test(m.line.trim()) ? i === 0 : line.trim().startsWith(m.line.trim())),
-        );
+        const mark = usable.find((m) => !used.has(m.label) && landing.get(m.label) === i);
         if (mark) used.add(mark.label);
         return (
           <span key={i}>

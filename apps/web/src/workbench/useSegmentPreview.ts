@@ -14,8 +14,8 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
 
   useEffect(() => () => void (generation.current += 1), []); // stop polling on unmount
 
-  const preview = useCallback(
-    (document?: SegmentDocument) => {
+  const start = useCallback(
+    (document: SegmentDocument | undefined, retried: boolean) => {
       const mine = ++generation.current;
       const current = () => generation.current === mine;
       setRunning(true);
@@ -43,7 +43,15 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
           }
         } catch (err) {
           if (!current()) return;
-          if (err instanceof ApiError && err.status === 404) return; // superseded on the server
+          if (err instanceof ApiError && err.status === 404) {
+            // Still wanted here, yet gone on the server: another request replaced this job.
+            if (!retried) {
+              start(document, true);
+              return;
+            }
+            setError('Preview was replaced; click Preview to try again');
+            return;
+          }
           setError((err as Error).message);
         } finally {
           if (current()) setRunning(false);
@@ -52,6 +60,7 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
     },
     [api, projectId, pollMs],
   );
+  const preview = useCallback((document?: SegmentDocument) => start(document, false), [start]);
 
   return { view, running, error, preview };
 }

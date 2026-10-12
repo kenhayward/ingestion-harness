@@ -205,7 +205,8 @@ export class PgRepo implements IngestionRepo {
       await client.query('BEGIN');
       // READ COMMITTED lets two concurrent calls both miss each other's insert; serialize per project.
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
-      // Deleting a running job is safe: its worker finds the claim gone and writes nothing.
+      // Deleting a running job is safe: the claim guard stops its status writes, and the worker
+      // notices the cancellation and removes its own result object.
       const removed = await client.query<{ id: string }>(
         `DELETE FROM jobs WHERE project_id = $1 AND task = 'segment' RETURNING id`,
         [projectId],
