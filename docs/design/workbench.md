@@ -162,7 +162,7 @@ All LLM and PDF work stays in the worker. The API only enqueues and reads result
 | `prepare` | sample | Text extraction and OCR (`ocr: auto`, cached by sha256). Writes the per-page text and triage metadata to the runs bucket. Copy selection and segmentation are *not* applied, so changing anchors never needs a re-prepare. |
 | `segment` | project | For each sample, applies the current draft's `copies` and `sections` (or a candidate anchor set) to the prepared text. Writes the grid: per sample × section, the hit, matched line, page and length. Text-only and sub-second. Runs at the highest workbench priority. |
 | `draft` | project | Runs one stage (`params.stage`). Builds the context (below), calls the `draft` model, validates the result and retries with the errors fed back. Writes a proposal. |
-| `revise` | project | Given feedback items and **dev** failure diffs, proposes a change to outputs, sections or steps. |
+| `revise` | project | Given feedback items and **dev** failure diffs, proposes a change to outputs, sections or steps. *As built (phase 4c):* not a task of its own but a `draft` job with `params.stage = 'revise'`, started by `POST /projects/:id/stages/revise`. Section and copy changes get one segmentation pass over the dev samples (10 s cap, timeout → `needs_review`), with no anchor feedback round. |
 | test runs | sample | The existing `process` path with `jobs.test`, using the step cache. A dev or holdout evaluation is a batch of test jobs linked to an iteration. |
 
 `prepare_document` is split so the workbench can stop after the OCR stage. The existing pipeline
@@ -273,6 +273,7 @@ GET               /projects/:id/proposals[/:pid]
 POST              /projects/:id/proposals/:pid/decision   { decision, changes? } accept/reject, optionally per change
 POST              /projects/:id/feedback          comment on field/step/section
 POST              /projects/:id/revise            enqueue revise from open feedback
+                                                  (as built: POST /projects/:id/stages/revise, a draft job)
 POST              /projects/:id/evaluate          { set: dev|holdout, model?, uncached? }
 GET               /projects/:id/iterations[/:iid] history, scores
 POST              /projects/:id/iterations/:iid/revert
