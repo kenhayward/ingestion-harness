@@ -2,6 +2,7 @@ import type { JobSummary } from '@ih/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { App } from '../src/App.js';
 import { ReviewPage } from '../src/review/ReviewPage.js';
 import { fakeApi, job } from './fake-api.js';
 import { JOB_ID, reviewData } from './review-fixture.js';
@@ -351,5 +352,42 @@ describe('ReviewPage', () => {
       }),
     });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load review: boom');
+  });
+});
+
+describe('ReviewPage between documents', () => {
+  it('starts fresh on Next document (no reason or note carried over)', async () => {
+    window.location.hash = `#/review/${JOB_ID}`;
+    const other = '22222222-2222-4222-8222-222222222222';
+    const api = fakeApi({
+      getReview: vi.fn(async (id: string) => {
+        const data = reviewData();
+        return { ...data, job: { ...data.job, id, filename: id === other ? 'b.pdf' : 'scan.pdf' } };
+      }),
+    });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Reject…' }));
+    await userEvent.type(screen.getByLabelText(/Rejection reason/), 'wrong supplier');
+    window.location.hash = `#/review/${other}`;
+    await screen.findByRole('heading', { level: 1, name: 'b.pdf' });
+    expect(screen.queryByLabelText(/Rejection reason/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Note (optional)')).toHaveValue('');
+    window.location.hash = '';
+  });
+
+  it('moves the source page to a flagged field on Next flagged', async () => {
+    const data = reviewData();
+    data.document.issues.push({
+      step: 'head',
+      target: 'executed_on',
+      row: null,
+      column: null,
+      raw: 'x',
+      message: 'odd date',
+    });
+    setup({ getReview: vi.fn(async () => data) });
+    await userEvent.click(await screen.findByRole('button', { name: /Next flagged/ }));
+    expect(screen.getByRole('img', { name: /page 3 of 3/i })).toBeInTheDocument();
   });
 });

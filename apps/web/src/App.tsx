@@ -104,7 +104,16 @@ function SignedInApp({
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
-    page = <ReviewPage api={api} jobId={route.jobId} jobs={jobs} onDone={() => navigate('#/')} />;
+    // Keyed: Next document must start fresh (no reason, note or page carried over).
+    page = (
+      <ReviewPage
+        key={route.jobId}
+        api={api}
+        jobId={route.jobId}
+        jobs={jobs}
+        onDone={() => navigate('#/')}
+      />
+    );
   } else if (route.name === 'results') {
     page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {

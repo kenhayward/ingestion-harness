@@ -125,7 +125,11 @@ export function ReviewPage({
     const target = targets[next]!;
     setCursor(next);
     setTab(target.tab);
-    if ('field' in target) setSelectedField(target.field);
+    if ('field' in target) {
+      setSelectedField(target.field);
+      const found = view.fields[target.field]?.page;
+      if (found) setPage(found); // like clicking the field: show where it was found
+    }
     setPendingFocus(targetKey(target));
   };
   // A render helper, not a component: a component declared here would remount every tab
