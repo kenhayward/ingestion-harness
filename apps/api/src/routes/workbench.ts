@@ -7,16 +7,21 @@ import {
   PreparedTextSchema,
   PreparedTriageSchema,
   SampleRoleSchema,
+  SegmentDocumentSchema,
+  SegmentationResultSchema,
   inboxKey,
   preparedTextKey,
   preparedTriageKey,
+  segmentationKey,
   type JobSummary,
   type ProjectSummary,
   type ProjectView,
   type SampleState,
   type SampleView,
+  type SegmentationView,
   type WorkbenchProject,
 } from '@ih/shared';
+import type { SegmentJob } from '../repositories/types.js';
 import { createNextDraft, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { validateTemplate } from '../templates/definitions.js';
@@ -27,6 +32,13 @@ const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
 
 type ProjectParams = { id: string };
+
+const StartSegmentation = z.object({ document: z.unknown().optional() }).strict();
+const SegmentationParams = z.object({ id: Id, jobId: z.string().uuid() });
+
+function segmentationView(job: SegmentJob, result: SegmentationView['result']): SegmentationView {
+  return { jobId: job.id, status: job.status, error: job.error, result };
+}
 
 /** The open draft, the latest published version and the newest record of a document type. */
 export async function versionsOf(templates: TemplateRepo, id: string) {
@@ -300,6 +312,65 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     );
     return reply.code(201).send({ jobs });
   });
+
+  /** Preview anchors over every prepared sample (worker task `segment`; ADR 0007). */
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/segmentations',
+    async (req, reply) => {
+      const projectId = req.params.id;
+      if (!(await workbench.getProject(projectId))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const body = StartSegmentation.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      let candidate = body.data.document;
+      if (candidate === undefined) {
+        const { draft, latest } = await versionsOf(templates, projectId);
+        const record = draft !== null ? await templates.get(projectId, draft) : latest;
+        const block = (record?.definition.document ?? {}) as Record<string, unknown>;
+        candidate = {
+          sections: block.sections,
+          ...(block.copies !== undefined ? { copies: block.copies } : {}),
+          ...(block.pageMarkers !== undefined ? { pageMarkers: block.pageMarkers } : {}),
+        };
+      }
+      const document = SegmentDocumentSchema.safeParse(candidate);
+      if (!document.success) {
+        return reply.code(400).send({ error: 'invalid sections', issues: document.error.issues });
+      }
+      const samples = (await sampleViews(app, projectId))
+        .filter((s) => s.view.state === 'ready')
+        .map((s) => ({ sampleId: s.record.id, sha256: s.record.sha256 }));
+      if (!samples.length) return reply.code(409).send({ error: 'no prepared samples to segment' });
+      const { job, removed } = await app.deps.repo.createSegmentJob(projectId, {
+        samples,
+        document: document.data,
+      });
+      await Promise.all(
+        removed.map((id) =>
+          app.deps.store
+            .delete(app.deps.buckets.runs, segmentationKey(projectId, id))
+            .catch((err: unknown) => req.log.warn({ err, id }, 'old segmentation not deleted')),
+        ),
+      );
+      return reply.code(202).send(segmentationView(job, null));
+    },
+  );
+
+  app.get<{ Params: { id: string; jobId: string } }>(
+    '/workbench/projects/:id/segmentations/:jobId',
+    async (req, reply) => {
+      const params = SegmentationParams.safeParse(req.params);
+      const job = params.success
+        ? await app.deps.repo.getSegmentJob(params.data.id, params.data.jobId)
+        : null;
+      if (!job) return reply.code(404).send({ error: 'segmentation not found' });
+      if (job.status !== 'succeeded') return segmentationView(job, null);
+      const raw = await readJson(app, segmentationKey(job.projectId, job.id));
+      if (raw === null) return { ...segmentationView(job, null), error: 'result missing' };
+      return segmentationView(job, SegmentationResultSchema.parse(raw));
+    },
+  );
 
   app.get<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
     if (!(await workbench.getProject(req.params.id))) {
