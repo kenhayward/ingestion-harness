@@ -187,6 +187,11 @@ describe('SurveyTab', () => {
     });
   });
 
+  it('cannot skip while the survey is running', async () => {
+    tab({ listProposals: vi.fn(async () => [proposalView({ status: 'running', body: null })]) });
+    expect(await screen.findByRole('button', { name: 'Skip this stage' })).toBeDisabled();
+  });
+
   it('skips the survey and reports the change', async () => {
     const onChanged = vi.fn();
     const api = fakeApi({ skipStage: vi.fn(async () => []) });

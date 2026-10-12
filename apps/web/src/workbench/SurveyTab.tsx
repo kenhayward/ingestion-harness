@@ -119,7 +119,7 @@ export function SurveyTab({
       <button type="button" className="primary" disabled={running} onClick={() => void run()}>
         {proposal ? 'Run survey again' : 'Run survey'}
       </button>
-      <button type="button" onClick={() => void skip()}>
+      <button type="button" disabled={running} onClick={() => void skip()}>
         Skip this stage
       </button>
       {running && <span className="muted"> Surveying the dev samples…</span>}

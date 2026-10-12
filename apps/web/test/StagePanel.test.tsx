@@ -94,6 +94,40 @@ describe('StagePanel', () => {
     await waitFor(() => expect(onSkipped).toHaveBeenCalled());
   });
 
+  it('ignores a second click while a decision is pending', async () => {
+    const p = changeProposalView();
+    let release: (v: typeof p) => void = () => {};
+    const decideProposal = vi.fn(
+      () =>
+        new Promise<typeof p>((resolve) => {
+          release = resolve;
+        }),
+    );
+    panel({ listProposals: vi.fn(async () => [p]), decideProposal });
+    const apply = await screen.findByRole('button', { name: 'Apply selected changes' });
+    await userEvent.click(apply);
+    expect(apply).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reject all' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Skip this stage' })).toBeDisabled();
+    await userEvent.click(apply);
+    expect(decideProposal).toHaveBeenCalledTimes(1);
+    release({ ...p, status: 'accepted' as const });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull());
+  });
+
+  it('offers a retry when the proposals cannot be loaded', async () => {
+    const p = changeProposalView();
+    const listProposals = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue([p]);
+    panel({ listProposals });
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Apply selected changes' })).toBeEnabled();
+    expect(listProposals).toHaveBeenCalledTimes(2);
+  });
+
   it('shows where proposed anchors were found on the dev samples', async () => {
     const a = sampleView({ id: 'sa', filename: 'a.pdf' });
     const b = sampleView({ id: 'sb', filename: 'b.pdf' });

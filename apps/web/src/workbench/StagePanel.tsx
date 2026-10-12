@@ -74,6 +74,7 @@ export function StagePanel({
   const [samples, setSamples] = useState<SampleView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -109,12 +110,16 @@ export function StagePanel({
   }, [api, projectId, stage]);
 
   const act = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await action();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -154,7 +159,18 @@ export function StagePanel({
     return `found in ${found} of ${rows.length} dev samples${missed.length ? ` (missed: ${missed.map((r) => name(r.sampleId)).join(', ')})` : ''}`;
   };
 
-  if (proposal === undefined) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
+  if (proposal === undefined) {
+    return error ? (
+      <div>
+        <p role="alert">{error}</p>
+        <button type="button" onClick={() => void refresh()}>
+          Retry
+        </button>
+      </div>
+    ) : (
+      <p>Loading…</p>
+    );
+  }
   const applied = proposal?.acceptedChanges ?? null;
 
   return (
@@ -165,12 +181,12 @@ export function StagePanel({
         <button
           type="button"
           className="primary"
-          disabled={running || !hasDraft}
+          disabled={running || busy || !hasDraft}
           onClick={() => void run()}
         >
           {proposal ? 'Propose again' : PROPOSE[stage]}
         </button>
-        <button type="button" onClick={() => void skip()}>
+        <button type="button" disabled={busy} onClick={() => void skip()}>
           Skip this stage
         </button>
       </div>
@@ -221,12 +237,12 @@ export function StagePanel({
               <button
                 type="button"
                 className="primary"
-                disabled={selected.size === 0}
+                disabled={busy || selected.size === 0}
                 onClick={() => void accept()}
               >
                 Apply selected changes
               </button>
-              <button type="button" onClick={() => void reject()}>
+              <button type="button" disabled={busy} onClick={() => void reject()}>
                 Reject all
               </button>
             </div>

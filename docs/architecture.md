@@ -96,11 +96,11 @@ proposes typed changes (add, set, remove on the template's fields, tables, secti
 whole template. A proposal records `baseVersion` and `baseDefinition`, and the user accepts it change by change:
 accepting applies the chosen changes to the open draft with `applyChanges`, and a change whose target was edited
 since the proposal is refused (409). A stage is complete once accepted or skipped; a later stage is shown as
-stale when an earlier stage was accepted after it, which is derived from the proposals and skips, never stored.
+stale when an earlier stage was accepted or skipped after it, which is derived from the proposals and skips, never stored.
 The sections stage runs the proposed anchors against every dev sample, gives the model one round of feedback on
 misses, and stores the result as `anchorCheck`; a segmentation timeout in the final round sends the job to
-`needs_review`. The worker drops empty strings and lists from drafted changes and validates each change against
-the draft with the earlier ones applied.
+`needs_review`. The worker drops empty strings and lists from drafted changes and checks removals against
+the draft with the earlier changes in the same body applied; all other validation runs on the whole body applied.
 
 ## Access
 

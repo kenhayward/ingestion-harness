@@ -189,3 +189,25 @@ describe('change stages', () => {
     expect(view).toMatchObject({ status: 'failed', error: 'result unreadable' });
   });
 });
+
+describe('accepting when the draft is no longer open', () => {
+  it('answers 409 and leaves the proposal undecided so it can be accepted again', async () => {
+    const { start, skip, finish, decide, templates, workbench } = await project();
+    await skip('survey');
+    const p = (await start('outputs')).json() as ProposalView;
+    await finish(p.id, 'outputs', { notes: '', changes: [putField('date')] });
+    const real = templates.updateDraft.bind(templates);
+    let closed = true;
+    templates.updateDraft = async (...args: Parameters<typeof real>) =>
+      closed ? null : real(...args);
+    const res = await decide(p.id, { decision: 'accepted', changes: [0] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(
+      'the draft is no longer open; start the next version and re-run the stage',
+    );
+    const [record] = await workbench.listProposals('letter');
+    expect(record!.decision).toBeNull();
+    closed = false;
+    expect((await decide(p.id, { decision: 'accepted', changes: [0] })).statusCode).toBe(200);
+  });
+});

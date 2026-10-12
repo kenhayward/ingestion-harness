@@ -149,7 +149,7 @@ export function ProjectPage({
             {TAB_LABEL[t]}
             {(() => {
               const s = stages.find((x) => x.stage === t);
-              return s && s.state !== 'pending' ? ` � ${s.state}` : '';
+              return s && s.state !== 'pending' ? ` \u00b7 ${s.state}` : '';
             })()}
           </a>
         ))}

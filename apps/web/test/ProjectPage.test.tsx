@@ -118,8 +118,10 @@ describe('ProjectPage', () => {
       <ProjectPage api={api} projectId="letter" tab="outputs" onNavigate={vi.fn()} role="admin" />,
     );
     const tabs = await screen.findByRole('navigation', { name: 'Project' });
-    expect(await within(tabs).findByRole('link', { name: /Outputs � stale/ })).toBeInTheDocument();
-    expect(within(tabs).getByRole('link', { name: /Survey � accepted/ })).toBeInTheDocument();
+    expect(
+      await within(tabs).findByRole('link', { name: /Outputs \u00b7 stale/ }),
+    ).toBeInTheDocument();
+    expect(within(tabs).getByRole('link', { name: /Survey \u00b7 accepted/ })).toBeInTheDocument();
     expect(within(tabs).getByRole('link', { name: /^Sections$/ })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Propose outputs' })).toBeInTheDocument();
   });

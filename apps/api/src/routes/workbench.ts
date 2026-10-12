@@ -663,6 +663,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           error: `the draft changed since this proposal where these changes apply: ${clashes.join(', ')}; re-run the stage or accept the others`,
         });
       }
+      // Apply first: if the draft was published meanwhile nothing is written and the proposal
+      // stays undecided. Re-applying the same changes after a lost race is idempotent.
+      const updated = await templates.updateDraft(
+        projectId,
+        draft,
+        pinned(applyChanges(draftRecord.definition, selected), projectId, draft),
+      );
+      if (!updated) {
+        return reply.code(409).send({
+          error: 'the draft is no longer open; start the next version and re-run the stage',
+        });
+      }
       const decided = await workbench.decideProposal(
         projectId,
         pid,
@@ -670,11 +682,6 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         chosen,
       );
       if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
-      await templates.updateDraft(
-        projectId,
-        draft,
-        pinned(applyChanges(draftRecord.definition, selected), projectId, draft),
-      );
       req.log.info({ projectId, proposal: pid, applied: chosen }, 'drafting changes applied');
       return proposalView(app, decided, job);
     },
