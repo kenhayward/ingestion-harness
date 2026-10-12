@@ -112,6 +112,8 @@ finished the summary is cached in `scores`. Store outages are rethrown rather th
 document yields a null comparison. Restoring an iteration writes its snapshot into the open draft. No worker code
 changed: evaluation and reference runs are ordinary `process` jobs.
 
+Phase 4b adds a step cache for workbench test runs (migration 0014, `step_cache.py`). Before an extract step calls its model, the worker hashes the step's full input: the rendered prompts, output schema, system prompt, page-image hashes, resolved model ref, output-affecting options (not `timeoutS`/`maxRetries`), `maxTokens` and `maxAttempts`. A stored output under `step-cache/{key}.json` in the runs bucket is reused and recorded as a `step_runs` row with `cached = true`; a miss calls the model and stores the result. Models resolve and the data policy is checked first, so a hit never bypasses it. Only `process` jobs with a project and `test` use the cache; production, regression and re-run jobs do not. `params.uncached` (the Evaluate tab's "Fresh model calls") skips the lookup but still writes. Model comparison starts one evaluation per alias (`default`, `fast`, `draft`) sharing a group id, read back as a table from `GET /comparisons/:groupId`.
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an access token. The

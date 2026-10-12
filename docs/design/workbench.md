@@ -342,8 +342,8 @@ Each phase is usable on its own.
    - **3b (done):** the outputs, sections and steps stages; per-change accept; skip; stale.
 4. **Evaluation loop**, split in three:
    - **4a (done):** references stage, Evaluate on dev, scorecard and drill-down, iterations with restore.
-   - **4b (next):** step cache, model comparison and re-run uncached.
-   - **4c:** feedback and `revise`.
+   - **4b (done):** step cache, re-run uncached ("Fresh model calls"), model comparison.
+   - **4c (next):** feedback and `revise`.
 5. **Holdout and publish:** holdout runs, publish gate, references across versions.
 6. **Export/import bundle.**
 
@@ -366,8 +366,9 @@ fast, users will go back to editing YAML by hand.
   snapshots the draft definition when it is clicked, but each queued job loads the draft as it
   is when a worker claims it. Editing the draft while an evaluation runs therefore scores a mix
   of versions against a snapshot that matches none of them exactly; Restore brings back the
-  snapshot, not what ran. Until phase 4b's step cache snapshots the definition per job, leave
-  the draft alone while an evaluation is running.
+  snapshot, not what ran. Phase 4b's step cache does not remove this: jobs still load the draft
+  when a worker claims them, and the cache only avoids repeating identical step calls. Leave the
+  draft alone while an evaluation is running.
 - Decided in phase 2, on design grounds (real timings are still to be measured): the worker
   wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
 - **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).
