@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .base import LLMProvider, ModelDescriptor, ProviderKind
 
@@ -47,6 +47,11 @@ class OcrConfig(BaseModel):
     enabled: bool = True
     #: Alias or provider/model-id of a vision model (olmOCR-style prompt + front matter).
     model: str
+    #: Endpoint for the OCR model's provider when OCR runs on a different server than
+    #: extraction (OCR_BASE_URL). Empty/unset: the provider's own baseUrl.
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    #: Env var with the OCR endpoint's API key (OCR_API_KEY). Unset/empty: the provider's key.
+    api_key_env: str | None = Field(default=None, alias="apiKeyEnv")
     min_chars: int = Field(default=25, ge=0, alias="minChars")
     longest_dim: int = Field(default=1288, gt=0, alias="longestDim")
     max_tokens: int = Field(default=8000, gt=0, alias="maxTokens")
@@ -54,6 +59,11 @@ class OcrConfig(BaseModel):
     concurrency: int = Field(default=1, ge=1, le=32)
     #: Reuse transcriptions across jobs of the same PDF (same model and settings).
     cache: bool = True
+
+    @field_validator("base_url")
+    @classmethod
+    def _empty_is_unset(cls, value: str | None) -> str | None:
+        return value or None  # ${OCR_BASE_URL:-} expands to ""
 
 
 class LLMConfig(BaseModel):
@@ -142,10 +152,13 @@ class ModelRegistry:
         providers: dict[str, LLMProvider],
         configs: dict[str, ProviderConfig],
         aliases: dict[str, str],
+        ocr_providers: dict[str, LLMProvider] | None = None,
     ) -> None:
         self._providers = providers
         self._configs = configs
         self._aliases = aliases
+        #: Same-named providers for OCR's own endpoint/key (OcrConfig.base_url, api_key_env).
+        self._ocr_providers = ocr_providers or {}
 
     @property
     def provider_names(self) -> list[str]:
@@ -168,6 +181,12 @@ class ModelRegistry:
                 f"model {ref!r}: provider {provider_name!r} is not configured/enabled"
             )
         return provider, model_id
+
+    def resolve_ocr(self, ref: str) -> tuple[LLMProvider, str]:
+        """Like resolve(), but uses the provider's OCR endpoint/key when configured. The
+        provider keeps its name, so OCR cache keys don't depend on the endpoint."""
+        provider, model_id = self.resolve(ref)
+        return self._ocr_providers.get(provider.name, provider), model_id
 
     def discover(self) -> list[ModelDescriptor]:
         """Static models plus each provider's discovered models. Discovery errors are logged,
@@ -207,4 +226,16 @@ def build_registry(
             raise ValueError(msg)
         providers[cfg.name] = factories[cfg.kind](cfg, api_key)
         configs[cfg.name] = cfg
-    return ModelRegistry(providers, configs, config.aliases)
+    registry = ModelRegistry(providers, configs, config.aliases)
+    ocr = config.ocr
+    ocr_key = env.get(ocr.api_key_env) if ocr and ocr.api_key_env else None
+    if ocr is None or not ocr.enabled or not (ocr.base_url or ocr_key):
+        return registry
+    try:
+        name = registry.resolve(ocr.model)[0].name
+    except ModelResolutionError:
+        return registry  # reported when a job needs OCR, like any unresolvable model
+    ocr_cfg = configs[name].model_copy(update={"base_url": ocr.base_url or configs[name].base_url})
+    api_key = ocr_key or (env.get(ocr_cfg.api_key_env) if ocr_cfg.api_key_env else None)
+    ocr_provider = factories[ocr_cfg.kind](ocr_cfg, api_key)
+    return ModelRegistry(providers, configs, config.aliases, {name: ocr_provider})

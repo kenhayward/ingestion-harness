@@ -97,4 +97,6 @@ errors, and the Zscaler root CA will need adding to the images.
 - Back up both volumes: `postgres-data` (`pg_dump`) and `seaweedfs-data` (or replicate buckets
   with `weed filer.sync` / an S3 sync to the final target).
 - The worker reaches a host-local LLM server at `host.docker.internal` (mapped via
-  `host-gateway`). Set `LOCAL_LLM_ENABLED=true` and `LOCAL_LLM_BASE_URL`.
+  `host-gateway`). Set `LOCAL_LLM_ENABLED=true` and `LOCAL_LLM_BASE_URL`. To run OCR on a different server, set
+  `OCR_BASE_URL` (same provider and options; empty = `LOCAL_LLM_BASE_URL`) and, if it needs its
+  own key, `OCR_API_KEY` (empty = `LOCAL_LLM_API_KEY`).
