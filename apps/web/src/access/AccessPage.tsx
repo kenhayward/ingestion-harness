@@ -37,6 +37,7 @@ export function AccessPage({
   const [created, setCreated] = useState<{ label: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = me.role === 'admin';
+  const shown = tokens.filter((t) => matchesQuery(query, t.label, t.role));
 
   const load = useCallback(async () => {
     try {
@@ -118,29 +119,32 @@ export function AccessPage({
           </tr>
         </thead>
         <tbody>
-          {tokens
-            .filter((t) => matchesQuery(query, t.label, t.role))
-            .map((t) => (
-              <tr key={t.id}>
-                <td>{t.label}</td>
-                <td>{t.role}</td>
-                <td>{when(t.createdAt, '—')}</td>
-                <td>{when(t.expiresAt, 'never')}</td>
-                <td>{when(t.lastUsedAt, 'never used')}</td>
-                <td>
-                  <span className={`token-status token-${t.status}`}>{STATUS_LABEL[t.status]}</span>
-                </td>
-                <td>
-                  {t.role === 'user' && (
-                    <TokenActions
-                      token={t}
-                      onRevoke={() => act(() => api.revokeToken(t.id))}
-                      onDelete={() => act(() => api.deleteToken(t.id))}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
+          {shown.length === 0 && tokens.length > 0 && (
+            <tr>
+              <td colSpan={7}>No tokens match “{query.trim()}”.</td>
+            </tr>
+          )}
+          {shown.map((t) => (
+            <tr key={t.id}>
+              <td>{t.label}</td>
+              <td>{t.role}</td>
+              <td>{when(t.createdAt, '—')}</td>
+              <td>{when(t.expiresAt, 'never')}</td>
+              <td>{when(t.lastUsedAt, 'never used')}</td>
+              <td>
+                <span className={`token-status token-${t.status}`}>{STATUS_LABEL[t.status]}</span>
+              </td>
+              <td>
+                {t.role === 'user' && (
+                  <TokenActions
+                    token={t}
+                    onRevoke={() => act(() => api.revokeToken(t.id))}
+                    onDelete={() => act(() => api.deleteToken(t.id))}
+                  />
+                )}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>

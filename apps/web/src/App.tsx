@@ -11,7 +11,7 @@ import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
-import { matchesQuery } from './shell/derive.js';
+import { matchesQuery, sectionOf } from './shell/derive.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
@@ -95,6 +95,14 @@ function SignedInApp({
   const route = useHashRoute();
   const { jobs, error, refresh } = useJobs(api, pollMs);
   const [query, setQuery] = useState('');
+  // The search filters the current section's list: moving to another section starts afresh,
+  // so a leftover query never hides rows somewhere else.
+  const section = sectionOf(route);
+  const [querySection, setQuerySection] = useState(section);
+  if (querySection !== section) {
+    setQuerySection(section);
+    setQuery('');
+  }
   /** Upload PDF was pressed: the Jobs page opens the file picker once, then clears this. */
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;

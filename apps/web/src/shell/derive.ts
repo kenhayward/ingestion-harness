@@ -1,4 +1,22 @@
 import type { JobStatus, JobSummary } from '@ih/shared';
+import type { Route } from '../router.js';
+
+/** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
+export type Section = 'jobs' | 'results' | 'templates' | 'access';
+
+const SECTION: Record<Route['name'], Section> = {
+  jobs: 'jobs',
+  review: 'jobs',
+  results: 'results',
+  result: 'results',
+  templates: 'templates',
+  template: 'templates',
+  access: 'access',
+};
+
+export function sectionOf(route: Route): Section {
+  return SECTION[route.name];
+}
 
 /** Which bucket a status belongs to: someone must act, still running, or finished. */
 export type StatusGroup = 'attention' | 'active' | 'done';

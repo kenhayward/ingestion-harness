@@ -203,3 +203,38 @@ describe('Upload PDF', () => {
     click.mockRestore();
   });
 });
+
+describe('search scope', () => {
+  it('clears the search when moving to another section', async () => {
+    render(
+      <App
+        api={fakeApi({ listJobs: vi.fn(async () => [job({ filename: 'a.pdf' })]) })}
+        pollMs={0}
+      />,
+    );
+    const search = await screen.findByRole('searchbox', { name: SEARCH });
+    await userEvent.type(search, 'invoice');
+    window.location.hash = '#/access';
+    await screen.findByRole('table', { name: 'Access tokens' });
+    expect(search).toHaveValue('');
+  });
+
+  it('keeps the search on child screens of the same section', async () => {
+    window.location.hash = '#/templates';
+    render(<App api={fakeApi()} pollMs={0} />);
+    const search = await screen.findByRole('searchbox', { name: SEARCH });
+    await userEvent.type(search, 'invoice');
+    window.location.hash = '#/templates/x/1';
+    await vi.waitFor(() => expect(window.location.hash).toBe('#/templates/x/1'));
+    expect(search).toHaveValue('invoice');
+  });
+
+  it('says when no tokens match', async () => {
+    window.location.hash = '#/access';
+    const api = fakeApi({ listTokens: vi.fn(async () => [token('1', 'Ken – laptop')]) });
+    render(<App api={api} pollMs={0} />);
+    await screen.findByText('Ken – laptop');
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'zzz');
+    expect(screen.getByText('No tokens match “zzz”.')).toBeInTheDocument();
+  });
+});

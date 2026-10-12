@@ -4,20 +4,7 @@ import type { Me } from '../api/client.js';
 import type { Route } from '../router.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
-import { attentionCount, initials } from './derive.js';
-
-type Section = 'jobs' | 'results' | 'templates' | 'access';
-
-/** Child screens highlight their parent: Review → Jobs, Editor → Document types, Result → Results. */
-const SECTION: Record<Route['name'], Section> = {
-  jobs: 'jobs',
-  review: 'jobs',
-  results: 'results',
-  result: 'results',
-  templates: 'templates',
-  template: 'templates',
-  access: 'access',
-};
+import { attentionCount, initials, sectionOf } from './derive.js';
 
 function NavLink({
   href,
@@ -62,7 +49,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const search = useRef<HTMLInputElement>(null);
-  const section = SECTION[route.name];
+  const section = sectionOf(route);
   const attention = attentionCount(jobs);
 
   useEffect(() => {
