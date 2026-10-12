@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { VALUE_TYPES, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
+import { EditorHeader } from './EditorHeader.js';
 import { QualityPanel } from './QualityPanel.js';
 import {
   checkPathOptions,
@@ -55,6 +56,8 @@ export function TemplateEditor({
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [sample, setSample] = useState<File | null>(null);
+  /** Latest published version of this type, for "from published vN" (null: never published). */
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
 
   const accept = (v: TemplateRecordView) => {
     setView(v);
@@ -65,6 +68,10 @@ export function TemplateEditor({
   useEffect(() => {
     api.getTemplate(templateId, version).then(accept, (err: Error) => setError(err.message));
     api.listModels().then(setModels, () => setModels([]));
+    api.listTemplates().then(
+      (items) => setPublishedVersion(items.find((t) => t.id === templateId)?.published ?? null),
+      () => setPublishedVersion(null),
+    );
   }, [api, templateId, version]);
 
   const issues = useMemo(() => validateDefinition(def), [def]);
@@ -135,54 +142,42 @@ export function TemplateEditor({
 
   return (
     <section className="template-editor">
-      <header>
-        <a href="#/templates">← Document types</a>
-        <h2>
-          {String(def.name ?? templateId)} <small>v{version}</small>{' '}
-          <span className={`status status-${record.status}`}>{record.status}</span>
-        </h2>
-        <div className="toolbar">
-          {editable ? (
-            <>
-              <button type="button" onClick={save} disabled={!dirty}>
-                Save draft
-              </button>
-              <button type="button" onClick={publish} disabled={dirty || issues.length > 0}>
-                Publish
-              </button>
-              <button type="button" className="danger" onClick={removeDraft}>
-                Delete draft
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={newDraft}>
-              New draft from v{version}
-            </button>
-          )}
-          <a href={api.exportUrl(templateId, version)}>Export YAML</a>
-          <label>
-            Sample PDF
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => setSample(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <button type="button" onClick={testRun} disabled={!sample}>
-            Test run
-          </button>
-        </div>
-        {dirty && <p className="hint">Unsaved changes.</p>}
-        {message && <p role="status">{message}</p>}
-        {error && <p role="alert">{error}</p>}
-        {issues.length > 0 && (
-          <ul aria-label="Validation issues" className="issues">
-            {issues.map((i) => (
-              <li key={i}>{i}</li>
-            ))}
-          </ul>
-        )}
-      </header>
+      <EditorHeader
+        name={String(def.name ?? templateId)}
+        id={templateId}
+        version={version}
+        status={record.status}
+        publishedVersion={publishedVersion}
+        dirty={dirty}
+        issues={issues.length}
+        exportUrl={api.exportUrl(templateId, version)}
+        onSave={() => void save()}
+        onPublish={() => void publish()}
+        onNewDraft={() => void newDraft()}
+        onDeleteDraft={() => void removeDraft()}
+      />
+      <div className="toolbar">
+        <label>
+          Sample PDF
+          <input
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setSample(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <button type="button" onClick={testRun} disabled={!sample}>
+          Test run
+        </button>
+      </div>
+      {message && <p role="status">{message}</p>}
+      {error && <p role="alert">{error}</p>}
+      {issues.length > 0 && (
+        <ul aria-label="Validation issues" className="issues">
+          {issues.map((i) => (
+            <li key={i}>{i}</li>
+          ))}
+        </ul>
+      )}
 
       <div role="tablist" aria-label="Template sections">
         {TABS.map(([id, label]) => (

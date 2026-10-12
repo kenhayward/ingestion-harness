@@ -54,12 +54,100 @@ function setup(record: TemplateRecordView, overrides = {}) {
 
 const tab = (name: RegExp) => screen.findByRole('tab', { name });
 
+const listItem = (published: number | null, draft: number | null) => ({
+  id: 'letter',
+  name: 'Letter',
+  description: null,
+  published,
+  draft,
+  versions: [],
+  summary: {
+    sections: 1,
+    fields: 0,
+    tables: 0,
+    references: 0,
+    draftIssues: null,
+    lastRegression: null,
+    regressionRunning: false,
+  },
+});
+
+describe('TemplateEditor header', () => {
+  it('names the draft and where it came from', async () => {
+    setup(view({ ...validDefinition(), version: 2 }), {
+      listTemplates: vi.fn(async () => [listItem(1, 2)]),
+    });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Letter' })).toBeInTheDocument();
+    expect(screen.getByText('Draft v2')).toBeInTheDocument();
+    expect(await screen.findByText('from published v1 · letter')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Document types/ })).toHaveAttribute(
+      'href',
+      '#/templates',
+    );
+  });
+
+  it('has no "from published" line for a never-published draft', async () => {
+    setup(view({ ...validDefinition(), version: 1 }), {
+      listTemplates: vi.fn(async () => [listItem(null, 1)]),
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Letter' });
+    expect(screen.queryByText(/from published/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Publish v1/ })).toBeEnabled();
+  });
+
+  it('flags unsaved changes and explains why Publish is disabled', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.type(await screen.findByLabelText('Name'), '!');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    const publish = screen.getByRole('button', { name: /^Publish v1/ });
+    expect(publish).toBeDisabled();
+    expect(publish).toHaveAttribute('title', 'Save the draft before publishing');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument());
+  });
+
+  it('explains validation issues as the publish blocker', async () => {
+    setup(view(skeleton));
+    const publish = await screen.findByRole('button', { name: /^Publish v1/ });
+    expect(publish.getAttribute('title')).toMatch(/^Fix \d+ validation issues?$/);
+    expect(screen.getByText(publish.getAttribute('title')!)).toBeInTheDocument();
+  });
+
+  it('deletes a draft only after confirming, from the More actions menu', async () => {
+    const { api, onNavigate } = setup(view({ ...validDefinition(), version: 2 }));
+    const more = await screen.findByRole('button', { name: 'More actions' });
+    await userEvent.click(more);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }));
+    expect(screen.getByText('Delete draft v2? This cannot be undone.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(api.deleteDraft).not.toHaveBeenCalled();
+    expect(more).toHaveFocus();
+    await userEvent.click(more);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete draft v2' }));
+    expect(api.deleteDraft).toHaveBeenCalledWith('letter', 2);
+    expect(onNavigate).toHaveBeenCalledWith('#/templates');
+  });
+
+  it('offers only a new draft and export on a published version', async () => {
+    setup(view({ ...validDefinition(), version: 1 }, 'published'));
+    expect(await screen.findByRole('button', { name: 'New draft from v1' })).toBeInTheDocument();
+    expect(screen.getByText('Published v1')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Export YAML' })).toHaveAttribute(
+      'href',
+      '/api/templates/letter/versions/1/export',
+    );
+    expect(screen.queryByRole('button', { name: /^Publish/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+  });
+});
+
 describe('TemplateEditor', () => {
   it('shows live validation issues for an incomplete draft', async () => {
     setup(view(skeleton));
     const issues = await screen.findByRole('list', { name: 'Validation issues' });
     expect(issues).toHaveTextContent('pipeline');
-    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Publish v1/ })).toBeDisabled();
   });
 
   it('builds a template: field, then a step that fills it, then saves', async () => {
@@ -105,7 +193,7 @@ describe('TemplateEditor', () => {
     const { api } = setup(view(definition), {
       publishTemplate: vi.fn(async () => view(definition, 'published')),
     });
-    const publish = await screen.findByRole('button', { name: 'Publish' });
+    const publish = await screen.findByRole('button', { name: /^Publish v1/ });
     expect(publish).toBeEnabled();
 
     await userEvent.type(screen.getByLabelText('Name'), ' (edited)');
