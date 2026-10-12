@@ -4,7 +4,7 @@ import type { Api, Me } from './api/client.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { JobCleanup } from './components/JobCleanup.js';
-import { JobsTable } from './components/JobsTable.js';
+import { JobList } from './jobs/JobList.js';
 import { UploadStrip } from './jobs/UploadStrip.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
@@ -193,7 +193,17 @@ function JobsView({
       {jobs.length > 0 && shown.length === 0 ? (
         <p>No jobs match “{query.trim()}”.</p>
       ) : (
-        <JobsTable api={api} jobs={shown} onChanged={refresh} retryModel={retryModel} />
+        <JobList
+          api={api}
+          jobs={shown}
+          selectedId={null}
+          onSelect={() => {}}
+          onChanged={refresh}
+          retryModel={retryModel}
+          models={[]}
+          specTitles={new Map()}
+          now={Date.now()}
+        />
       )}
       <JobCleanup api={api} onChanged={refresh} />
     </>
