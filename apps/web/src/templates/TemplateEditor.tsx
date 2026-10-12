@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { VALUE_TYPES, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { EditorHeader } from './EditorHeader.js';
 import { tabCounts } from './editor-derive.js';
@@ -188,7 +189,12 @@ export function TemplateEditor({
             {TABS.map(([id, label]) => (
               <button key={id} role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
                 {label}
-                {tabCount(id) && <span className="tab-count">{tabCount(id)}</span>}
+                {tabCount(id) && (
+                  <>
+                    {' '}
+                    <span className="tab-count">{tabCount(id)}</span>
+                  </>
+                )}
               </button>
             ))}
           </div>
@@ -398,6 +404,7 @@ export function TemplateEditor({
                 ))}
                 <button
                   type="button"
+                  className="add"
                   onClick={() => {
                     update(
                       ['pipeline'],
@@ -410,6 +417,7 @@ export function TemplateEditor({
                 </button>
                 <button
                   type="button"
+                  className="add"
                   onClick={() => {
                     update(
                       ['pipeline'],
@@ -776,25 +784,27 @@ function RowTable<T extends Definition>({
                 <div className="step-tools">
                   <button
                     type="button"
+                    className="icon bordered"
                     aria-label={`Move ${noun} ${i + 1} up`}
                     onClick={() => onChange(moveItem(items, i, -1))}
                   >
-                    ↑
+                    <Icon name="chevronUp" />
                   </button>
                   <button
                     type="button"
+                    className="icon bordered"
                     aria-label={`Move ${noun} ${i + 1} down`}
                     onClick={() => onChange(moveItem(items, i, 1))}
                   >
-                    ↓
+                    <Icon name="chevronDown" />
                   </button>
                   <button
                     type="button"
-                    className="danger"
+                    className="icon bordered danger"
                     aria-label={`Remove ${noun} ${i + 1}`}
                     onClick={() => onChange(removeAt(items, i))}
                   >
-                    Remove
+                    <Icon name="trash" />
                   </button>
                 </div>
               </td>
@@ -802,7 +812,7 @@ function RowTable<T extends Definition>({
           ))}
         </tbody>
       </table>
-      <button type="button" onClick={() => onChange([...items, create()])}>
+      <button type="button" className="add" onClick={() => onChange([...items, create()])}>
         {addLabel}
       </button>
     </div>
@@ -830,30 +840,32 @@ function ListEditor<T extends Definition>({
           <div className="step-tools">
             <button
               type="button"
+              className="icon bordered"
               aria-label={`Move ${label} ${i + 1} up`}
               onClick={() => onChange(moveItem(items, i, -1))}
             >
-              ↑
+              <Icon name="chevronUp" />
             </button>
             <button
               type="button"
+              className="icon bordered"
               aria-label={`Move ${label} ${i + 1} down`}
               onClick={() => onChange(moveItem(items, i, 1))}
             >
-              ↓
+              <Icon name="chevronDown" />
             </button>
             <button
               type="button"
-              className="danger"
+              className="icon bordered danger"
               aria-label={`Remove ${label} ${i + 1}`}
               onClick={() => onChange(removeAt(items, i))}
             >
-              Remove
+              <Icon name="trash" />
             </button>
           </div>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...items, create()])}>
+      <button type="button" className="add" onClick={() => onChange([...items, create()])}>
         Add {label}
       </button>
     </div>
