@@ -32,7 +32,7 @@ const view = (
   issues: [],
 });
 
-function setup(record: TemplateRecordView, overrides = {}) {
+function setup(record: TemplateRecordView, overrides = {}, embedded?: { onChanged: () => void }) {
   const onNavigate = vi.fn();
   const api = fakeApi({
     getTemplate: vi.fn(async () => record),
@@ -47,6 +47,7 @@ function setup(record: TemplateRecordView, overrides = {}) {
       templateId={record.record.id}
       version={record.record.version}
       onNavigate={onNavigate}
+      embedded={embedded}
     />,
   );
   return { api, onNavigate };
@@ -213,6 +214,57 @@ describe('TemplateEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'New draft from v1' }));
     expect(api.newDraft).toHaveBeenCalledWith('letter', 1);
     expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/2');
+  });
+
+  describe('embedded in the workbench', () => {
+    it('hides the single-sample test run (the Runs tab replaces it)', async () => {
+      setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      await screen.findByRole('button', { name: /^Publish v1/ });
+      expect(
+        screen.queryByRole('complementary', { name: 'Test this draft' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Sample PDF')).not.toBeInTheDocument();
+    });
+
+    it('reports a publish instead of navigating', async () => {
+      const definition = { ...validDefinition(), version: 1 };
+      const onChanged = vi.fn();
+      const { onNavigate } = setup(
+        view(definition),
+        { publishTemplate: vi.fn(async () => view(definition, 'published')) },
+        { onChanged },
+      );
+      await userEvent.click(await screen.findByRole('button', { name: /^Publish v1/ }));
+      await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(onNavigate).not.toHaveBeenCalled();
+    });
+
+    it('reports a new draft instead of navigating', async () => {
+      const onChanged = vi.fn();
+      const { onNavigate } = setup(
+        view({ ...validDefinition(), version: 1 }, 'published'),
+        { newDraft: vi.fn(async () => view({ ...validDefinition(), version: 2 })) },
+        { onChanged },
+      );
+      await userEvent.click(await screen.findByRole('button', { name: 'New draft from v1' }));
+      await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(onNavigate).not.toHaveBeenCalled();
+    });
+
+    it('reports a deleted draft instead of navigating', async () => {
+      const onChanged = vi.fn();
+      const { onNavigate, api } = setup(
+        view({ ...validDefinition(), version: 1 }),
+        {},
+        { onChanged },
+      );
+      await userEvent.click(await screen.findByRole('button', { name: 'More actions' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Delete draft' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Delete draft v1' }));
+      await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(api.deleteDraft).toHaveBeenCalledWith('letter', 1);
+      expect(onNavigate).not.toHaveBeenCalled();
+    });
   });
 
   it('sets step context from earlier steps', async () => {

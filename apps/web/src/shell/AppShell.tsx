@@ -139,6 +139,12 @@ export function AppShell({
             label="Document types"
             current={section === 'templates'}
           />
+          <NavLink
+            href="#/workbench"
+            icon="workbench"
+            label="Workbench"
+            current={section === 'workbench'}
+          />
           {me.role === 'admin' && (
             <>
               <span className="nav-heading">Admin</span>

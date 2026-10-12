@@ -12,6 +12,8 @@ import { sectionOf } from './shell/derive.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
+import { ProjectPage } from './workbench/ProjectPage.js';
+import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 
 /** Sign-in gate (ADR 0006): the app renders only for a valid session. */
 export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
@@ -131,6 +133,19 @@ function SignedInApp({
         version={route.version}
         onNavigate={navigate}
         jobs={jobs}
+      />
+    );
+  } else if (route.name === 'workbench') {
+    page = <WorkbenchPage api={api} onNavigate={navigate} query={query} />;
+  } else if (route.name === 'project') {
+    page = (
+      <ProjectPage
+        key={route.projectId}
+        api={api}
+        projectId={route.projectId}
+        tab={route.tab}
+        onNavigate={navigate}
+        pollMs={pollMs}
       />
     );
   } else {

@@ -42,6 +42,21 @@ describe('http api: URLs', () => {
   });
 });
 
+describe('http api: workbench', () => {
+  it('uploads a sample as multipart with its role before the file', async () => {
+    const fetchMock = vi.fn(async () => respond(201, { id: 's1' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
+    await createHttpApi('/api').uploadSample('letter', file, 'holdout');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/workbench/projects/letter/samples');
+    expect(init.method).toBe('POST');
+    const form = init.body as FormData;
+    expect([...form.keys()]).toEqual(['role', 'file']);
+    expect(form.get('role')).toBe('holdout');
+  });
+});
+
 describe('http api: results query', () => {
   it('sends the file name filter with the other parameters', async () => {
     const fetch = vi.fn(async () => respond(200, []));

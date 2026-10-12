@@ -97,3 +97,27 @@ def test_a_retried_and_reclaimed_job_is_no_longer_the_old_workers(
     q.complete(old, [], "outputs")  # the old run's late write must not touch the new run
     row = q._conn.execute("SELECT status, locked_by FROM jobs WHERE id = %s", (job_id,)).fetchone()
     assert row == ("running", "w2")
+
+
+def test_production_jobs_are_claimed_before_workbench_jobs(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, production_job = queue_with_queued_job
+    doc, workbench_job = str(uuid.uuid4()), str(uuid.uuid4())
+    q._conn.execute(
+        """INSERT INTO documents (id, filename, sha256, size_bytes, spec_id, spec_version,
+                                  bucket, object_key)
+           VALUES (%s, 'b.pdf', 'y', 1, 'demo', 1, 'inbox', %s)""",
+        (doc, f"demo/v1/{doc}.pdf"),
+    )
+    # Queued an hour earlier, but workbench priority (-10) runs after production (0).
+    q._conn.execute(
+        """INSERT INTO jobs (id, document_id, priority, created_at, run_after)
+           VALUES (%s, %s, -10, now() - interval '1 hour', now() - interval '1 hour')""",
+        (workbench_job, doc),
+    )
+    try:
+        claimed = q.claim("w1")
+        assert claimed is not None and claimed.id == production_job
+    finally:
+        q._conn.execute("DELETE FROM documents WHERE id = %s", (doc,))

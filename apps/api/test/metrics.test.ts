@@ -130,6 +130,18 @@ describe('GET /api/templates/:id/metrics', () => {
     ]);
   });
 
+  it('does not count sample preparation jobs as test jobs', async () => {
+    const ctx = await testApp();
+    const id = await job(ctx, 1, 'succeeded', { test: true });
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, task: 'prepare' });
+    await job(ctx, 1, 'succeeded', { test: true });
+    const m = (await ctx.app.inject('/api/templates/pvp/metrics')).json();
+    expect(m.versions.find((v: { version: number }) => v.version === 1)).toMatchObject({
+      jobs: 0,
+      testJobs: 1,
+    });
+  });
+
   it('is empty, not an error, for a type without jobs', async () => {
     const ctx = await testApp();
     const m = (await ctx.app.inject('/api/templates/none/metrics')).json();

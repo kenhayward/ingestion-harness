@@ -7,6 +7,7 @@ import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
 import type { TemplateRepo } from './templates/repo.js';
+import type { WorkbenchRepo } from './workbench/repo.js';
 import { templateRoutes } from './routes/templates.js';
 import { referenceRoutes } from './routes/references.js';
 import { healthRoutes } from './routes/health.js';
@@ -16,6 +17,7 @@ import { jobRoutes } from './routes/jobs.js';
 import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
 import { resultRoutes } from './routes/results.js';
+import { workbenchRoutes } from './routes/workbench.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -25,6 +27,8 @@ export interface AppDeps {
   target: { bucket: string; prefix: string };
   specs: SpecRegistry;
   templates: TemplateRepo;
+  /** Workbench projects, samples and briefs (ADR 0007). */
+  workbench: WorkbenchRepo;
   buckets: { inbox: string; outputs: string; runs: string };
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
@@ -67,6 +71,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(templateRoutes, { prefix: '/api' });
   await app.register(referenceRoutes, { prefix: '/api' });
   await app.register(resultRoutes, { prefix: '/api' });
+  await app.register(workbenchRoutes, { prefix: '/api' });
 
   return app;
 }

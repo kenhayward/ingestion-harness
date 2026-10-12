@@ -52,6 +52,7 @@ export function TemplateEditor({
   version,
   onNavigate,
   jobs = [],
+  embedded,
 }: {
   api: Api;
   templateId: string;
@@ -59,6 +60,12 @@ export function TemplateEditor({
   onNavigate: (hash: string) => void;
   /** The polled job list: the Test this draft rail shows recent test runs from it. */
   jobs?: readonly JobSummary[];
+  /**
+   * Set when hosted by the workbench: the Runs tab replaces the single-sample test run (no Test
+   * this draft rail), and publish / new draft / delete draft report back instead of navigating
+   * to Document types.
+   */
+  embedded?: { onChanged: () => void };
 }) {
   const [view, setView] = useState<TemplateRecordView | null>(null);
   const [def, setDef] = useState<Definition>({});
@@ -116,15 +123,18 @@ export function TemplateEditor({
     act(async () => {
       accept(await api.publishTemplate(templateId, version));
       setMessage(`Published v${version}.`);
+      embedded?.onChanged();
     });
   const newDraft = () =>
     act(async () => {
       const { record: draft } = await api.newDraft(templateId, version);
+      if (embedded) return embedded.onChanged();
       onNavigate(`#/templates/${draft.id}/${draft.version}`);
     });
   const removeDraft = () =>
     act(async () => {
       await api.deleteDraft(templateId, version);
+      if (embedded) return embedded.onChanged();
       onNavigate('#/templates');
     });
   const openTab = (t: Tab) => {
@@ -452,7 +462,7 @@ export function TemplateEditor({
             </div>
           )}
         </div>
-        <TestRail api={api} templateId={templateId} version={version} jobs={jobs} />
+        {!embedded && <TestRail api={api} templateId={templateId} version={version} jobs={jobs} />}
       </div>
     </section>
   );

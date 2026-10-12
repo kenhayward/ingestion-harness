@@ -4,6 +4,7 @@
  *   inbox bucket:   {specId}/v{version}/{documentId}.pdf
  *   outputs bucket: {specId}/v{version}/{outputId}/{documentId}.{csv|json}
  *   runs bucket:    {jobId}/{extractionId}/attempt-{n}.json   (prompt + raw response audit)
+ *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
  */
 export function inboxKey(specId: string, version: number, documentId: string): string {
   return `${specId}/v${version}/${documentId}.pdf`;
@@ -22,4 +23,14 @@ export function outputKey(
 /** JPEG preview of a 1-based page for the review screen (runs bucket). */
 export function pagePreviewKey(jobId: string, pageNumber: number): string {
   return `${jobId}/pages/page-${pageNumber}.jpg`;
+}
+
+/** Page text of a PDF after extraction + OCR (workbench prepare task, runs bucket). */
+export function preparedTextKey(sha256: string): string {
+  return `prepared/${sha256}/text.json`;
+}
+
+/** Page count, OCR'd pages and size of a prepared PDF (runs bucket). */
+export function preparedTriageKey(sha256: string): string {
+  return `prepared/${sha256}/triage.json`;
 }

@@ -78,8 +78,9 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Spec format (incl. `document.ocr`, `copies`, chunking, `checks`) | `packages/shared/src/spec.ts` (Zod, `.strict()`) | `worker/src/ingest_worker/specs.py` (Pydantic, `extra="forbid"`) |
 | Template format (fields, tables, steps, review) | `packages/shared/src/template.ts` | `worker/src/ingest_worker/template.py` |
 | Object keys | `packages/shared/src/storage-keys.ts` | `worker/src/ingest_worker/storage.py` |
-| Job statuses (incl. `cancelled`, migration 0006) | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
+| Job statuses and tasks (incl. `cancelled`, migration 0006; `prepare` + `priority`, migration 0008) | `packages/shared/src/jobs.ts` | `db/migrations` `job_status` enum, `queue.py` |
 | Models table | `ModelInfo` in `packages/shared/src/models.ts`, `PgRepo.listModels` | `PgJobQueue.upsert_models` |
+| Workbench prepared text | `PreparedTextSchema`/`PreparedTriageSchema` in `packages/shared/src/workbench.ts`, `preparedTextKey` | `workbench.prepare_sample`, `storage.prepared_text_key` |
 
 ## Rules of the road
 
@@ -111,6 +112,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   the local provider and OCR run at 0 so regression scores measure the template, not sampling noise.
 - **Review:** template jobs needing review stop in `awaiting_review` (drafts in the outputs bucket); approve → publish task applies `review_edits` (`worker/src/ingest_worker/review.py`) and writes to the final target (`Target`, `TARGET_S3_*`); reject is final. `needs_review` is different: a processing problem for an operator.
 - **Results:** `apps/web/src/results/` + `apps/api/src/routes/results.ts` read published outputs from the target store (`AppDeps.targetStore`, `storeFor(stage)`); the API reads `TARGET_S3_*` via `targetConfig` (same fallback as the worker).
+- **Workbench ([ADR 0007](docs/adr/0007-workbench.md), [design](docs/design/workbench.md)):** one project per document type (`workbench_projects.id` = template id; `apps/api/src/workbench/`, `apps/api/src/routes/workbench.ts`, `apps/web/src/workbench/`). Samples are ordinary documents; uploading one queues a `prepare` job (text + OCR only, `worker/src/ingest_worker/workbench.py`) writing `prepared/{sha256}/text.json|triage.json` to the runs bucket. Sample state comes from that job. Workbench jobs (prepare and test runs) have `priority = -10` (production 0). Prepare jobs never appear on the Jobs page and are never bulk-deleted; dev test runs are ordinary test jobs. A sample's document is never deleted with a job.
 - **Access ([ADR 0006](docs/adr/0006-token-access.md)):** every `/api/*` route needs a session cookie except `/api/auth/login|logout` (hook in `apps/api/src/access/routes.ts`, decided on the *matched route*); tokens and sessions are SHA-256 hashed (`AccessRepo`, migration 0007); the admin token rotates on every API start and is logged; `buildApp({ access: null })` disables enforcement for unit tests only - new routes are covered by the sweep in `access.test.ts`.
 - **UI:** design tokens in `apps/web/src/styles/tokens.css` (light/dark; the theme choice is `ih.theme` via `apps/web/src/theme.ts`), shared primitives in `apps/web/src/ui/`, app shell in `apps/web/src/shell/`; the redesign handoff is [docs/design/ui-redesign/](docs/design/ui-redesign/).
 - **Error routing in the worker:** `DocumentError` (missing sections, page count, schema never
