@@ -1,5 +1,11 @@
 import { vi } from 'vitest';
-import type { JobSummary, ProjectView, SampleView, SegmentationView } from '@ih/shared';
+import type {
+  JobSummary,
+  ProjectView,
+  ProposalView,
+  SampleView,
+  SegmentationView,
+} from '@ih/shared';
 import {
   outputPath,
   type Api,
@@ -147,6 +153,16 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     createProject: vi.fn(async () => {
       throw new Error('createProject not stubbed');
     }),
+    setDataPolicy: vi.fn(async () => {
+      throw new Error('setDataPolicy not stubbed');
+    }),
+    startStage: vi.fn(async () => {
+      throw new Error('startStage not stubbed');
+    }),
+    listProposals: vi.fn(async () => []),
+    decideProposal: vi.fn(async () => {
+      throw new Error('decideProposal not stubbed');
+    }),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
@@ -212,4 +228,34 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
 
 export function segmentationView(overrides: Partial<SegmentationView> = {}): SegmentationView {
   return { jobId: 'seg-1', status: 'succeeded', error: null, result: null, ...overrides };
+}
+
+export function proposalView(overrides: Partial<ProposalView> = {}): ProposalView {
+  return {
+    id: crypto.randomUUID(),
+    stage: 'survey',
+    status: 'ready',
+    error: null,
+    briefVersion: 1,
+    model: 'local/qwen',
+    body: {
+      summary: 'Process validation protocols, blank and executed.',
+      structure: [{ name: 'Approvals', description: 'Signatures', howToFind: 'PROTOCOL APPROVAL' }],
+      variants: ['Executed copy follows the blank one'],
+      candidates: [
+        {
+          name: 'protocol_number',
+          description: 'Protocol id',
+          where: 'page header',
+          kind: 'field',
+        },
+      ],
+      questions: [
+        { question: 'Which copy should be extracted?', why: 'Some PDFs hold two copies' },
+      ],
+    },
+    createdAt: '2026-10-13T00:00:00.000Z',
+    decidedAt: null,
+    ...overrides,
+  };
 }
