@@ -1,14 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
+  AVAILABLE_STAGES,
   BriefBodySchema,
+  DRAFT_STAGES,
+  DataPolicySchema,
+  DraftResultSchema,
+  EMPTY_BRIEF,
   MAX_SAMPLES,
   PreparedTextSchema,
   PreparedTriageSchema,
   SampleRoleSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
+  SurveyBodySchema,
+  draftingKey,
   inboxKey,
   preparedTextKey,
   preparedTriageKey,
@@ -16,22 +23,35 @@ import {
   type JobSummary,
   type ProjectSummary,
   type ProjectView,
+  type ProposalView,
   type SampleState,
   type SampleView,
   type SegmentationView,
   type WorkbenchProject,
 } from '@ih/shared';
-import type { SegmentJob } from '../repositories/types.js';
+import type { ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { validateTemplate } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
-import { WorkbenchConflictError, type SampleRecord } from '../workbench/repo.js';
+import {
+  WorkbenchConflictError,
+  type ProposalRecord,
+  type SampleRecord,
+} from '../workbench/repo.js';
 
 const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
 
 type ProjectParams = { id: string };
+
+const PolicyBody = z.object({ dataPolicy: DataPolicySchema }).strict();
+const StageParams = z.object({ id: Id, stage: z.enum(DRAFT_STAGES) });
+const ProposalParams = z.object({ id: Id, pid: z.string().uuid() });
+const DecisionBody = z.object({ decision: z.enum(['accepted', 'rejected']) }).strict();
+
+const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
+  app.deps.access === null || req.auth?.role === 'admin';
 
 const StartSegmentation = z.object({ document: z.unknown().optional() }).strict();
 const SegmentationParams = z.object({ id: Id, jobId: z.string().uuid() });
@@ -67,6 +87,58 @@ function stateOf(job: JobSummary | null): SampleState {
 async function readJson(app: FastifyInstance, key: string): Promise<unknown | null> {
   const raw = await app.deps.store.get(app.deps.buckets.runs, key);
   return raw ? (JSON.parse(raw.toString('utf8')) as unknown) : null;
+}
+
+/** Like `readJson`, but a corrupt object reads as `undefined` instead of throwing. */
+async function readJsonSafe(
+  app: FastifyInstance,
+  key: string,
+): Promise<unknown | null | undefined> {
+  try {
+    return await readJson(app, key);
+  } catch (err) {
+    if (err instanceof SyntaxError) return undefined;
+    throw err;
+  }
+}
+
+async function proposalView(
+  app: FastifyInstance,
+  p: ProposalRecord,
+  job: ProjectJob | null,
+): Promise<ProposalView> {
+  const base = {
+    id: p.id,
+    stage: p.stage,
+    briefVersion: p.briefVersion,
+    createdAt: p.createdAt,
+    decidedAt: p.decidedAt,
+  };
+  const empty = { ...base, model: null, body: null };
+  if (!job || job.status === 'queued' || job.status === 'running') {
+    return { ...empty, status: p.decision ?? 'running', error: null };
+  }
+  if (job.status !== 'succeeded') {
+    return { ...empty, status: p.decision ?? 'failed', error: job.error ?? job.status };
+  }
+  const raw = await readJsonSafe(app, draftingKey(job.projectId, job.id));
+  const parsed = raw == null ? null : DraftResultSchema.safeParse(raw);
+  const body =
+    parsed?.success && p.stage === 'survey' ? SurveyBodySchema.safeParse(parsed.data.body) : null;
+  if (!parsed?.success || !body?.success) {
+    return {
+      ...empty,
+      status: p.decision ?? 'failed',
+      error: raw === null ? 'result missing' : 'result unreadable',
+    };
+  }
+  return {
+    ...base,
+    status: p.decision ?? 'ready',
+    error: null,
+    model: parsed.data.model,
+    body: body.data,
+  };
 }
 
 /** Samples with their state, derived from each one's latest prepare job. */
@@ -171,9 +243,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   /** Upload one sample PDF (multipart: `role` field first, then the file). */
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/samples', async (req, reply) => {
     const projectId = req.params.id;
-    if (!(await workbench.getProject(projectId))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
+    const project = await workbench.getProject(projectId);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: 'file part is required' });
     const role = SampleRoleSchema.safeParse(multipartField(file, 'role') ?? 'dev');
@@ -206,7 +277,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         bucket: app.deps.buckets.inbox,
         objectKey: key,
       },
-      { projectId, task: 'prepare' },
+      { projectId, task: 'prepare', params: { dataPolicy: project.dataPolicy } },
     );
     try {
       const record = await workbench.addSample({
@@ -280,9 +351,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   /** Test-run the open draft on every prepared dev sample (holdout samples are not used). */
   app.post<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
     const projectId = req.params.id;
-    if (!(await workbench.getProject(projectId))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
+    const project = await workbench.getProject(projectId);
+    if (!project) return reply.code(404).send({ error: 'project not found' });
     const { draft } = await versionsOf(templates, projectId);
     if (draft === null) {
       return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
@@ -306,7 +376,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             bucket: record.bucket,
             objectKey: record.objectKey,
           },
-          { projectId, task: 'process' },
+          { projectId, task: 'process', params: { dataPolicy: project.dataPolicy } },
         ),
       ),
     );
@@ -378,4 +448,90 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     }
     return (await app.deps.repo.listProjectJobs(req.params.id)).filter((j) => j.task !== 'prepare');
   });
+
+  app.put<{ Params: ProjectParams }>('/workbench/projects/:id/data-policy', async (req, reply) => {
+    if (!isAdmin(app, req)) return reply.code(403).send({ error: 'admins only' });
+    const body = PolicyBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.issues });
+    const project = await workbench.setDataPolicy(
+      req.params.id,
+      body.data.dataPolicy,
+      req.auth?.label ?? null,
+    );
+    if (!project) return reply.code(404).send({ error: 'project not found' });
+    req.log.info({ projectId: project.id, dataPolicy: project.dataPolicy }, 'data policy changed');
+    return projectView(app, project);
+  });
+
+  app.post<{ Params: { id: string; stage: string } }>(
+    '/workbench/projects/:id/stages/:stage',
+    async (req, reply) => {
+      const params = StageParams.safeParse(req.params);
+      if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
+        return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
+      }
+      const { id: projectId, stage } = params.data;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft, latest } = await versionsOf(templates, projectId);
+      const record = draft !== null ? await templates.get(projectId, draft) : latest;
+      if (!record) return reply.code(409).send({ error: 'the project has no template version' });
+      // Holdout rule (ADR 0007): only dev samples ever reach a drafting model.
+      const samples = (await sampleViews(app, projectId))
+        .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+        .map((s) => ({
+          sampleId: s.record.id,
+          filename: s.record.filename,
+          sha256: s.record.sha256,
+          role: 'dev' as const,
+        }));
+      if (!samples.length) return reply.code(409).send({ error: 'no prepared dev samples' });
+      const brief = await workbench.latestBrief(projectId);
+      const job = await app.deps.repo.createDraftJob(projectId, {
+        stage,
+        dataPolicy: project.dataPolicy,
+        briefVersion: brief?.version ?? null,
+        brief: brief?.body ?? EMPTY_BRIEF,
+        draft: record.definition,
+        samples,
+      });
+      const proposal = await workbench.createProposal({
+        id: job.id,
+        projectId,
+        stage,
+        briefVersion: brief?.version ?? null,
+      });
+      return reply.code(202).send(await proposalView(app, proposal, job));
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/proposals', async (req, reply) => {
+    if (!(await workbench.getProject(req.params.id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const jobs = new Map((await app.deps.repo.listDraftJobs(req.params.id)).map((j) => [j.id, j]));
+    const proposals = await workbench.listProposals(req.params.id);
+    return Promise.all(proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null)));
+  });
+
+  app.post<{ Params: { id: string; pid: string } }>(
+    '/workbench/projects/:id/proposals/:pid/decision',
+    async (req, reply) => {
+      const params = ProposalParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'proposal not found' });
+      const body = DecisionBody.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id: projectId, pid } = params.data;
+      const record = (await workbench.listProposals(projectId)).find((p) => p.id === pid);
+      if (!record) return reply.code(404).send({ error: 'proposal not found' });
+      const job = (await app.deps.repo.listDraftJobs(projectId)).find((j) => j.id === pid) ?? null;
+      const current = await proposalView(app, record, job);
+      if (current.status !== 'ready') {
+        return reply.code(409).send({ error: `proposal is ${current.status}` });
+      }
+      const decided = await workbench.decideProposal(projectId, pid, body.data.decision);
+      if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
+      return proposalView(app, decided, job);
+    },
+  );
 };
