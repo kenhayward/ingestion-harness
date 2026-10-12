@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { ValueDef } from '@ih/shared';
+import { Icon } from '../ui/Icon.js';
 import { display } from './effective.js';
 
 interface Props {
@@ -10,6 +11,10 @@ interface Props {
   editLabel: string;
   inputLabel: string;
   onSave: (value: unknown) => Promise<void>;
+  /** boxed: the fields grid (value in a box, pencil button); inline: compact table cells. */
+  variant?: 'boxed' | 'inline';
+  /** Box border: flagged (warn) or edited (info). */
+  state?: 'flagged' | 'edited' | '';
 }
 
 function toInput(def: ValueDef, value: unknown): string {
@@ -32,7 +37,16 @@ function fromInput(def: ValueDef, text: string): unknown {
   return trimmed;
 }
 
-export function EditableValue({ def, value, editable, editLabel, inputLabel, onSave }: Props) {
+export function EditableValue({
+  def,
+  value,
+  editable,
+  editLabel,
+  inputLabel,
+  onSave,
+  variant = 'inline',
+  state = '',
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -55,6 +69,18 @@ export function EditableValue({ def, value, editable, editLabel, inputLabel, onS
     if (e.key === 'Escape') setEditing(false);
   };
 
+  if (!editing && variant === 'boxed') {
+    return (
+      <span className="value boxed">
+        <span className={`value-box ${state}`.trim()}>{display(value)}</span>
+        {editable && (
+          <button type="button" className="icon bordered" aria-label={editLabel} onClick={start}>
+            <Icon name="pencil" />
+          </button>
+        )}
+      </span>
+    );
+  }
   if (!editing) {
     return (
       <span className="value">

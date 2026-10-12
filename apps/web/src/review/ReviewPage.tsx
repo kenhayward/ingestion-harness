@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EditRequest, StepRun } from '@ih/shared';
+import type { EditRequest, JobSummary, StepRun } from '@ih/shared';
 import type { Api, ReviewData } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
+import { DecisionBar } from './DecisionBar.js';
 import { EditableValue } from './EditableValue.js';
+import { FieldsGrid } from './FieldsGrid.js';
 import { display, effectiveView } from './effective.js';
 import { PageViewer } from './PageViewer.js';
+import { flaggedTargets, targetKey } from './queue.js';
+import { ReviewHeader } from './ReviewHeader.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -37,10 +42,13 @@ export function ReviewPage({
   api,
   jobId,
   onDone,
+  jobs = [],
 }: {
   api: Api;
   jobId: string;
   onDone: () => void;
+  /** The polled job list: the review queue position and Next document come from it. */
+  jobs?: readonly JobSummary[];
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,12 +56,13 @@ export function ReviewPage({
   const [tab, setTab] = useState('fields');
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [reviewer, setReviewer] = useState(loadReviewer);
-  const [note, setNote] = useState('');
-  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [referenceName, setReferenceName] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [stepRuns, setStepRuns] = useState<StepRun[]>([]);
+  const [selectedField, setSelectedField] = useState<string | null>(null);
+  const [cursor, setCursor] = useState(-1);
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [rerun, setRerun] = useState<{
     step: string;
     model: string;
@@ -79,6 +88,18 @@ export function ReviewPage({
   }, [api, jobId, tab]);
 
   const view = useMemo(() => (data ? effectiveView(data) : null), [data]);
+  const targets = useMemo(
+    () => (data && view ? flaggedTargets(view, data.template) : []),
+    [data, view],
+  );
+
+  // Next flagged: a fresh view (after an edit) restarts the cycle from the top.
+  useEffect(() => setCursor(-1), [targets]);
+  useEffect(() => {
+    if (!pendingFocus) return;
+    window.document.getElementById(`flag-${pendingFocus}`)?.focus();
+    setPendingFocus(null);
+  }, [pendingFocus, tab]);
 
   if (error === NOT_A_TEMPLATE) {
     return (
@@ -96,6 +117,29 @@ export function ReviewPage({
   const pageCount = Math.max(1, Number(document.page_count ?? 1));
   const withEditor = <T extends object>(body: T) =>
     reviewer.trim() ? { ...body, editor: reviewer.trim() } : body;
+
+  const fieldsFlagged = template.outputs.fields.some((f) => view.fields[f.id]?.flags.length);
+  const extractSteps = template.pipeline.filter((p) => p.type === 'extract').length;
+  const nextFlagged = () => {
+    const next = (cursor + 1) % targets.length;
+    const target = targets[next]!;
+    setCursor(next);
+    setTab(target.tab);
+    if ('field' in target) {
+      setSelectedField(target.field);
+      const found = view.fields[target.field]?.page;
+      if (found) setPage(found); // like clicking the field: show where it was found
+    }
+    setPendingFocus(targetKey(target));
+  };
+  // A render helper, not a component: a component declared here would remount every tab
+  // (losing keyboard focus) on each render.
+  const tabButton = (id: string, label: string, count: number, flagged = false) => (
+    <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+      {label} <span className={flagged ? 'tab-count tone-warn' : 'tab-count'}>{count}</span>
+      {flagged && <span className="visually-hidden"> (flagged)</span>}
+    </button>
+  );
 
   const saveEdit = async (edit: EditRequest) => {
     await api.addEdit(jobId, withEditor(edit) as EditRequest);
@@ -116,24 +160,9 @@ export function ReviewPage({
 
   return (
     <div className="review">
-      <header className="review-header">
-        <a href="#/">← Jobs</a>
-        <h2>Review: {job.filename}</h2>
-        <p>
-          {template.name} v{template.version} ·{' '}
-          <span className={`status status-${job.status}`}>{job.status}</span>
-          {view.flaggedCount > 0 && <> · {view.flaggedCount} value(s) flagged</>}
-        </p>
-        {job.reviewReasons && job.reviewReasons.length > 0 && (
-          <ul className="reasons">
-            {job.reviewReasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        )}
-      </header>
+      <ReviewHeader data={data} jobs={jobs} jobId={jobId} />
 
-      <div className="review-body">
+      <div className="review-panes">
         <PageViewer
           src={api.pageUrl(jobId, page)}
           page={page}
@@ -141,75 +170,39 @@ export function ReviewPage({
           onPage={setPage}
         />
 
-        <section className="review-data">
-          <div role="tablist" aria-label="Extracted data">
-            <button role="tab" aria-selected={tab === 'fields'} onClick={() => setTab('fields')}>
-              Fields ({template.outputs.fields.length})
-            </button>
-            {template.outputs.tables.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-              >
-                {t.name ?? t.id} ({view.tables[t.id]?.length ?? 0})
+        <section className="review-data" aria-label="Extracted data">
+          <div className="data-tabs">
+            <div role="tablist" aria-label="Extracted data">
+              {tabButton('fields', 'Fields', template.outputs.fields.length, fieldsFlagged)}
+              {template.outputs.tables.map((t) =>
+                tabButton(
+                  t.id,
+                  t.name ?? t.id,
+                  view.tables[t.id]?.length ?? 0,
+                  (view.tables[t.id] ?? []).some((r) => r.flagged),
+                ),
+              )}
+              {tabButton('edits', 'Edits', edits.length)}
+              {tabButton('steps', 'Steps', extractSteps)}
+            </div>
+            {targets.length > 0 && (
+              <button type="button" className="next-flagged" onClick={nextFlagged}>
+                <Icon name="flag" />
+                Next flagged ({targets.length})
               </button>
-            ))}
-            <button role="tab" aria-selected={tab === 'edits'} onClick={() => setTab('edits')}>
-              Edits ({edits.length})
-            </button>
-            <button role="tab" aria-selected={tab === 'steps'} onClick={() => setTab('steps')}>
-              Steps
-            </button>
+            )}
           </div>
 
           {tab === 'fields' && (
-            <table aria-label="fields" className="fields">
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Value</th>
-                  <th>Evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {template.outputs.fields.map((def) => {
-                  const f = view.fields[def.id]!;
-                  return (
-                    <tr key={def.id} className={f.flags.length ? 'flagged' : undefined}>
-                      <th scope="row" title={def.description}>
-                        {def.name ?? def.id}
-                        <small> {def.type}</small>
-                      </th>
-                      <td title={f.flags.join('; ') || undefined}>
-                        <EditableValue
-                          def={def}
-                          value={f.value}
-                          editable={editable}
-                          editLabel="Edit"
-                          inputLabel={`New value for ${def.id}`}
-                          onSave={(value) => saveEdit({ field: def.id, value })}
-                        />
-                        {f.edit && (
-                          <small className="edited" title={`was ${display(f.edit.oldValue)}`}>
-                            edited{f.edit.editor ? ` by ${f.edit.editor}` : ''}
-                          </small>
-                        )}
-                      </td>
-                      <td>
-                        {f.evidence && <q>{f.evidence}</q>}{' '}
-                        {f.page !== null && (
-                          <button type="button" className="link" onClick={() => setPage(f.page!)}>
-                            p. {f.page}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <FieldsGrid
+              template={template}
+              view={view}
+              editable={editable}
+              selected={selectedField}
+              onSelect={setSelectedField}
+              onPage={setPage}
+              onSave={saveEdit}
+            />
           )}
 
           {template.outputs.tables
@@ -248,6 +241,8 @@ export function ReviewPage({
                               return (
                                 <td
                                   key={c.id}
+                                  id={`flag-${t.id}:${r.number}:${c.id}`}
+                                  tabIndex={-1}
                                   className={
                                     [
                                       cell.flags.length ? 'flag' : '',
@@ -411,58 +406,33 @@ export function ReviewPage({
       </div>
 
       {editable ? (
-        <footer className="decision">
-          <label>
-            Reviewer
-            <input
-              value={reviewer}
-              onChange={(e) => {
-                setReviewer(e.target.value);
-                saveReviewer(e.target.value);
-              }}
-            />
-          </label>
-          <label>
-            Note
-            <input value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              decide(() =>
-                api.approve(jobId, {
-                  ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
-                  ...(note.trim() ? { note: note.trim() } : {}),
-                }),
-              )
-            }
-          >
-            Approve and publish
-          </button>
-          <label>
-            Rejection reason
-            <input value={reason} onChange={(e) => setReason(e.target.value)} />
-          </label>
-          <button
-            type="button"
-            className="danger"
-            disabled={busy || !reason.trim()}
-            onClick={() =>
-              decide(() =>
-                api.reject(jobId, {
-                  reason: reason.trim(),
-                  ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
-                }),
-              )
-            }
-          >
-            Reject
-          </button>
-        </footer>
+        <DecisionBar
+          busy={busy}
+          reviewer={reviewer}
+          onReviewer={(name) => {
+            setReviewer(name);
+            saveReviewer(name);
+          }}
+          onApprove={(note) =>
+            void decide(() =>
+              api.approve(jobId, {
+                ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
+                ...(note ? { note } : {}),
+              }),
+            )
+          }
+          onReject={(reason) =>
+            void decide(() =>
+              api.reject(jobId, {
+                reason,
+                ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
+              }),
+            )
+          }
+        />
       ) : job.status === 'succeeded' ? (
         <form
-          className="decision"
+          className="decision-bar"
           aria-label="Save as reference"
           onSubmit={(e) => {
             e.preventDefault();
@@ -491,7 +461,7 @@ export function ReviewPage({
           {notice && <p role="status">{notice}</p>}
         </form>
       ) : (
-        <p className="decision">
+        <p className="decision-bar">
           {job.status === 'rejected'
             ? `Rejected by ${job.reviewer ?? 'unknown'}: ${job.reviewNote ?? ''}`
             : `This document is ${job.status}; review is closed.`}
