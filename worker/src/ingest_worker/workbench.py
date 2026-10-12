@@ -8,12 +8,31 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
+import re
+import signal
+from bisect import bisect_right
+from multiprocessing.connection import Connection
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
 from .ocr import pages_needing_ocr
-from .pipeline import DocumentError, PipelineDeps, check_cancelled, ocr_pages
+from .pipeline import (
+    DocumentError,
+    JobCancelled,
+    PipelineDeps,
+    check_cancelled,
+    mark_pages,
+    ocr_pages,
+)
 from .queue import ClaimedJob, JobQueue
-from .storage import prepared_text_key, prepared_triage_key
+from .segment import PAGE_BREAK, section_spans, select_copy
+from .specs import CopySelection, Section
+from .storage import prepared_text_key, prepared_triage_key, segmentation_key
+
+#: Longest matched line returned to the UI.
+LINE_LIMIT = 200
 
 
 def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
@@ -52,3 +71,216 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
     )
     queue.event(job.id, "info", "prepared", {"pages": len(pages), "ocr_pages": ocr_numbers})
     return triage
+
+
+class SegmentDocument(BaseModel):
+    """The candidate `document` block a preview applies (TS: SegmentDocumentSchema)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    sections: list[Section] = Field(min_length=1)
+    copies: CopySelection | None = None
+    page_markers: bool = Field(default=True, alias="pageMarkers")
+
+    @model_validator(mode="after")
+    def _unique_section_ids(self) -> SegmentDocument:
+        seen: set[str] = set()
+        for section in self.sections:
+            if section.id in seen:
+                raise ValueError(f"duplicate section id {section.id}")
+            seen.add(section.id)
+        return self
+
+
+def _regex_error(pattern: str) -> str | None:
+    try:
+        re.compile(pattern, re.MULTILINE)
+    except re.error as exc:
+        return str(exc)
+    return None
+
+
+def _line_at(text: str, pos: int) -> str:
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    return text[start : len(text) if end == -1 else end].strip()[:LINE_LIMIT]
+
+
+def segment_samples(
+    samples: list[tuple[str, list[str] | None]], document: SegmentDocument
+) -> dict[str, Any]:
+    """The preview grid (TS: SegmentationResult) for (sample id, prepared pages or None).
+
+    Same steps as prepare_document: copy selection, page markers, then section_spans, so the
+    grid shows exactly where production segmentation would cut. Invalid anchors are reported in
+    anchorErrors and skipped; they never fail the preview."""
+    anchor_errors: dict[str, str] = {}
+    for section in document.sections:
+        if (error := _regex_error(section.anchor)) is not None:
+            anchor_errors[section.id] = error
+    copies = document.copies
+    if copies is not None and (error := _regex_error(copies.anchor)) is not None:
+        anchor_errors["copies"] = error
+        copies = None
+    valid = [s for s in document.sections if s.id not in anchor_errors]
+    required = [s.id for s in valid if s.required]
+
+    rows: list[dict[str, Any]] = []
+    for sample_id, pages in samples:
+        if not pages:
+            rows.append(
+                {
+                    "sampleId": sample_id,
+                    "firstPage": 1,
+                    "pageCount": 0,
+                    "error": "not prepared" if pages is None else "no pages",
+                    "missingRequired": [],
+                    "sections": [],
+                }
+            )
+            continue
+        first, kept = select_copy(pages, copies) if copies else (0, pages)
+        if document.page_markers:
+            kept = mark_pages(kept, first + 1)
+        text = PAGE_BREAK.join(kept)
+        page_starts: list[int] = []
+        offset = 0
+        for page in kept:
+            page_starts.append(offset)
+            offset += len(page) + len(PAGE_BREAK)
+        spans, unmatched = section_spans(text, valid)
+        by_id = {span.id: span for span in spans}
+        cells: list[dict[str, Any]] = []
+        for section in document.sections:
+            span = by_id.get(section.id)
+            if span is None:
+                cells.append(
+                    {"id": section.id, "found": False, "page": None, "line": None, "chars": 0}
+                )
+                continue
+            body = text[span.start : span.end].strip()
+            cells.append(
+                {
+                    "id": section.id,
+                    "found": True,
+                    "page": first + bisect_right(page_starts, span.start),
+                    "line": _line_at(text, span.start),
+                    "chars": len(body),
+                }
+            )
+        rows.append(
+            {
+                "sampleId": sample_id,
+                "firstPage": first + 1,
+                "pageCount": len(kept),
+                "error": None,
+                "missingRequired": [i for i in unmatched if i in required],
+                "sections": cells,
+            }
+        )
+    return {"anchorErrors": anchor_errors, "samples": rows}
+
+
+class SegmentSample(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    sample_id: str = Field(alias="sampleId")
+    sha256: str
+
+
+class SegmentParams(BaseModel):
+    """jobs.params of a segment job (written by the API)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+    samples: list[SegmentSample]
+    document: SegmentDocument
+
+
+#: Longest a segmentation preview may run before its child process is killed.
+SEGMENT_TIMEOUT_S = 10.0
+
+
+def _segment_child(
+    conn: Connection, samples: list[tuple[str, list[str] | None]], document: dict[str, Any]
+) -> None:
+    """Child-process entry point (module level so 'spawn' can import it)."""
+    # A forked child inherits the worker's graceful-stop handlers, which would ignore terminate().
+    for name in ("SIGTERM", "SIGINT"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), signal.SIG_DFL)
+    conn.send(segment_samples(samples, SegmentDocument.model_validate(document)))
+    conn.close()
+
+
+def segment_with_timeout(
+    samples: list[tuple[str, list[str] | None]],
+    document: SegmentDocument,
+    timeout_s: float = SEGMENT_TIMEOUT_S,
+) -> dict[str, Any]:
+    """segment_samples in a child process; a runaway regex is killed after `timeout_s`."""
+    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    ctx: Any = multiprocessing.get_context(method)  # typeshed: BaseContext has no Process
+    parent, child = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_segment_child,
+        args=(child, samples, document.model_dump(by_alias=True)),
+        daemon=True,
+    )
+    try:
+        proc.start()
+        child.close()
+        if not parent.poll(timeout_s):
+            raise DocumentError(
+                f"preview took longer than {timeout_s:g}s; an anchor may backtrack catastrophically"
+            )
+        try:
+            result: dict[str, Any] = parent.recv()
+        except EOFError as exc:
+            raise DocumentError("preview process failed") from exc
+        return result
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(5)
+            if proc.is_alive():
+                proc.kill()
+        if proc.pid is not None:
+            proc.join()
+        child.close()
+        parent.close()
+
+
+def _prepared_pages(deps: PipelineDeps, sha256: str) -> list[str] | None:
+    raw = deps.store.get_optional(deps.buckets.runs, prepared_text_key(sha256))
+    if raw is None:
+        return None
+    pages: list[dict[str, Any]] = json.loads(raw)["pages"]
+    return [str(p["text"]) for p in pages]
+
+
+def run_segment(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, *, timeout_s: float = SEGMENT_TIMEOUT_S
+) -> dict[str, Any]:
+    """Apply the job's candidate anchors to every listed sample; write and return the grid.
+
+    A newer preview deletes this job's row and result object while it runs, so cancellation is
+    checked before the write and again after it (removing the object this run just wrote)."""
+    try:
+        params = SegmentParams.model_validate(job.params or {})
+    except ValidationError as exc:
+        raise DocumentError(f"invalid segment parameters: {exc}") from exc
+    if job.project_id is None:
+        raise DocumentError("segment job without a project")
+    grid = segment_with_timeout(
+        [(s.sample_id, _prepared_pages(deps, s.sha256)) for s in params.samples],
+        params.document,
+        timeout_s,
+    )
+    check_cancelled(job, queue)
+    key = segmentation_key(job.project_id, job.id)
+    deps.store.put(deps.buckets.runs, key, json.dumps(grid).encode(), "application/json")
+    if queue.is_cancelled(job):
+        deps.store.delete(deps.buckets.runs, key)
+        raise JobCancelled(job.id)
+    return grid

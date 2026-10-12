@@ -19,6 +19,8 @@ import {
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
+  type SegmentJob,
+  type SegmentJobParams,
   type NewDocument,
   type NewEdit,
   type StoredObject,
@@ -32,6 +34,8 @@ const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled'
 /** In-memory repo for unit tests and local UI work without Postgres. */
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
+  /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
+  readonly segmentJobs = new Map<string, SegmentJob & { params: SegmentJobParams }>();
   readonly outputs = new Map<string, JobOutput[]>();
   /** job_events (only what the API writes itself, e.g. cancellations). */
   readonly events = new Map<string, { level: string; message: string }[]>();
@@ -89,6 +93,37 @@ export class MemoryRepo implements IngestionRepo {
     const job = await this.createDocumentAndJob(doc, null, true);
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
     return this.update(job.id, { projectId, task });
+  }
+
+  async createSegmentJob(projectId: string, params: SegmentJobParams) {
+    const removed = [...this.segmentJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .map((j) => j.id);
+    for (const id of removed) this.segmentJobs.delete(id);
+    const now = new Date().toISOString();
+    const job: SegmentJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.segmentJobs.set(job.id, { ...job, params });
+    return { job, removed };
+  }
+
+  async getSegmentJob(projectId: string, id: string) {
+    const stored = this.segmentJobs.get(id);
+    if (stored?.projectId !== projectId) return null;
+    return {
+      id: stored.id,
+      projectId: stored.projectId,
+      status: stored.status,
+      error: stored.error,
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt,
+    };
   }
 
   async listProjectJobs(projectId: string): Promise<JobSummary[]> {

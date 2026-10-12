@@ -48,12 +48,19 @@ def prepared_triage_key(pdf_sha256: str) -> str:
     return f"prepared/{pdf_sha256}/triage.json"
 
 
+def segmentation_key(project_id: str, job_id: str) -> str:
+    """Section-anchor preview grid of a workbench project (runs bucket, segment task)."""
+    return f"segmentation/{project_id}/{job_id}.json"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 
     def get_optional(self, bucket: str, key: str) -> bytes | None: ...
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None: ...
+
+    def delete(self, bucket: str, key: str) -> None: ...
 
 
 class MemoryObjectStore:
@@ -72,6 +79,9 @@ class MemoryObjectStore:
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self.objects[(bucket, key)] = (body, content_type)
+
+    def delete(self, bucket: str, key: str) -> None:
+        self.objects.pop((bucket, key), None)
 
 
 class S3ObjectStore:
@@ -101,3 +111,6 @@ class S3ObjectStore:
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
         self._client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+
+    def delete(self, bucket: str, key: str) -> None:
+        self._client.delete_object(Bucket=bucket, Key=key)

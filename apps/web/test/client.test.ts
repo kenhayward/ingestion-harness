@@ -57,6 +57,27 @@ describe('http api: workbench', () => {
   });
 });
 
+describe('http api: segmentation', () => {
+  it('posts candidate anchors and reads a preview', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      respond(202, { jobId: 'j1', status: 'queued', error: null, result: null }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    const document = {
+      sections: [{ id: 'all', anchor: '\\A', required: true }],
+      pageMarkers: true,
+    };
+    await api.startSegmentation('letter', document);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/workbench/projects/letter/segmentations');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ document });
+    await api.getSegmentation('letter', 'j1');
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/workbench/projects/letter/segmentations/j1');
+  });
+});
+
 describe('http api: results query', () => {
   it('sends the file name filter with the other parameters', async () => {
     const fetch = vi.fn(async () => respond(200, []));

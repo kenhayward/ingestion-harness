@@ -26,7 +26,7 @@ from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
 from .template_pipeline import publish_template_job, rerun_template_job
-from .workbench import prepare_sample
+from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
 
@@ -60,6 +60,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             triage = prepare_sample(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s prepared %d pages", job.id, triage["pageCount"])
+            return True
+        if job.task == "segment":
+            grid = run_segment(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s segmented %d samples", job.id, len(grid["samples"]))
             return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
@@ -105,6 +110,12 @@ def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only template documents go through review/publish")
     return publish_template_job(job, deps, queue, loaded)
+
+
+def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
+    """Nothing to claim: wait for a NOTIFY (or the poll interval), unless shutting down."""
+    if not stop.is_set():
+        queue.wait_for_work(timeout_s)
 
 
 def main() -> None:
@@ -173,7 +184,7 @@ def main() -> None:
                 log.warning("re-queued %d stale jobs", reaped)
             next_reap = now + 60
         if not run_once(queue, deps, settings.worker_id):
-            stop.wait(settings.poll_interval_s)
+            idle(queue, stop, settings.poll_interval_s)
 
     queue.close()
     log.info("worker stopped")

@@ -11,6 +11,7 @@ describe('parseHash', () => {
     ['#/workbench', { name: 'workbench' }],
     ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['#/workbench/letter/brief', { name: 'project', projectId: 'letter', tab: 'brief' }],
+    ['#/workbench/letter/sections', { name: 'project', projectId: 'letter', tab: 'sections' }],
     ['#/workbench/letter/bogus', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['', { name: 'jobs' }],
   ])('%s', (hash, route) => {

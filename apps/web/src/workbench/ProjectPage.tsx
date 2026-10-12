@@ -6,10 +6,12 @@ import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
+import { SectionsTab } from './SectionsTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
   brief: 'Brief',
+  sections: 'Sections',
   template: 'Template',
   runs: 'Test runs',
 };
@@ -109,6 +111,9 @@ export function ProjectPage({
           brief={view.brief}
           onSaved={(brief) => setView({ ...view, brief })}
         />
+      )}
+      {tab === 'sections' && (
+        <SectionsTab api={api} projectId={project.id} draft={draft} pollMs={300} />
       )}
       {tab === 'runs' && <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />}
       {tab === 'template' &&
