@@ -7,8 +7,10 @@ import type {
   DataPolicy,
   DraftStage,
   EvaluationModel,
+  EvaluationSet,
   FeedbackItem,
   ProposalDecision,
+  Publication,
   SampleRole,
   StageSkip,
   WorkbenchProject,
@@ -75,7 +77,7 @@ export interface IterationRecord {
   templateVersion: number;
   definition: Record<string, unknown>;
   briefVersion: number | null;
-  set: 'dev';
+  set: EvaluationSet;
   model: EvaluationModel | null;
   jobIds: string[];
   /** Shared by the iterations of one model comparison. */
@@ -120,6 +122,11 @@ export interface WorkbenchRepo {
     policy: DataPolicy,
     by: string | null,
   ): Promise<WorkbenchProject | null>;
+  /** Null when the project is unknown. */
+  setPublishThreshold(id: string, threshold: number): Promise<WorkbenchProject | null>;
+  recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>): Promise<Publication>;
+  /** Newest first. */
+  listPublications(projectId: string): Promise<Publication[]>;
   createProposal(p: NewProposal): Promise<ProposalRecord>;
   /** Newest first. */
   listProposals(projectId: string): Promise<ProposalRecord[]>;
@@ -159,6 +166,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
   readonly iterations: IterationRecord[] = [];
+  readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
 
   constructor(private readonly jobs: MemoryRepo) {}
@@ -189,6 +197,24 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     };
     this.projects.set(id, project);
     return project;
+  }
+
+  async setPublishThreshold(id: string, threshold: number) {
+    const project = this.projects.get(id);
+    if (!project) return null;
+    const updated = { ...project, publishThreshold: threshold };
+    this.projects.set(id, updated);
+    return updated;
+  }
+
+  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+    const row: Publication = { ...p, id: randomUUID(), publishedAt: this.now() };
+    this.publications.push(row);
+    return row;
+  }
+
+  async listPublications(projectId: string) {
+    return this.publications.filter((p) => p.projectId === projectId).reverse();
   }
 
   async addSample(sample: NewSample) {
@@ -476,7 +502,7 @@ interface IterationRow {
   template_version: number;
   definition: Record<string, unknown>;
   brief_version: number | null;
-  eval_set: 'dev';
+  eval_set: EvaluationSet;
   model: EvaluationModel | null;
   job_ids: string[];
   group_id: string | null;
@@ -532,6 +558,30 @@ const toFeedback = (r: FeedbackRow): FeedbackItem => ({
   resolvedBy: r.resolved_by,
 });
 
+interface PublicationRow {
+  id: string;
+  project_id: string;
+  version: number;
+  iteration_id: string | null;
+  score: string | null;
+  threshold: string;
+  override_reason: string | null;
+  published_by: string | null;
+  published_at: Date;
+}
+
+const toPublication = (r: PublicationRow): Publication => ({
+  id: r.id,
+  projectId: r.project_id,
+  version: r.version,
+  iterationId: r.iteration_id,
+  score: r.score === null ? null : Number(r.score),
+  threshold: Number(r.threshold),
+  overrideReason: r.override_reason,
+  publishedBy: r.published_by,
+  publishedAt: r.published_at.toISOString(),
+});
+
 const toProject = (r: ProjectRow): WorkbenchProject => ({
   id: r.id,
   name: r.name,
@@ -585,6 +635,41 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [id],
     );
     return rows[0] ? toProject(rows[0]) : null;
+  }
+
+  async setPublishThreshold(id: string, threshold: number) {
+    const { rows } = await this.pool.query<ProjectRow>(
+      'UPDATE workbench_projects SET publish_threshold = $2 WHERE id = $1 RETURNING *',
+      [id, threshold],
+    );
+    return rows[0] ? toProject(rows[0]) : null;
+  }
+
+  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+    const { rows } = await this.pool.query<PublicationRow>(
+      `INSERT INTO workbench_publications
+         (project_id, version, iteration_id, score, threshold, override_reason, published_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        p.projectId,
+        p.version,
+        p.iterationId,
+        p.score,
+        p.threshold,
+        p.overrideReason,
+        p.publishedBy,
+      ],
+    );
+    return toPublication(rows[0]!);
+  }
+
+  async listPublications(projectId: string) {
+    const { rows } = await this.pool.query<PublicationRow>(
+      `SELECT * FROM workbench_publications WHERE project_id = $1
+        ORDER BY published_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toPublication);
   }
 
   async createProject(id: string, name: string) {
