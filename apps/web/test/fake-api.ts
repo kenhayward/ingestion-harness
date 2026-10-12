@@ -1,10 +1,12 @@
 import { vi } from 'vitest';
 import type {
   FeedbackItem,
+  GateView,
   IterationView,
   JobSummary,
   ProjectView,
   ProposalView,
+  Publication,
   ReferenceRow,
   SampleView,
   SegmentationView,
@@ -295,6 +297,17 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     restoreIteration: vi.fn(async () => {
       throw new Error('restoreIteration not stubbed');
     }),
+    startHoldoutReferenceRuns: vi.fn(async () => {
+      throw new Error('startHoldoutReferenceRuns not stubbed');
+    }),
+    setPublishThreshold: vi.fn(async () => {
+      throw new Error('setPublishThreshold not stubbed');
+    }),
+    getPublishGate: vi.fn(async () => gateView()),
+    publish: vi.fn(async () => {
+      throw new Error('publish not stubbed');
+    }),
+    listPublications: vi.fn(async () => []),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
@@ -318,6 +331,32 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getSegmentation: vi.fn(async () => {
       throw new Error('getSegmentation not stubbed');
     }),
+    ...overrides,
+  };
+}
+
+export function gateView(overrides: Partial<GateView> = {}): GateView {
+  return {
+    threshold: 0.9,
+    iterationId: null,
+    score: null,
+    passes: false,
+    reason: 'no complete holdout evaluation of the current draft',
+    ...overrides,
+  };
+}
+
+export function publication(overrides: Partial<Publication> = {}): Publication {
+  return {
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    version: 1,
+    iterationId: null,
+    score: 0.95,
+    threshold: 0.9,
+    overrideReason: null,
+    publishedBy: 'admin',
+    publishedAt: '2026-10-12T12:00:00.000Z',
     ...overrides,
   };
 }

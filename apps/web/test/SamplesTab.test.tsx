@@ -25,6 +25,20 @@ describe('SamplesTab', () => {
     expect(row('b.pdf')).toHaveTextContent('preparing');
   });
 
+  it('shows how often a holdout sample was used in evaluations', async () => {
+    tab(
+      fakeApi({
+        listSamples: vi.fn(async () => [
+          sampleView({ filename: 'h.pdf', role: 'holdout', holdoutRuns: 2 }),
+          sampleView({ filename: 'd.pdf' }),
+        ]),
+      }),
+    );
+    await screen.findByRole('table', { name: 'Samples' });
+    expect(row('h.pdf')).toHaveTextContent('used in 2 holdout evaluations');
+    expect(row('d.pdf')).not.toHaveTextContent('holdout evaluations');
+  });
+
   it('uploads each chosen PDF as a dev sample and reports failures', async () => {
     const uploadSample = vi
       .fn()

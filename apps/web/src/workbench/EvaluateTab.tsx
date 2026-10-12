@@ -1,15 +1,18 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   EVALUATION_MODELS,
+  EVALUATION_SETS,
   FEEDBACK_MAX_CHARS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
   type EvaluationModel,
+  type EvaluationSet,
   type IterationSummary,
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { PublishPanel } from './PublishPanel.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
@@ -29,6 +32,7 @@ export function EvaluateTab({
   projectId,
   dataPolicy,
   hasDraft,
+  draft,
   pollMs,
   onRestored,
 }: {
@@ -36,6 +40,8 @@ export function EvaluateTab({
   projectId: string;
   dataPolicy: DataPolicy;
   hasDraft: boolean;
+  /** The open draft version; the Publish panel is hidden without one. */
+  draft: number | null;
   pollMs: number;
   onRestored: () => void;
 }) {
@@ -44,6 +50,7 @@ export function EvaluateTab({
   const [model, setModel] = useState<EvaluationModel | ''>('');
   const [open, setOpen] = useState<string | null>(null);
   const [uncached, setUncached] = useState(false);
+  const [set, setSet] = useState<EvaluationSet>('dev');
   const [comparison, setComparison] = useState<ComparisonView | null>(null);
   const [commenting, setCommenting] = useState<{
     targetId: string;
@@ -149,7 +156,7 @@ export function EvaluateTab({
 
   const evaluate = () =>
     act(async () => {
-      const started = await api.startEvaluation(projectId, model || null, { uncached });
+      const started = await api.startEvaluation(projectId, model || null, { uncached, set });
       setCurrent(started);
       setOpen(null);
       setHistory((h) => [started, ...(h ?? [])]);
@@ -199,6 +206,16 @@ export function EvaluateTab({
           </select>
         </label>
         <label>
+          Set{' '}
+          <select value={set} onChange={(e) => setSet(e.target.value as EvaluationSet)}>
+            {EVALUATION_SETS.map((v) => (
+              <option key={v} value={v}>
+                {v === 'dev' ? 'Dev' : 'Holdout'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           <input
             type="checkbox"
             checked={uncached}
@@ -216,7 +233,7 @@ export function EvaluateTab({
         </button>
         <button
           type="button"
-          disabled={!hasDraft || busy || running || comparing}
+          disabled={!hasDraft || busy || running || comparing || set === 'holdout'}
           onClick={() => void compare()}
         >
           Compare models
@@ -405,6 +422,7 @@ export function EvaluateTab({
                   {h.model ?? "template's"}
                   {h.uncached && ` ${DOT} fresh`}
                   {h.groupId && ` ${DOT} compare`}
+                  {h.set === 'holdout' && ` ${DOT} holdout`}
                 </td>
                 <td>{h.status === 'complete' ? pct(h.score) : 'running'}</td>
                 <td>{new Date(h.createdAt).toLocaleString()}</td>
@@ -417,6 +435,9 @@ export function EvaluateTab({
             ))}
           </tbody>
         </table>
+      )}
+      {draft !== null && (
+        <PublishPanel api={api} projectId={projectId} draft={draft} onPublished={onRestored} />
       )}
     </div>
   );
