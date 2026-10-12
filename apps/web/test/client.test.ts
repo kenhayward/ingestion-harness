@@ -106,3 +106,45 @@ describe('http api: long results filter', () => {
     expect(fetch).toHaveBeenCalledWith(`/api/results?q=${'x'.repeat(100)}`, undefined);
   });
 });
+
+describe('http api: S3 keys (ADR 0008)', () => {
+  it('lists, issues, rotates, revokes and deletes through /api/access/s3-keys', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST' && !String(_url).endsWith('/revoke')
+        ? respond(200, { secretAccessKey: 's' })
+        : init?.method
+          ? new Response(null, { status: 204 })
+          : respond(200, { bucket: 'b', endpoint: null, consumers: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listS3Keys();
+    await api.createS3Key('Lake', 90);
+    await api.rotateS3Key('c1', 365, 7);
+    await api.revokeS3Key('k1');
+    await api.deleteS3Consumer('c1');
+    const calls = fetchMock.mock.calls.map(([url, init]) => [
+      init?.method ?? 'GET',
+      url,
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ['GET', '/api/access/s3-keys', undefined],
+      ['POST', '/api/access/s3-keys', { label: 'Lake', expiresInDays: 90 }],
+      ['POST', '/api/access/s3-keys/c1/rotate', { expiresInDays: 365, graceDays: 7 }],
+      ['POST', '/api/access/s3-keys/keys/k1/revoke', undefined],
+      ['DELETE', '/api/access/s3-keys/c1', undefined],
+    ]);
+  });
+
+  it('carries the status of a failure (404: keys not available here)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(404, { error: 'S3 keys are not available' })),
+    );
+    await expect(createHttpApi('/api').listS3Keys()).rejects.toMatchObject({
+      status: 404,
+      message: 'S3 keys are not available',
+    });
+  });
+});

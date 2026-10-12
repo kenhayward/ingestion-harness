@@ -80,11 +80,12 @@ jobs:
           compose run --rm migrate
           compose up -d api worker app
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
+          echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"
       - name: Smoke test
         run: |
           ADMIN_TOKEN="$(deploy/scripts/admin-token.sh --env-file deploy/.env.ci -f deploy/docker-compose.yml)"
           echo "::add-mask::$ADMIN_TOKEN"
-          BASE_URL="$APP_URL" ADMIN_TOKEN="$ADMIN_TOKEN" deploy/scripts/smoke-test.sh
+          BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" deploy/scripts/smoke-test.sh
       - name: Logs on failure
         if: failure()
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml logs --tail=200

@@ -1,8 +1,12 @@
 import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { buildApp } from './app.js';
-import { loadConfig, targetConfig } from './config.js';
+import { loadConfig, s3KeysConfig, targetConfig } from './config.js';
 import { PgRepo } from './repositories/pg.js';
+import { PgS3KeyRepo } from './s3keys/pg.js';
+import { startReconciler } from './s3keys/reconciler.js';
+import { SeaweedIamIssuer } from './s3keys/seaweed-iam.js';
+import { S3KeyService } from './s3keys/service.js';
 import { SpecRegistry } from './specs/spec-registry.js';
 import { S3ObjectStore } from './storage/s3.js';
 import { PgTemplateRepo } from './templates/repo.js';
@@ -20,17 +24,28 @@ const workbench = new PgWorkbenchRepo(
 );
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
 const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
+const s3 = {
+  endpoint: config.S3_ENDPOINT,
+  region: config.S3_REGION,
+  accessKeyId: config.S3_ACCESS_KEY,
+  secretAccessKey: config.S3_SECRET_KEY,
+};
+// Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
+// identity; only when the publish target is that SeaweedFS.
+const s3KeySettings = s3KeysConfig(config);
+const s3Keys =
+  s3KeySettings &&
+  new S3KeyService({
+    repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+    issuer: new SeaweedIamIssuer(s3),
+    ...s3KeySettings,
+  });
 
 const app = await buildApp({
   repo,
   templates,
   workbench,
-  store: new S3ObjectStore({
-    endpoint: config.S3_ENDPOINT,
-    region: config.S3_REGION,
-    accessKeyId: config.S3_ACCESS_KEY,
-    secretAccessKey: config.S3_SECRET_KEY,
-  }),
+  store: new S3ObjectStore(s3),
   targetStore: new S3ObjectStore({
     endpoint: target.endpoint,
     region: target.region,
@@ -46,12 +61,15 @@ const app = await buildApp({
   },
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
+  s3Keys,
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   logger: { level: config.LOG_LEVEL },
 });
 
+let stopReconciler = () => {};
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
+    stopReconciler();
     await app.close();
     await repo.close();
     process.exit(0);
@@ -66,3 +84,4 @@ const adminToken = await access.rotateAdminToken();
 // shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
 process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);
 await app.listen({ host: config.HOST, port: config.PORT });
+if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);

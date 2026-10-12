@@ -27,6 +27,8 @@ const EnvSchema = z.object({
   TARGET_S3_SECRET_KEY: optional(z.string()),
   TARGET_S3_BUCKET: z.preprocess(blank, z.string().default('ingest-published')),
   TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
+  /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
+  S3_PUBLIC_URL: optional(z.string().url()),
   SPECS_DIR: z.string().default(defaultSpecsDir),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
   /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
@@ -63,4 +65,14 @@ export function targetConfig(c: Config): TargetConfig {
     bucket: c.TARGET_S3_BUCKET,
     prefix: c.TARGET_S3_PREFIX,
   };
+}
+
+/**
+ * Read-only S3 keys (ADR 0008) are issued by the local SeaweedFS, so they're only offered when
+ * the publish target is that SeaweedFS. null = off.
+ */
+export function s3KeysConfig(c: Config): { bucket: string; endpoint: string | null } | null {
+  const target = targetConfig(c);
+  if (target.endpoint !== c.S3_ENDPOINT) return null;
+  return { bucket: target.bucket, endpoint: c.S3_PUBLIC_URL ?? null };
 }

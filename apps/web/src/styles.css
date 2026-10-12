@@ -2713,3 +2713,57 @@ tr.confirming td {
 .yaml-editor .cm-content[aria-readonly='true'] {
   background: var(--ih-surface2);
 }
+
+/* Access: data-lake S3 keys (ADR 0008) */
+.s3-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+.s3-keys h2 {
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.s3-keys > div > p {
+  margin: 4px 0 0;
+}
+.s3-consumer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.s3-consumer > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.s3-consumer > header.confirming {
+  margin: -8px -12px;
+  padding: 8px 12px;
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-danger-bg);
+}
+.s3-rotate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+.s3-rotate .field,
+.s3-fields .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.s3-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 12px 16px;
+}

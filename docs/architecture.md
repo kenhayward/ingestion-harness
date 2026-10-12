@@ -87,6 +87,15 @@ Every request to the API needs a session cookie, obtained by signing in with an 
 admin token rotates on every API start and is printed in the log; admins issue user tokens on the
 **Access** page. See [ADR 0006](adr/0006-token-access.md).
 
+The same page issues **read-only S3 keys** for external consumers of the publish bucket (e.g. a data
+lake), when the publish target is the local SeaweedFS ([ADR 0008](adr/0008-s3-read-keys.md)). Each
+consumer is a SeaweedFS IAM user `lake-<id>` with one policy (get, list and bucket location on that
+bucket), created through SeaweedFS's embedded IAM API with the admin identity
+(`apps/api/src/s3keys/`). SeaweedFS holds the secrets; Postgres (`s3_consumers`, `s3_access_keys`,
+migration 0010) holds metadata only. Revocation deletes the key immediately; a reconciler in the
+API deletes expired keys and anything `lake-*` it has no record of, every minute. The proxy in
+front of the S3 port allows only GET/HEAD on the bucket (`deploy/README.md`).
+
 ## LLM provider layer
 
 `config/llm-providers.yaml` declares providers; each has a `kind`:
