@@ -137,6 +137,25 @@ describe('http api: drafting', () => {
   });
 });
 
+describe('http api: drafting stages', () => {
+  it('decides chosen changes, skips and lists stages', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, []));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.decideProposal('letter', 'p1', 'accepted', [0, 2]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual({
+      decision: 'accepted',
+      changes: [0, 2],
+    });
+    await api.decideProposal('letter', 'p1', 'rejected');
+    expect(JSON.parse(String(fetchMock.mock.calls[1]![1]!.body))).toEqual({ decision: 'rejected' });
+    await api.skipStage('letter', 'survey');
+    expect(fetchMock.mock.calls[2]![0]).toBe('/api/workbench/projects/letter/stages/survey/skip');
+    await api.listStages('letter');
+    expect(fetchMock.mock.calls[3]![0]).toBe('/api/workbench/projects/letter/stages');
+  });
+});
+
 describe('http api: S3 keys (ADR 0008)', () => {
   it('lists, issues, rotates, revokes and deletes through /api/access/s3-keys', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

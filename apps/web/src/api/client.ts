@@ -21,6 +21,7 @@ import type {
   SegmentDocument,
   SegmentationView,
   SpecSummary,
+  StageView,
   StepRun,
   Template,
 } from '@ih/shared';
@@ -302,7 +303,11 @@ export interface Api {
     projectId: string,
     proposalId: string,
     decision: 'accepted' | 'rejected',
+    /** Indexes of the changes to apply (outputs/sections/steps); omitted = all. */
+    changes?: number[],
   ): Promise<ProposalView>;
+  skipStage(projectId: string, stage: DraftStage): Promise<StageView[]>;
+  listStages(projectId: string): Promise<StageView[]>;
   listSamples(projectId: string): Promise<SampleView[]>;
   uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
   setSampleRole(projectId: string, sampleId: string, role: SampleRole): Promise<SampleView>;
@@ -503,10 +508,14 @@ export function createHttpApi(base = '/api'): Api {
       post<ProposalView>(`${base}/workbench/projects/${id}/stages/${stage}`, {}),
     listProposals: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/proposals`).then(json<ProposalView[]>),
-    decideProposal: (id, proposalId, decision) =>
-      post<ProposalView>(`${base}/workbench/projects/${id}/proposals/${proposalId}/decision`, {
-        decision,
-      }),
+    decideProposal: (id, proposalId, decision, changes) =>
+      post<ProposalView>(
+        `${base}/workbench/projects/${id}/proposals/${proposalId}/decision`,
+        changes ? { decision, changes } : { decision },
+      ),
+    skipStage: (id, stage) =>
+      post<StageView[]>(`${base}/workbench/projects/${id}/stages/${stage}/skip`, {}),
+    listStages: (id) => apiFetch(`${base}/workbench/projects/${id}/stages`).then(json<StageView[]>),
     listSamples: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/samples`).then(json<SampleView[]>),
     uploadSample: (id, file, role) => {
