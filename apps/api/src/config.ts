@@ -29,6 +29,8 @@ const EnvSchema = z.object({
   TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
   SPECS_DIR: z.string().default(defaultSpecsDir),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
+  /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
+  TRUST_PROXY: optional(z.string()),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

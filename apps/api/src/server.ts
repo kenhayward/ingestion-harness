@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { PgAccessRepo } from './access/pg.js';
 import { buildApp } from './app.js';
 import { loadConfig, targetConfig } from './config.js';
 import { PgRepo } from './repositories/pg.js';
@@ -14,6 +15,7 @@ const templates = new PgTemplateRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 }),
 );
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
+const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
 
 const app = await buildApp({
   repo,
@@ -38,6 +40,8 @@ const app = await buildApp({
     runs: config.S3_BUCKET_RUNS,
   },
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
+  access, // always enforced in production (ADR 0006)
+  ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   logger: { level: config.LOG_LEVEL },
 });
 
@@ -50,4 +54,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 if (seeded.length) app.log.info({ seeded }, 'imported template files into the database');
+// A new admin token on every start (deploy/restart); the previous one and its sessions end.
+// Rotated before listening, so a failure stops startup rather than serving without an admin.
+const adminToken = await access.rotateAdminToken();
+app.log.warn(`ADMIN TOKEN (valid until the next restart): ${adminToken}`);
 await app.listen({ host: config.HOST, port: config.PORT });
