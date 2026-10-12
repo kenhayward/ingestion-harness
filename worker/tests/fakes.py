@@ -77,9 +77,14 @@ class FakeQueue:
     drafts: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
+    #: Timeouts passed to wait_for_work (it returns immediately).
+    waits: list[float] = field(default_factory=list)
 
     def is_cancelled(self, job: ClaimedJob) -> bool:
         return bool(self.cancel_when and self.cancel_when())
+
+    def wait_for_work(self, timeout_s: float) -> None:
+        self.waits.append(timeout_s)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None

@@ -42,7 +42,7 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    `inbox/{specId}/v{version}/{documentId}.pdf`; `documents` + `jobs` rows inserted in one
    transaction.
 2. **Claim**: worker runs a `FOR UPDATE SKIP LOCKED` CTE, sets `running`, increments `attempts`,
-   records `locked_by/locked_at`. Stale locks (crashed worker) are re-queued after `STALE_LOCK_S`.
+   records `locked_by/locked_at`. Idle workers `LISTEN` on `ih_jobs` (a trigger `NOTIFY`s on insert/requeue, migration 0009) and wake immediately; the poll interval is only the fallback and drives retry backoff. Stale locks (crashed worker) are re-queued after `STALE_LOCK_S`.
 3. **Extract text**: `pypdf` text layer, one string per page. Page count checked against
    `spec.document.pages`.
    **OCR** (`document.ocr: auto` by default): pages with fewer than `ocr.minChars` non-space
@@ -77,6 +77,8 @@ no LLM extraction) that writes `prepared/{sha256}/text.json|triage.json` to the 
 sample's state is derived from that job. Workbench jobs (prepare and test runs) run at `priority = -10` against production's 0.
 Prepare jobs never appear on the Jobs page and are never bulk-deleted, dev test runs are ordinary test jobs, and a sample's
 document is never deleted along with a job.
+
+Anchor previews are `segment` jobs (`priority = -5`, migration 0009): project-scoped with no document, one per project, running the production `segment.section_spans` over the project's prepared samples in a child process capped at 10 s and writing a segmentation result to the runs bucket. They never appear on the Jobs page and are not retryable or cancellable there. Idle workers wake on `NOTIFY ih_jobs` rather than waiting for the poll; the UI polls the preview every 300 ms (30 s deadline).
 
 ## Access
 

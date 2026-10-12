@@ -21,6 +21,9 @@ import {
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
+  SEGMENT_PRIORITY,
+  type SegmentJob,
+  type SegmentJobParams,
   type NewDocument,
   type NewEdit,
   type StoredObject,
@@ -28,6 +31,8 @@ import {
   type WorkbenchJobOptions,
 } from './types.js';
 
+// Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
+// Any query on `jobs` that does not go through JOB_SELECT must exclude `document_id IS NULL` rows.
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
@@ -36,6 +41,24 @@ const JOB_SELECT = `
                 WHERE job_id = j.id AND model IS NOT NULL
                 GROUP BY model ORDER BY min(started_at)) AS models_used
     FROM jobs j JOIN documents d ON d.id = j.document_id`;
+
+interface SegmentRow {
+  id: string;
+  project_id: string;
+  status: JobStatus;
+  error: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const toSegmentJob = (r: SegmentRow): SegmentJob => ({
+  id: r.id,
+  projectId: r.project_id,
+  status: r.status,
+  error: r.error,
+  createdAt: r.created_at.toISOString(),
+  updatedAt: r.updated_at.toISOString(),
+});
 
 interface JobRow {
   id: string;
@@ -174,6 +197,43 @@ export class PgRepo implements IngestionRepo {
       task,
       priority: WORKBENCH_PRIORITY,
     });
+  }
+
+  async createSegmentJob(projectId: string, params: SegmentJobParams) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // READ COMMITTED lets two concurrent calls both miss each other's insert; serialize per project.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
+      // Deleting a running job is safe: the claim guard stops its status writes, and the worker
+      // notices the cancellation and removes its own result object.
+      const removed = await client.query<{ id: string }>(
+        `DELETE FROM jobs WHERE project_id = $1 AND task = 'segment' RETURNING id`,
+        [projectId],
+      );
+      const { rows } = await client.query<SegmentRow>(
+        `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+         VALUES ($1, 'segment', true, $2, 1, $3)
+         RETURNING id, project_id, status, error, created_at, updated_at`,
+        [projectId, SEGMENT_PRIORITY, JSON.stringify(params)],
+      );
+      await client.query('COMMIT');
+      return { job: toSegmentJob(rows[0]!), removed: removed.rows.map((r) => r.id) };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getSegmentJob(projectId: string, id: string) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `SELECT id, project_id, status, error, created_at, updated_at FROM jobs
+        WHERE id = $1 AND project_id = $2 AND task = 'segment'`,
+      [id, projectId],
+    );
+    return rows[0] ? toSegmentJob(rows[0]) : null;
   }
 
   async listProjectJobs(projectId: string): Promise<JobSummary[]> {
@@ -386,7 +446,9 @@ export class PgRepo implements IngestionRepo {
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
                 locked_by = NULL, locked_at = NULL, updated_at = now(),
                 model_override = CASE WHEN $2 THEN $3 ELSE model_override END
+          -- document_id IS NOT NULL: segment previews (document-less) are not retryable
           WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled', 'succeeded')
+            AND document_id IS NOT NULL
           RETURNING document_id),
        cleared AS (
          DELETE FROM review_edits
@@ -403,7 +465,7 @@ export class PgRepo implements IngestionRepo {
     const { rowCount } = await this.pool.query(
       `WITH cancelled AS (
          UPDATE jobs SET status = 'cancelled', locked_by = NULL, locked_at = NULL, updated_at = now()
-          WHERE id = $1 AND status IN ('queued', 'running')
+          WHERE id = $1 AND status IN ('queued', 'running') AND document_id IS NOT NULL
           RETURNING id)
        INSERT INTO job_events (job_id, level, message) SELECT id, 'warn', 'cancelled' FROM cancelled`,
       [id],
@@ -476,7 +538,7 @@ export class PgRepo implements IngestionRepo {
     const { rows } = await this.pool.query<{ id: string }>(
       `SELECT id FROM jobs
         WHERE status = ANY($1::job_status[]) AND updated_at < $2
-          AND ($3 OR reference_id IS NULL) AND task <> 'prepare'
+          AND ($3 OR reference_id IS NULL) AND task <> 'prepare' AND document_id IS NOT NULL
         ORDER BY updated_at`,
       [DELETABLE_STATUSES, cutoffIso, includeRegression],
     );

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export const PROJECT_TABS = ['samples', 'brief', 'template', 'runs'] as const;
+export const PROJECT_TABS = ['samples', 'brief', 'sections', 'template', 'runs'] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export type Route =

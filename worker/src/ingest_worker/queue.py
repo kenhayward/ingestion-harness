@@ -4,7 +4,9 @@ so any number of worker replicas can poll concurrently.
 Statuses: queued, running, succeeded, failed, needs_review, awaiting_review, rejected, cancelled.
 `cancelled` is set by an operator (API); every worker status write is guarded with
 `AND status = 'running'`, so the worker never overwrites a cancel.
-Claims take higher jobs.priority first (production 0, workbench -10; ADR 0007)."""
+Claims take higher jobs.priority first (production 0, workbench -10; ADR 0007).
+Idle workers LISTEN on ih_jobs (trigger jobs_notify_queued, migration 0009) and wake as soon as a
+job is queued; the poll interval is only a fallback."""
 
 from __future__ import annotations
 
@@ -31,7 +33,7 @@ class ClaimedJob:
     attempts: int
     max_attempts: int
     #: "process" (extract), "publish" (apply review edits, deliver), "rerun" (one step) or
-    #: "prepare" (workbench: text + OCR only).
+    #: "prepare" (workbench: text + OCR only) or "segment" (workbench anchor preview; no document).
     task: str = "process"
     #: Test run of a (draft) template: processed and reviewable, never published.
     test: bool = False
@@ -40,10 +42,18 @@ class ClaimedJob:
     #: jobs.locked_at of this claim: identifies *this* run. A cancel, delete, retry or stale-lock
     #: reap changes or removes it, after which the run must stop and write nothing.
     claimed_at: datetime | None = None
+    #: Workbench project of a project-scoped job (prepare, test runs, segment).
+    project_id: str | None = None
+    #: Task parameters (segment: samples + candidate document block).
+    params: dict[str, Any] | None = None
 
 
 class JobQueue(Protocol):
     def claim(self, worker_id: str) -> ClaimedJob | None: ...
+
+    def wait_for_work(self, timeout_s: float) -> None:
+        """Block until a job is queued (NOTIFY ih_jobs) or `timeout_s` passes."""
+        ...
 
     def is_cancelled(self, job: ClaimedJob) -> bool:
         """True once the job is no longer this run's claim: cancelled, deleted, re-queued
@@ -102,6 +112,7 @@ class JobQueue(Protocol):
     def reap_stale(self, older_than_s: float) -> int: ...
 
 
+# Project-scoped jobs (task segment) have no document: its columns come back as ''/0.
 CLAIM_SQL = """
 WITH next AS (
   SELECT id FROM jobs
@@ -116,9 +127,11 @@ WITH next AS (
     FROM next WHERE j.id = next.id
   RETURNING j.*
 )
-SELECT c.id::text, c.document_id::text, d.spec_id, d.spec_version, d.bucket, d.object_key,
-       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at
-  FROM claimed c JOIN documents d ON d.id = c.document_id
+SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.project_id, ''),
+       COALESCE(d.spec_version, 0), COALESCE(d.bucket, ''), COALESCE(d.object_key, ''),
+       c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at,
+       c.project_id, c.params
+  FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 
 
@@ -136,6 +149,14 @@ class PgJobQueue:
         import psycopg
 
         self._conn = psycopg.connect(database_url, autocommit=True)
+        self._listening = False
+
+    def wait_for_work(self, timeout_s: float) -> None:
+        if not self._listening:
+            self._conn.execute("LISTEN ih_jobs")
+            self._listening = True
+        for _ in self._conn.notifies(timeout=timeout_s, stop_after=1):
+            pass
 
     def close(self) -> None:
         self._conn.close()

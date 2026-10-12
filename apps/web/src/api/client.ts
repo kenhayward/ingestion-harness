@@ -15,6 +15,8 @@ import type {
   ReviewEdit,
   SampleRole,
   SampleView,
+  SegmentDocument,
+  SegmentationView,
   SpecSummary,
   StepRun,
   Template,
@@ -285,6 +287,9 @@ export interface Api {
   /** Test-run the open draft on every prepared dev sample. */
   runDevTests(projectId: string): Promise<{ jobs: JobSummary[] }>;
   listTestRuns(projectId: string): Promise<JobSummary[]>;
+  /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
+  startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
+  getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
 }
 
 /** An access token as listed to admins (never the token itself). */
@@ -445,6 +450,15 @@ export function createHttpApi(base = '/api'): Api {
       post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {}),
     listTestRuns: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<JobSummary[]>),
+    startSegmentation: (id, document) =>
+      post<SegmentationView>(
+        `${base}/workbench/projects/${id}/segmentations`,
+        document ? { document } : {},
+      ),
+    getSegmentation: (id, jobId) =>
+      apiFetch(`${base}/workbench/projects/${id}/segmentations/${jobId}`).then(
+        json<SegmentationView>,
+      ),
     outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
     getOutputText: async (jobId, outputId, stage) => {
       const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));

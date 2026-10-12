@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { JobSummary, ProjectView, SampleView } from '@ih/shared';
+import type { JobSummary, ProjectView, SampleView, SegmentationView } from '@ih/shared';
 import {
   outputPath,
   type Api,
@@ -164,6 +164,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     runDevTests: vi.fn(async () => ({ jobs: [] })),
     listTestRuns: vi.fn(async () => []),
+    startSegmentation: vi.fn(async () => {
+      throw new Error('startSegmentation not stubbed');
+    }),
+    getSegmentation: vi.fn(async () => {
+      throw new Error('getSegmentation not stubbed');
+    }),
     ...overrides,
   };
 }
@@ -195,4 +201,8 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
     ...overrides,
   };
+}
+
+export function segmentationView(overrides: Partial<SegmentationView> = {}): SegmentationView {
+  return { jobId: 'seg-1', status: 'succeeded', error: null, result: null, ...overrides };
 }

@@ -7,6 +7,9 @@ import {
   PreparedTriageSchema,
   preparedTextKey,
   preparedTriageKey,
+  SegmentDocumentSchema,
+  SegmentationResultSchema,
+  segmentationKey,
 } from '../src/index.js';
 
 describe('workbench contracts', () => {
@@ -45,5 +48,54 @@ describe('workbench contracts', () => {
     const job = JobSummarySchema.shape.task.parse('prepare');
     expect(job).toBe('prepare');
     expect(JobSummarySchema.shape.projectId.parse(null)).toBeNull();
+  });
+});
+
+describe('segmentation contracts', () => {
+  it('keys a segmentation result by project and job (mirrors worker storage.py)', () => {
+    expect(segmentationKey('letter', 'j1')).toBe('segmentation/letter/j1.json');
+  });
+
+  it('defaults page markers on and requires at least one section', () => {
+    expect(SegmentDocumentSchema.parse({ sections: [{ id: 'all', anchor: '\\A' }] })).toEqual({
+      sections: [{ id: 'all', anchor: '\\A', required: true }],
+      pageMarkers: true,
+    });
+    expect(SegmentDocumentSchema.safeParse({ sections: [] }).success).toBe(false);
+    expect(
+      SegmentDocumentSchema.safeParse({ sections: [{ id: 'Bad Id', anchor: 'x' }] }).success,
+    ).toBe(false);
+  });
+
+  it('rejects duplicate section ids', () => {
+    const result = SegmentDocumentSchema.safeParse({
+      sections: [
+        { id: 'a', anchor: 'x' },
+        { id: 'a', anchor: 'y' },
+      ],
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain('duplicate section id a');
+  });
+
+  it('parses the grid the worker writes', () => {
+    const result = SegmentationResultSchema.parse({
+      anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 2,
+          error: null,
+          missingRequired: [],
+          sections: [{ id: 'header', found: true, page: 1, line: 'INVOICE 42', chars: 30 }],
+        },
+      ],
+    });
+    expect(result.samples[0]!.sections[0]!.page).toBe(1);
+  });
+
+  it('accepts segment jobs', () => {
+    expect(JobSummarySchema.shape.task.parse('segment')).toBe('segment');
   });
 });

@@ -15,3 +15,17 @@ def test_prepared_keys_mirror_the_typescript_helpers() -> None:
 
     assert prepared_text_key("abc") == "prepared/abc/text.json"
     assert prepared_triage_key("abc") == "prepared/abc/triage.json"
+
+
+def test_segmentation_key_mirrors_the_typescript_helper() -> None:
+    from ingest_worker.storage import segmentation_key
+
+    assert segmentation_key("letter", "j1") == "segmentation/letter/j1.json"
+
+
+def test_delete_removes_an_object_and_tolerates_a_missing_one() -> None:
+    store = MemoryObjectStore()
+    store.put("b", "k", b"x", "text/plain")
+    store.delete("b", "k")
+    assert store.get_optional("b", "k") is None
+    store.delete("b", "k")

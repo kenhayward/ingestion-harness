@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import threading
+
 from ingest_worker.config import Settings
+from ingest_worker.main import idle
 from ingest_worker.queue import backoff_seconds
+
+from .fakes import FakeQueue
 
 
 def test_backoff_grows_quadratically_and_caps() -> None:
@@ -58,3 +63,17 @@ def test_target_defaults_to_the_same_s3_with_a_published_bucket() -> None:
         elsewhere.target_prefix,
         elsewhere.target_region,
     ) == ("https://s3.eu-west-2.amazonaws.com", "lake", "ingest/", "eu-west-2")
+
+
+def test_idle_waits_for_work_with_the_poll_interval() -> None:
+    queue = FakeQueue()
+    idle(queue, threading.Event(), 2.0)
+    assert queue.waits == [2.0]
+
+
+def test_idle_does_not_wait_once_stopping() -> None:
+    queue = FakeQueue()
+    stop = threading.Event()
+    stop.set()
+    idle(queue, stop, 2.0)
+    assert queue.waits == []
