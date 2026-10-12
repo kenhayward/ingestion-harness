@@ -81,6 +81,8 @@ export interface IngestionRepo {
   ): Promise<JobSummary>;
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
+  /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
+  getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */
   listPublished(query: ListPublishedQuery): Promise<ResultSummary[]>;
   /** Latest publish time of a job's published outputs (ISO, ms precision); null if none. */

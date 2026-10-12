@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FilterChips } from '../src/ui/FilterChips.js';
 import { Segmented } from '../src/ui/Segmented.js';
+import { StatusPill } from '../src/ui/StatusPill.js';
 import { ThemeSwitch } from '../src/ui/ThemeSwitch.js';
 
 afterEach(() => {
@@ -44,5 +46,37 @@ describe('ThemeSwitch', () => {
     expect(localStorage.getItem('ih.theme')).toBe('dark');
     await userEvent.click(screen.getByRole('button', { name: 'System' }));
     expect(document.documentElement).not.toHaveAttribute('data-theme');
+  });
+});
+
+describe('StatusPill', () => {
+  it('always carries the status text', () => {
+    render(<StatusPill status="awaiting_review" />);
+    expect(screen.getByText('Awaiting review')).toBeInTheDocument();
+  });
+});
+
+describe('FilterChips', () => {
+  it('is a labelled group of pressed chips with counts', async () => {
+    const onChange = vi.fn();
+    render(
+      <FilterChips
+        label="Filter jobs by status"
+        chips={[
+          { value: 'all', label: 'All', count: 8 },
+          { value: 'attention', label: 'Needs attention', count: 3, tone: 'warn' },
+        ]}
+        value="all"
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole('group', { name: 'Filter jobs by status' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All 8' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Needs attention 3' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Needs attention 3' }));
+    expect(onChange).toHaveBeenCalledWith('attention');
   });
 });

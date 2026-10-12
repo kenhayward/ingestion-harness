@@ -100,6 +100,12 @@ export class MemoryRepo implements IngestionRepo {
     return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
   }
 
+  async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
+    const job = this.jobs.get(jobId);
+    const doc = job && this.documents.get(job.documentId);
+    return doc ? { bucket: doc.bucket, key: doc.objectKey, filename: doc.filename } : null;
+  }
+
   async listPublished({
     limit,
     templateId,

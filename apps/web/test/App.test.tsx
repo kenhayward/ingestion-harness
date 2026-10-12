@@ -1,8 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { fakeApi, job } from './fake-api.js';
+
+/** The job list (the detail panel repeats the selected job's name and actions). */
+const list = async () => within(await screen.findByRole('region', { name: 'Job list' }));
 
 describe('App', () => {
   it('shows an empty state when there are no jobs', async () => {
@@ -19,9 +22,10 @@ describe('App', () => {
     });
     render(<App api={api} pollMs={0} />);
 
-    expect(await screen.findByText('bad.pdf')).toBeInTheDocument();
-    expect(screen.getByText('schema mismatch')).toBeInTheDocument();
-    const retry = screen.getAllByRole('button', { name: /^Retry/ });
+    const jobs = await list();
+    expect(await jobs.findByText('bad.pdf')).toBeInTheDocument();
+    expect(jobs.getByText('schema mismatch')).toBeInTheDocument();
+    const retry = jobs.getAllByRole('button', { name: /^Retry with/ });
     expect(retry).toHaveLength(1);
 
     await userEvent.click(retry[0]!);
@@ -56,9 +60,10 @@ describe('review routing', () => {
       ],
     });
     render(<App api={api} pollMs={0} />);
-    const link = await screen.findByRole('link', { name: 'Review' });
+    const jobs = await list();
+    const link = await jobs.findByRole('link', { name: 'Review' });
     expect(link).toHaveAttribute('href', '#/review/r1');
-    expect(screen.getByText('2 unmatched')).toBeInTheDocument();
+    expect(jobs.getByText('2 unmatched')).toBeInTheDocument();
   });
 
   it('renders the review screen for #/review/<id>', async () => {
@@ -97,7 +102,7 @@ describe('review routing', () => {
     await screen.findByRole('option', { name: /Claude Haiku 5.5/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-haiku-5-5');
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
     );
     expect(api.retryJob).toHaveBeenCalledWith('f', 'anthropic/claude-haiku-5-5');
   });
@@ -120,7 +125,7 @@ describe('review routing', () => {
     });
     render(<App api={api} pollMs={0} />);
     expect(
-      await screen.findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
     ).toBeInTheDocument();
   });
 });

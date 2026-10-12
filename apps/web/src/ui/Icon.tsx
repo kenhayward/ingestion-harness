@@ -77,6 +77,13 @@ const PATHS = {
       <path d="M12 7v6M12 16.5h.01" />
     </>
   ),
+  more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
+  download: (
+    <>
+      <path d="M12 4v12M7 11l5 5 5-5" />
+      <path d="M4 20h16" />
+    </>
+  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
