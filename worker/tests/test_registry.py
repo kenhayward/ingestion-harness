@@ -164,3 +164,114 @@ def test_temperature_option_reaches_openai_providers(llm_config_path: Path) -> N
     local = next(p for p in committed.providers if p.name == "local")
     assert local.options["temperature"] == 0  # deterministic extraction on the local model
     assert committed.ocr is not None and committed.ocr.temperature == 0
+
+
+def recording_factories(made: list[ProviderConfig]):  # type: ignore[no-untyped-def]
+    def make(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
+        made.append(cfg)
+        return FakeProvider(cfg.name, kind=cfg.kind)
+
+    return {"anthropic": make, "openai-chat": make, "openai-responses": make}
+
+
+def test_ocr_base_url_comes_from_env(llm_config_path: Path) -> None:
+    cfg = load_llm_config(llm_config_path, env={"OCR_BASE_URL": "http://ocr-box:8000/v1"})
+    assert cfg.ocr is not None and cfg.ocr.base_url == "http://ocr-box:8000/v1"
+    unset = load_llm_config(llm_config_path, env={})
+    assert unset.ocr is not None and unset.ocr.base_url is None  # empty -> same endpoint
+
+
+def test_ocr_base_url_gives_ocr_its_own_endpoint() -> None:
+    made: list[ProviderConfig] = []
+    registry = build_registry(
+        config(
+            ocr={"model": "ocr-model", "baseUrl": "http://ocr-box/v1"},
+            aliases={"ocr-model": "local/olmocr"},
+        ),
+        env={"ANTHROPIC_API_KEY": "k"},
+        factories=recording_factories(made),
+    )
+    ocr_provider, model_id = registry.resolve_ocr("ocr-model")
+    extraction_provider, _ = registry.resolve("local/qwen")
+    assert model_id == "olmocr"
+    # Same provider name, so the OCR cache key (provider/model) is unchanged.
+    assert ocr_provider.name == "local" and ocr_provider is not extraction_provider
+    assert [c.base_url for c in made if c.name == "local"] == ["http://x/v1", "http://ocr-box/v1"]
+    assert registry.provider_names == ["anthropic", "local"]
+
+
+def test_without_ocr_base_url_ocr_uses_the_regular_provider() -> None:
+    registry = build_registry(
+        config(ocr={"model": "local/olmocr"}),
+        env={"ANTHROPIC_API_KEY": "k"},
+        factories=recording_factories([]),
+    )
+    assert registry.resolve_ocr("local/olmocr")[0] is registry.resolve("local/x")[0]
+
+
+def test_ocr_base_url_for_an_unconfigured_provider_fails_at_resolution() -> None:
+    from ingest_worker.llm.registry import ModelResolutionError
+
+    registry = build_registry(
+        config(ocr={"model": "openai/vision", "baseUrl": "http://ocr-box/v1"}),
+        env={"ANTHROPIC_API_KEY": "k"},
+        factories=recording_factories([]),
+    )
+    with pytest.raises(ModelResolutionError, match="not configured"):
+        registry.resolve_ocr("openai/vision")
+
+
+def recording_keys(made: list[tuple[str | None, str | None]]):  # type: ignore[no-untyped-def]
+    def make(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
+        made.append((cfg.base_url, api_key))
+        return FakeProvider(cfg.name, kind=cfg.kind)
+
+    return {"anthropic": make, "openai-chat": make, "openai-responses": make}
+
+
+def test_committed_config_reads_the_ocr_api_key_from_ocr_api_key(llm_config_path: Path) -> None:
+    cfg = load_llm_config(llm_config_path, env={})
+    assert cfg.ocr is not None and cfg.ocr.api_key_env == "OCR_API_KEY"
+
+
+@pytest.mark.parametrize(
+    ("ocr", "env", "ocr_client"),
+    [
+        # OCR_API_KEY wins on the OCR endpoint...
+        (
+            {"baseUrl": "http://ocr-box/v1"},
+            {"OCR_KEY": "ocr-secret", "LOCAL_KEY": "local-secret"},
+            ("http://ocr-box/v1", "ocr-secret"),
+        ),
+        # ...falls back to the provider's own key when unset...
+        (
+            {"baseUrl": "http://ocr-box/v1"},
+            {"LOCAL_KEY": "local-secret"},
+            ("http://ocr-box/v1", "local-secret"),
+        ),
+        # ...and on its own (no OCR_BASE_URL) re-keys the provider's endpoint for OCR.
+        ({}, {"OCR_KEY": "ocr-secret", "LOCAL_KEY": "local-secret"}, ("http://x/v1", "ocr-secret")),
+    ],
+)
+def test_ocr_api_key_overrides_the_providers_key(
+    ocr: dict[str, str], env: dict[str, str], ocr_client: tuple[str, str]
+) -> None:
+    cfg = config(ocr={"model": "local/olmocr", "apiKeyEnv": "OCR_KEY", **ocr})
+    cfg.providers[1].api_key_env = "LOCAL_KEY"
+    made: list[tuple[str | None, str | None]] = []
+    registry = build_registry(
+        cfg, env={"ANTHROPIC_API_KEY": "k", **env}, factories=recording_keys(made)
+    )
+    assert made[-1] == ocr_client
+    assert made[1] == ("http://x/v1", env["LOCAL_KEY"])  # extraction keeps its own key
+    assert registry.resolve_ocr("local/olmocr")[0] is not registry.resolve("local/x")[0]
+
+
+def test_no_ocr_overrides_means_no_extra_client() -> None:
+    made: list[tuple[str | None, str | None]] = []
+    build_registry(
+        config(ocr={"model": "local/olmocr", "apiKeyEnv": "OCR_KEY"}),
+        env={"ANTHROPIC_API_KEY": "k"},
+        factories=recording_keys(made),
+    )
+    assert len(made) == 2  # anthropic + local only

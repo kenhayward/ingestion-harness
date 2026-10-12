@@ -123,6 +123,8 @@ services:
       LOCAL_LLM_RESPONSE_FORMAT: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
       OCR_ENABLED: ${OCR_ENABLED:-true}
       OCR_MODEL: ${OCR_MODEL:-local/olmocr-2-7b-1025}
+      OCR_BASE_URL: ${OCR_BASE_URL:-}
+      OCR_API_KEY: ${OCR_API_KEY:-}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
     extra_hosts:

@@ -56,6 +56,10 @@ aliases:
 ocr:
   enabled: ${OCR_ENABLED:-true}
   model: ${OCR_MODEL:-local/olmocr-2-7b-1025}
+  # Run OCR on a different server than extraction: the OCR model's provider (same name and
+  # options) pointed at this endpoint and/or using this key. Empty = the provider's own.
+  baseUrl: ${OCR_BASE_URL:-}
+  apiKeyEnv: OCR_API_KEY
   minChars: 25 # pages with fewer non-space characters in their text layer are OCR'd
   longestDim: 1288 # render size olmOCR 2 was trained on
   maxTokens: 8000

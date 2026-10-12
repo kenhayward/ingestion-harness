@@ -3,7 +3,8 @@
     uv run python scripts/ocr_pdf.py "../docs/samples/IMAGE process validation protocol.pdf" \
         --out tests/fixtures/samples/pvp-image-ocr.json
 
-Endpoint/model come from env: LOCAL_LLM_BASE_URL, LOCAL_LLM_API_KEY, OCR_MODEL (provider/model).
+Endpoint/model come from env: OCR_BASE_URL and OCR_API_KEY (falling back to LOCAL_LLM_BASE_URL /
+LOCAL_LLM_API_KEY), OCR_MODEL (provider/model).
 """
 
 from __future__ import annotations
@@ -33,8 +34,10 @@ def main() -> int:
     model_ref = os.environ.get("OCR_MODEL", "local/olmocr-2-7b-1025")
     model_id = model_ref.partition("/")[2]
     client = openai.OpenAI(
-        base_url=os.environ["LOCAL_LLM_BASE_URL"],
-        api_key=os.environ.get("LOCAL_LLM_API_KEY") or "not-needed",
+        base_url=os.environ.get("OCR_BASE_URL") or os.environ["LOCAL_LLM_BASE_URL"],
+        api_key=os.environ.get("OCR_API_KEY")
+        or os.environ.get("LOCAL_LLM_API_KEY")
+        or "not-needed",
         timeout=600,
     )
     provider = OpenAIChatProvider("local", client, max_tokens_param="max_tokens")

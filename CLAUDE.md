@@ -98,7 +98,8 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   `anthropic/claude-haiku-5-5`). Unresolvable refs raise `ModelResolutionError` and are resolved
   for every extraction *before* any LLM call (config error → `needs_review`, never retried).
 - **OCR** (`worker/src/ingest_worker/ocr.py`): `ocr:` in `config/llm-providers.yaml` names a
-  vision model (default `local/olmocr-2-7b-1025`); spec `document.ocr` is `auto|always|never`.
+  vision model (default `local/olmocr-2-7b-1025`), optionally on its own endpoint/key (`OCR_BASE_URL`,
+  `OCR_API_KEY` → `ocr.baseUrl`/`apiKeyEnv`, resolved via `ModelRegistry.resolve_ocr`); spec `document.ocr` is `auto|always|never`.
   Providers implement `complete_vision`; tests use `PipelineDeps.render_page` fakes, and only
   `test_render_page_png_scales_longest_side` renders a real PDF (pypdfium2, in-memory).
   OCR output is cached per PDF sha256 + OCR settings (`runs/ocr-cache/`), so re-runs and
