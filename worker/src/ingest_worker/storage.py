@@ -58,6 +58,11 @@ def drafting_key(project_id: str, job_id: str) -> str:
     return f"drafting/{project_id}/{job_id}.json"
 
 
+def step_cache_object_key(key: str) -> str:
+    """A cached extract step's output, keyed by its full input (workbench, runs bucket)."""
+    return f"step-cache/{key}.json"
+
+
 class ObjectStore(Protocol):
     def get(self, bucket: str, key: str) -> bytes: ...
 

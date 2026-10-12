@@ -31,6 +31,8 @@ class ExtractionResult:
     data: dict[str, Any]
     model_ref: str
     attempts: list[Attempt] = field(default_factory=list)
+    #: Reused from the step cache: no model call was made and `attempts` is empty.
+    cached: bool = False
 
 
 class ExtractionFailedError(Exception):
