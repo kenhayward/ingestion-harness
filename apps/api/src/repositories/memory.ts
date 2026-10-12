@@ -19,6 +19,7 @@ import {
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
+  type ProjectJob,
   type SegmentJob,
   type SegmentJobParams,
   type NewDocument,
@@ -36,6 +37,10 @@ export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly segmentJobs = new Map<string, SegmentJob & { params: SegmentJobParams }>();
+  /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
+  readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
+  /** jobs.params of workbench jobs. */
+  readonly jobParams = new Map<string, Record<string, unknown>>();
   readonly outputs = new Map<string, JobOutput[]>();
   /** job_events (only what the API writes itself, e.g. cancellations). */
   readonly events = new Map<string, { level: string; message: string }[]>();
@@ -89,10 +94,40 @@ export class MemoryRepo implements IngestionRepo {
     return job;
   }
 
-  async createWorkbenchJob(doc: NewDocument, { projectId, task }: WorkbenchJobOptions) {
+  async createWorkbenchJob(doc: NewDocument, { projectId, task, params }: WorkbenchJobOptions) {
     const job = await this.createDocumentAndJob(doc, null, true);
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
+    if (params) this.jobParams.set(job.id, params);
     return this.update(job.id, { projectId, task });
+  }
+
+  async createDraftJob(projectId: string, params: Record<string, unknown>) {
+    const now = new Date().toISOString();
+    const job: ProjectJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.draftJobs.set(job.id, { ...job, params });
+    return job;
+  }
+
+  async listDraftJobs(projectId: string) {
+    // Map iteration is insertion order, which is reliable where timestamps can tie.
+    return [...this.draftJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .reverse()
+      .map(({ id, projectId: p, status, error, createdAt, updatedAt }) => ({
+        id,
+        projectId: p,
+        status,
+        error,
+        createdAt,
+        updatedAt,
+      }));
   }
 
   async createSegmentJob(projectId: string, params: SegmentJobParams) {

@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { BriefBodySchema } from '@ih/shared';
-import type { Brief, BriefBody, DataPolicy, SampleRole, WorkbenchProject } from '@ih/shared';
+import type {
+  Brief,
+  BriefBody,
+  DataPolicy,
+  DraftStage,
+  SampleRole,
+  WorkbenchProject,
+} from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
 
 /** A workbench sample joined with its document row. */
@@ -27,6 +34,17 @@ export interface NewSample {
   addedForVersion: number;
 }
 
+/** A drafting proposal; its id is the draft job that produced it. */
+export interface ProposalRecord {
+  id: string;
+  projectId: string;
+  stage: DraftStage;
+  briefVersion: number | null;
+  decision: 'accepted' | 'rejected' | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
 export class WorkbenchConflictError extends Error {}
 
 /** Persistence for workbench projects, samples and briefs (ADR 0007; migration 0008). */
@@ -48,6 +66,26 @@ export interface WorkbenchRepo {
   latestBrief(projectId: string): Promise<Brief | null>;
   /** Appends version n+1. */
   saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
+  /** Null when the project is unknown. `by` is the actor who changed it. */
+  setDataPolicy(
+    id: string,
+    policy: DataPolicy,
+    by: string | null,
+  ): Promise<WorkbenchProject | null>;
+  createProposal(p: {
+    id: string;
+    projectId: string;
+    stage: DraftStage;
+    briefVersion: number | null;
+  }): Promise<ProposalRecord>;
+  /** Newest first. */
+  listProposals(projectId: string): Promise<ProposalRecord[]>;
+  /** Null when the proposal is unknown, belongs to another project, or is already decided. */
+  decideProposal(
+    projectId: string,
+    id: string,
+    decision: 'accepted' | 'rejected',
+  ): Promise<ProposalRecord | null>;
 }
 
 /** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
@@ -55,6 +93,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly projects = new Map<string, WorkbenchProject>();
   readonly samples = new Map<string, NewSample & { id: string; createdAt: string }>();
   readonly briefs: Brief[] = [];
+  readonly proposals: ProposalRecord[] = [];
 
   constructor(private readonly jobs: MemoryRepo) {}
 
@@ -137,6 +176,53 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return brief;
   }
 
+  async setDataPolicy(id: string, policy: DataPolicy, by: string | null) {
+    const project = this.projects.get(id);
+    if (!project) return null;
+    const updated: WorkbenchProject = {
+      ...project,
+      dataPolicy: policy,
+      dataPolicyChangedAt: new Date().toISOString(),
+      dataPolicyChangedBy: by,
+    };
+    this.projects.set(id, updated);
+    return updated;
+  }
+
+  async createProposal(p: {
+    id: string;
+    projectId: string;
+    stage: DraftStage;
+    briefVersion: number | null;
+  }) {
+    const record: ProposalRecord = {
+      ...p,
+      decision: null,
+      decidedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    this.proposals.push(record);
+    return record;
+  }
+
+  async listProposals(projectId: string) {
+    // Insertion order, newest first: timestamps can tie within a millisecond.
+    return this.proposals.filter((p) => p.projectId === projectId).reverse();
+  }
+
+  async decideProposal(projectId: string, id: string, decision: 'accepted' | 'rejected') {
+    const index = this.proposals.findIndex((p) => p.id === id);
+    const current = this.proposals[index];
+    if (current?.projectId !== projectId || current.decision !== null) return null;
+    const decided: ProposalRecord = {
+      ...current,
+      decision,
+      decidedAt: new Date().toISOString(),
+    };
+    this.proposals[index] = decided;
+    return decided;
+  }
+
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
     const doc = this.jobs.documents.get(row.documentId)!;
     return {
@@ -184,6 +270,26 @@ interface BriefRow {
   body: BriefBody;
   created_at: Date;
 }
+
+interface ProposalRow {
+  id: string;
+  project_id: string;
+  stage: DraftStage;
+  brief_version: number | null;
+  decision: 'accepted' | 'rejected' | null;
+  decided_at: Date | null;
+  created_at: Date;
+}
+
+const toProposal = (r: ProposalRow): ProposalRecord => ({
+  id: r.id,
+  projectId: r.project_id,
+  stage: r.stage,
+  briefVersion: r.brief_version,
+  decision: r.decision,
+  decidedAt: r.decided_at?.toISOString() ?? null,
+  createdAt: r.created_at.toISOString(),
+});
 
 const toProject = (r: ProjectRow): WorkbenchProject => ({
   id: r.id,
@@ -307,6 +413,46 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId, JSON.stringify(body)],
     );
     return toBrief(rows[0]!);
+  }
+
+  async setDataPolicy(id: string, policy: DataPolicy, by: string | null) {
+    const { rows } = await this.pool.query<ProjectRow>(
+      `UPDATE workbench_projects SET data_policy = $2, data_policy_changed_at = now(),
+              data_policy_changed_by = $3 WHERE id = $1 RETURNING *`,
+      [id, policy, by],
+    );
+    return rows[0] ? toProject(rows[0]) : null;
+  }
+
+  async createProposal(p: {
+    id: string;
+    projectId: string;
+    stage: DraftStage;
+    briefVersion: number | null;
+  }) {
+    const { rows } = await this.pool.query<ProposalRow>(
+      `INSERT INTO workbench_proposals (id, project_id, stage, brief_version)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [p.id, p.projectId, p.stage, p.briefVersion],
+    );
+    return toProposal(rows[0]!);
+  }
+
+  async listProposals(projectId: string) {
+    const { rows } = await this.pool.query<ProposalRow>(
+      `SELECT * FROM workbench_proposals WHERE project_id = $1 ORDER BY created_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toProposal);
+  }
+
+  async decideProposal(projectId: string, id: string, decision: 'accepted' | 'rejected') {
+    const { rows } = await this.pool.query<ProposalRow>(
+      `UPDATE workbench_proposals SET decision = $3, decided_at = now()
+        WHERE project_id = $1 AND id = $2 AND decision IS NULL RETURNING *`,
+      [projectId, id, decision],
+    );
+    return rows[0] ? toProposal(rows[0]) : null;
   }
 
   private async sample(id: string) {
