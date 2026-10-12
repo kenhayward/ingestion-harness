@@ -39,9 +39,10 @@ $base = "http://localhost:$appPort"
 # The API logs a new admin token on every start (ADR 0006).
 $adminToken = $null
 for ($i = 0; $i -lt 30 -and -not $adminToken; $i++) {
-  $log = docker compose --env-file $EnvFile -f $ComposeFile logs api 2>$null | Out-String
-  $found = [regex]::Matches($log, 'ih_[A-Za-z0-9_-]{43}')
-  if ($found.Count) { $adminToken = $found[$found.Count - 1].Value } else { Start-Sleep -Seconds 2 }
+  # Only the API's own line counts: request URLs in the log can't contain it (no spaces).
+  $log = docker compose --env-file $EnvFile -f $ComposeFile logs --no-log-prefix api 2>$null | Out-String
+  $found = [regex]::Matches($log, '(?m)^ADMIN TOKEN \(valid until the next restart\): (ih_[A-Za-z0-9_-]{43})')
+  if ($found.Count) { $adminToken = $found[$found.Count - 1].Groups[1].Value } else { Start-Sleep -Seconds 2 }
 }
 if (-not $adminToken) { throw 'admin token not found in the api log' }
 

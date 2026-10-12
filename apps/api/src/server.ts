@@ -57,5 +57,7 @@ if (seeded.length) app.log.info({ seeded }, 'imported template files into the da
 // A new admin token on every start (deploy/restart); the previous one and its sessions end.
 // Rotated before listening, so a failure stops startup rather than serving without an admin.
 const adminToken = await access.rotateAdminToken();
-app.log.warn(`ADMIN TOKEN (valid until the next restart): ${adminToken}`);
+// Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
+// shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
+process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);
 await app.listen({ host: config.HOST, port: config.PORT });
