@@ -3,6 +3,7 @@ import type { ProjectView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import { PROJECT_TABS, type ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
+import { SamplesTab } from './SamplesTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
   samples: 'Samples',
@@ -17,12 +18,13 @@ export function ProjectPage({
   projectId,
   tab,
   onNavigate,
+  pollMs = 3000,
 }: {
   api: Api;
   projectId: string;
   tab: ProjectTab;
   onNavigate: (hash: string) => void;
-  /** Poll interval for the Samples and Test runs tabs (used from Task 10). */
+  /** Poll interval for the Samples and Test runs tabs. */
   pollMs?: number;
 }) {
   const [view, setView] = useState<ProjectView | null>(null);
@@ -97,6 +99,7 @@ export function ProjectPage({
           </a>
         ))}
       </nav>
+      {tab === 'samples' && <SamplesTab api={api} projectId={project.id} pollMs={pollMs} />}
       {tab === 'template' &&
         (draft !== null ? (
           <TemplateEditor
