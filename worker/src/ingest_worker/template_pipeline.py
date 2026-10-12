@@ -48,10 +48,13 @@ ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
 
 def workbench_step_cache(job: ClaimedJob, deps: PipelineDeps) -> StepCache | None:
     """Only workbench test runs use the step cache: never production, regression or re-runs.
-    `params.uncached` forces fresh calls but still stores their results."""
+    `params.uncached` and reference runs (`params.forceReview`) force fresh calls but still
+    store their results, so re-running references always asks the model again."""
     if job.project_id is None or not job.test or job.task != "process":
         return None
-    return StepCache(deps.store, deps.buckets.runs, read=not (job.params or {}).get("uncached"))
+    params = job.params or {}
+    fresh = bool(params.get("uncached")) or bool(params.get("forceReview"))
+    return StepCache(deps.store, deps.buckets.runs, read=not fresh)
 
 
 def process_template_job(

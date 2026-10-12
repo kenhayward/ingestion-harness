@@ -2,8 +2,14 @@
 
 An extract step's output is reused when its full input is unchanged: the rendered prompts
 (preamble, instructions, section text and context values are all inside them), the output
-schema, the system prompt, the page images, the resolved model and its output-affecting
-options. Entries live in the runs bucket keyed by content, so identical inputs share one."""
+schema, the system prompt, the page images, the step id, the resolved model and its provider's
+kind, endpoint (baseUrl) and output-affecting options. Entries live in the runs bucket keyed by
+content, so identical inputs share one. A hit is still validated against the step's schema
+before use (an invalid entry is a miss).
+
+Unlike the OCR cache, which deliberately ignores the endpoint so OCR can move servers without
+re-transcribing, the step cache keys on the provider's kind and baseUrl: the same model name on
+a different server (LOCAL_LLM_BASE_URL) or adapter may answer differently."""
 
 from __future__ import annotations
 
@@ -24,13 +30,16 @@ __all__ = [
     "step_cache_key",
 ]
 
+#: Bump when provider adapters change how requests are shaped or responses are parsed: the
+#: rest of the key cannot see such a change, and old entries would otherwise still hit.
 CACHE_VERSION = 1
 
 
 def step_cache_key(
     *,
     model_ref: str,
-    options: dict[str, Any],
+    provider: dict[str, Any],
+    step_id: str,
     system: str,
     schema: dict[str, Any],
     prompts: list[str],
@@ -41,7 +50,8 @@ def step_cache_key(
     payload = {
         "v": CACHE_VERSION,
         "model": model_ref,
-        "options": options,
+        "provider": provider,
+        "step": step_id,
         "system": system,
         "schema": schema,
         "prompts": prompts,

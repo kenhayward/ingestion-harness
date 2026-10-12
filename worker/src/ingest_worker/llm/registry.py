@@ -203,6 +203,16 @@ class ModelRegistry:
             return {}
         return {k: v for k, v in cfg.options.items() if k not in OPERATIONAL_OPTIONS}
 
+    def cache_fingerprint(self, provider_name: str) -> dict[str, Any]:
+        """What about a provider can change a step's answer: its kind, endpoint and
+        output-affecting options (step cache keys)."""
+        cfg = self._configs.get(provider_name)
+        return {
+            "kind": cfg.kind if cfg else None,
+            "baseUrl": cfg.base_url if cfg else None,
+            "options": self.options(provider_name),
+        }
+
     def resolve_ocr(self, ref: str) -> tuple[LLMProvider, str]:
         """Like resolve(), but uses the provider's OCR endpoint/key when configured. The
         provider keeps its name, so OCR cache keys don't depend on the endpoint."""

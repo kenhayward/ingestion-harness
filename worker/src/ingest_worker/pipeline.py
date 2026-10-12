@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from jsonschema import Draft202012Validator
+
 from .checks import run_check
 from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import LLMProvider, RefusalError
@@ -370,8 +372,9 @@ def run_step_extraction(
     """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
     (keeps each call's output well inside the model's output token limit).
 
-    With a `cache`, an unchanged step input (every rendered prompt, schema, images, model and
-    options) returns the stored output without calling the model; a miss stores the result."""
+    With a `cache`, an unchanged step input (every rendered prompt, schema, images, step id,
+    model and provider fingerprint) returns the stored output without calling the model, if it
+    still satisfies the schema; a miss stores the result."""
     plan: list[tuple[str, dict[str, str], dict[str, Any] | None]]
     if ex.chunk_pages is None:
         plan = [(ex.id, sections, None)]
@@ -404,7 +407,8 @@ def run_step_extraction(
     if cache is not None:
         key = step_cache_key(
             model_ref=f"{provider.name}/{model_id}",
-            options=deps.models.options(provider.name),
+            provider=deps.models.cache_fingerprint(provider.name),
+            step_id=ex.id,
             system=SYSTEM_PROMPT,
             schema=ex.schema_,
             prompts=[prompt for _, prompt, _ in rendered],
@@ -412,8 +416,10 @@ def run_step_extraction(
             max_tokens=ex.max_tokens,
             max_attempts=ex.max_attempts,
         )
-        if (hit := cache.get(key)) is not None:
+        hit = cache.get(key)
+        if hit is not None and Draft202012Validator(ex.schema_).is_valid(hit.data):
             return ExtractionResult(hit.data, hit.model_ref, [], cached=True)
+        # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
 
     merged: ExtractionResult | None = None
     for audit_id, prompt, chunk in rendered:
