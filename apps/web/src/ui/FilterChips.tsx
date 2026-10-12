@@ -1,7 +1,8 @@
 export type FilterChip<T extends string> = {
   value: T;
   label: string;
-  count: number;
+  /** Omitted: the chip shows no count. */
+  count?: number;
   /** warn: the count is always amber (e.g. "Needs attention"). */
   tone?: 'warn';
 };
@@ -29,7 +30,9 @@ export function FilterChips<T extends string>({
           onClick={() => onChange(c.value)}
         >
           {c.label}
-          <span className={c.tone ? `chip-count tone-${c.tone}` : 'chip-count'}>{c.count}</span>
+          {c.count !== undefined && (
+            <span className={c.tone ? `chip-count tone-${c.tone}` : 'chip-count'}>{c.count}</span>
+          )}
         </button>
       ))}
     </div>
