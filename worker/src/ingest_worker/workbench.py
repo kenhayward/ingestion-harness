@@ -10,6 +10,7 @@ import hashlib
 import json
 import multiprocessing
 import re
+import signal
 from bisect import bisect_right
 from multiprocessing.connection import Connection
 from typing import Any
@@ -197,6 +198,10 @@ def _segment_child(
     conn: Connection, samples: list[tuple[str, list[str] | None]], document: dict[str, Any]
 ) -> None:
     """Child-process entry point (module level so 'spawn' can import it)."""
+    # A forked child inherits the worker's graceful-stop handlers, which would ignore terminate().
+    for name in ("SIGTERM", "SIGINT"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), signal.SIG_DFL)
     conn.send(segment_samples(samples, SegmentDocument.model_validate(document)))
     conn.close()
 
@@ -215,9 +220,9 @@ def segment_with_timeout(
         args=(child, samples, document.model_dump(by_alias=True)),
         daemon=True,
     )
-    proc.start()
-    child.close()
     try:
+        proc.start()
+        child.close()
         if not parent.poll(timeout_s):
             raise DocumentError(
                 f"preview took longer than {timeout_s:g}s; an anchor may backtrack catastrophically"
@@ -230,7 +235,12 @@ def segment_with_timeout(
     finally:
         if proc.is_alive():
             proc.terminate()
-        proc.join(5)
+            proc.join(5)
+            if proc.is_alive():
+                proc.kill()
+        if proc.pid is not None:
+            proc.join()
+        child.close()
         parent.close()
 
 

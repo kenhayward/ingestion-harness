@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
+import signal
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -231,3 +234,15 @@ def test_runaway_anchor_is_killed_and_reported() -> None:
     with pytest.raises(DocumentError, match="backtrack"):
         segment_with_timeout([("s1", ["a" * 40 + "!"])], document, timeout_s=3)
     assert time.monotonic() - started < 3 + 5
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs fork and POSIX signals")
+def test_runaway_child_is_reaped_even_when_the_worker_handles_sigterm() -> None:
+    previous = signal.signal(signal.SIGTERM, lambda *_: None)  # like main()'s graceful stop
+    try:
+        document = SegmentDocument.model_validate({"sections": [{"id": "x", "anchor": "(a+)+$"}]})
+        with pytest.raises(DocumentError, match="backtrack"):
+            segment_with_timeout([("s1", ["a" * 40 + "!"])], document, timeout_s=1)
+        assert multiprocessing.active_children() == []
+    finally:
+        signal.signal(signal.SIGTERM, previous)
