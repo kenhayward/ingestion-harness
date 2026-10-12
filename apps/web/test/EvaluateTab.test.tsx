@@ -54,6 +54,23 @@ describe('EvaluateTab', () => {
     expect(score).toHaveTextContent('100%');
   });
 
+  it('disables "Evaluate the draft" while a comparison is running', async () => {
+    const group = 'g1';
+    const running = [
+      iterationView({ model: 'default', groupId: group, status: 'running', score: null }),
+    ];
+    tab({
+      listIterations: vi.fn(async () => []),
+      startComparison: vi.fn(async () => ({ groupId: group, iterations: running })),
+      getComparison: vi.fn(async () => ({ groupId: group, iterations: running })),
+    });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate the draft' });
+    expect(evaluate).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Compare models' }));
+    await screen.findByRole('table', { name: 'Model comparison' });
+    await waitFor(() => expect(evaluate).toBeDisabled());
+  });
+
   it('polls a running comparison until it completes, then stops', async () => {
     const group = 'g1';
     const running = [

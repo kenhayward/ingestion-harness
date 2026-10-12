@@ -187,7 +187,7 @@ export function EvaluateTab({
         <button
           type="button"
           className="primary"
-          disabled={!hasDraft || busy || running}
+          disabled={!hasDraft || busy || running || comparing}
           onClick={() => void evaluate()}
         >
           Evaluate the draft
