@@ -156,6 +156,37 @@ describe('http api: drafting stages', () => {
   });
 });
 
+describe('http api: evaluation', () => {
+  it('proposes references, evaluates, lists, opens and restores iterations', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      respond(200, { jobs: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listReferenceRows('letter');
+    await api.proposeReferences('letter');
+    await api.startEvaluation('letter', 'fast');
+    await api.startEvaluation('letter', null);
+    await api.listIterations('letter');
+    await api.getIteration('letter', 'i1');
+    await api.restoreIteration('letter', 'i1');
+    const calls = fetchMock.mock.calls.map(([url, init]) => [
+      init?.method ?? 'GET',
+      url,
+      init?.body ? JSON.parse(String(init.body)) : undefined,
+    ]);
+    expect(calls).toEqual([
+      ['GET', '/api/workbench/projects/letter/references', undefined],
+      ['POST', '/api/workbench/projects/letter/stages/references', {}],
+      ['POST', '/api/workbench/projects/letter/evaluations', { model: 'fast' }],
+      ['POST', '/api/workbench/projects/letter/evaluations', {}],
+      ['GET', '/api/workbench/projects/letter/iterations', undefined],
+      ['GET', '/api/workbench/projects/letter/iterations/i1', undefined],
+      ['POST', '/api/workbench/projects/letter/iterations/i1/restore', {}],
+    ]);
+  });
+});
+
 describe('http api: S3 keys (ADR 0008)', () => {
   it('lists, issues, rotates, revokes and deletes through /api/access/s3-keys', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

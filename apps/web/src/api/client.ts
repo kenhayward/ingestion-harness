@@ -4,6 +4,9 @@ import type {
   DataPolicy,
   DraftStage,
   EditRequest,
+  EvaluationModel,
+  IterationSummary,
+  IterationView,
   JobDetail,
   JobSummary,
   ModelInfo,
@@ -12,6 +15,7 @@ import type {
   ProjectSummary,
   ProjectView,
   Reference,
+  ReferenceRow,
   RerunRequest,
   ResultDetail,
   ResultSummary,
@@ -307,6 +311,13 @@ export interface Api {
     changes?: number[],
   ): Promise<ProposalView>;
   skipStage(projectId: string, stage: DraftStage): Promise<StageView[]>;
+  listReferenceRows(projectId: string): Promise<ReferenceRow[]>;
+  /** Queue draft-model runs on unverified dev samples. */
+  proposeReferences(projectId: string): Promise<JobSummary[]>;
+  startEvaluation(projectId: string, model: EvaluationModel | null): Promise<IterationView>;
+  listIterations(projectId: string): Promise<IterationSummary[]>;
+  getIteration(projectId: string, iterationId: string): Promise<IterationView>;
+  restoreIteration(projectId: string, iterationId: string): Promise<ProjectView>;
   listStages(projectId: string): Promise<StageView[]>;
   listSamples(projectId: string): Promise<SampleView[]>;
   uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
@@ -515,6 +526,20 @@ export function createHttpApi(base = '/api'): Api {
       ),
     skipStage: (id, stage) =>
       post<StageView[]>(`${base}/workbench/projects/${id}/stages/${stage}/skip`, {}),
+    listReferenceRows: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/references`).then(json<ReferenceRow[]>),
+    proposeReferences: (id) =>
+      post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/stages/references`, {}).then(
+        (r) => r.jobs,
+      ),
+    startEvaluation: (id, model) =>
+      post<IterationView>(`${base}/workbench/projects/${id}/evaluations`, model ? { model } : {}),
+    listIterations: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/iterations`).then(json<IterationSummary[]>),
+    getIteration: (id, iid) =>
+      apiFetch(`${base}/workbench/projects/${id}/iterations/${iid}`).then(json<IterationView>),
+    restoreIteration: (id, iid) =>
+      post<ProjectView>(`${base}/workbench/projects/${id}/iterations/${iid}/restore`, {}),
     listStages: (id) => apiFetch(`${base}/workbench/projects/${id}/stages`).then(json<StageView[]>),
     listSamples: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/samples`).then(json<SampleView[]>),
