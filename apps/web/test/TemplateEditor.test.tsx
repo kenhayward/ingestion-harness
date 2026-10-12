@@ -218,10 +218,12 @@ describe('TemplateEditor', () => {
   it('sets step context from earlier steps', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/Pipeline/));
-    const head = screen.getByRole('group', { name: 'Step 1' });
     // validDefinition: step 1 fills "sender"; step 2 fills table "lines" -> step 2 can use step 1
+    await userEvent.click(screen.getByRole('button', { name: /^2 EXTRACT rows/ }));
     const rows = screen.getByRole('group', { name: 'Step 2' });
     await userEvent.type(within(rows).getByLabelText('Context'), 'from_letterhead = sender');
+    await userEvent.click(screen.getByRole('button', { name: /^1 EXTRACT head/ }));
+    const head = screen.getByRole('group', { name: 'Step 1' });
     expect(within(head).getByLabelText('Context')).toHaveValue('');
     await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     const saved = vi.mocked(api.saveTemplate).mock.calls[0]![2] as { pipeline: object[] };
@@ -398,5 +400,73 @@ describe('TemplateEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Test run' }));
     expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
     expect(await screen.findByRole('status')).toHaveTextContent('Test run queued');
+  });
+});
+
+describe('TemplateEditor tabs and step cards', () => {
+  const stepHead = (n: number) =>
+    screen.getByRole('button', { name: new RegExp(`^${n} (EXTRACT|CHECK)`) });
+
+  it('counts sections, outputs and steps on the tabs', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    expect(await screen.findByRole('tab', { name: 'Sections 1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Outputs 1 · 1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Pipeline 2' })).toBeInTheDocument();
+  });
+
+  it('shows steps as collapsed cards with a summary, one open at a time', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    expect(stepHead(1)).toHaveAttribute('aria-expanded', 'false');
+    expect(stepHead(1)).toHaveTextContent('1 field · reads all · default model');
+    expect(stepHead(2)).toHaveTextContent('Table lines · default model');
+    expect(screen.queryByRole('group', { name: 'Step 1' })).not.toBeInTheDocument();
+    await userEvent.click(stepHead(1));
+    expect(stepHead(1)).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('group', { name: 'Step 1' })).toBeInTheDocument();
+    await userEvent.click(stepHead(2));
+    expect(stepHead(1)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('group', { name: 'Step 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Step 2' })).toBeInTheDocument();
+  });
+
+  it('keeps the open step open when it moves, and closes it when removed', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(stepHead(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Move step 1 down' }));
+    expect(
+      within(screen.getByRole('group', { name: 'Step 2' })).getByLabelText('Step id'),
+    ).toHaveValue('head');
+    expect(stepHead(1)).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove step 2' }));
+    expect(screen.queryByRole('group', { name: /Step/ })).not.toBeInTheDocument();
+    expect(stepHead(1)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps the open step when an earlier step is removed', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(stepHead(2));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove step 1' }));
+    expect(
+      within(screen.getByRole('group', { name: 'Step 1' })).getByLabelText('Step id'),
+    ).toHaveValue('rows');
+  });
+
+  it('switches what a step fills with the Fills choice', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(stepHead(1));
+    const fills = screen.getByRole('group', { name: 'Fills' });
+    expect(within(fills).getByRole('button', { name: 'Fields' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(fills).getByRole('button', { name: 'A table' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      pipeline: [{ id: 'head', table: 'lines', fields: [] }, {}],
+    });
   });
 });

@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { VALUE_TYPES, type ModelInfo } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
+import { Segmented } from '../ui/Segmented.js';
 import { EditorHeader } from './EditorHeader.js';
+import { tabCounts } from './editor-derive.js';
+import { StepCard } from './StepCard.js';
 import { QualityPanel } from './QualityPanel.js';
 import {
   checkPathOptions,
@@ -25,6 +28,11 @@ const TABS: [Tab, string][] = [
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
 ];
+
+const FILLS = [
+  { value: 'fields', label: 'Fields' },
+  { value: 'table', label: 'A table' },
+] as const;
 
 /** Empty text means "not set": the key is dropped rather than stored as "". */
 const opt = (value: string): string | undefined => (value.trim() === '' ? undefined : value);
@@ -56,6 +64,8 @@ export function TemplateEditor({
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [sample, setSample] = useState<File | null>(null);
+  /** The one pipeline step whose card is open (null: all collapsed). */
+  const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
 
@@ -139,6 +149,15 @@ export function TemplateEditor({
   const tables: { id: string }[] = def.outputs?.tables ?? [];
   const pipeline: Definition[] = def.pipeline ?? [];
   const paths = checkPathOptions(def);
+  const counts = tabCounts(def);
+  const tabCount = (t: Tab): string | null =>
+    t === 'sections'
+      ? String(counts.sections)
+      : t === 'outputs'
+        ? `${counts.fields} · ${counts.tables}`
+        : t === 'pipeline'
+          ? String(counts.steps)
+          : null;
 
   return (
     <section className="template-editor">
@@ -183,6 +202,7 @@ export function TemplateEditor({
         {TABS.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
             {label}
+            {tabCount(id) && <span className="tab-count">{tabCount(id)}</span>}
           </button>
         ))}
       </div>
@@ -342,34 +362,26 @@ export function TemplateEditor({
               ))}
             </datalist>
             {pipeline.map((step, i) => (
-              <fieldset key={i} aria-label={`Step ${i + 1}`} className="step">
-                <legend>
-                  Step {i + 1} — {step.type}
-                </legend>
-                <div className="step-tools">
-                  <button
-                    type="button"
-                    aria-label={`Move step ${i + 1} up`}
-                    onClick={() => update(['pipeline'], moveItem(pipeline, i, -1))}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Move step ${i + 1} down`}
-                    onClick={() => update(['pipeline'], moveItem(pipeline, i, 1))}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    aria-label={`Remove step ${i + 1}`}
-                    onClick={() => update(['pipeline'], removeAt(pipeline, i))}
-                  >
-                    Remove
-                  </button>
-                </div>
+              <StepCard
+                key={i}
+                index={i}
+                step={step}
+                open={openStep === i}
+                onToggle={() => setOpenStep(openStep === i ? null : i)}
+                onMove={(delta) => {
+                  const to = i + delta;
+                  if (to < 0 || to >= pipeline.length) return;
+                  update(['pipeline'], moveItem(pipeline, i, delta));
+                  // The open card follows its step; a card swapped past it takes its old place.
+                  if (openStep === i) setOpenStep(to);
+                  else if (openStep === to) setOpenStep(i);
+                }}
+                onRemove={() => {
+                  update(['pipeline'], removeAt(pipeline, i));
+                  if (openStep === i) setOpenStep(null);
+                  else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
+                }}
+              >
                 {step.type === 'extract' ? (
                   <ExtractStep
                     step={step}
@@ -386,27 +398,29 @@ export function TemplateEditor({
                     set={(key, v) => update(['pipeline', i, key], v)}
                   />
                 )}
-              </fieldset>
+              </StepCard>
             ))}
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
                 update(
                   ['pipeline'],
                   [...pipeline, { type: 'extract', id: '', fields: [], sections: [] }],
-                )
-              }
+                );
+                setOpenStep(pipeline.length);
+              }}
             >
               Add extract step
             </button>
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
                 update(
                   ['pipeline'],
                   [...pipeline, { type: 'check', id: '', values: '', reference: '' }],
-                )
-              }
+                );
+                setOpenStep(pipeline.length);
+              }}
             >
               Add check step
             </button>
@@ -458,30 +472,25 @@ function ExtractStep({
     <div className="extract-step">
       <div className="grid step-settings">
         <Text label="Step id" value={step.id} onChange={(v) => set('id', v)} />
-        <fieldset className="choice">
-          <legend>Fills</legend>
-          <label className="inline">
-            <input
-              type="radio"
-              checked={!fillsTable}
-              onChange={() => {
+        <div className="field">
+          <span className="field-label">Fills</span>
+          <Segmented
+            label="Fills"
+            options={FILLS}
+            value={fillsTable ? 'table' : 'fields'}
+            onChange={(v) => {
+              if (v === (fillsTable ? 'table' : 'fields')) return;
+              if (v === 'table') {
+                replace({ ...step, fields: [], table: tables[0] ?? '' });
+              } else {
                 const rest = { ...step };
                 delete rest.table;
                 delete rest.chunkPages;
                 replace({ ...rest, fields: [] });
-              }}
-            />
-            Fields
-          </label>
-          <label className="inline">
-            <input
-              type="radio"
-              checked={fillsTable}
-              onChange={() => replace({ ...step, fields: [], table: tables[0] ?? '' })}
-            />
-            A table
-          </label>
-        </fieldset>
+              }
+            }}
+          />
+        </div>
         {fillsTable ? (
           <>
             <Select
