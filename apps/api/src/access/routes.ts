@@ -49,8 +49,11 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
   const limiter = new LoginLimiter();
 
   app.addHook('onRequest', async (req, reply) => {
-    const path = req.url.split('?')[0]!;
-    if (!path.startsWith('/api/') || PUBLIC.has(path)) return;
+    // Decide on the *matched route pattern*, never the raw URL: the router decodes and
+    // normalises paths (e.g. /%61pi/specs matches /api/specs), so string checks on req.url can
+    // be bypassed. Unmatched requests (no pattern) just 404 and serve nothing.
+    const route = req.routeOptions.url;
+    if (route === undefined || !route.startsWith('/api/') || PUBLIC.has(route)) return;
     const sessionId = req.cookies[SESSION_COOKIE];
     const session = sessionId ? await access.session(sessionId) : null;
     if (!session) return reply.code(401).send({ error: 'sign in required' });

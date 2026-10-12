@@ -184,3 +184,15 @@ describe('token access', () => {
     expect((await app.inject('/healthz')).statusCode).toBe(200);
   });
 });
+
+describe('token access path handling', () => {
+  it.each(['/%61pi/specs', '/api/%73pecs', '/API/specs', '/api//specs', '/api/specs/'])(
+    'never serves %s without a session',
+    async (url) => {
+      const access = new MemoryAccessRepo();
+      const { app } = await testApp({ access });
+      const res = await app.inject(url);
+      expect([401, 404]).toContain(res.statusCode);
+    },
+  );
+});
