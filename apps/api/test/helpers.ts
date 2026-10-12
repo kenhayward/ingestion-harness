@@ -44,6 +44,16 @@ export const demoTemplate = TemplateSchema.parse({
   ],
 });
 
+/** A minimal valid `letter` template definition (workbench tests). */
+export const letter = (version = 1) => ({
+  id: 'letter',
+  version,
+  name: 'Letter',
+  document: { sections: [{ id: 'all', anchor: '\\A' }] },
+  outputs: { fields: [{ id: 'sender', type: 'text' }] },
+  pipeline: [{ type: 'extract', id: 'head', fields: ['sender'], sections: ['all'] }],
+});
+
 export async function testApp(overrides: Partial<AppDeps> = {}) {
   const repo = new MemoryRepo();
   const store = new MemoryObjectStore();

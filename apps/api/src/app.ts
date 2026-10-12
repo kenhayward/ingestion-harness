@@ -17,6 +17,7 @@ import { jobRoutes } from './routes/jobs.js';
 import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
 import { resultRoutes } from './routes/results.js';
+import { workbenchRoutes } from './routes/workbench.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -70,6 +71,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(templateRoutes, { prefix: '/api' });
   await app.register(referenceRoutes, { prefix: '/api' });
   await app.register(resultRoutes, { prefix: '/api' });
+  await app.register(workbenchRoutes, { prefix: '/api' });
 
   return app;
 }
