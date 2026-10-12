@@ -111,6 +111,7 @@ export class MemoryRepo implements IngestionRepo {
     templateId,
     before,
     beforeId,
+    q,
   }: ListPublishedQuery): Promise<ResultSummary[]> {
     // Compare as times (cursors may carry an offset); ties break on job id, like PgRepo.
     const cursor = before === undefined ? undefined : Date.parse(before);
@@ -121,6 +122,7 @@ export class MemoryRepo implements IngestionRepo {
     };
     return [...this.jobs.values()]
       .filter((j) => !j.test && (!templateId || j.specId === templateId))
+      .filter((j) => !q || j.filename.toLowerCase().includes(q.toLowerCase()))
       .flatMap((j): ResultSummary[] => {
         const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
         const at = this.publishedAt.get(j.id) ?? j.updatedAt;
@@ -136,6 +138,14 @@ export class MemoryRepo implements IngestionRepo {
             reviewer: j.reviewer,
             reviewedAt: j.reviewedAt,
             outputCount: published.length,
+            outputs: [...published]
+              .sort((a, b) => a.outputId.localeCompare(b.outputId))
+              .map((o) => ({
+                outputId: o.outputId,
+                format: o.format,
+                name: o.key.split('/').pop() ?? o.outputId,
+                rowCount: o.rowCount,
+              })),
             issueCount: published.find((o) => o.outputId === 'issues')?.rowCount ?? null,
           },
         ];

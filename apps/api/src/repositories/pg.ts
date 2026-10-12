@@ -240,6 +240,7 @@ export class PgRepo implements IngestionRepo {
     templateId,
     before,
     beforeId,
+    q,
   }: ListPublishedQuery): Promise<ResultSummary[]> {
     // Publish time = latest published job_outputs.created_at, compared at millisecond precision
     // because the `before` cursor is an ISO string (ms) taken from a previous page. Ties at the
@@ -255,15 +256,20 @@ export class PgRepo implements IngestionRepo {
       published_at: Date;
       output_count: number;
       issue_count: number | null;
+      outputs: { outputId: string; format: 'csv' | 'json'; key: string; rowCount: number | null }[];
     }>(
       `SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.reviewer, j.reviewed_at,
               date_trunc('milliseconds', max(o.created_at)) AS published_at,
               count(*)::int AS output_count,
-              max(o.row_count) FILTER (WHERE o.output_id = 'issues') AS issue_count
+              max(o.row_count) FILTER (WHERE o.output_id = 'issues') AS issue_count,
+              json_agg(json_build_object('outputId', o.output_id, 'format', o.format,
+                                         'key', o.object_key, 'rowCount', o.row_count)
+                       ORDER BY o.output_id) AS outputs
          FROM jobs j
          JOIN documents d ON d.id = j.document_id
          JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published'
         WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
+          AND ($5::text IS NULL OR d.filename ILIKE '%' || $5 || '%' ESCAPE '!')
         GROUP BY j.id, d.id
        HAVING $2::timestamptz IS NULL
            OR date_trunc('milliseconds', max(o.created_at)) < $2
@@ -272,7 +278,14 @@ export class PgRepo implements IngestionRepo {
                AND j.id < $4)
         ORDER BY published_at DESC, j.id DESC
         LIMIT $3`,
-      [templateId ?? null, before ?? null, limit, beforeId ?? null],
+      [
+        templateId ?? null,
+        before ?? null,
+        limit,
+        beforeId ?? null,
+        // % and _ are literal in a file name filter: escape them (and the escape character, !).
+        q?.replace(/[!%_]/g, (c) => `!${c}`) ?? null,
+      ],
     );
     return rows.map((r) => ({
       jobId: r.id,
@@ -284,6 +297,12 @@ export class PgRepo implements IngestionRepo {
       reviewer: r.reviewer,
       reviewedAt: r.reviewed_at?.toISOString() ?? null,
       outputCount: r.output_count,
+      outputs: r.outputs.map((o) => ({
+        outputId: o.outputId,
+        format: o.format,
+        name: o.key.split('/').pop() ?? o.outputId,
+        rowCount: o.rowCount,
+      })),
       issueCount: r.issue_count,
     }));
   }

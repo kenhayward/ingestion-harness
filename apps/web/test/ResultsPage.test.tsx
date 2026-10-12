@@ -15,56 +15,112 @@ const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
   reviewer: null,
   reviewedAt: null,
   outputCount: 5,
+  outputs: [],
   issueCount: 2,
   ...o,
 });
 
-describe('ResultsPage', () => {
-  it('lists published documents with links to their results', async () => {
+const row = (file: string) =>
+  screen.getByRole('button', { name: `Show preview of ${file}` }).closest('tr')!;
+const types = [
+  { id: 'pvp', version: 2, title: 'Process Validation Protocol' },
+  { id: 'pvp', version: 3, title: 'Process Validation Protocol' },
+  { id: 'invoice', version: 1, title: 'Invoice' },
+];
+
+describe('ResultsPage list', () => {
+  it('has a header and lists published documents', async () => {
     const r = result({
       filename: 'protocol.pdf',
       reviewer: 'Ken',
       reviewedAt: '2026-10-02T08:00:00Z',
     });
     const auto = result({ filename: 'auto.pdf', issueCount: null });
+    const clean = result({ filename: 'clean.pdf', issueCount: 0 });
     const unnamed = result({ filename: 'unnamed.pdf', reviewedAt: '2026-10-02T08:00:00Z' });
-    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r, auto, unnamed]) })} />);
-
-    const link = await screen.findByRole('link', { name: 'protocol.pdf' });
-    expect(link).toHaveAttribute('href', `#/results/${r.jobId}`);
-    const row = link.closest('tr')!;
-    expect(within(row).getByText('pvp v3')).toBeInTheDocument();
-    expect(within(row).getByText('Ken')).toBeInTheDocument();
-    const autoRow = screen.getByRole('link', { name: 'auto.pdf' }).closest('tr')!;
-    expect(within(autoRow).getByText('auto')).toBeInTheDocument();
-    expect(within(autoRow).getByText('—')).toBeInTheDocument();
-    const unnamedRow = screen.getByRole('link', { name: 'unnamed.pdf' }).closest('tr')!;
-    expect(within(unnamedRow).getByText('unnamed reviewer')).toBeInTheDocument();
-  });
-
-  it('filters by document type', async () => {
-    const listResults = vi.fn(async () => [result()]);
-    const api = fakeApi({
-      listResults,
-      listSpecs: vi.fn(async () => [
-        { id: 'pvp', version: 2, title: 'Process Validation Protocol' },
-        { id: 'pvp', version: 3, title: 'Process Validation Protocol' },
-        { id: 'invoice', version: 1, title: 'Invoice' },
-      ]),
-    });
-    render(<ResultsPage api={api} />);
-    const select = await screen.findByLabelText('Document type');
-    await screen.findByRole('option', { name: 'Invoice' });
+    render(
+      <ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r, auto, clean, unnamed]) })} />,
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Results' })).toBeInTheDocument();
     expect(
-      within(select)
-        .getAllByRole('option')
-        .map((o) => o.textContent),
-    ).toEqual(['All', 'Invoice', 'Process Validation Protocol']);
-    await userEvent.selectOptions(select, 'pvp');
-    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', before: undefined });
+      screen.getByText(/Test runs and rejected documents never appear here\./),
+    ).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Show preview of protocol.pdf' });
+    expect(within(row('protocol.pdf')).getByText('pvp v3')).toBeInTheDocument();
+    expect(within(row('protocol.pdf')).getByText('Ken')).toBeInTheDocument();
+    expect(within(row('protocol.pdf')).getByText('2')).toBeInTheDocument();
+    expect(within(row('auto.pdf')).getByText('auto-approved')).toBeInTheDocument();
+    expect(within(row('auto.pdf')).getByText('—')).toBeInTheDocument();
+    expect(within(row('clean.pdf')).getByText('—')).toBeInTheDocument();
+    expect(within(row('unnamed.pdf')).getByText('unnamed reviewer')).toBeInTheDocument();
   });
 
-  it('loads more with the last publish time as the cursor', async () => {
+  it('links each published file for download', async () => {
+    const r = result({
+      jobId: 'j1',
+      filename: 'a.pdf',
+      outputs: [
+        { outputId: 'document', format: 'json', name: 'document.json', rowCount: null },
+        { outputId: 'results', format: 'csv', name: 'results.csv', rowCount: 3 },
+      ],
+    });
+    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r]) })} />);
+    await screen.findByRole('button', { name: 'Show preview of a.pdf' });
+    expect(
+      within(row('a.pdf')).getByRole('link', { name: 'Download results.csv for a.pdf' }),
+    ).toHaveAttribute('href', '/api/jobs/j1/outputs/results?stage=published');
+    expect(
+      within(row('a.pdf')).getByRole('link', { name: 'Download document.json for a.pdf' }),
+    ).toHaveAttribute('href', '/api/jobs/j1/outputs/document?stage=published');
+  });
+
+  it('filters by document type with chips', async () => {
+    const listResults = vi.fn(async () => [result()]);
+    render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
+    const chips = screen.getByRole('group', { name: 'Filter by document type' });
+    await within(chips).findByRole('button', { name: 'Invoice' });
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['All types', 'Invoice', 'Process Validation Protocol']);
+    expect(within(chips).getByRole('button', { name: 'All types' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(
+      within(chips).getByRole('button', { name: 'Process Validation Protocol' }),
+    );
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', q: undefined });
+  });
+
+  it('filters by file name on the server, once typing pauses', async () => {
+    const listResults = vi.fn(async () => [result()]);
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Filter by file name' }), 'acme');
+    await vi.waitFor(() =>
+      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' }),
+    );
+    const qs = listResults.mock.calls.map((c) => (c as unknown as [{ q?: string }])[0].q);
+    expect(qs).toEqual([undefined, 'acme']);
+  });
+
+  it('takes the top-bar search as the file name filter', async () => {
+    const listResults = vi.fn(async () => [result()]);
+    render(<ResultsPage api={fakeApi({ listResults })} query="acme" />);
+    expect(screen.getByRole('searchbox', { name: 'Filter by file name' })).toHaveValue('acme');
+    await vi.waitFor(() =>
+      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' }),
+    );
+  });
+
+  it('says when the filter matches nothing', async () => {
+    const listResults = vi.fn(async (query?: { q?: string }) => (query?.q ? [] : [result()]));
+    render(<ResultsPage api={fakeApi({ listResults })} query="zzz" />);
+    expect(await screen.findByText('No results match “zzz”.')).toBeInTheDocument();
+  });
+
+  it('loads more with the last publish time as the cursor, keeping the filter', async () => {
     const page1 = Array.from({ length: 50 }, (_, i) =>
       result({
         filename: `p1-${i}.pdf`,
@@ -75,23 +131,24 @@ describe('ResultsPage', () => {
       .fn()
       .mockResolvedValueOnce(page1)
       .mockResolvedValueOnce([result({ filename: 'p2.pdf' })]);
-    render(<ResultsPage api={fakeApi({ listResults })} />);
+    render(<ResultsPage api={fakeApi({ listResults })} query="p" />);
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
     expect(listResults).toHaveBeenLastCalledWith({
       templateId: undefined,
+      q: 'p',
       before: page1[49]!.publishedAt,
       beforeId: page1[49]!.jobId,
     });
-    expect(await screen.findByRole('link', { name: 'p2.pdf' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'p1-0.pdf' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Show preview of p2.pdf' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show preview of p1-0.pdf' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 
   it('explains the empty state and shows load errors', async () => {
     const { unmount } = render(<ResultsPage api={fakeApi()} />);
-    expect(await screen.findByText(/No published results yet/)).toHaveTextContent(
-      'Test runs and rejected documents never appear here.',
-    );
+    expect(await screen.findByText(/No published results yet/)).toBeInTheDocument();
     unmount();
     const failing = vi.fn(async () => {
       throw new Error('boom');
@@ -110,17 +167,16 @@ describe('ResultsPage', () => {
           else resolveAll = resolve;
         }),
     );
-    const api = fakeApi({
-      listResults,
-      listSpecs: vi.fn(async () => [{ id: 'pvp', version: 3, title: 'PVP' }]),
-    });
-    render(<ResultsPage api={api} />);
-    await screen.findByRole('option', { name: 'PVP' });
-    await userEvent.selectOptions(screen.getByLabelText('Document type'), 'pvp');
+    render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Process Validation Protocol' }),
+    );
     await act(async () => resolvePvp([result({ filename: 'pvp.pdf' })]));
     await act(async () => resolveAll([result({ filename: 'stale-all.pdf' })]));
-    expect(screen.getByRole('link', { name: 'pvp.pdf' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'stale-all.pdf' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show preview of pvp.pdf' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Show preview of stale-all.pdf' }),
+    ).not.toBeInTheDocument();
   });
 
   it('disables Load more while a page is loading', async () => {
@@ -137,23 +193,44 @@ describe('ResultsPage', () => {
     await userEvent.click(more);
     expect(listResults).toHaveBeenCalledTimes(2);
     await act(async () => resolveMore([result({ filename: 'p2.pdf' })]));
-    expect(screen.getAllByRole('link', { name: 'p2.pdf' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Show preview of p2.pdf' })).toHaveLength(1);
   });
 
   it('says when the selected document type has no results', async () => {
     const listResults = vi.fn(async (query?: { templateId?: string }) =>
       query?.templateId ? [] : [result()],
     );
-    const api = fakeApi({
-      listResults,
-      listSpecs: vi.fn(async () => [{ id: 'pvp', version: 3, title: 'PVP' }]),
-    });
-    render(<ResultsPage api={api} />);
-    await screen.findByRole('option', { name: 'PVP' });
-    await userEvent.selectOptions(screen.getByLabelText('Document type'), 'pvp');
+    render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Invoice' }));
     expect(
       await screen.findByText('No published results for this document type.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/No published results yet/)).not.toBeInTheDocument();
+  });
+});
+
+describe('ResultsPage while a filter loads', () => {
+  it('keeps the current rows (no false empty state) until the filtered page arrives', async () => {
+    let resolveFiltered!: (rows: ResultSummary[]) => void;
+    const listResults = vi.fn((query?: { q?: string }) =>
+      query?.q
+        ? new Promise<ResultSummary[]>((resolve) => (resolveFiltered = resolve))
+        : Promise.resolve([result({ filename: 'a.pdf' })]),
+    );
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    await screen.findByRole('button', { name: 'Show preview of a.pdf' });
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Filter by file name' }), 'acme');
+    await vi.waitFor(() => expect(listResults).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/No results match/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show preview of a.pdf' })).toBeInTheDocument();
+    await act(async () => resolveFiltered([result({ filename: 'acme.pdf' })]));
+    expect(screen.getByRole('button', { name: 'Show preview of acme.pdf' })).toBeInTheDocument();
+  });
+
+  it('limits the file name filter to 100 characters', () => {
+    render(<ResultsPage api={fakeApi()} />);
+    expect(screen.getByRole('searchbox', { name: 'Filter by file name' })).toHaveAttribute(
+      'maxLength',
+      '100',
+    );
   });
 });

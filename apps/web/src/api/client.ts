@@ -211,6 +211,8 @@ export interface Api {
   getOutputText(jobId: string, outputId: string, stage: 'draft' | 'published'): Promise<string>;
   listResults(query?: {
     templateId?: string;
+    /** File name substring (case-insensitive). */
+    q?: string;
     before?: string;
     beforeId?: string;
   }): Promise<ResultSummary[]>;
@@ -388,6 +390,8 @@ export function createHttpApi(base = '/api'): Api {
     listResults: (query = {}) => {
       const params = new URLSearchParams();
       if (query.templateId) params.set('templateId', query.templateId);
+      // The API accepts up to 100 characters: a longer filter is clamped, not refused.
+      if (query.q?.trim()) params.set('q', query.q.trim().slice(0, 100));
       if (query.before) params.set('before', query.before);
       if (query.beforeId) params.set('beforeId', query.beforeId);
       const qs = params.toString();
