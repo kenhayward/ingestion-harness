@@ -90,13 +90,17 @@ class AnthropicProvider:
         return self._send(params)
 
     def _send(self, params: dict[str, Any]) -> CompletionResult:
+        # Streamed and collected with get_final_message(): large output budgets (64K) can run
+        # long, and the SDK refuses non-streaming requests it estimates exceed ~10 minutes.
         try:
             if self._server_fallbacks:
-                message: Any = self._client.beta.messages.create(
+                stream: Any = self._client.beta.messages.stream(
                     **params, betas=[FALLBACK_BETA], fallbacks="default"
                 )
             else:
-                message = self._client.messages.create(**params)
+                stream = self._client.messages.stream(**params)
+            with stream as s:
+                message: Any = s.get_final_message()
         except anthropic.APIStatusError as exc:
             if exc.status_code in (408, 409, 429) or exc.status_code >= 500:
                 raise LLMError(f"anthropic {exc.status_code}: {exc.message}") from exc

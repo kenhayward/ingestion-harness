@@ -35,7 +35,7 @@ class Extraction(_Model):
     #: 1-based PDF pages sent as images with the prompt (needs a vision-capable model).
     page_images: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, alias="pageImages")
     #: Output token budget per LLM call.
-    max_tokens: int = Field(default=16000, ge=256, le=128000, alias="maxTokens")
+    max_tokens: int = Field(default=64000, ge=256, le=128000, alias="maxTokens")
     #: Run once per N pages of the (single) section and concatenate `merge_path` arrays.
     chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
     #: Top-level array property of the schema merged across chunks.

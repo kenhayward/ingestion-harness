@@ -65,7 +65,7 @@ class ExtractStep(_Model):
     model: str = "default"
     page_images: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, alias="pageImages")
     max_attempts: int = Field(default=2, ge=1, le=5, alias="maxAttempts")
-    max_tokens: int = Field(default=16000, ge=256, le=128000, alias="maxTokens")
+    max_tokens: int = Field(default=64000, ge=256, le=128000, alias="maxTokens")
     chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
     #: Values from earlier steps shown in the prompt: name -> `<field>` or `<table>.<column>`.
     context: dict[Id, str] = Field(default_factory=dict)

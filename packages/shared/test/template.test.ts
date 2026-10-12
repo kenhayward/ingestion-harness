@@ -48,7 +48,7 @@ describe('TemplateSchema', () => {
     expect(t.review.required).toBe('on_warnings');
     expect(t.document.pageMarkers).toBe(true);
     expect(t.document.dateOrder).toBe('DMY');
-    expect(t.pipeline[0]).toMatchObject({ model: 'default', maxTokens: 16000 });
+    expect(t.pipeline[0]).toMatchObject({ model: 'default', maxTokens: 64000 });
   });
 
   it('accepts context from earlier steps only', () => {

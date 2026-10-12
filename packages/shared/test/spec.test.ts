@@ -68,7 +68,7 @@ describe('DocumentSpecSchema', () => {
       const result = chunked({ maxTokens: 32000 });
       expect(result.success).toBe(true);
       expect(result.data?.extractions[0]?.maxTokens).toBe(32000);
-      expect(DocumentSpecSchema.parse(valid).extractions[0]?.maxTokens).toBe(16000);
+      expect(DocumentSpecSchema.parse(valid).extractions[0]?.maxTokens).toBe(64000);
     });
 
     it.each([
