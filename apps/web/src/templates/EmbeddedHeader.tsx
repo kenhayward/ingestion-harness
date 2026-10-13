@@ -1,4 +1,4 @@
-import type { DataPolicy } from '@ih/shared';
+import type { DataPolicy, OverviewItem } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { TabHeader } from '../workbench/TabHeader.js';
@@ -20,6 +20,8 @@ export function EmbeddedHeader({
   status,
   dirty,
   dataPolicy,
+  issues,
+  item,
   exportUrl,
   publishBlocker,
   onQueued,
@@ -33,6 +35,9 @@ export function EmbeddedHeader({
   status: 'draft' | 'published';
   dirty: boolean;
   dataPolicy: DataPolicy;
+  issues: number;
+  /** The overview's Template item: the status line (null while unknown). */
+  item: OverviewItem | null;
   exportUrl: string;
   /** Why Publish cannot run (unsaved edits, validation issues); null when it can. */
   publishBlocker: string | null;
@@ -45,7 +50,7 @@ export function EmbeddedHeader({
   return (
     <TabHeader
       title={draft ? `Template · draft v${version}` : `Template · v${version}`}
-      item={null}
+      item={item}
       description={EMBEDDED_NOTE}
       actions={
         <>
@@ -56,6 +61,7 @@ export function EmbeddedHeader({
               version={version}
               dirty={dirty}
               dataPolicy={dataPolicy}
+              issues={issues}
               onQueued={onQueued}
             />
           )}

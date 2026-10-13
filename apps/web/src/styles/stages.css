@@ -3009,14 +3009,13 @@ label.inline.list-select {
 
 /* Template tab: Checks and Changes since vN (handoff §10) */
 .template-side {
-  flex: 1 1 280px;
-  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 24px);
+  top: calc(var(--ih-topbar-h, 0px) + 12px);
+  max-height: calc(100vh - var(--ih-topbar-h, 0px) - 24px);
   overflow-y: auto;
 }
 .checks-panel {
@@ -3086,10 +3085,6 @@ label.inline.list-select {
   align-items: start;
 }
 .template-embedded .editor-main {
-  min-width: 0;
-}
-.template-embedded .template-side {
-  max-width: none;
   min-width: 0;
 }
 .try-on {

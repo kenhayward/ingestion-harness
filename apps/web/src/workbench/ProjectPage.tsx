@@ -409,10 +409,14 @@ export function ProjectPage({
                 version={draft}
                 onNavigate={onNavigate}
                 embedded={{
-                  onChanged: load,
+                  onChanged: () => {
+                    load();
+                    loadOverview();
+                  },
                   onSaved: loadOverview,
                   dataPolicy: project.dataPolicy,
                   stages: overview?.stages ?? null,
+                  item: itemOf('template'),
                   published,
                 }}
               />

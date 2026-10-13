@@ -122,12 +122,16 @@ describe('changeTag', () => {
 });
 
 describe('tryOnBlockedReason', () => {
-  it.each<[boolean, number | null, string | null]>([
-    [false, null, 'Loading the dev samples…'],
-    [true, 3, 'Save the draft first: a test run uses the saved draft'],
-    [false, 0, 'No prepared dev samples: add or prepare some on the Samples tab'],
-    [false, 2, null],
-  ])('dirty %s, %s ready', (dirty, n, reason) => expect(tryOnBlockedReason(dirty, n)).toBe(reason));
+  it.each<[boolean, number | null, number, string | null]>([
+    [false, null, 0, 'Loading the dev samples…'],
+    [true, 3, 0, 'Save the draft first: a test run uses the saved draft'],
+    [false, 0, 0, 'No prepared dev samples: add or prepare some on the Samples tab'],
+    [false, 2, 0, null],
+    [false, 2, 1, 'Fix 1 validation issue first'],
+    [false, 2, 3, 'Fix 3 validation issues first'],
+  ])('dirty %s, %s ready, %s issues', (dirty, n, issues, reason) =>
+    expect(tryOnBlockedReason(dirty, n, issues)).toBe(reason),
+  );
 });
 
 describe('changeAtText', () => {

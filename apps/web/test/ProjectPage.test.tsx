@@ -12,6 +12,7 @@ import {
   projectOverview,
   reviseProposal,
   projectView,
+  publication,
   templateView,
 } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
@@ -55,7 +56,7 @@ const TAB_TITLES = [
 
 describe('ProjectPage tab headers', () => {
   it.each(TAB_TITLES)('opens the %s tab with the H2 %s and its status', async (tab, title) => {
-    const stages = OVERVIEW_TABS.filter((s) => s !== 'template').map((stage) => [
+    const stages = OVERVIEW_TABS.map((stage) => [
       stage,
       { state: 'accepted' as const, status: 'Accepted' },
     ]);
@@ -75,12 +76,10 @@ describe('ProjectPage tab headers', () => {
     );
     expect(await screen.findByRole('heading', { level: 2, name: title })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 2, name: title })).toHaveLength(1);
-    if (tab !== 'template') {
-      await waitFor(() => {
-        const header = screen.getByRole('heading', { level: 2, name: title }).closest('header')!;
-        expect(within(header).getByText('Accepted')).toBeInTheDocument();
-      });
-    }
+    await waitFor(() => {
+      const header = screen.getByRole('heading', { level: 2, name: title }).closest('header')!;
+      expect(within(header).getByText('Accepted')).toBeInTheDocument();
+    });
   });
 
   it('has one Ask button and no Skip on the Revise tab', async () => {
@@ -634,6 +633,23 @@ describe('ProjectPage', () => {
     );
     expect(await screen.findByRole('button', { name: 'Evaluate v1 on dev…' })).toBeInTheDocument();
   });
+  it('refreshes the page overview after publishing from the Template tab', async () => {
+    const getProjectOverview = vi.fn(async () => projectOverview());
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })),
+      getProjectOverview,
+      getTemplate: vi.fn(async () => templateView({ ...validDefinition(), version: 2 })),
+      publish: vi.fn(async () => ({ publication: publication(), project: projectView() })),
+    });
+    page(api, 'template');
+    const publish = await screen.findByRole('button', { name: /^Publish v2/ });
+    await waitFor(() => expect(publish).toBeEnabled());
+    const calls = getProjectOverview.mock.calls.length;
+    await userEvent.click(publish);
+    await waitFor(() => expect(api.publish).toHaveBeenCalled());
+    await waitFor(() => expect(getProjectOverview.mock.calls.length).toBeGreaterThan(calls));
+  });
+
   it("passes the overview's stale stages to the Template tab and refreshes the overview after a save", async () => {
     const getProjectOverview = vi.fn(async () =>
       overviewWith({

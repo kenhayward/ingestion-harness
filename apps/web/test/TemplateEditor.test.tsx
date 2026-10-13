@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
-import { fakeApi, job, projectView, publication, sampleView } from './fake-api.js';
+import {
+  fakeApi,
+  job,
+  projectOverview,
+  projectView,
+  publication,
+  sampleView,
+} from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
 import { setYaml } from './yaml-editor.js';
 
@@ -106,6 +113,26 @@ describe('TemplateEditor header', () => {
     expect(publish).toHaveAttribute('title', 'Save the draft before publishing');
     await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await waitFor(() => expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument());
+  });
+
+  it('sends one save while a save is in flight, and disables Save meanwhile', async () => {
+    let finish: (v: TemplateRecordView) => void = () => {};
+    const saveTemplate = vi.fn(
+      () =>
+        new Promise<TemplateRecordView>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    setup(view({ ...validDefinition(), version: 1 }), { saveTemplate });
+    await userEvent.type(await screen.findByLabelText('Name'), '!');
+    const save = screen.getByRole('button', { name: 'Save draft' });
+    await userEvent.dblClick(save);
+    expect(saveTemplate).toHaveBeenCalledTimes(1);
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute('title', 'Saving…');
+    finish(view({ ...validDefinition(), version: 1, name: 'Letter!' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('explains validation issues as the publish blocker', async () => {
@@ -339,6 +366,118 @@ describe('TemplateEditor', () => {
       await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
       expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
     });
+
+    it('sends one save from the bar while a save is in flight', async () => {
+      let finish: (v: TemplateRecordView) => void = () => {};
+      const saveTemplate = vi.fn(
+        () =>
+          new Promise<TemplateRecordView>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      setup(
+        view({ ...validDefinition(), version: 1 }),
+        { saveTemplate },
+        { onChanged: vi.fn() },
+      );
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.dblClick(screen.getByRole('button', { name: 'Save draft v1' }));
+      expect(saveTemplate).toHaveBeenCalledTimes(1);
+      const bar = screen.getByRole('region', { name: 'Unsaved changes' });
+      expect(within(bar).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+      expect(within(bar).getByRole('button', { name: 'Discard' })).toBeDisabled();
+      finish(view({ ...validDefinition(), version: 1, name: 'Letter!' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument(),
+      );
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('Discard after a refused save clears the conflict alert and the Reload button', async () => {
+      const saveTemplate = vi.fn(async () => {
+        throw new ApiError('the draft changed since you opened it; reload it', 409);
+      });
+      setup(
+        view({ ...validDefinition(), version: 1 }),
+        { saveTemplate },
+        { onChanged: vi.fn() },
+      );
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reload the draft' })).not.toBeInTheDocument();
+    });
+
+    it('Reload the draft refreshes the change log', async () => {
+      const definition = { ...validDefinition(), version: 1 };
+      const { api } = setup(
+        view(definition),
+        {
+          saveTemplate: vi.fn(async () => {
+            throw new ApiError('the draft changed since you opened it; reload it', 409);
+          }),
+        },
+        { onChanged: vi.fn() },
+      );
+      await waitFor(() => expect(api.listDraftChanges).toHaveBeenCalledTimes(1));
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Reload the draft' }));
+      await waitFor(() => expect(api.listDraftChanges).toHaveBeenCalledTimes(2));
+    });
+
+    it('shows the overview status line in the tab header', async () => {
+      setup(
+        view({ ...validDefinition(), version: 1 }),
+        {},
+        {
+          onChanged: vi.fn(),
+          item: {
+            ...projectOverview().stages.find((s) => s.stage === 'template')!,
+            state: 'accepted',
+            status: 'Draft v1 is ready',
+          },
+        },
+      );
+      await screen.findByRole('heading', { level: 2 });
+      expect(await screen.findByText('Draft v1 is ready')).toBeInTheDocument();
+    });
+
+    it('disables Test run with the validation count while the draft has issues', async () => {
+      setup(
+        view({ ...skeleton }),
+        { listSamples: vi.fn(async () => [sampleView()]) },
+        { onChanged: vi.fn() },
+      );
+      const run = await screen.findByRole('button', { name: 'Test run' });
+      await waitFor(() => expect(run.getAttribute('title')).toMatch(/^Fix \d+ validation issues?/));
+      expect(run).toBeDisabled();
+    });
+
+    it.each([
+      ['local', true],
+      ['external', false],
+    ] as const)(
+      "gives the Try on dialog the project's %s data policy",
+      async (dataPolicy, cloudDisabled) => {
+        setup(
+          view({ ...validDefinition(), version: 1 }),
+          { listSamples: vi.fn(async () => [sampleView()]) },
+          { onChanged: vi.fn(), dataPolicy },
+        );
+        const run = await screen.findByRole('button', { name: 'Test run' });
+        await waitFor(() => expect(run).toBeEnabled());
+        await userEvent.click(run);
+        const dialog = await screen.findByRole('dialog');
+        const cloud = within(dialog).getByRole('option', { name: /Cloud model/ });
+        expect((cloud as HTMLOptionElement).disabled).toBe(cloudDisabled);
+      },
+    );
 
     it('offers a reload when the draft changed elsewhere', async () => {
       const definition = { ...validDefinition(), version: 1 };

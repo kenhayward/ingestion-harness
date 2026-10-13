@@ -214,9 +214,21 @@ describe('accepting when the draft is no longer open', () => {
     const p = (await start('outputs')).json() as ProposalView;
     await finish(p.id, 'outputs', { notes: '', changes: [putField('date')] });
     const real = templates.updateDraft.bind(templates);
+    const realGet = templates.get.bind(templates);
     let closed = true;
-    templates.updateDraft = async (...args: Parameters<typeof real>) =>
-      closed ? null : real(...args);
+    let refused = false;
+    templates.updateDraft = async (...args: Parameters<typeof real>) => {
+      if (!closed) return real(...args);
+      refused = true;
+      return null;
+    };
+    // Published meanwhile: the read that follows the refused write sees a published version.
+    templates.get = async (...args: Parameters<typeof realGet>) => {
+      const record = await realGet(...args);
+      if (!refused || !record) return record;
+      refused = false;
+      return { ...record, status: 'published' as const };
+    };
     const res = await decide(p.id, { decision: 'accepted', changes: [0] });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe(

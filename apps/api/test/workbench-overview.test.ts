@@ -282,6 +282,16 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     expect((await p.metrics('sections'))[0]).toEqual({ label: 'Sections', value: '1', at: null });
   });
 
+  it('shows no Hand edit for a published-only project whose live version was never hand-edited', async () => {
+    const p = await project();
+    await p.templates.publish('letter', 1);
+    expect((await p.metrics('template'))[1]).toEqual({
+      label: 'Hand edit',
+      value: '—',
+      at: null,
+    });
+  });
+
   it('survives a corrupt drafting body', async () => {
     const p = await project();
     const outputs = await p.proposal('outputs', Buffer.from('{not json'));

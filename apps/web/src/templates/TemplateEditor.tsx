@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
@@ -69,6 +69,8 @@ export interface EmbeddedEditor {
   dataPolicy?: DataPolicy;
   /** The page overview's items (null while unknown): stale stages for Checks. */
   stages?: readonly OverviewItem[] | null;
+  /** The overview's Template item: the tab header's status line. */
+  item?: OverviewItem | null;
   /** The latest published version: "Changes since vN" and Full diff. */
   published?: number | null;
 }
@@ -116,8 +118,11 @@ export function TemplateEditor({
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   /** A save refused with 409 (written elsewhere meanwhile, or published): offer a reload. */
   const [conflict, setConflict] = useState(false);
-  /** Counts saves, so the change log reloads after each. */
+  /** Counts draft writes by this editor (save, reload), so the change log reloads after each. */
   const [saves, setSaves] = useState(0);
+  /** A save is in flight: a second one would carry the same base and be refused as a conflict. */
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const savedDef = useMemo<Definition>(
     () => (saved ? (JSON.parse(saved) as Definition) : {}),
     [saved],
@@ -165,7 +170,7 @@ export function TemplateEditor({
     const body = error ? <p role="alert">{error}</p> : <p>Loading…</p>;
     return embedded ? (
       <section className="template-editor template-embedded">
-        <TabHeader title={`Template · draft v${version}`} item={null} />
+        <TabHeader title={`Template · draft v${version}`} item={embedded.item ?? null} />
         {body}
       </section>
     ) : (
@@ -188,6 +193,9 @@ export function TemplateEditor({
   };
 
   const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     setError(null);
     setConflict(false);
     try {
@@ -198,12 +206,16 @@ export function TemplateEditor({
     } catch (err) {
       setError((err as Error).message);
       setConflict(err instanceof ApiError && err.status === 409);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
   const reload = () =>
     act(async () => {
       accept(await api.getTemplate(templateId, version));
       setConflict(false);
+      setSaves((n) => n + 1);
       setMessage('Reloaded the saved draft.');
     });
   const discard = () => {
@@ -211,6 +223,8 @@ export function TemplateEditor({
     setReplaced((r) => r + 1);
     if (tab === 'yaml') setYamlText(toYaml(savedDef, { lineWidth: 100 }));
     setMessage(null);
+    setError(null);
+    setConflict(false);
   };
   const publish = () =>
     act(async () => {
@@ -296,6 +310,8 @@ export function TemplateEditor({
           status={record.status}
           dirty={dirty}
           dataPolicy={embedded.dataPolicy ?? 'local'}
+          issues={issues.length}
+          item={embedded.item ?? null}
           exportUrl={api.exportUrl(templateId, version)}
           publishBlocker={publishBlocker(dirty, issues.length)}
           onQueued={() => embedded.onSaved?.()}
@@ -313,6 +329,7 @@ export function TemplateEditor({
           dirty={dirty}
           issues={issues.length}
           exportUrl={api.exportUrl(templateId, version)}
+          saving={saving}
           onSave={() => void save()}
           onPublish={() => void publish()}
           onNewDraft={() => void newDraft()}
@@ -709,6 +726,7 @@ export function TemplateEditor({
           text={unsavedText(describeDefinitionChange(savedDef, def).subjects)}
           version={version}
           onDiscard={discard}
+          saving={saving}
           onSave={() => void save()}
         />
       )}

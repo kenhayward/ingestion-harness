@@ -15,6 +15,7 @@ export function EditorHeader({
   dirty,
   issues,
   exportUrl,
+  saving = false,
   onSave,
   onPublish,
   onNewDraft,
@@ -29,6 +30,7 @@ export function EditorHeader({
   dirty: boolean;
   issues: number;
   exportUrl: string;
+  saving?: boolean;
   onSave: () => void;
   onPublish: () => void;
   onNewDraft: () => void;
@@ -82,7 +84,13 @@ export function EditorHeader({
             >
               Publish v{version}
             </button>
-            <button type="button" className="primary" disabled={!dirty} onClick={onSave}>
+            <button
+              type="button"
+              className="primary"
+              disabled={!dirty || saving}
+              title={saving ? 'Saving…' : undefined}
+              onClick={onSave}
+            >
               Save draft
             </button>
           </>

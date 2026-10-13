@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { stringify as toYaml } from 'yaml';
 import {
   draftingKey,
@@ -274,6 +274,77 @@ describe('Workbench writes to the draft (TP1)', () => {
     });
     expect(restored.statusCode).toBe(200);
     expect(await count()).toBe(before);
+  });
+
+  /** After the next read of the draft, a hand save lands: the write that follows is stale. */
+  function handSaveAfterNextRead(templates: MemoryTemplateRepo) {
+    const get = templates.get.bind(templates);
+    let armed = true;
+    vi.spyOn(templates, 'get').mockImplementation(async (id, version) => {
+      const record = await get(id, version);
+      if (armed && record && record.status === 'draft') {
+        armed = false;
+        await templates.updateDraft(
+          id,
+          version,
+          { ...record.definition, name: 'Hand' },
+          { change: hand('Changed the name') },
+        );
+      }
+      return record;
+    });
+  }
+
+  it('refuses to apply a proposal over a hand save made meanwhile, writing and logging nothing', async () => {
+    const { app, templates, finish } = await project();
+    await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/stages/survey/skip' });
+    const p = (
+      await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/stages/outputs' })
+    ).json() as ProposalView;
+    await finish(p.id, 'outputs', { notes: '', changes: [putField('date')] });
+    const before = (await templates.listChanges('letter', 1)).length;
+    handSaveAfterNextRead(templates);
+    const decide = () =>
+      app.inject(
+        json('POST', `/api/workbench/projects/letter/proposals/${p.id}/decision`, {
+          decision: 'accepted',
+          changes: [0],
+        }),
+      );
+    const refused = await decide();
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe('the draft changed while applying; try again');
+    const draft = (await templates.get('letter', 1))!.definition;
+    expect(draft.name).toBe('Hand');
+    expect(draft.outputs?.fields?.map((f: { id: string }) => f.id)).not.toContain('date');
+    // Only the hand save was logged on top of what was there.
+    expect((await templates.listChanges('letter', 1)).length).toBe(before + 1);
+    // The proposal is still undecided: trying again applies it on top of the hand save.
+    expect((await decide()).statusCode).toBe(200);
+    expect((await templates.get('letter', 1))!.definition.name).toBe('Hand');
+  });
+
+  it('refuses to restore over a hand save made meanwhile, writing and logging nothing', async () => {
+    const { app, templates, workbench } = await project();
+    const iteration = await workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: { ...letter(1), name: 'Old letter' },
+      briefVersion: null,
+      set: 'dev',
+      model: null,
+      jobIds: [],
+    });
+    const before = (await templates.listChanges('letter', 1)).length;
+    handSaveAfterNextRead(templates);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/workbench/projects/letter/iterations/${iteration.id}/restore`,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('the draft changed while applying; try again');
+    expect((await templates.get('letter', 1))!.definition.name).toBe('Hand');
+    expect((await templates.listChanges('letter', 1)).length).toBe(before + 1);
   });
 
   it('logs a restored iteration', async () => {

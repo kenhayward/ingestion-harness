@@ -102,9 +102,14 @@ export function changeTag(c: Pick<TemplateChange, 'source' | 'stage'>): string {
 }
 
 /** Why *Test run* is disabled (its title); null when it can run. `null` samples: loading. */
-export function tryOnBlockedReason(dirty: boolean, readyDevSamples: number | null): string | null {
+export function tryOnBlockedReason(
+  dirty: boolean,
+  readyDevSamples: number | null,
+  issues = 0,
+): string | null {
   if (readyDevSamples === null) return 'Loading the dev samples…';
   if (dirty) return 'Save the draft first: a test run uses the saved draft';
+  if (issues > 0) return `${publishBlocker(false, issues)} first`;
   if (readyDevSamples === 0)
     return 'No prepared dev samples: add or prepare some on the Samples tab';
   return null;

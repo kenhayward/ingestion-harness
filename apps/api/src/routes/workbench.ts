@@ -2992,8 +2992,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           },
           partial,
         ),
+        // A hand save between the read and this write must not be overwritten (or logged twice).
+        expectedUpdatedAt: draftRecord.updatedAt,
       });
       if (!updated) {
+        const now = await templates.get(projectId, draft);
+        if (now?.status === 'draft') {
+          return reply.code(409).send({ error: 'the draft changed while applying; try again' });
+        }
         return reply.code(409).send({
           error: 'the draft is no longer open; start the next version and re-run the stage',
         });
@@ -3290,8 +3296,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           { source: 'restore', stage: null, proposalId: null, by: req.auth?.label ?? null },
           ` (from the ${iteration.set} evaluation of ${iteration.createdAt.slice(0, 10)})`,
         ),
+        ...(current ? { expectedUpdatedAt: current.updatedAt } : {}),
       });
-      if (!saved) return reply.code(409).send({ error: 'the draft is no longer open' });
+      if (!saved) {
+        const now = await templates.get(projectId, draft);
+        return reply.code(409).send({
+          error:
+            now?.status === 'draft'
+              ? 'the draft changed while applying; try again'
+              : 'the draft is no longer open',
+        });
+      }
       req.log.info({ projectId, iteration: iteration.id, version: draft }, 'iteration restored');
       return projectView(app, (await workbench.getProject(projectId))!);
     },
