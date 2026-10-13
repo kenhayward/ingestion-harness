@@ -1626,14 +1626,44 @@ label.inline.list-select {
 /* Sections (handoff §5) */
 .sections-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  grid-template-columns: minmax(0, 1fr) 380px;
   gap: 16px;
   align-items: start;
 }
 .sections-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
+}
+.anchors-card,
+.grid-card {
+  min-width: 0;
+  max-width: 100%;
+}
+.grid-card .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.anchor-row > * {
+  min-width: 0;
+}
+.anchor-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.anchor-row input[type='checkbox'] {
+  width: auto;
+}
+.section-text {
+  position: sticky;
+  top: calc(var(--ih-topbar-h, 0px) + 12px);
+  max-height: calc(100vh - var(--ih-topbar-h, 0px) - 24px);
+  overflow: auto;
+  min-width: 0;
+}
+.section-text .sample-text pre {
+  overflow-wrap: anywhere;
 }
 .anchors-head,
 .grid-head {
@@ -1767,6 +1797,10 @@ label.inline.list-select {
   .sections-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+  .section-text {
+    position: static;
+    max-height: 70vh;
+  }
   .anchor-row {
     grid-template-columns: 24px minmax(0, 1fr) auto;
   }
@@ -1785,6 +1819,7 @@ label.inline.list-select {
 }
 .survey-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
@@ -1819,7 +1854,6 @@ label.inline.list-select {
   list-style: none;
   margin: 12px 0;
   padding: 0;
-  grid-template-columns: minmax(0, 1fr);
   display: grid;
   gap: 12px;
 }

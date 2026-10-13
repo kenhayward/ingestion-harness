@@ -259,7 +259,7 @@ describe('SectionsTab', () => {
       '0/1',
     );
     expect(screen.getByRole('img', { name: 'Matched in 1 of 1 samples' })).toHaveTextContent('1/1');
-    expect(screen.getByText('In a.pdf: no match — required')).toBeInTheDocument();
+    expect(await screen.findByText('In a.pdf: no match — required')).toBeInTheDocument();
     expect(screen.getByText('In a.pdf: p.1 · matches "TAX INVOICE"')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'a.pdf · supplier' })).toHaveAttribute(
       'aria-pressed',

@@ -436,6 +436,7 @@ export function SectionsTab({
               projectId={projectId}
               sampleId={selected.sampleId}
               marks={marks}
+              focus={selected.sectionId}
             />
           </aside>
         )}

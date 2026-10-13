@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SampleText, type TextMark } from '../src/workbench/SampleText.js';
@@ -22,6 +22,44 @@ describe('SampleText marks', () => {
     const mark = await screen.findByRole('note', { name: 'header starts here' });
     expect(mark).toHaveStyle({ background: 'var(--ih-ok-fg)' });
     expect(mark).toHaveTextContent('▶ header starts here');
+  });
+
+  it('keeps a line’s leading spaces and wraps long lines', async () => {
+    show('intro\n        TEM-290\nend', [{ page: 1, line: 'TEM-290', label: 'item' }]);
+    const note = await screen.findByRole('note', { name: 'item starts here' });
+    const pre = note.closest('pre')!;
+    expect(pre.textContent).toContain('\n        TEM-290\n');
+    expect(pre).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+  });
+
+  it('scrolls the focused section start into view', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const api = fakeApi({
+      getSampleText: vi.fn(async () => ({
+        sha256: 'abc',
+        pages: [{ number: 1, text: 'intro\nHEADER\nbody', ocr: false }],
+      })),
+    });
+    render(
+      <SampleText
+        api={api}
+        projectId="letter"
+        sampleId="s1"
+        marks={[{ page: 1, line: 'HEADER', label: 'header' }]}
+        focus="header"
+      />,
+    );
+    const note = await screen.findByRole('note', { name: 'header starts here' });
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(scroll.mock.contexts.at(-1)).toBe(note);
+  });
+
+  it('keeps leading spaces in unmarked text too', async () => {
+    show('intro\n        TEM-290\nend', []);
+    const pre = (await screen.findByText(/TEM-290/)).closest('pre')!;
+    expect(pre.textContent).toBe('intro\n        TEM-290\nend');
+    expect(pre).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
   });
 
   it('prefers an exact line match over an earlier line that merely starts with the mark', async () => {

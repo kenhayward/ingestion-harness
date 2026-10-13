@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PreparedText } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
@@ -7,8 +7,11 @@ export type TextMark = { page: number; line: string; label: string; color?: stri
 /** With page markers on, a section starting at a page top reports this line. */
 const PAGE_MARKER = /^\[page \d+\]$/;
 
+/** Indentation matters when an anchor misses: show it, and wrap long lines. */
+const PRE_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const;
+
 function PageBody({ text, marks }: { text: string; marks: Omit<TextMark, 'page'>[] }) {
-  if (!marks.length) return <pre>{text}</pre>;
+  if (!marks.length) return <pre style={PRE_STYLE}>{text}</pre>;
   const lines = text.split('\n');
   const used = new Set<string>();
   const usable = marks.filter((m) => m.line.trim() !== '');
@@ -25,7 +28,7 @@ function PageBody({ text, marks }: { text: string; marks: Omit<TextMark, 'page'>
     if (index !== -1) landing.set(m.label, index);
   }
   return (
-    <pre>
+    <pre style={PRE_STYLE}>
       {lines.map((line, i) => {
         const mark = usable.find((m) => !used.has(m.label) && landing.get(m.label) === i);
         if (mark) used.add(mark.label);
@@ -57,29 +60,45 @@ export function SampleText({
   sampleId,
   marks,
   paged = false,
+  focus,
 }: {
   api: Api;
   projectId: string;
   sampleId: string;
   /** Lines to flag with "<label> starts here" on the given page. */
   marks?: TextMark[];
+  /** A mark label to scroll into view once the text is shown. */
+  focus?: string;
   /** One page at a time with page chips (Samples preview); off: every page (Sections). */
   paged?: boolean;
 }) {
   const [text, setText] = useState<PreparedText | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.getSampleText(projectId, sampleId).then(setText, (err: Error) => setError(err.message));
   }, [api, projectId, sampleId]);
+
+  useEffect(() => {
+    if (!text || !focus) return;
+    const notes = root.current?.querySelectorAll('[role="note"]') ?? [];
+    const wanted = `${focus} starts here`;
+    for (const note of notes) {
+      if (note.getAttribute('aria-label') === wanted) {
+        note.scrollIntoView?.({ block: 'nearest' });
+        return;
+      }
+    }
+  }, [text, focus, page]);
 
   if (error) return <p role="alert">{error}</p>;
   if (!text) return <p>Loading text…</p>;
   if (paged) {
     const current = text.pages.find((p) => p.number === page) ?? text.pages[0];
     return (
-      <div className="sample-text paged">
+      <div className="sample-text paged" ref={root}>
         <div role="group" aria-label="Pages" className="page-chips">
           {text.pages.map((p) => (
             <button
@@ -106,7 +125,7 @@ ${current.text}`}
     );
   }
   return (
-    <div className="sample-text">
+    <div className="sample-text" ref={root}>
       {text.pages.map((p) => (
         <section key={p.number} aria-label={`Page ${p.number}`}>
           <h4>
