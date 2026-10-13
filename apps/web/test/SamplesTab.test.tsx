@@ -301,7 +301,7 @@ describe('SamplesTab', () => {
     );
     const note = await screen.findByRole('note', { name: 'all starts here' });
     const pre = note.closest('pre')!;
-    expect(pre.textContent).toMatch(/^▶ all\nintro/);
+    expect(pre.textContent).toMatch(/^▶ all starts here\nintro/);
   });
 
   it('matches a truncated start line by prefix', async () => {

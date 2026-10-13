@@ -15,6 +15,15 @@ function show(text: string, marks: TextMark[]) {
 }
 
 describe('SampleText marks', () => {
+  it('colours a section start marker', async () => {
+    show('intro\nHEADER\nbody', [
+      { page: 1, line: 'HEADER', label: 'header', color: 'var(--ih-ok-fg)' },
+    ]);
+    const mark = await screen.findByRole('note', { name: 'header starts here' });
+    expect(mark).toHaveStyle({ background: 'var(--ih-ok-fg)' });
+    expect(mark).toHaveTextContent('▶ header starts here');
+  });
+
   it('prefers an exact line match over an earlier line that merely starts with the mark', async () => {
     show('TOTALS carried\nbody\nTOTAL\nend', [{ page: 1, line: 'TOTAL', label: 'total' }]);
     const note = await screen.findByRole('note', { name: 'total starts here' });

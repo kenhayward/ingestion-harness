@@ -39,7 +39,7 @@ const DESCRIPTION: Record<ChangeStage, string | undefined> = {
   outputs:
     'The fields and tables every document of this type produces. The model proposes them from the brief and survey; you choose which to apply.',
   sections:
-    'Where each section of the text starts. The model proposes anchors from the dev samples; you choose which to apply.',
+    'Each section starts at the first match of its anchor (a multiline regular expression) and runs to the next. The grid shows, live, where every anchor lands in each prepared sample.',
   steps:
     'Each step sends some sections of the text to a model and fills some outputs; check steps compare values.',
   revise: undefined,

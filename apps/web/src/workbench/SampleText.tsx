@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import type { PreparedText } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
-export type TextMark = { page: number; line: string; label: string };
+export type TextMark = { page: number; line: string; label: string; color?: string };
 
 /** With page markers on, a section starting at a page top reports this line. */
 const PAGE_MARKER = /^\[page \d+\]$/;
 
-function PageBody({ text, marks }: { text: string; marks: { line: string; label: string }[] }) {
+function PageBody({ text, marks }: { text: string; marks: Omit<TextMark, 'page'>[] }) {
   if (!marks.length) return <pre>{text}</pre>;
   const lines = text.split('\n');
   const used = new Set<string>();
@@ -32,8 +32,13 @@ function PageBody({ text, marks }: { text: string; marks: { line: string; label:
         return (
           <span key={i}>
             {mark && (
-              <span role="note" aria-label={`${mark.label} starts here`} className="section-start">
-                {`▶ ${mark.label}\n`}
+              <span
+                role="note"
+                aria-label={`${mark.label} starts here`}
+                className="section-start"
+                style={mark.color ? { background: mark.color } : undefined}
+              >
+                {`▶ ${mark.label} starts here\n`}
               </span>
             )}
             {line}

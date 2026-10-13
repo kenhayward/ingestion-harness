@@ -1602,7 +1602,10 @@ label.inline.list-select {
 .card.coverage,
 .card.pipeline,
 .summary-card,
-.sample-preview {
+.sample-preview,
+.anchors-card,
+.grid-card,
+.section-text {
   padding: 12px 16px;
 }
 .brief-card h3,
@@ -1613,8 +1616,164 @@ label.inline.list-select {
 .coverage-head h3,
 .pipeline-head h3,
 .summary-card h3,
-.sample-preview-head h3 {
+.sample-preview-head h3,
+.anchors-card h3,
+.grid-card h3,
+.section-text h3 {
   font-weight: 600;
+}
+
+/* Sections (handoff §5) */
+.sections-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+.sections-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.anchors-head,
+.grid-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.anchors-head h3,
+.grid-head h3 {
+  margin: 0;
+}
+.anchors-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.anchor-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.anchor-row {
+  display: grid;
+  grid-template-columns: 24px minmax(80px, 160px) minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+}
+.anchor-row.selected {
+  background: var(--ih-info-bg);
+}
+.anchor-order {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--ih-accent-text);
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+}
+.anchor-regex[aria-invalid='true'] {
+  border-color: var(--ih-danger-fg);
+}
+.hits-badge {
+  min-width: 44px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: var(--ih-text-sm);
+}
+.hits-badge.tone-ok {
+  background: var(--ih-ok-bg);
+  color: var(--ih-ok-fg);
+}
+.hits-badge.tone-danger {
+  background: var(--ih-danger-bg);
+  color: var(--ih-danger-fg);
+}
+.hits-badge.tone-neutral {
+  background: var(--ih-surface2);
+}
+.anchor-landing {
+  grid-column: 2 / -1;
+  margin: 0;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+  overflow-wrap: anywhere;
+}
+.document-options {
+  margin-top: 8px;
+}
+.seg-legend {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--ih-text-sm);
+}
+.seg-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  border: 1px solid var(--ih-border);
+  border-radius: 3px;
+  vertical-align: -2px;
+}
+.cell-found .seg-cell,
+.seg-swatch.cell-found {
+  background: var(--ih-ok-bg);
+}
+.cell-large .seg-cell,
+.seg-swatch.cell-large {
+  background: var(--ih-warn-bg);
+  border-color: var(--ih-warn-fg);
+}
+.cell-missing-required .seg-cell,
+.cell-empty .seg-cell,
+.seg-swatch.cell-missing-required {
+  background: var(--ih-danger-bg);
+  border-color: var(--ih-danger-fg);
+}
+.cell-missing .seg-cell,
+.seg-swatch.cell-missing {
+  background: var(--ih-surface2);
+}
+.seg-cell {
+  width: 100%;
+  text-align: left;
+}
+.seg-cell[aria-pressed='true'] {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: -2px;
+}
+.anchor-hint {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ih-danger-bg);
+}
+.anchor-hint p {
+  margin: 0 0 8px;
+}
+@media (max-width: 900px) {
+  .sections-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .anchor-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+  .anchor-regex,
+  .anchor-landing {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Survey (handoff §3) */
