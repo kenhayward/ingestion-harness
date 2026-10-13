@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { Api, Me } from '../api/client.js';
 import { API_DOCS } from '../shell/AppShell.js';
+import { BrandMark } from '../ui/BrandMark.js';
 import { Icon } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 
@@ -21,10 +22,8 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <main className="auth-main">
         <div className="auth-column">
           <div className="auth-brand">
-            <span className="brand-mark large">
-              <Icon name="brand" size={26} />
-            </span>
-            <h1>Ingestion Harness</h1>
+            <BrandMark size={52} />
+            <h1>CT Studio</h1>
           </div>
           {children}
         </div>

@@ -24,10 +24,13 @@ describe('app shell', () => {
     expect(
       within(banner).getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
     ).toHaveTextContent('KL');
-    expect(within(banner).getByRole('link', { name: 'Ingestion Harness' })).toHaveAttribute(
-      'href',
-      '#/',
-    );
+    const home = within(banner).getByRole('link', {
+      name: 'CT Studio — Content Transformation Studio, home',
+    });
+    expect(home).toHaveAttribute('href', '#/');
+    expect(home).toHaveAttribute('title', 'Content Transformation Studio');
+    expect(home).toHaveTextContent('CT Studio');
+    expect(home.querySelector('svg')).toHaveAttribute('data-geometry', 'small');
   });
 
   it.each(['user', 'admin'] as const)(

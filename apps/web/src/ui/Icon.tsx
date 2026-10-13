@@ -1,12 +1,5 @@
 /** Stroke paths from the UI handoff's design source (24×24 viewBox, currentColor). */
 const PATHS = {
-  brand: (
-    <>
-      <path d="M5 7h14" />
-      <path d="M5 12h9" />
-      <path d="M5 17h5" />
-    </>
-  ),
   search: (
     <>
       <circle cx="11" cy="11" r="6" />

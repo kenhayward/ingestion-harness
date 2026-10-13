@@ -8,6 +8,13 @@ const statusError = (status: number, message: string) =>
   Object.assign(new Error(message), { status });
 
 describe('sign-in gate', () => {
+  it('shows the CT Studio mark and name', async () => {
+    render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
+    await screen.findByLabelText('Access token'); // past the loading layout, which has the same brand
+    expect(screen.getByRole('heading', { level: 1, name: 'CT Studio' })).toBeInTheDocument();
+    expect(document.querySelector('.auth-brand svg')).toHaveAttribute('width', '52');
+  });
+
   it('asks for a token when not signed in, then shows the app', async () => {
     const api = fakeApi({
       me: vi.fn(async () => null),

@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
 import type { Route } from '../router.js';
+import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 import { attentionCount, initials, sectionOf } from './derive.js';
@@ -69,11 +70,14 @@ export function AppShell({
   return (
     <div className="app-shell">
       <header className="top-bar">
-        <a className="brand" href="#/">
-          <span className="brand-mark">
-            <Icon name="brand" size={18} />
-          </span>
-          Ingestion Harness
+        <a
+          className="brand"
+          href="#/"
+          aria-label="CT Studio — Content Transformation Studio, home"
+          title="Content Transformation Studio"
+        >
+          <BrandMark size={30} />
+          CT Studio
         </a>
         <label className="search">
           <Icon name="search" />
