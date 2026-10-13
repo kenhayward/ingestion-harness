@@ -89,7 +89,12 @@ import {
   type StageView,
   type SurveyBody,
   type WorkbenchProject,
+  ReferenceDetailSchema,
+  correctionOutput,
+  outputCoverage,
+  outputProvenance,
   referenceCorrections,
+  type ReferenceDetail,
   type ReferenceInfo,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
@@ -547,6 +552,64 @@ export async function referenceRows(
   preloaded?: SampleViews,
 ): Promise<ReferenceRow[]> {
   return (await referenceEntries(app, projectId, set, preloaded)).map((e) => e.row);
+}
+
+/**
+ * One sample's reference with each current output's value and provenance (handoff RF2), or why
+ * there is none. Reads the sample's set the same way as `referenceRows` (one review query).
+ */
+async function referenceDetail(
+  app: FastifyInstance,
+  projectId: string,
+  sampleId: string,
+): Promise<ReferenceDetail | 'sample not found' | 'no reference for this sample'> {
+  const views = await sampleViews(app, projectId);
+  const sample = views.find((s) => s.record.id === sampleId);
+  if (!sample) return 'sample not found';
+  const entry = (await referenceEntries(app, projectId, sample.view.role, views)).find(
+    (e) => e.row.sampleId === sampleId,
+  );
+  if (!entry?.reference || !entry.row.reference) return 'no reference for this sample';
+  const { reference } = entry;
+  const info = entry.row.reference;
+  const { definition } = await currentDefinition(app, projectId);
+  const values = outputCoverage(definition).outputs.map((o) => {
+    const own =
+      info.corrections === null
+        ? null
+        : info.corrections.filter((c) => correctionOutput(c.key) === o.id);
+    const first = own?.[0];
+    return {
+      id: o.id,
+      kind: o.kind,
+      value:
+        o.kind === 'field'
+          ? (reference.expected.fields[o.id] ?? null)
+          : (reference.expected.tables[o.id] ?? []),
+      provenance: own === null ? null : outputProvenance(own),
+      proposed: o.kind === 'field' && first?.kind === 'corrected' ? first.proposed : null,
+      corrections: own ?? [],
+    };
+  });
+  const job = info.sourceJobId ? await app.deps.repo.getJob(info.sourceJobId) : null;
+  const models = job
+    ? [
+        ...new Set(
+          (await app.deps.repo.listStepRuns(job.id)).flatMap((r) =>
+            r.status === 'succeeded' && r.model ? [r.model] : [],
+          ),
+        ),
+      ]
+    : [];
+  return {
+    sampleId,
+    filename: sample.record.filename,
+    role: sample.view.role,
+    reference: info,
+    run: job && { jobId: job.id, modelOverride: job.modelOverride, models },
+    values,
+    corrections: info.corrections,
+  };
 }
 
 /** `sampleViews`' result: pass it to `referenceRows` when the caller has already loaded it. */
@@ -2260,6 +2323,44 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const query = ReferencesQuery.safeParse(req.query ?? {});
       if (!query.success) return reply.code(400).send({ error: query.error.issues });
       return referenceRows(app, req.params.id, query.data.set ?? 'dev');
+    },
+  );
+
+  app.get<{ Params: { id: string; sid: string } }>(
+    '/workbench/projects/:id/references/:sid',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'getReferenceDetail',
+        summary: "Read one sample's reference",
+        description: md`
+          The References tab's detail panel (handoff RF2): the sample's reference for the
+          current version (as in the list), the run that proposed its values (job, model
+          override, the models its step runs used) and one entry per output of the current
+          version with the expected value (a table's rows) and its provenance: \`model\` (the
+          model proposed it and nobody changed it), \`corrected\` (with the model's value in
+          \`proposed\` for a field) or \`entered\` (the model proposed nothing); \`null\` when the
+          corrections are unknown. Dev and holdout samples alike: holdout values are shown to
+          the user, never to a model.
+        `,
+        params: SampleIdParams,
+        response: {
+          200: res('The reference.', ReferenceDetailSchema),
+          404: error(
+            '`project not found`, `sample not found` or `no reference for this sample` (none yet, or the sample is not ready).',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const params = SampleParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'sample not found' });
+      const detail = await referenceDetail(app, params.data.id, params.data.sid);
+      if (typeof detail === 'string') return reply.code(404).send({ error: detail });
+      return detail;
     },
   );
 

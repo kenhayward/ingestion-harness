@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { preparedTriageKey, type ReferenceRow, type SampleView, type StageView } from '@ih/shared';
+import {
+  preparedTriageKey,
+  type ReferenceDetail,
+  type ReferenceRow,
+  type SampleView,
+  type StageView,
+} from '@ih/shared';
 import type { NewEdit } from '../src/repositories/types.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -313,5 +319,122 @@ describe('reference corrections (RF1)', () => {
       await app.inject('/api/workbench/projects/letter/references?set=holdout')
     ).json() as ReferenceRow[];
     expect(row!.reference).toMatchObject({ verifiedBy: 'ken', corrections: [] });
+  });
+});
+
+describe('reference detail (RF2)', () => {
+  const field = (f: string, oldValue: unknown, newValue: unknown) => ({
+    field: f,
+    table: null,
+    row: null,
+    column: null,
+    oldValue,
+    newValue,
+  });
+
+  it('returns each output with its provenance, the run that proposed it and its models', async () => {
+    const { add, skipAll, reviewed, detail, repo } = await project();
+    const s = await add(1);
+    await skipAll();
+    const { job, reference } = await reviewed(s, [field('sender', 'Acme', 'Acme Ltd')]);
+    repo.stepRuns.set(job.id, [
+      {
+        id: 1,
+        stepId: 'head',
+        trigger: 'process',
+        model: 'local/qwen',
+        attempts: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        status: 'succeeded',
+        cached: false,
+        error: null,
+        startedAt: '2026-10-13T09:00:00.000Z',
+        finishedAt: '2026-10-13T09:00:01.000Z',
+      },
+    ]);
+    const res = await detail(s.id);
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as ReferenceDetail;
+    expect(body).toMatchObject({
+      sampleId: s.id,
+      filename: 's1.pdf',
+      role: 'dev',
+      reference: { id: reference.id, verifiedBy: 'ken', sourceJobId: job.id },
+      run: { jobId: job.id, modelOverride: 'draft', models: ['local/qwen'] },
+      corrections: [{ key: 'sender', kind: 'corrected', proposed: 'Acme' }],
+    });
+    expect(body.values).toEqual([
+      {
+        id: 'sender',
+        kind: 'field',
+        value: 'Acme Ltd',
+        provenance: 'corrected',
+        proposed: 'Acme',
+        corrections: [{ key: 'sender', kind: 'corrected', proposed: 'Acme' }],
+      },
+    ]);
+  });
+
+  it('marks values the reviewer typed as entered and untouched ones as model', async () => {
+    const { add, skipAll, reviewed, detail } = await project();
+    const s1 = await add(1);
+    const s2 = await add(2);
+    await skipAll();
+    await reviewed(s1, [field('sender', null, 'Acme Ltd')]);
+    await reviewed(s2, []);
+    expect(((await detail(s1.id)).json() as ReferenceDetail).values[0]).toMatchObject({
+      provenance: 'entered',
+      proposed: null,
+    });
+    expect(((await detail(s2.id)).json() as ReferenceDetail).values[0]).toMatchObject({
+      provenance: 'model',
+      proposed: null,
+      corrections: [],
+    });
+  });
+
+  it('serves holdout samples, with null provenance when the corrections are unknown', async () => {
+    const { add, skipAll, detail, repo } = await project();
+    const h = await add(3, 'holdout');
+    await skipAll();
+    const doc = [...repo.documents.values()].find((d) => d.sha256 === h.sha256)!;
+    await repo.createReference({
+      templateId: 'letter',
+      name: 'h',
+      documentId: doc.id,
+      sourceJobId: null,
+      expected: { fields: { sender: 'Globex' }, tables: {} },
+    });
+    const body = (await detail(h.id)).json() as ReferenceDetail;
+    expect(body).toMatchObject({ role: 'holdout', run: null, corrections: null });
+    expect(body.values[0]).toMatchObject({ value: 'Globex', provenance: null });
+  });
+
+  it.each([
+    [
+      'an unknown project',
+      '/api/workbench/projects/nope/references/00000000-0000-4000-8000-000000000000',
+      'project not found',
+    ],
+    [
+      'an unknown sample',
+      '/api/workbench/projects/letter/references/00000000-0000-4000-8000-000000000000',
+      'sample not found',
+    ],
+    ['a malformed sample id', '/api/workbench/projects/letter/references/x', 'sample not found'],
+  ])('is a 404 for %s', async (_name, url, error) => {
+    const { app } = await project();
+    const res = await app.inject(url);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error });
+  });
+
+  it('is a 404 for a sample without a reference', async () => {
+    const { add, detail } = await project();
+    const s = await add(1);
+    const res = await detail(s.id);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'no reference for this sample' });
   });
 });
