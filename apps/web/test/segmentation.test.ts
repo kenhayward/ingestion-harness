@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { SectionCell, SegmentedSample } from '@ih/shared';
-import { cellFlag, sectionHits } from '../src/workbench/segmentation.js';
+import type { SectionCell, SegmentationResult, SegmentedSample } from '@ih/shared';
+import {
+  cellFlag,
+  cellShare,
+  hitTone,
+  initialSelection,
+  landingText,
+  move,
+  sectionHits,
+  suggestionFor,
+} from '../src/workbench/segmentation.js';
 
 const cell = (o: Partial<SectionCell> = {}): SectionCell => ({
   id: 'a',
@@ -63,5 +72,80 @@ describe('sectionHits', () => {
       ],
     };
     expect(sectionHits(result, 'a')).toEqual({ hits: 1, of: 2 });
+  });
+});
+
+describe('anchor helpers', () => {
+  const result: SegmentationResult = {
+    anchorErrors: {},
+    samples: [
+      sample([cell({ id: 'header' }), cell({ id: 'supplier' })], { sampleId: 'acme' }),
+      sample(
+        [
+          cell({ id: 'header' }),
+          cell({ id: 'supplier', found: false, chars: 0, page: null, line: null }),
+        ],
+        { sampleId: 'globex', missingRequired: ['supplier'] },
+      ),
+    ],
+    suggestions: [
+      { section: 'supplier', sampleId: 'globex', anchor: '^(From|Vendor)\\b', reason: 'r' },
+    ],
+  };
+
+  it('selects the first required miss, else the first cell', () => {
+    expect(initialSelection(result)).toEqual({ sampleId: 'globex', sectionId: 'supplier' });
+    expect(initialSelection({ ...result, samples: [result.samples[0]!] })).toEqual({
+      sampleId: 'acme',
+      sectionId: 'header',
+    });
+    expect(initialSelection({ ...result, samples: [] })).toBeNull();
+  });
+
+  it('finds the suggestion for a sample and section', () => {
+    expect(suggestionFor(result, 'globex', 'supplier')?.anchor).toBe('^(From|Vendor)\\b');
+    expect(suggestionFor(result, 'acme', 'supplier')).toBeNull();
+  });
+
+  it.each<[string, Parameters<typeof landingText>[1], boolean, string]>([
+    [
+      'found',
+      cell({ id: 'h', page: 2, line: 'TAX INVOICE' }),
+      true,
+      'In a.pdf: p.2 · matches "TAX INVOICE"',
+    ],
+    [
+      'missing, required',
+      cell({ id: 'h', found: false, page: null, line: null }),
+      true,
+      'In a.pdf: no match — required',
+    ],
+    [
+      'missing, optional',
+      cell({ id: 'h', found: false, page: null, line: null }),
+      false,
+      'In a.pdf: no match — optional',
+    ],
+    ['not previewed', undefined, true, 'In a.pdf: not in the preview yet'],
+  ])('landingText: %s', (_name, c, required, expected) => {
+    expect(landingText('a.pdf', c, required)).toBe(expected);
+  });
+
+  it.each([
+    [8, 8, true, 'ok'],
+    [7, 8, true, 'danger'],
+    [7, 8, false, 'neutral'],
+    [0, 0, true, 'neutral'],
+  ] as const)('hitTone(%i, %i, %s) = %s', (hits, of, required, tone) => {
+    expect(hitTone(hits, of, required)).toBe(tone);
+  });
+
+  it('measures a cell against the sample and moves rows', () => {
+    const big = cell({ id: 'a', chars: 800 });
+    expect(cellShare(big, sample([big, cell({ id: 'b', chars: 200 })]))).toBeCloseTo(0.8);
+    expect(cellShare(big, sample([]))).toBe(0);
+    expect(move(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a']);
+    expect(move(['a', 'b', 'c'], 2, 1)).toEqual(['a', 'c', 'b']);
+    expect(move(['a', 'b'], 0, -1)).toEqual(['a', 'b']);
   });
 });

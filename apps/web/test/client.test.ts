@@ -230,6 +230,11 @@ describe('http api: drafting stages', () => {
     expect(fetchMock.mock.calls[2]![0]).toBe('/api/workbench/projects/letter/stages/survey/skip');
     await api.listStages('letter');
     expect(fetchMock.mock.calls[3]![0]).toBe('/api/workbench/projects/letter/stages');
+    await api.confirmStage('letter', 'sections');
+    expect(fetchMock.mock.calls[4]![0]).toBe(
+      '/api/workbench/projects/letter/stages/sections/confirm',
+    );
+    expect(fetchMock.mock.calls[4]![1]!.method).toBe('POST');
   });
 });
 
