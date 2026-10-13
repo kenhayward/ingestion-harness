@@ -1,10 +1,10 @@
-import { ModelInfoSchema } from '@ih/shared';
+import { ModelInfoSchema, isOffered } from '@ih/shared';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { md, res } from '../openapi/zod.js';
 
 export const modelRoutes: FastifyPluginAsync = async (app) => {
-  /** Models discovered by the worker (llm_models table). `?all=true` includes disabled ones. */
+  /** The models offered in the pickers (curated, enabled); `?all=true` adds every other one. */
   app.get<{ Querystring: { all?: string } }>(
     '/models',
     {
@@ -13,20 +13,26 @@ export const modelRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listModels',
         summary: 'List the models jobs can use',
         description: md`
-          The models the worker discovered from the providers in \`config/llm-providers.yaml\`,
-          as \`provider/model-id\` refs. Only enabled models are listed unless \`all=true\`.
-          A job or step re-run may name any enabled model as an override; aliases such as
-          \`default\` and \`fast\` are resolved by the worker and are not listed here.
+          The models offered in the model pickers, as \`endpoint/model-id\` refs: those chosen
+          for an enabled endpoint (\`curated\`, seeded from \`.env\` or picked by an admin;
+          [ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md))
+          and enabled. With \`all=true\` every known model is listed, including disabled ones
+          and models the worker discovered on an endpoint but nobody chose (suggestions). A job
+          or retry may name an offered model as an override; aliases such as \`default\` and
+          \`fast\` are resolved by the worker and are not listed here.
         `,
         querystring: z.object({
-          all: z.enum(['true', 'false']).optional().describe('`true` includes disabled models.'),
+          all: z
+            .enum(['true', 'false'])
+            .optional()
+            .describe('`true` adds disabled models and uncurated discoveries.'),
         }),
         response: { 200: res('The models.', z.array(ModelInfoSchema)) },
       },
     },
     async (req) => {
       const models = await app.deps.repo.listModels();
-      return req.query.all === 'true' ? models : models.filter((m) => m.enabled);
+      return req.query.all === 'true' ? models : models.filter(isOffered);
     },
   );
 };

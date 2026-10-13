@@ -42,6 +42,7 @@ const model = (ref: string): ModelInfo => ({
   displayName: null,
   enabled: true,
   discoveredAt: '',
+  curated: true,
 });
 
 describe('JobList main action', () => {

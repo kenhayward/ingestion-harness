@@ -4340,7 +4340,7 @@
         "tags": [
           "Models"
         ],
-        "description": "The models the worker discovered from the providers in `config/llm-providers.yaml`,\nas `provider/model-id` refs. Only enabled models are listed unless `all=true`.\nA job or step re-run may name any enabled model as an override; aliases such as\n`default` and `fast` are resolved by the worker and are not listed here.",
+        "description": "The models offered in the model pickers, as `endpoint/model-id` refs: those chosen\nfor an enabled endpoint (`curated`, seeded from `.env` or picked by an admin;\n[ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md))\nand enabled. With `all=true` every known model is listed, including disabled ones\nand models the worker discovered on an endpoint but nobody chose (suggestions). A job\nor retry may name an offered model as an override; aliases such as `default` and\n`fast` are resolved by the worker and are not listed here.",
         "parameters": [
           {
             "schema": {
@@ -4353,7 +4353,7 @@
             "in": "query",
             "name": "all",
             "required": false,
-            "description": "`true` includes disabled models."
+            "description": "`true` adds disabled models and uncurated discoveries."
           }
         ],
         "responses": {
@@ -4394,6 +4394,9 @@
                       },
                       "discoveredAt": {
                         "type": "string"
+                      },
+                      "curated": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -4403,7 +4406,8 @@
                       "modelId",
                       "displayName",
                       "enabled",
-                      "discoveredAt"
+                      "discoveredAt",
+                      "curated"
                     ],
                     "additionalProperties": true
                   },

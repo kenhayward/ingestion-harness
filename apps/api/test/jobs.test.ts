@@ -162,15 +162,22 @@ describe('specs and models API', () => {
     expect((await app.inject('/api/specs/missing')).statusCode).toBe(404);
   });
 
-  it('hides disabled models unless all=true', async () => {
+  it('offers only curated, enabled models; all=true adds the rest (suggestions)', async () => {
     const { app, repo } = await testApp();
     const base = { providerKind: 'openai-chat' as const, displayName: null, discoveredAt: '' };
     repo.models = [
-      { ...base, ref: 'local/a', provider: 'local', modelId: 'a', enabled: true },
-      { ...base, ref: 'local/b', provider: 'local', modelId: 'b', enabled: false },
+      { ...base, ref: 'local/a', provider: 'local', modelId: 'a', enabled: true, curated: true },
+      { ...base, ref: 'local/b', provider: 'local', modelId: 'b', enabled: false, curated: true },
+      // Discovered on the endpoint but never chosen: a suggestion, not a picker entry.
+      { ...base, ref: 'local/c', provider: 'local', modelId: 'c', enabled: true, curated: false },
     ];
-    expect((await app.inject('/api/models')).json()).toHaveLength(1);
-    expect((await app.inject('/api/models?all=true')).json()).toHaveLength(2);
+    const refs = (res: { json: () => { ref: string }[] }) => res.json().map((m) => m.ref);
+    expect(refs(await app.inject('/api/models'))).toEqual(['local/a']);
+    expect(refs(await app.inject('/api/models?all=true'))).toEqual([
+      'local/a',
+      'local/b',
+      'local/c',
+    ]);
   });
 });
 
@@ -271,11 +278,16 @@ describe('retry with a model', () => {
     displayName: null,
     enabled,
     discoveredAt: '',
+    curated: !ref.endsWith('/suggested'),
   });
 
   async function failedJob(modelOverride: string | null = 'anthropic/old') {
     const ctx = await seedJob();
-    ctx.repo.models = [model('anthropic/new'), model('anthropic/off', false)];
+    ctx.repo.models = [
+      model('anthropic/new'),
+      model('anthropic/off', false),
+      model('anthropic/suggested'),
+    ];
     ctx.repo.jobs.set(ctx.job.id, {
       ...ctx.repo.jobs.get(ctx.job.id)!,
       status: 'failed',
@@ -303,12 +315,15 @@ describe('retry with a model', () => {
     expect((await retry(ctx)).json()).toMatchObject({ modelOverride: 'anthropic/old' });
   });
 
-  it.each(['anthropic/unknown', 'anthropic/off'])('rejects %s', async (ref) => {
-    const ctx = await failedJob();
-    const res = await retry(ctx, { model: ref });
-    expect(res.statusCode).toBe(400);
-    expect(ctx.repo.jobs.get(ctx.job.id)!.status).toBe('failed');
-  });
+  it.each(['anthropic/unknown', 'anthropic/off', 'anthropic/suggested'])(
+    'rejects %s',
+    async (ref) => {
+      const ctx = await failedJob();
+      const res = await retry(ctx, { model: ref });
+      expect(res.statusCode).toBe(400);
+      expect(ctx.repo.jobs.get(ctx.job.id)!.status).toBe('failed');
+    },
+  );
 });
 
 describe('models used', () => {

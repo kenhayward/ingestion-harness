@@ -3,6 +3,7 @@ import {
   JobDetailSchema,
   JobStatusSchema,
   JobSummarySchema,
+  isOffered,
   pagePreviewKey,
   sourceContentType,
   type JobSummary,
@@ -180,7 +181,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({ error: 'model must be a model ref or null' });
       const { model } = body.data;
       if (model) {
-        const known = (await app.deps.repo.listModels()).some((m) => m.enabled && m.ref === model);
+        const known = (await app.deps.repo.listModels()).some(
+          (m) => isOffered(m) && m.ref === model,
+        );
         if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
       }
       const current = await app.deps.repo.getJob(req.params.id);
