@@ -2215,16 +2215,6 @@ a.button.icon.bordered {
   gap: 8px;
 }
 
-.segmentation-grid td.cell-missing-required,
-.segmentation-grid td.cell-empty {
-  background: var(--ih-danger-bg);
-  color: var(--ih-danger-fg);
-}
-.segmentation-grid td.cell-large,
-.segmentation-grid td.cell-missing {
-  background: var(--ih-info-bg);
-  color: var(--ih-info-fg);
-}
 .segmentation-grid .anchor-errors {
   background: var(--ih-alert-bg);
   color: var(--ih-alert-fg);
@@ -2233,8 +2223,11 @@ a.button.icon.bordered {
 }
 
 .section-start {
-  color: var(--ih-accent);
+  color: var(--ih-accent-text);
   font-weight: 600;
+}
+.section-start:not([style]) {
+  color: var(--ih-accent);
 }
 
 .sections-tab input.mono {

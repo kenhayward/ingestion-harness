@@ -253,7 +253,12 @@ describe.each([
   ['IterationView', IterationViewSchema, iteration, 'scorecard'],
   ['ProposalView', ProposalViewSchema, proposal, 'stage'],
   ['ReferenceRow', ReferenceRowSchema, referenceRow, 'reference'],
-  ['StageView', StageViewSchema, { stage: 'survey', state: 'accepted', completedAt: at }, 'state'],
+  [
+    'StageView',
+    StageViewSchema,
+    { stage: 'survey', state: 'accepted', completedAt: at, skippedAt: null },
+    'skippedAt',
+  ],
   [
     'SegmentationView',
     SegmentationViewSchema,

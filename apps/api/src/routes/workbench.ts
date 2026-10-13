@@ -18,6 +18,7 @@ import {
   FeedbackItemSchema,
   GateViewSchema,
   IterationSummarySchema,
+  KEEPABLE_STAGES,
   IterationViewSchema,
   MAX_SAMPLES,
   JobSummarySchema,
@@ -34,6 +35,7 @@ import {
   SampleRoleSchema,
   SampleViewSchema,
   SegmentationViewSchema,
+  STAGE_ORDER,
   StageViewSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
@@ -239,7 +241,11 @@ export async function stagesOf(app: FastifyInstance, projectId: string): Promise
     decidedAt: p.decidedAt,
     status: statusOf(p, jobs.get(p.id) ?? null),
   }));
-  return stageStates(proposals, await app.deps.workbench.listSkips(projectId));
+  const [skips, confirms] = await Promise.all([
+    app.deps.workbench.listSkips(projectId),
+    app.deps.workbench.listConfirms(projectId),
+  ]);
+  return stageStates(proposals, skips, confirms);
 }
 
 /** The body of the latest accepted survey, or null (context for the change stages). */
@@ -1712,8 +1718,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           A preview's status and, once it succeeded, its result: per sample, the kept copy's
           pages, the sections found (pages and characters) and the required sections missing;
-          and the anchors whose regex is invalid. \`error: result missing\` when the result
-          file is gone.
+          and the anchors whose regex is invalid. \`suggestions\` lists, for required sections
+          that missed a sample, an anchor that would find it (the sample writes the label
+          another way: a synonym, another case, an indent) and why. \`error: result missing\`
+          when the result file is gone.
         `,
         params: z.object({
           id: z.string().describe('The project id.'),
@@ -2152,7 +2160,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Each stage's state: \`pending\`, \`running\`, \`proposed\` (waiting for a
           decision), \`accepted\`, \`skipped\`, or \`stale\` (an earlier stage was accepted
           again since). \`references\` is accepted once every ready dev sample has a verified
-          reference. States are derived, never stored.
+          reference. States are derived, never stored. \`skippedAt\` is the stage's latest skip, kept after
+          it is run or accepted again (the Survey tab's "You skipped this stage" banner).
         `,
         params: ProjectIdParams,
         response: { 200: res('The stages.', z.array(StageViewSchema)), 404: PROJECT_NOT_FOUND },
@@ -2327,6 +2336,61 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: `finish the ${blocking} stage first (accept or skip it)` });
       }
       await workbench.addSkip(projectId, stage);
+      return reply.code(201).send(await allStages(app, projectId));
+    },
+  );
+
+  app.post<{ Params: { id: string; stage: string } }>(
+    '/workbench/projects/:id/stages/:stage/confirm',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'confirmStage',
+        summary: 'Keep a stale stage as it is',
+        description: md`
+          Clears \`stale\` from a stage without a new proposal (the Sections tab's _Keep these
+          anchors_): its current content is confirmed against the earlier stages as they are now.
+          Its \`completedAt\` and its state (\`accepted\`, or \`skipped\` for a kept skip) are
+          unchanged, so later stages do not go stale; an earlier stage completing again makes it
+          stale again. Only \`outputs\`, \`sections\` and \`steps\` can be kept, and only while
+          stale. Nothing is proposed and the draft is not changed.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          stage: z.string().describe('The stage: outputs, sections or steps.'),
+        }),
+        response: {
+          201: res("Every stage's state.", z.array(StageViewSchema)),
+          400: error('`stage {stage} cannot be kept`.'),
+          404: PROJECT_NOT_FOUND,
+          409: error('`stage {stage} is not stale`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const stage = KEEPABLE_STAGES.find((s) => s === req.params.stage);
+      if (!stage) {
+        return reply.code(400).send({ error: `stage ${req.params.stage} cannot be kept` });
+      }
+      const projectId = req.params.id;
+      if (!(await workbench.getProject(projectId))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const states = await stagesOf(app, projectId);
+      const index = STAGE_ORDER.indexOf(stage);
+      if (states[index]?.state !== 'stale') {
+        return reply.code(409).send({ error: `stage ${stage} is not stale` });
+      }
+      // What the stage is kept against: the earlier completions read for the check above. One
+      // that lands after this read (even concurrently) is newer, so it makes the stage stale again.
+      const upTo = states
+        .slice(0, index)
+        .map((s) => s.completedAt)
+        .filter((at): at is string => at !== null)
+        .sort()
+        .at(-1)!;
+      await workbench.addConfirm(projectId, stage, upTo);
+      req.log.info({ projectId, stage, upTo }, 'workbench stage kept');
       return reply.code(201).send(await allStages(app, projectId));
     },
   );

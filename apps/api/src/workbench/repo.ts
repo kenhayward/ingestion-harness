@@ -10,9 +10,11 @@ import type {
   EvaluationSet,
   FeedbackItem,
   JobSummary,
+  KeepableStage,
   ProposalDecision,
   Publication,
   SampleRole,
+  StageConfirm,
   StageSkip,
   WorkbenchProject,
 } from '@ih/shared';
@@ -62,6 +64,7 @@ export interface ProposalRecord {
 }
 
 export type StageSkipRecord = StageSkip & { projectId: string };
+export type StageConfirmRecord = StageConfirm & { projectId: string };
 
 export interface NewProposal {
   id: string;
@@ -198,6 +201,10 @@ export interface WorkbenchRepo {
   addSkip(projectId: string, stage: DraftStage): Promise<StageSkipRecord>;
   /** Newest first. */
   listSkips(projectId: string): Promise<StageSkipRecord[]>;
+  /** "Keep" on a stale stage (handoff SC1, migration 0026): its content stands up to `upTo`. */
+  addConfirm(projectId: string, stage: KeepableStage, upTo: string): Promise<StageConfirmRecord>;
+  /** Newest first. */
+  listConfirms(projectId: string): Promise<StageConfirmRecord[]>;
   createIteration(input: NewIteration): Promise<IterationRecord>;
   /** Newest first. */
   listIterations(projectId: string): Promise<IterationRecord[]>;
@@ -220,7 +227,7 @@ export interface WorkbenchRepo {
   deleteProject(id: string): Promise<RemovedProject | 'published' | null>;
   /**
    * Per project, a hash of everything the project overview reads (the project row, its jobs,
-   * samples, proposals, skips, briefs, iterations, publications, feedback, template versions and
+   * samples, proposals, skips, confirmations, briefs, iterations, publications, feedback, template versions and
    * references), and the latest activity time. Equal fingerprints mean an unchanged list row.
    */
   projectFingerprints(): Promise<ProjectFingerprint[]>;
@@ -257,6 +264,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly briefs: Brief[] = [];
   readonly proposals: ProposalRecord[] = [];
   readonly skips: StageSkipRecord[] = [];
+  readonly confirms: StageConfirmRecord[] = [];
   readonly iterations: IterationRecord[] = [];
   readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
@@ -515,6 +523,16 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     return this.skips.filter((s) => s.projectId === projectId).reverse();
   }
 
+  async addConfirm(projectId: string, stage: KeepableStage, upTo: string) {
+    const confirm: StageConfirmRecord = { projectId, stage, upTo, confirmedAt: this.now() };
+    this.confirms.push(confirm);
+    return confirm;
+  }
+
+  async listConfirms(projectId: string) {
+    return this.confirms.filter((c) => c.projectId === projectId).reverse();
+  }
+
   async createIteration(input: NewIteration) {
     const record: IterationRecord = {
       ...input,
@@ -601,6 +619,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       this.iterations,
       this.proposals,
       this.skips,
+      this.confirms,
       this.briefs,
     ] as { projectId: string }[][]) {
       for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
@@ -668,6 +687,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       const briefs = of(this.briefs).map((b) => [b.version, b.createdAt]);
       const proposals = of(this.proposals).map((p) => [p.id, p.decision, p.createdAt, p.decidedAt]);
       const skips = of(this.skips).map((s) => [s.stage, s.skippedAt]);
+      const confirms = of(this.confirms).map((c) => [c.stage, c.upTo, c.confirmedAt]);
       const iterations = of(this.iterations).map((i) => [i.id, i.createdAt, i.scores, i.gateCache]);
       const publications = of(this.publications).map((p) => [p.id, p.publishedAt]);
       const feedback = of(this.feedback).map((f) => [f.id, f.resolvedBy, f.createdAt]);
@@ -686,6 +706,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
             briefs,
             proposals,
             skips,
+            confirms,
             iterations,
             publications,
             feedback,
@@ -701,6 +722,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
         ...briefs.map((b) => b[1] as string),
         ...proposals.flatMap((p) => [p[2], p[3]]),
         ...skips.map((s) => s[1] as string),
+        ...confirms.map((c) => c[2] as string),
         ...iterations.map((i) => i[1] as string),
         ...publications.map((p) => p[1] as string),
         ...feedback.map((f) => f[2] as string),
@@ -821,6 +843,13 @@ interface SkipRow {
   skipped_at: Date;
 }
 
+interface ConfirmRow {
+  project_id: string;
+  stage: KeepableStage;
+  up_to: Date;
+  confirmed_at: Date;
+}
+
 interface IterationRow {
   id: string;
   project_id: string;
@@ -859,6 +888,13 @@ const toSkip = (r: SkipRow): StageSkipRecord => ({
   projectId: r.project_id,
   stage: r.stage,
   skippedAt: r.skipped_at.toISOString(),
+});
+
+const toConfirm = (r: ConfirmRow): StageConfirmRecord => ({
+  projectId: r.project_id,
+  stage: r.stage,
+  upTo: r.up_to.toISOString(),
+  confirmedAt: r.confirmed_at.toISOString(),
 });
 
 const toProposal = (r: ProposalRow): ProposalRecord => ({
@@ -965,6 +1001,7 @@ const FINGERPRINT_SQL = `
            coalesce(pr.n, 0), coalesce(pr.at::text, ''), coalesce(pr.decided_at::text, ''),
            coalesce(pr.decided, 0),
            coalesce(sk.n, 0), coalesce(sk.at::text, ''),
+           coalesce(sc.n, 0), coalesce(sc.at::text, ''),
            coalesce(b.version, 0),
            coalesce(i.n, 0), coalesce(i.at::text, ''), coalesce(i.scored, 0), coalesce(i.gated, 0),
            coalesce(pu.n, 0), coalesce(pu.at::text, ''),
@@ -973,7 +1010,7 @@ const FINGERPRINT_SQL = `
            coalesce(r.n, 0), coalesce(r.at::text, ''), coalesce(r.superseded, 0),
            coalesce(r.superseded_at::text, '')
          )) AS fingerprint,
-         greatest(p.created_at, j.at, s.at, pr.at, pr.decided_at, sk.at, b.at, i.at, pu.at, f.at,
+         greatest(p.created_at, j.at, s.at, pr.at, pr.decided_at, sk.at, sc.at, b.at, i.at, pu.at, f.at,
                   t.at, r.at, r.superseded_at) AS last_activity_at
     FROM workbench_projects p
     LEFT JOIN (SELECT project_id, count(*) AS n, max(updated_at) AS at,
@@ -991,6 +1028,9 @@ const FINGERPRINT_SQL = `
     LEFT JOIN (SELECT project_id, count(*) AS n, max(skipped_at) AS at
                  FROM workbench_stage_skips GROUP BY project_id) sk
       ON sk.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(confirmed_at) AS at
+                 FROM workbench_stage_confirms GROUP BY project_id) sc
+      ON sc.project_id = p.id
     LEFT JOIN (SELECT project_id, max(version) AS version, max(created_at) AS at
                  FROM workbench_briefs GROUP BY project_id) b
       ON b.project_id = p.id
@@ -1330,6 +1370,24 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     return rows.map(toSkip);
   }
 
+  async addConfirm(projectId: string, stage: KeepableStage, upTo: string) {
+    const { rows } = await this.pool.query<ConfirmRow>(
+      `INSERT INTO workbench_stage_confirms (project_id, stage, up_to) VALUES ($1, $2, $3)
+       RETURNING project_id, stage, up_to, confirmed_at`,
+      [projectId, stage, upTo],
+    );
+    return toConfirm(rows[0]!);
+  }
+
+  async listConfirms(projectId: string) {
+    const { rows } = await this.pool.query<ConfirmRow>(
+      `SELECT project_id, stage, up_to, confirmed_at FROM workbench_stage_confirms
+        WHERE project_id = $1 ORDER BY confirmed_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toConfirm);
+  }
+
   async createIteration(i: NewIteration) {
     const { rows } = await this.pool.query<IterationRow>(
       `INSERT INTO workbench_iterations
@@ -1447,6 +1505,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         'workbench_iterations',
         'workbench_proposals',
         'workbench_stage_skips',
+        'workbench_stage_confirms',
         'workbench_briefs',
         'workbench_samples',
       ]) {

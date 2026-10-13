@@ -15840,6 +15840,34 @@
                                 ],
                                 "additionalProperties": true
                               }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "section": {
+                                    "type": "string"
+                                  },
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "anchor": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "section",
+                                  "sampleId",
+                                  "anchor",
+                                  "reason"
+                                ],
+                                "additionalProperties": true
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -15994,7 +16022,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "A preview's status and, once it succeeded, its result: per sample, the kept copy's\npages, the sections found (pages and characters) and the required sections missing;\nand the anchors whose regex is invalid. `error: result missing` when the result\nfile is gone.",
+        "description": "A preview's status and, once it succeeded, its result: per sample, the kept copy's\npages, the sections found (pages and characters) and the required sections missing;\nand the anchors whose regex is invalid. `suggestions` lists, for required sections\nthat missed a sample, an anchor that would find it (the sample writes the label\nanother way: a synonym, another case, an indent) and why. `error: result missing`\nwhen the result file is gone.",
         "parameters": [
           {
             "schema": {
@@ -16140,6 +16168,34 @@
                                 ],
                                 "additionalProperties": true
                               }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "section": {
+                                    "type": "string"
+                                  },
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "anchor": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "section",
+                                  "sampleId",
+                                  "anchor",
+                                  "reason"
+                                ],
+                                "additionalProperties": true
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -17410,6 +17466,24 @@
                                           "field",
                                           "table"
                                         ]
+                                      },
+                                      "seenIn": {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "of"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -18035,6 +18109,34 @@
                                             ],
                                             "additionalProperties": true
                                           }
+                                        },
+                                        "suggestions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "section": {
+                                                "type": "string"
+                                              },
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "anchor": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "section",
+                                              "sampleId",
+                                              "anchor",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": true
+                                          },
+                                          "default": []
                                         }
                                       },
                                       "required": [
@@ -18231,7 +18333,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Each stage's state: `pending`, `running`, `proposed` (waiting for a\ndecision), `accepted`, `skipped`, or `stale` (an earlier stage was accepted\nagain since). `references` is accepted once every ready dev sample has a verified\nreference. States are derived, never stored.",
+        "description": "Each stage's state: `pending`, `running`, `proposed` (waiting for a\ndecision), `accepted`, `skipped`, or `stale` (an earlier stage was accepted\nagain since). `references` is accepted once every ready dev sample has a verified\nreference. States are derived, never stored. `skippedAt` is the stage's latest skip, kept after\nit is run or accepted again (the Survey tab's \"You skipped this stage\" banner).",
         "parameters": [
           {
             "schema": {
@@ -18280,12 +18382,19 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "skippedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
                       "stage",
                       "state",
-                      "completedAt"
+                      "completedAt",
+                      "skippedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -18999,12 +19108,19 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "skippedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
                       "stage",
                       "state",
-                      "completedAt"
+                      "completedAt",
+                      "skippedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -19127,6 +19243,213 @@
                   ],
                   "additionalProperties": true,
                   "description": "`finish the {stage} stage first (accept or skip it)`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/stages/{stage}/confirm": {
+      "post": {
+        "operationId": "confirmStage",
+        "summary": "Keep a stale stage as it is",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Clears `stale` from a stage without a new proposal (the Sections tab's _Keep these\nanchors_): its current content is confirmed against the earlier stages as they are now.\nIts `completedAt` and its state (`accepted`, or `skipped` for a kept skip) are\nunchanged, so later stages do not go stale; an earlier stage completing again makes it\nstale again. Only `outputs`, `sections` and `steps` can be kept, and only while\nstale. Nothing is proposed and the draft is not changed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "stage",
+            "required": true,
+            "description": "The stage: outputs, sections or steps."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Every stage's state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stage": {
+                        "type": "string",
+                        "enum": [
+                          "survey",
+                          "outputs",
+                          "sections",
+                          "steps",
+                          "references",
+                          "revise"
+                        ]
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "running",
+                          "proposed",
+                          "accepted",
+                          "skipped",
+                          "stale"
+                        ]
+                      },
+                      "completedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "skippedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "stage",
+                      "state",
+                      "completedAt",
+                      "skippedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "Every stage's state."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`stage {stage} cannot be kept`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`stage {stage} cannot be kept`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`stage {stage} is not stale`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`stage {stage} is not stale`."
                 }
               }
             }
@@ -19270,6 +19593,24 @@
                                             "field",
                                             "table"
                                           ]
+                                        },
+                                        "seenIn": {
+                                          "type": "object",
+                                          "properties": {
+                                            "n": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "of": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "n",
+                                            "of"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -19895,6 +20236,34 @@
                                               ],
                                               "additionalProperties": true
                                             }
+                                          },
+                                          "suggestions": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "section": {
+                                                  "type": "string"
+                                                },
+                                                "sampleId": {
+                                                  "type": "string"
+                                                },
+                                                "anchor": {
+                                                  "type": "string"
+                                                },
+                                                "reason": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "section",
+                                                "sampleId",
+                                                "anchor",
+                                                "reason"
+                                              ],
+                                              "additionalProperties": true
+                                            },
+                                            "default": []
                                           }
                                         },
                                         "required": [
@@ -20196,6 +20565,24 @@
                                           "field",
                                           "table"
                                         ]
+                                      },
+                                      "seenIn": {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "of"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -20821,6 +21208,34 @@
                                             ],
                                             "additionalProperties": true
                                           }
+                                        },
+                                        "suggestions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "section": {
+                                                "type": "string"
+                                              },
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "anchor": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "section",
+                                              "sampleId",
+                                              "anchor",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": true
+                                          },
+                                          "default": []
                                         }
                                       },
                                       "required": [

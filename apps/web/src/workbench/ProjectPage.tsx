@@ -100,6 +100,8 @@ export function ProjectPage({
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   /** Bumped when a stage changes the draft, to remount editors showing it. */
   const [revision, setRevision] = useState(0);
+  /** The Sections tab has anchor edits that are not in the draft yet. */
+  const [anchorsDirty, setAnchorsDirty] = useState(false);
 
   // The Workbench list's "Pinned and recent" cards show the projects opened last.
   useEffect(() => rememberProject(projectId), [projectId]);
@@ -282,7 +284,6 @@ export function ProjectPage({
               }
             />
           )}
-          {tab === 'survey' && header('survey')}
           {tab === 'survey' && (
             <SurveyTab
               api={api}
@@ -295,6 +296,7 @@ export function ProjectPage({
               }}
               pollMs={pollMs}
               onChanged={changed}
+              item={itemOf('survey')}
             />
           )}
           {(tab === 'outputs' || tab === 'steps') && (
@@ -329,10 +331,13 @@ export function ProjectPage({
                 briefVersion={view.brief?.version ?? null}
                 pollMs={pollMs}
                 onApplied={changed}
+                onConfirmed={loadOverview}
                 onSkipped={changed}
+                blockedReason={anchorsDirty ? 'Save your unsaved anchors first' : null}
               />
               <SectionsTab
                 key={revision}
+                onDirtyChange={setAnchorsDirty}
                 api={api}
                 projectId={project.id}
                 draft={draft}

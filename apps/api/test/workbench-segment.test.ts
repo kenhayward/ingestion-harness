@@ -120,7 +120,7 @@ describe('workbench segmentation', () => {
       jobId: first,
       status: 'succeeded',
       error: null,
-      result: grid,
+      result: { ...grid, suggestions: [] }, // a grid written before SC2 reads with no suggestions
     });
 
     const second = (await start({ document: doc })).json().jobId as string;

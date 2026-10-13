@@ -96,6 +96,10 @@ describe('MemoryWorkbenchRepo project list support', () => {
     ['a data policy change', ({ workbench }) => workbench.setDataPolicy('alpha', 'external', 'me')],
     ['skipping a stage', ({ workbench }) => workbench.addSkip('alpha', 'survey')],
     [
+      'keeping a stale stage',
+      ({ workbench }) => workbench.addConfirm('alpha', 'sections', '2026-10-13T09:00:00.000Z'),
+    ],
+    [
       'recording a publication',
       ({ workbench }) =>
         workbench.recordPublication({
