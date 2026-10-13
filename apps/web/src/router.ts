@@ -21,6 +21,7 @@ export type Route =
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
   | { name: 'access' }
+  | { name: 'models' }
   | { name: 'results' }
   | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number }
@@ -49,6 +50,7 @@ export function parseHash(hash: string): Route {
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
+  if (hash === '#/models') return { name: 'models' };
   return { name: 'jobs' };
 }
 

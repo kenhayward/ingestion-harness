@@ -4,6 +4,8 @@ import type {
   BriefVersionView,
   DataPolicy,
   DraftStage,
+  EndpointCreateInput,
+  EndpointPatchBody,
   EditRequest,
   EvaluationModel,
   EvaluationSet,
@@ -18,6 +20,7 @@ import type {
   JobDetail,
   JobSummary,
   KeepableStage,
+  LlmEndpointView,
   ModelInfo,
   PreparedText,
   ProjectListPage,
@@ -254,6 +257,14 @@ export interface Api {
   ): Promise<IssuedS3Key>;
   revokeS3Key(keyId: string): Promise<void>;
   deleteS3Consumer(consumerId: string): Promise<void>;
+  /** LLM endpoints and their models (admins; ADR 0010). */
+  listLlmEndpoints(): Promise<LlmEndpointView[]>;
+  createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
+  /** `apiKey`: a new key (stored encrypted), or null to remove the stored one. */
+  updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
+  /** Exactly these models are offered in the pickers. */
+  setLlmEndpointModels(name: string, models: string[]): Promise<LlmEndpointView>;
+  deleteLlmEndpoint(name: string): Promise<void>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
@@ -538,6 +549,20 @@ export function createHttpApi(base = '/api'): Api {
     deleteToken: async (id) => {
       await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
     },
+    listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
+    createLlmEndpoint: (body) => post<LlmEndpointView>(`${base}/llm/endpoints`, body),
+    updateLlmEndpoint: (name, patch) =>
+      post<LlmEndpointView>(`${base}/llm/endpoints/${encodeURIComponent(name)}`, patch, 'PATCH'),
+    setLlmEndpointModels: (name, models) =>
+      post<LlmEndpointView>(
+        `${base}/llm/endpoints/${encodeURIComponent(name)}/models`,
+        { models },
+        'PUT',
+      ),
+    deleteLlmEndpoint: (name) =>
+      noContent(
+        apiFetch(`${base}/llm/endpoints/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+      ),
     listS3Keys: () => apiFetch(`${base}/access/s3-keys`).then(json<S3KeysOverview>),
     createS3Key: (label, expiresInDays) =>
       post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays }),

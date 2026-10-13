@@ -117,7 +117,11 @@ describe('sign-in gate', () => {
   it('signs out', async () => {
     const api = fakeApi();
     render(<App api={api} pollMs={0} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    // An admin signs out from the account menu on their name.
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'admin (admin): account menu' }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     expect(api.logout).toHaveBeenCalled();
     expect(await screen.findByLabelText('Access token')).toBeInTheDocument();
   });
@@ -125,7 +129,7 @@ describe('sign-in gate', () => {
   it('shows the Access link to admins only', async () => {
     const { unmount } = render(<App api={fakeApi()} pollMs={0} />);
     expect(await screen.findByRole('link', { name: 'Access' })).toHaveAttribute('href', '#/access');
-    expect(screen.getByRole('group', { name: 'Signed in as admin (admin)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'admin (admin): account menu' })).toBeInTheDocument();
     unmount();
     const user = fakeApi({
       me: vi.fn(async () => ({ role: 'user' as const, label: 'Ken', expiresAt: null })),

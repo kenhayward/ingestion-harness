@@ -1,6 +1,6 @@
 # 0010: LLM endpoints and curated models live in the database; .env seeds them
 
-**Status:** accepted · 2026-10-13 · phases 1-2 and 3a of 4 implemented
+**Status:** accepted · 2026-10-13 · phases 1-3 of 4 implemented
 
 ## Context
 Content Transformation Studio (CT Studio) had one local LLM endpoint (`LOCAL_LLM_BASE_URL`) next

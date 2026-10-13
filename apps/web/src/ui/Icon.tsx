@@ -150,6 +150,12 @@ const PATHS = {
       <path d="M9 11V8a3 3 0 0 1 6 0v3" />
     </>
   ),
+  chip: (
+    <>
+      <rect x="7" y="7" width="10" height="10" rx="1.5" />
+      <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

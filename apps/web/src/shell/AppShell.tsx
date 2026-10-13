@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
 import type { Route } from '../router.js';
@@ -39,6 +39,87 @@ function NavLink({
       <span className="nav-label">{label}</span>
       {children}
     </a>
+  );
+}
+
+/**
+ * An admin's name opens the account menu (Models, Access, Sign out; ADR 0010). It closes on
+ * Escape (focus back on the name), a click outside, or a choice.
+ */
+function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const name = `${me.label} (${me.role}): account menu`;
+
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+
+  return (
+    <div
+      className="user-chip account-menu"
+      ref={box}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && open) {
+          e.stopPropagation();
+          close();
+        }
+      }}
+    >
+      <button
+        type="button"
+        ref={trigger}
+        className="account-trigger"
+        aria-label={name}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="avatar" aria-hidden="true">
+          {initials(me.label)}
+        </span>
+        <span className="who" aria-hidden="true">
+          <span>{me.label}</span>
+          <small>{me.role}</small>
+        </span>
+        <Icon name="chevronDown" size={16} />
+      </button>
+      {open && (
+        <div role="menu" aria-label={name} className="menu-popover">
+          <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
+            <Icon name="chip" />
+            Models
+          </a>
+          <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
+            <Icon name="key" />
+            Access
+          </a>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onSignOut();
+            }}
+          >
+            <Icon name="signOut" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -111,28 +192,32 @@ export function AppShell({
             <Icon name="upload" />
             Upload document
           </button>
-          <div
-            className="user-chip"
-            role="group"
-            aria-label={`Signed in as ${me.label} (${me.role})`}
-          >
-            <span className="avatar" aria-hidden="true">
-              {initials(me.label)}
-            </span>
-            <span className="who" aria-hidden="true">
-              <span>{me.label}</span>
-              <small>{me.role}</small>
-            </span>
-            <button
-              type="button"
-              className="icon"
-              aria-label="Sign out"
-              title="Sign out"
-              onClick={onSignOut}
+          {me.role === 'admin' ? (
+            <AccountMenu me={me} onSignOut={onSignOut} />
+          ) : (
+            <div
+              className="user-chip"
+              role="group"
+              aria-label={`Signed in as ${me.label} (${me.role})`}
             >
-              <Icon name="signOut" size={18} />
-            </button>
-          </div>
+              <span className="avatar" aria-hidden="true">
+                {initials(me.label)}
+              </span>
+              <span className="who" aria-hidden="true">
+                <span>{me.label}</span>
+                <small>{me.role}</small>
+              </span>
+              <button
+                type="button"
+                className="icon"
+                aria-label="Sign out"
+                title="Sign out"
+                onClick={onSignOut}
+              >
+                <Icon name="signOut" size={18} />
+              </button>
+            </div>
+          )}
         </div>
       </header>
       <div className="app-body">
@@ -176,6 +261,13 @@ export function AppShell({
           {me.role === 'admin' && (
             <>
               <span className="nav-heading">Admin</span>
+              <NavLink
+                href="#/models"
+                icon="chip"
+                label="Models"
+                current={section === 'models'}
+                compact={compact}
+              />
               <NavLink
                 href="#/access"
                 icon="key"
