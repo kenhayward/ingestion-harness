@@ -69,6 +69,8 @@ export const EndpointCreateBodySchema = z
     path: ['baseUrl'],
   });
 export type EndpointCreateBody = z.infer<typeof EndpointCreateBodySchema>;
+/** What a client sends (defaults not applied yet). */
+export type EndpointCreateInput = z.input<typeof EndpointCreateBodySchema>;
 
 export const EndpointPatchBodySchema = z
   .object({

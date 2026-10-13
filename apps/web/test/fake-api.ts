@@ -173,6 +173,17 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     revokeToken: vi.fn(async () => undefined),
     deleteToken: vi.fn(async () => undefined),
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
+    listLlmEndpoints: vi.fn(async () => []),
+    createLlmEndpoint: vi.fn(async () => {
+      throw new Error('createLlmEndpoint not stubbed');
+    }),
+    updateLlmEndpoint: vi.fn(async () => {
+      throw new Error('updateLlmEndpoint not stubbed');
+    }),
+    setLlmEndpointModels: vi.fn(async () => {
+      throw new Error('setLlmEndpointModels not stubbed');
+    }),
+    deleteLlmEndpoint: vi.fn(async () => undefined),
     createS3Key: vi.fn(async () => {
       throw new Error('createS3Key not stubbed');
     }),

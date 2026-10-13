@@ -2,7 +2,7 @@ import type { JobStatus, JobSummary } from '@ih/shared';
 import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
-export type Section = 'jobs' | 'results' | 'templates' | 'workbench' | 'access';
+export type Section = 'jobs' | 'results' | 'templates' | 'workbench' | 'access' | 'models';
 
 const SECTION: Record<Route['name'], Section> = {
   jobs: 'jobs',
@@ -14,6 +14,7 @@ const SECTION: Record<Route['name'], Section> = {
   workbench: 'workbench',
   project: 'workbench',
   access: 'access',
+  models: 'models',
 };
 
 export function sectionOf(route: Route): Section {
@@ -72,6 +73,7 @@ const PAGE: Record<Route['name'], string> = {
   workbench: 'Workbench',
   project: 'Workbench',
   access: 'Access',
+  models: 'Models',
 };
 
 /** Browser tab title: "<Page> · CT Studio", or just the name. */

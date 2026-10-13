@@ -7,6 +7,7 @@ describe('parseHash', () => {
     ['#/results', { name: 'results' }],
     ['#/results/abc-123', { name: 'result', jobId: 'abc-123' }],
     ['#/templates', { name: 'templates' }],
+    ['#/models', { name: 'models' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
     ['#/workbench', { name: 'workbench' }],
     ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'overview' }],
