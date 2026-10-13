@@ -111,6 +111,45 @@ const PATHS = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  overview: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="8.5" y="14" width="7" height="7" rx="1.5" />
+      <path d="M6.5 10v2h11v-2M12 12v2" />
+    </>
+  ),
+  brief: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M9 8h6M9 12h6M9 16h4" />
+    </>
+  ),
+  sections: <path d="M5 6h14M8 10h8M5 14h14M8 18h8" />,
+  steps: (
+    <>
+      <rect x="3" y="4" width="7" height="6" rx="1.5" />
+      <rect x="14" y="14" width="7" height="6" rx="1.5" />
+      <path d="M6.5 10v4.5a2 2 0 0 0 2 2H14" />
+    </>
+  ),
+  shieldCheck: (
+    <>
+      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />
+      <path d="M9 12l2 2 4-4" />
+    </>
+  ),
+  bars: <path d="M5 20h14M8 16v-5M12 16V7M16 16v-8" />,
+  message: <path d="M5 5h14v10H9l-4 4z" />,
+  code: <path d="M9 7l-5 5 5 5M15 7l5 5-5 5" />,
+  play: <path d="M8 5v14l11-7z" />,
+  back: <path d="M15 6l-6 6 6 6" />,
+  lock: (
+    <>
+      <rect x="6" y="11" width="12" height="9" rx="2" />
+      <path d="M9 11V8a3 3 0 0 1 6 0v3" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;
