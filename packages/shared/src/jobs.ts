@@ -164,20 +164,24 @@ export const RerunRequestSchema = z
 export type RerunRequest = z.infer<typeof RerunRequestSchema>;
 
 /** A reference document of a document type: approved values used as the expected result. */
-export interface Reference {
-  id: string;
-  templateId: string;
+export const ReferenceSchema = z.object({
+  id: z.string().uuid(),
+  templateId: z.string(),
   /** Workbench types: the template version it belongs to. Null: every version (other types). */
-  templateVersion: number | null;
-  name: string;
-  documentId: string;
-  sourceJobId: string | null;
+  templateVersion: z.number().int().nullable(),
+  name: z.string(),
+  documentId: z.string().uuid(),
+  sourceJobId: z.string().uuid().nullable(),
   /** The reference it was carried forward from (a copy for the next version). */
-  copiedFrom: string | null;
+  copiedFrom: z.string().uuid().nullable(),
   /** The outputs definition the expected values were verified against (null: unpinned). */
-  verifiedOutputs: unknown;
+  verifiedOutputs: z.unknown(),
   /** Set when a re-verified reference replaced this one; kept for older iterations. */
-  supersededAt: string | null;
-  expected: { fields: Record<string, unknown>; tables: Record<string, Record<string, unknown>[]> };
-  createdAt: string;
-}
+  supersededAt: z.string().nullable(),
+  expected: z.object({
+    fields: z.record(z.string(), z.unknown()),
+    tables: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))),
+  }),
+  createdAt: z.string(),
+});
+export type Reference = z.infer<typeof ReferenceSchema>;

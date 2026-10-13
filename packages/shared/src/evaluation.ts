@@ -3,42 +3,44 @@ import type { JobStatus } from './jobs.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
 
-export interface FieldComparison {
-  id: string;
-  expected: unknown;
-  actual: unknown;
-  match: boolean;
-}
+const Row = z.record(z.string(), z.unknown());
 
-export interface TableComparison {
-  id: string;
-  expected: number;
-  actual: number;
+export const FieldComparisonSchema = z.object({
+  id: z.string(),
+  expected: z.unknown(),
+  actual: z.unknown(),
+  match: z.boolean(),
+});
+export type FieldComparison = z.infer<typeof FieldComparisonSchema>;
+
+export const TableComparisonSchema = z.object({
+  id: z.string(),
+  /** Row counts. */
+  expected: z.number().int(),
+  actual: z.number().int(),
   /** Rows identical to their expected counterpart. */
-  matched: number;
+  matched: z.number().int(),
   /** Expected rows with no counterpart sharing any cell. */
-  missing: Record<string, unknown>[];
+  missing: z.array(Row),
   /** Actual rows not aligned to any expected row. */
-  extra: Record<string, unknown>[];
+  extra: z.array(Row),
   /** Aligned rows that differ, with the differing columns. */
-  changed: {
-    expected: Record<string, unknown>;
-    actual: Record<string, unknown>;
-    columns: string[];
-  }[];
+  changed: z.array(z.object({ expected: Row, actual: Row, columns: z.array(z.string()) })),
   /** Equal cells / all cells considered (aligned rows, missing rows, extra rows). */
-  cells: number;
-  cellsTotal: number;
+  cells: z.number().int(),
+  cellsTotal: z.number().int(),
   /** The same cell counts per column. */
-  columns: Record<string, { matched: number; total: number }>;
-}
+  columns: z.record(z.string(), z.object({ matched: z.number().int(), total: z.number().int() })),
+});
+export type TableComparison = z.infer<typeof TableComparisonSchema>;
 
-export interface Comparison {
+export const ComparisonSchema = z.object({
   /** (matched fields + equal cells) / (fields + all cells considered); 1 = identical. */
-  score: number;
-  fields: FieldComparison[];
-  tables: TableComparison[];
-}
+  score: z.number(),
+  fields: z.array(FieldComparisonSchema),
+  tables: z.array(TableComparisonSchema),
+});
+export type Comparison = z.infer<typeof ComparisonSchema>;
 
 export const EVALUATION_MODELS = ['default', 'fast', 'draft'] as const;
 export type EvaluationModel = (typeof EVALUATION_MODELS)[number];

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ModelInfoSchema, ReviewEditSchema, StepRunSchema } from '../src/index.js';
+import {
+  ComparisonSchema,
+  ModelInfoSchema,
+  ReferenceSchema,
+  ReviewEditSchema,
+  StepRunSchema,
+} from '../src/index.js';
 
 const edit = {
   id: 1,
@@ -39,10 +45,45 @@ const model = {
   discoveredAt: '2026-10-13T09:00:00.000Z',
 };
 
+const reference = {
+  id: '00000000-0000-4000-8000-000000000001',
+  templateId: 'letter',
+  templateVersion: 2,
+  name: 'March letter',
+  documentId: '00000000-0000-4000-8000-000000000002',
+  sourceJobId: null,
+  copiedFrom: null,
+  verifiedOutputs: { fields: [] },
+  supersededAt: null,
+  expected: { fields: { sender: 'Ken' }, tables: { lines: [{ qty: 1 }] } },
+  createdAt: '2026-10-13T09:00:00.000Z',
+};
+
+const comparison = {
+  score: 0.5,
+  fields: [{ id: 'sender', expected: 'Ken', actual: 'Ken', match: true }],
+  tables: [
+    {
+      id: 'lines',
+      expected: 1,
+      actual: 1,
+      matched: 0,
+      missing: [],
+      extra: [],
+      changed: [{ expected: { qty: 1 }, actual: { qty: 2 }, columns: ['qty'] }],
+      cells: 0,
+      cellsTotal: 1,
+      columns: { qty: { matched: 0, total: 1 } },
+    },
+  ],
+};
+
 describe.each([
   ['ReviewEdit', ReviewEditSchema, edit, 'at'],
   ['StepRun', StepRunSchema, step, 'trigger'],
   ['ModelInfo', ModelInfoSchema, model, 'providerKind'],
+  ['Reference', ReferenceSchema, reference, 'expected'],
+  ['Comparison', ComparisonSchema, comparison, 'score'],
 ] as const)('%s schema', (_name, schema, example, required) => {
   it('accepts a full value', () => {
     expect(schema.parse(example)).toEqual(example);
