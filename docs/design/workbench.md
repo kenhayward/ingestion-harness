@@ -457,6 +457,12 @@ Pins (W3) live in `workbench_pins (owner, project_id)` and belong to the signed-
 (`GET /api/workbench/pins`, `PUT` and `DELETE /api/workbench/pins/:projectId`). The bootstrap admin
 token is recreated on every API start, so its pins reset then; named admin tokens keep theirs.
 
+The web's Workbench page (`WorkbenchPage`) is that list: server-counted filter chips, a search
+debounced by 250 ms, Phase, Models and Sort selects, the projects table (cards on phones) and a
+pager with 25, 50 or 100 rows per page (kept in `localStorage` `ih.wbPageSize`). Above it, up to three
+cards show the pinned projects first, then the ones opened most recently (`ih.wbRecent`, written by the
+project page); New project and Import bundle open dialogs.
+
 `npm run seed:workbench -w @ih/api -- 1000` seeds varied projects into the database in
 `DATABASE_URL`, and `apps/api/test/integration/workbench-list-perf.test.ts` holds the list at p95 <
 200 ms with 1,000 seeded projects against a throwaway Postgres (skipped unless

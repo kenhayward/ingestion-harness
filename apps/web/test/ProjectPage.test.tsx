@@ -107,6 +107,13 @@ describe('ProjectPage tab headers', () => {
 });
 
 describe('ProjectPage', () => {
+  it('remembers the project first among the recent projects', async () => {
+    localStorage.setItem('ih.wbRecent', JSON.stringify(['invoice', 'letter']));
+    page(fakeApi({ getProject: vi.fn(async () => projectView()) }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Letter' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('ih.wbRecent')!)).toEqual(['letter', 'invoice']);
+  });
+
   it('shows the project with tab links', async () => {
     page(fakeApi({ getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })) }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Letter' })).toBeInTheDocument();
