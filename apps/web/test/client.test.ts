@@ -57,6 +57,28 @@ describe('http api: workbench', () => {
     expect([...(init.body as FormData).keys()]).toEqual(['id', 'name', 'bundle']);
   });
 
+  it("explains a proxy 413 on import, and keeps the API's own 413 message", async () => {
+    const file = new File(['PK'], 'b.zip', { type: 'application/zip' });
+    const html = '<html><body><h1>413 Request Entity Too Large</h1></body></html>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(html, { status: 413, headers: { 'content-type': 'text/html' } }),
+      ),
+    );
+    await expect(createHttpApi('/api').importBundle(file, {})).rejects.toMatchObject({
+      message: 'bundle too large for the proxy',
+      status: 413,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(413, { error: 'request file too large' })),
+    );
+    await expect(createHttpApi('/api').importBundle(file, {})).rejects.toThrow(
+      'request file too large',
+    );
+  });
+
   it('links the bundle download of an export', () => {
     expect(createHttpApi('/api').exportBundleUrl('letter', 'j1')).toBe(
       '/api/workbench/projects/letter/exports/j1/bundle',

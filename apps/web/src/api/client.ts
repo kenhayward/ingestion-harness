@@ -568,7 +568,19 @@ export function createHttpApi(base = '/api'): Api {
       if (fields.name) form.append('name', fields.name);
       form.append('bundle', file);
       return apiFetch(`${base}/workbench/projects/import`, { method: 'POST', body: form }).then(
-        json<ProjectView>,
+        async (res) => {
+          // A proxy in front of the API (nginx, NGINX Proxy Manager) refuses with its own page.
+          if (res.status === 413) {
+            const body: unknown = await res
+              .clone()
+              .json()
+              .catch(() => null);
+            if (body === null || typeof body !== 'object') {
+              throw new ApiError('bundle too large for the proxy', 413);
+            }
+          }
+          return json<ProjectView>(res);
+        },
       );
     },
     setDataPolicy: (id, dataPolicy) =>

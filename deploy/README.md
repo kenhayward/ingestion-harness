@@ -62,6 +62,12 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
    - SSL: request a Let's Encrypt certificate, and turn on Force SSL and HSTS;
    - turn on **Block common exploits**;
    - Advanced: `client_max_body_size 60m; proxy_read_timeout 300s;` (uploads and long requests).
+     Workbench bundle imports (`POST /api/workbench/projects/import`) are larger: up to
+     `MAX_UPLOAD_MB` × 12 samples + 8 MB (608 MB at the default 50). The app's nginx allows
+     650 MB on that path only; give the proxy host the same allowance, e.g. a custom location
+     `= /api/workbench/projects/import` with `client_max_body_size 650m; proxy_request_buffering
+     off;`, or raise the host-wide limit. Otherwise the import fails with "bundle too large for
+     the proxy".
 4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds
    on `127.0.0.1` (the defaults). Postgres and the API container are never published.
 5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
