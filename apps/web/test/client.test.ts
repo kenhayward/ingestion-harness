@@ -402,6 +402,15 @@ describe('http api: feedback', () => {
       ['DELETE', '/api/workbench/projects/letter/feedback/f1', undefined],
     ]);
   });
+
+  it('reads the revise preview', async () => {
+    const fetchMock = vi.fn(async (_url: string) => respond(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    await createHttpApi('/api').getRevisePreview('letter');
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      '/api/workbench/projects/letter/stages/revise/preview',
+    );
+  });
 });
 
 describe('http api: brief versions', () => {
