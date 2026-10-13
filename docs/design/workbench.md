@@ -317,17 +317,24 @@ How it works (migration 0018):
   reference runs (dev and holdout), evaluation and so the holdout gate's coverage, until the user
   re-verifies it. Regression ignores outdated references.
 - The verified outputs are those the run was checked against, not the draft at save time.
-  Reference runs (dev and holdout) snapshot the draft's outputs into `params.outputs`, and
-  "Save as reference" uses that snapshot. Without one, it uses the published version's outputs,
+  Every test run of a draft snapshots the draft's outputs into `params.outputs`: reference runs
+  (dev and holdout), dev test runs, evaluations (dev and holdout), model comparisons, regression
+  runs of a draft version and Templates test uploads (`draftOutputsSnapshot`). "Save as
+  reference" uses that snapshot, so a later draft edit (say, to the steps) does not block the
+  save. Without one (jobs created before the snapshot), it uses the published version's outputs,
   or the draft's when the draft has not changed since the run was created; a draft edited after
   the run is a 409 (`the draft changed after this run; run it again`). A run of a version that no
   longer exists saves `{}`, which is outdated as soon as the version has outputs again.
 - `GET /api/templates/:id/references?version=N` returns the version's regression set
-  (`versionReferences`): outdated references are left out.
+  (`versionReferences`): outdated references are left out, and there is one reference per PDF
+  (sha256), the one pinned to the version over an unpinned one, so a PDF is never run twice.
 - Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
   instead of deleting it, so older iterations keep their comparisons. Deleting a pinned reference
   supersedes it too. Carrying skips a version that has any row, live or superseded, so deleted
-  copies don't come back; copies keep the source's `created_at`.
+  copies don't come back; copies keep the source's `created_at`. The carry source is the newest
+  earlier version with any row, live or superseded, and only its live rows are copied: a version
+  whose references were all deleted passes on nothing, and the version before it is not
+  resurrected.
 - Two saves of the same PDF at the same version serialize on an advisory transaction lock
   (template, version, sha256), so only one stays live.
 - Other document types keep unpinned references that apply to every version.

@@ -126,4 +126,18 @@ describe('references across versions (repository)', () => {
       [],
     );
   });
+
+  it('carries an emptied version forward as empty, never the version before it', async () => {
+    const repo = new MemoryRepo();
+    await repo.createReference(input(await docOf(repo, 'a'), 'a', 1));
+    expect(await repo.carryReferencesForward('letter', 2)).toBe(1);
+    for (const r of await repo.listReferences('letter', 2)) {
+      expect(await repo.deleteReference('letter', r.id)).toBe(true);
+    }
+    // v2 is the newest earlier version with rows (all superseded): it passes on nothing
+    expect(await repo.carryReferencesForward('letter', 3)).toBe(0);
+    expect(await repo.listReferences('letter', 3)).toEqual([]);
+    // v1 keeps its own reference
+    expect((await repo.listReferences('letter', 1)).map((r) => r.name)).toEqual(['a']);
+  });
 });

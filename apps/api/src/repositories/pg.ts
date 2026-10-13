@@ -186,6 +186,7 @@ export class PgRepo implements IngestionRepo {
     modelOverride: string | null,
     test = false,
     referenceId: string | null = null,
+    params: Record<string, unknown> | null = null,
   ): Promise<JobSummary> {
     return this.insertDocumentAndJob(doc, {
       modelOverride,
@@ -194,7 +195,7 @@ export class PgRepo implements IngestionRepo {
       projectId: null,
       task: 'process',
       priority: 0,
-      params: null,
+      params,
     });
   }
 
@@ -759,6 +760,8 @@ export class PgRepo implements IngestionRepo {
   async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
     // Concurrent callers both pass NOT EXISTS; the live-name unique index makes the second a no-op.
     // Any row of the target version, live or superseded (deleted), means it has its own set.
+    // The source is the newest earlier version with any row, so an emptied version passes on
+    // nothing rather than the set before it.
     // Copies keep the source's created_at: when the sample was verified.
     const { rowCount } = await this.pool.query(
       `INSERT INTO template_references
@@ -769,8 +772,7 @@ export class PgRepo implements IngestionRepo {
          FROM template_references r
         WHERE r.template_id = $1 AND r.superseded_at IS NULL
           AND r.template_version = (SELECT max(template_version) FROM template_references
-                                     WHERE template_id = $1 AND superseded_at IS NULL
-                                       AND template_version < $2)
+                                     WHERE template_id = $1 AND template_version < $2)
           AND NOT EXISTS (SELECT 1 FROM template_references
                            WHERE template_id = $1 AND template_version = $2)
         ORDER BY r.created_at, r.id
@@ -797,7 +799,11 @@ export class PgRepo implements IngestionRepo {
     return (rowCount ?? 0) > 0;
   }
 
-  async createRegressionJob(reference: Reference, version: number): Promise<JobSummary> {
+  async createRegressionJob(
+    reference: Reference,
+    version: number,
+    params: Record<string, unknown> | null = null,
+  ): Promise<JobSummary> {
     const { rows } = await this.pool.query<{
       filename: string;
       sha256: string;
@@ -821,6 +827,7 @@ export class PgRepo implements IngestionRepo {
       null,
       true,
       reference.id,
+      params,
     );
   }
 

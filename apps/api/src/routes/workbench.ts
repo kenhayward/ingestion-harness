@@ -75,7 +75,7 @@ import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
-import { validateTemplate } from '../templates/definitions.js';
+import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
 import {
   WorkbenchConflictError,
@@ -376,14 +376,11 @@ function sampleDocument(sample: SampleRecord, projectId: string, version: number
 
 const activeJob = (status: JobStatus) => status === 'queued' || status === 'running';
 
-/**
- * Params of a reference run: forced review, plus a snapshot of the draft's outputs so a reference
- * saved from it remembers what the run was checked against (the worker ignores `outputs`).
- */
+/** Params of a reference run: forced review, plus the draft's outputs snapshot. */
 const referenceRunParams = (
   dataPolicy: z.infer<typeof DataPolicySchema>,
   definition: Record<string, unknown>,
-) => ({ dataPolicy, forceReview: true, outputs: definition.outputs ?? null });
+) => ({ dataPolicy, forceReview: true, ...draftOutputsSnapshot(definition) });
 
 /** A reference row plus the sample's newest reference run (draft model), for stage state. */
 interface ReferenceEntry {
@@ -788,7 +785,11 @@ async function startIteration(
         {
           projectId,
           task: 'process',
-          params: { dataPolicy: project.dataPolicy, ...(uncached ? { uncached: true } : {}) },
+          params: {
+            dataPolicy: project.dataPolicy,
+            ...(uncached ? { uncached: true } : {}),
+            ...draftOutputsSnapshot(record.definition),
+          },
           referenceId: row.reference!.id,
           modelOverride: model,
         },
@@ -1106,7 +1107,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (draft === null) {
       return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
     }
-    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    const { definition } = (await templates.get(projectId, draft))!;
+    const issues = validateTemplate(definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
     const ready = (await sampleViews(app, projectId)).filter(
       (s) => s.view.role === 'dev' && s.view.state === 'ready',
@@ -1117,7 +1119,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
           projectId,
           task: 'process',
-          params: { dataPolicy: project.dataPolicy },
+          params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
         }),
       ),
     );

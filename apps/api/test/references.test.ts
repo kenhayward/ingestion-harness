@@ -397,6 +397,59 @@ describe('references across versions', () => {
     expect(listed.json()).toEqual([]);
   });
 
+  it('runs regression once per PDF, preferring the reference pinned to the version', async () => {
+    const ctx = await setup();
+    await project(ctx);
+    // processedJob always uses sha256 'abc': both references are of the same PDF
+    const legacyJob = await processedJob(ctx, undefined, 'succeeded', 1);
+    const pinnedJob = await processedJob(ctx, undefined, 'succeeded', 2);
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'legacy',
+      documentId: legacyJob.documentId,
+      sourceJobId: legacyJob.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const pinned = await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'pinned',
+      documentId: pinnedJob.documentId,
+      sourceJobId: pinnedJob.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 2,
+      verifiedOutputs: definition(2, 'two').outputs,
+    });
+    const listed = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect((listed.json() as { id: string }[]).map((r) => r.id)).toEqual([pinned.id]);
+    expect(listed.json()[0]).not.toHaveProperty('sha256');
+    const run = await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}));
+    expect(run.statusCode).toBe(201);
+    expect(run.json().jobs).toHaveLength(1);
+    expect(run.json().jobs[0].referenceId).toBe(pinned.id);
+    // v1 has only the unpinned one
+    const v1 = await ctx.app.inject('/api/templates/letter/references?version=1');
+    expect((v1.json() as { name: string }[]).map((r) => r.name)).toEqual(['legacy']);
+  });
+
+  it("snapshots a draft version's outputs on its regression jobs, not a published one's", async () => {
+    const ctx = await setup();
+    const job = await processedJob(ctx, undefined, 'succeeded', 1);
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'r',
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const draft = await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}));
+    expect(draft.statusCode).toBe(201);
+    expect(await ctx.repo.getJobParams(draft.json().jobs[0].id)).toEqual({
+      outputs: definition(2, 'two').outputs,
+    });
+    const published = await ctx.app.inject(post('/api/templates/letter/versions/1/regression', {}));
+    expect(await ctx.repo.getJobParams(published.json().jobs[0].id)).toBeNull();
+  });
+
   describe('the outputs a saved reference was verified against', () => {
     const save = (ctx: Awaited<ReturnType<typeof setup>>, jobId: string) =>
       ctx.app.inject(post('/api/templates/letter/references', { jobId, name: 'r' }));

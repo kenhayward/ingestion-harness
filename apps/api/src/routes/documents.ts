@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { inboxKey } from '@ih/shared';
-import { resolveDefinition } from '../templates/definitions.js';
+import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
 
 /**
@@ -51,6 +51,8 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     const key = inboxKey(spec.id, spec.version, documentId);
     await store.put(buckets.inbox, key, body, 'application/pdf');
 
+    // A draft can change after the run: snapshot the outputs it was run against.
+    const record = resolved.draft ? await app.deps.templates.get(spec.id, spec.version) : null;
     const job = await repo.createDocumentAndJob(
       {
         id: documentId,
@@ -64,6 +66,8 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
       },
       model,
       test,
+      null,
+      record ? draftOutputsSnapshot(record.definition) : null,
     );
     return reply.code(201).send(job);
   });

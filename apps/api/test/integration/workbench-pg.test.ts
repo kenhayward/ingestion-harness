@@ -458,6 +458,46 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.listReferences(projectId, 2)).toEqual([]);
   });
 
+  it('carries an emptied version forward as empty, never the version before it', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    await repo.createReference({
+      templateId: projectId,
+      name: 'a',
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 1,
+      verifiedOutputs: {},
+    });
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(1);
+    for (const r of await repo.listReferences(projectId, 2)) {
+      expect(await repo.deleteReference(projectId, r.id)).toBe(true);
+    }
+    expect(await repo.carryReferencesForward(projectId, 3)).toBe(0);
+    expect(await repo.listReferences(projectId, 3)).toEqual([]);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.name)).toEqual(['a']);
+  });
+
+  it('stores params on document jobs and regression jobs', async () => {
+    const projectId = await newProject();
+    const outputs = { fields: [{ id: 'sender' }] };
+    const job = await repo.createDocumentAndJob(doc(projectId), null, true, null, { outputs });
+    expect(await paramsOf(job.id)).toEqual({ outputs });
+    const plain = await repo.createDocumentAndJob(doc(projectId), null);
+    expect(await paramsOf(plain.id)).toBeNull();
+    const reference = await repo.createReference({
+      templateId: projectId,
+      name: 'r',
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const regression = await repo.createRegressionJob(reference, 2, { outputs });
+    expect(await paramsOf(regression.id)).toEqual({ outputs });
+    expect(await paramsOf((await repo.createRegressionJob(reference, 2)).id)).toBeNull();
+  });
+
   it('serializes concurrent saves of the same PDF at one version', async () => {
     const projectId = await newProject();
     const source = doc(projectId);

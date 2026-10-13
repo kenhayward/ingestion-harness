@@ -63,17 +63,31 @@ export async function regressionReport(
 
 /**
  * The references a version is regression-tested against: live ones pinned to it or unpinned,
- * minus those verified against outputs this version has changed (re-verify them first).
+ * minus those verified against outputs this version has changed (re-verify them first), and one
+ * per PDF (sha256), preferring the pinned one. Oldest first.
  */
 export async function versionReferences(
   app: FastifyInstance,
   templateId: string,
   version: number,
 ): Promise<Reference[]> {
-  const [references, record] = await Promise.all([
-    app.deps.repo.listReferences(templateId, version),
+  const [all, record] = await Promise.all([
+    app.deps.repo.listReferencesWithSha(templateId), // newest first
     app.deps.templates.get(templateId, version),
   ]);
   const outputs = (record?.definition as { outputs?: unknown } | undefined)?.outputs ?? null;
-  return references.filter((r) => outputChanges(r.verifiedOutputs, outputs).length === 0);
+  const bySha = new Map<string, Reference & { sha256: string }>();
+  for (const r of all) {
+    if (r.supersededAt !== null) continue;
+    if (r.templateVersion !== null && r.templateVersion !== version) continue;
+    if (outputChanges(r.verifiedOutputs, outputs).length) continue;
+    const kept = bySha.get(r.sha256);
+    if (!kept || (kept.templateVersion === null && r.templateVersion !== null))
+      bySha.set(r.sha256, r);
+  }
+  const keep = new Set([...bySha.values()].map((r) => r.id));
+  return all
+    .filter((r) => keep.has(r.id))
+    .reverse()
+    .map(({ sha256: _sha256, ...reference }) => reference);
 }

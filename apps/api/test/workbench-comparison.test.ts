@@ -98,7 +98,11 @@ describe('model comparison and uncached evaluations', () => {
     const iteration = (await evaluate({ uncached: true })).json() as IterationView;
     expect(iteration).toMatchObject({ uncached: true, groupId: null });
     const [run] = (await repo.listProjectRuns('letter')).filter((r) => r.job.referenceId);
-    expect(repo.jobParams.get(run!.job.id)).toEqual({ dataPolicy: 'local', uncached: true });
+    expect(repo.jobParams.get(run!.job.id)).toEqual({
+      dataPolicy: 'local',
+      uncached: true,
+      outputs: letter(1).outputs,
+    });
   });
 
   it('starts one iteration per model and lines them up', async () => {

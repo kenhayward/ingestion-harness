@@ -308,6 +308,67 @@ describe('references across versions (workbench)', () => {
     expect(row!.reference).toMatchObject({ version: 1, outdated: ['field:sender'] });
   });
 
+  it('snapshots the draft outputs on every test run: dev runs, evaluations and comparisons', async () => {
+    const { app, add, skipAll, verify, repo } = await project();
+    const d = await add(1);
+    const h = await add(2, 'holdout');
+    await skipAll();
+    await verify(d, 1);
+    await verify(h, 1);
+    const processJobs = () =>
+      [...repo.jobs.values()]
+        .filter((j) => j.projectId === 'letter' && j.task === 'process')
+        .map((j) => j.id);
+    const created = async (url: string, payload?: Record<string, unknown>) => {
+      const before = new Set(processJobs());
+      const res = await app.inject({ method: 'POST', url, ...(payload ? { payload } : {}) });
+      expect(res.statusCode).toBe(201);
+      return processJobs().filter((id) => !before.has(id));
+    };
+    const base = '/api/workbench/projects/letter';
+    const runs = [
+      ...(await created(`${base}/test-runs`)),
+      ...(await created(`${base}/evaluations`, { set: 'dev' })),
+      ...(await created(`${base}/evaluations`, { set: 'holdout' })),
+      ...(await created(`${base}/evaluations/compare`, {})),
+    ];
+    expect(runs).toHaveLength(6); // 1 test run, 1 dev, 1 holdout, 3 compared models
+    for (const id of runs) {
+      expect(await repo.getJobParams(id)).toMatchObject({
+        dataPolicy: 'local',
+        outputs: letter(1).outputs,
+      });
+    }
+  });
+
+  it('saves a reference from a dev test run after a steps-only draft edit', async () => {
+    const { app, add, skipAll, finish, repo, templates } = await project();
+    await add(1);
+    await skipAll();
+    const run = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/test-runs',
+    });
+    expect(run.statusCode).toBe(201);
+    const [job] = run.json().jobs as { id: string }[];
+    // the run predates the edit (the in-memory clocks can tie within a millisecond)
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, createdAt: '2000-01-01T00:00:00.000Z' });
+    await templates.updateDraft('letter', 1, {
+      ...letter(1),
+      pipeline: [
+        { type: 'extract', id: 'head', fields: ['sender'], sections: ['all'], instructions: 'x' },
+      ],
+    });
+    await finish(job!.id, 1);
+    const saved = await app.inject({
+      method: 'POST',
+      url: '/api/templates/letter/references',
+      payload: { jobId: job!.id, name: 's1' },
+    });
+    expect(saved.statusCode).toBe(201);
+    expect(saved.json()).toMatchObject({ templateVersion: 1, verifiedOutputs: letter(1).outputs });
+  });
+
   it('holdout reference runs snapshot the draft outputs too', async () => {
     const { app, add, repo } = await project();
     await add(1, 'holdout');
