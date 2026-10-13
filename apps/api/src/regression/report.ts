@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { JobDetail, Reference } from '@ih/shared';
+import { outputChanges, type JobDetail, type Reference } from '@ih/shared';
 import { compareToReference, type RunDocument } from './compare.js';
 
 async function readJson(app: FastifyInstance, bucket: string, key: string) {
@@ -36,7 +36,7 @@ export async function regressionReport(
   /** Pass when already loaded (the templates list reads them for its summary too). */
   known?: Reference[],
 ) {
-  const references = known ?? (await app.deps.repo.listReferences(templateId));
+  const references = known ?? (await versionReferences(app, templateId, version));
   const jobs = await app.deps.repo.listLatestRegressionJobs(templateId, version);
   const items = await Promise.all(
     references.map(async (reference) => {
@@ -59,4 +59,21 @@ export async function regressionReport(
       averageScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
     },
   };
+}
+
+/**
+ * The references a version is regression-tested against: live ones pinned to it or unpinned,
+ * minus those verified against outputs this version has changed (re-verify them first).
+ */
+export async function versionReferences(
+  app: FastifyInstance,
+  templateId: string,
+  version: number,
+): Promise<Reference[]> {
+  const [references, record] = await Promise.all([
+    app.deps.repo.listReferences(templateId, version),
+    app.deps.templates.get(templateId, version),
+  ]);
+  const outputs = (record?.definition as { outputs?: unknown } | undefined)?.outputs ?? null;
+  return references.filter((r) => outputChanges(r.verifiedOutputs, outputs).length === 0);
 }

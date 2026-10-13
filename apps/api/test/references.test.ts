@@ -296,3 +296,101 @@ describe('document type summaries (GET /api/templates)', () => {
     expect((await summaryOf(ctx, 'letter')).lastRegression).toBeNull();
   });
 });
+
+describe('references across versions', () => {
+  const project = (ctx: Awaited<ReturnType<typeof setup>>) =>
+    ctx.app.inject(post('/api/workbench/projects', { id: 'letter', name: 'Letter' }));
+
+  it('pins a Workbench type reference to the job version and its outputs', async () => {
+    const ctx = await setup();
+    await project(ctx);
+    const job = await processedJob(ctx, undefined, 'succeeded', 2);
+    const res = await ctx.app.inject(
+      post('/api/templates/letter/references', { jobId: job.id, name: 'r' }),
+    );
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      templateVersion: 2,
+      verifiedOutputs: definition(2, 'two').outputs,
+    });
+    const v1 = await ctx.app.inject('/api/templates/letter/references?version=1');
+    expect(v1.json()).toEqual([]);
+    const v2 = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect((v2.json() as { name: string }[]).map((r) => r.name)).toEqual(['r']);
+  });
+
+  it('carries the earlier version forward before pinning a save to a new version', async () => {
+    const ctx = await setup();
+    await project(ctx);
+    const j1 = await processedJob(ctx, undefined, 'succeeded', 1);
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'v1',
+      documentId: j1.documentId,
+      sourceJobId: j1.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 1,
+      verifiedOutputs: definition(1).outputs,
+    });
+    const j2 = await processedJob(ctx, undefined, 'succeeded', 2);
+    // processedJob always uses sha256 'abc'; a different PDF, or the save would supersede the copy
+    const d2 = ctx.repo.documents.get(j2.documentId)!;
+    ctx.repo.documents.set(d2.id, { ...d2, sha256: 'def' });
+    const res = await ctx.app.inject(
+      post('/api/templates/letter/references', { jobId: j2.id, name: 'v2' }),
+    );
+    expect(res.statusCode).toBe(201);
+    const v2 = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect((v2.json() as { name: string }[]).map((r) => r.name).sort()).toEqual(['v1', 'v2']);
+  });
+
+  it('leaves other types unpinned: a reference applies to every version', async () => {
+    const ctx = await setup();
+    const job = await processedJob(ctx, undefined, 'succeeded', 1);
+    const res = await ctx.app.inject(
+      post('/api/templates/letter/references', { jobId: job.id, name: 'r' }),
+    );
+    expect(res.json()).toMatchObject({ templateVersion: null, verifiedOutputs: null });
+    const v2 = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect((v2.json() as { name: string }[]).map((r) => r.name)).toEqual(['r']);
+  });
+
+  it('rejects a bad version query', async () => {
+    const ctx = await setup();
+    const res = await ctx.app.inject('/api/templates/letter/references?version=zero');
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('runs regression of a version on its own references only, leaving outdated ones out', async () => {
+    const ctx = await setup();
+    await project(ctx);
+    const outputs = definition(1).outputs;
+    const j1 = await processedJob(ctx, undefined, 'succeeded', 1);
+    const j2 = await processedJob(ctx, undefined, 'succeeded', 2);
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'v1',
+      documentId: j1.documentId,
+      sourceJobId: j1.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+    });
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'v2',
+      documentId: j2.documentId,
+      sourceJobId: j2.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 2,
+      verifiedOutputs: { fields: [{ id: 'gone' }], tables: [] }, // verified against other outputs
+    });
+    const r1 = await ctx.app.inject(post('/api/templates/letter/versions/1/regression', {}));
+    expect(r1.statusCode).toBe(201);
+    expect(r1.json().jobs).toHaveLength(1);
+    const r2 = await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}));
+    expect(r2.statusCode).toBe(400); // v2's only reference is outdated
+    const report = await ctx.app.inject('/api/templates/letter/versions/1/regression');
+    expect(report.json().summary.references).toBe(1);
+  });
+});

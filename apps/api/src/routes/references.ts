@@ -1,10 +1,14 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { expectedFromDocument } from '../regression/compare.js';
-import { jobDocument, regressionReport } from '../regression/report.js';
+import { jobDocument, regressionReport, versionReferences } from '../regression/report.js';
 import { diffDefinitions } from '../regression/diff.js';
 import { computeMetrics } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
+
+const ListQuery = z
+  .object({ version: z.coerce.number().int().positive().optional() })
+  .strict();
 
 const CreateReference = z
   .object({ jobId: z.string().uuid(), name: z.string().min(1).max(100) })
@@ -14,9 +18,11 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
   const typeExists = async (id: string) =>
     (await app.deps.templates.list()).some((r) => r.id === id);
 
-  app.get<{ Params: { id: string } }>('/templates/:id/references', async (req) =>
-    app.deps.repo.listReferences(req.params.id),
-  );
+  app.get<{ Params: { id: string } }>('/templates/:id/references', async (req, reply) => {
+    const query = ListQuery.safeParse(req.query);
+    if (!query.success) return reply.code(400).send({ error: query.error.issues });
+    return app.deps.repo.listReferences(req.params.id, query.data.version);
+  });
 
   /** Save a finished job's (reviewed) values as the expected result for this document type. */
   app.post<{ Params: { id: string } }>('/templates/:id/references', async (req, reply) => {
@@ -36,13 +42,27 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
     }
     const document = await jobDocument(app, job);
     if (!document) return reply.code(400).send({ error: 'job has no document output' });
+    // Workbench types pin references to the version they were verified against.
+    const pin = (await app.deps.workbench.getProject(req.params.id))
+      ? {
+          templateVersion: job.specVersion,
+          verifiedOutputs:
+            ((await app.deps.templates.get(req.params.id, job.specVersion))?.definition as
+              | { outputs?: unknown }
+              | undefined)?.outputs ?? null,
+        }
+      : null;
     try {
+      // Carry earlier references forward first, or a save made before anyone opened the
+      // References tab would give this version references of its own and hide the earlier set.
+      if (pin) await app.deps.repo.carryReferencesForward(req.params.id, job.specVersion);
       const reference = await app.deps.repo.createReference({
         templateId: req.params.id,
         name: body.data.name,
         documentId: job.documentId,
         sourceJobId: job.id,
         expected: expectedFromDocument(document),
+        ...pin,
       });
       return reply.code(201).send(reference);
     } catch (err) {
@@ -73,7 +93,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
       if (!(await app.deps.templates.get(req.params.id, version))) {
         return reply.code(404).send({ error: 'template version not found' });
       }
-      const references = await app.deps.repo.listReferences(req.params.id);
+      const references = await versionReferences(app, req.params.id, version);
       if (!references.length) {
         return reply
           .code(400)
