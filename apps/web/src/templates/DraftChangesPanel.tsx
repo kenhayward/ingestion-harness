@@ -33,6 +33,7 @@ export function DraftChangesPanel({
   const [error, setError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   const [diff, setDiff] = useState<VersionDiff | null>(null);
+  const [diffError, setDiffError] = useState<string | null>(null);
   /** Numbers each load, so an older response never replaces a newer one. */
   const request = useRef(0);
 
@@ -50,15 +51,24 @@ export function DraftChangesPanel({
     );
   }, [api, projectId, refreshKey]);
 
-  const toggleDiff = () => {
-    const open = !showDiff;
-    setShowDiff(open);
-    if (open && published !== null) {
-      api
-        .diffVersions(projectId, published, version)
-        .then(setDiff, (err: Error) => setError(err.message));
-    }
-  };
+  /** Own sequence for the full diff, so a slower earlier response is dropped. */
+  const diffRequest = useRef(0);
+  useEffect(() => {
+    const n = ++diffRequest.current;
+    setDiff(null);
+    setDiffError(null);
+    if (!showDiff || published === null) return;
+    api.diffVersions(projectId, published, version).then(
+      (d) => {
+        if (n === diffRequest.current) setDiff(d);
+      },
+      (err: Error) => {
+        if (n === diffRequest.current) setDiffError(err.message);
+      },
+    );
+  }, [api, projectId, published, version, showDiff, refreshKey]);
+
+  const toggleDiff = () => setShowDiff((open) => !open);
 
   const title = published !== null ? `Changes since v${published}` : `Changes in draft v${version}`;
   return (
@@ -72,6 +82,8 @@ export function DraftChangesPanel({
         )}
       </div>
       {error && <p role="alert">Could not load the changes: {error}</p>}
+      {showDiff && diffError && <p role="alert">Could not load the full diff: {diffError}</p>}
+      {showDiff && !diff && !diffError && <p className="muted">Loading…</p>}
       {showDiff && diff && (
         <ul className="full-diff" aria-label={`Full diff from v${diff.from}`}>
           {diff.changes.length === 0 && <li className="muted">No differences.</li>}

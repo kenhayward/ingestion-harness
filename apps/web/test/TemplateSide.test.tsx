@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { TemplateChange } from '@ih/shared';
+import type { VersionDiff } from '../src/api/client.js';
 import { ChecksPanel } from '../src/templates/ChecksPanel.js';
 import { DraftChangesPanel } from '../src/templates/DraftChangesPanel.js';
 import { fakeApi } from './fake-api.js';
@@ -116,6 +117,38 @@ describe('DraftChangesPanel', () => {
       'added outputs.fields[due_date]',
     );
     expect(full).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('refetches the open full diff after a save and drops a slower earlier response', async () => {
+    let resolveFirst: (v: VersionDiff) => void = () => {};
+    const diffVersions = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<VersionDiff>((r) => (resolveFirst = r)))
+      .mockResolvedValue({ from: 3, to: 4, changes: [{ kind: 'added', path: 'new.path' }] });
+    const api = fakeApi({ diffVersions });
+    const { rerender } = render(
+      <DraftChangesPanel api={api} projectId="invoice" version={4} published={3} refreshKey={0} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Full diff' }));
+    rerender(
+      <DraftChangesPanel api={api} projectId="invoice" version={4} published={3} refreshKey={1} />,
+    );
+    expect(await screen.findByText('added new.path')).toBeInTheDocument();
+    expect(diffVersions).toHaveBeenCalledTimes(2);
+    resolveFirst({ from: 3, to: 4, changes: [{ kind: 'added', path: 'old.path' }] });
+    await waitFor(() => expect(screen.queryByText('added old.path')).not.toBeInTheDocument());
+  });
+
+  it('says when the full diff cannot be read, apart from the changes list', async () => {
+    const api = fakeApi({ diffVersions: vi.fn(async () => Promise.reject(new Error('gone'))) });
+    render(
+      <DraftChangesPanel api={api} projectId="invoice" version={4} published={3} refreshKey={0} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Full diff' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load the full diff: gone',
+    );
+    expect(screen.queryByText(/Could not load the changes/)).not.toBeInTheDocument();
   });
 
   it('names the draft when nothing is published, and says when nothing is recorded', async () => {
