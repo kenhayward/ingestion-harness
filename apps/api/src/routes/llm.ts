@@ -1,0 +1,256 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import {
+  CuratedModelsBodySchema,
+  EndpointCreateBodySchema,
+  EndpointPatchBodySchema,
+  LlmEndpointViewSchema,
+  resolveAlias,
+} from '@ih/shared';
+import { z } from 'zod';
+import { encryptSecret } from '../llm/secrets.js';
+import { error, md, noContent, res } from '../openapi/zod.js';
+
+const ADR =
+  'https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md';
+const ADMINS_ONLY = error('`admins only`.');
+const NOT_FOUND = error('`endpoint not found`.');
+const NO_SECRETS = 'LLM_SECRETS_KEY is not set: the API cannot store keys';
+const IN_USE = error('`alias {name} uses {ref}: point it elsewhere first`.');
+const NameParams = z.object({ name: z.string().describe('The endpoint name (model-ref prefix).') });
+const base = (operationId: string, summary: string, description: string) => ({
+  tags: ['Models'],
+  'x-admin': true,
+  operationId,
+  summary,
+  description,
+});
+
+/**
+ * LLM endpoints and their curated models (ADR 0010), for the Models page. Admins only; the
+ * access hook has already required a session (`deps.access === null` disables both in unit
+ * tests). Keys are encrypted here and never returned.
+ */
+export async function llmRoutes(app: FastifyInstance): Promise<void> {
+  const repo = app.deps.llm;
+
+  app.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (app.deps.access && req.auth?.role !== 'admin') {
+      return reply.code(403).send({ error: 'admins only' });
+    }
+  });
+
+  const by = (req: FastifyRequest) => req.auth?.label ?? null;
+  const encrypt = (key: string) =>
+    app.deps.llmSecrets ? encryptSecret(key, app.deps.llmSecrets) : null;
+
+  /** The first alias (by name) that resolves to a ref `matches` accepts, as a 409 message. */
+  const aliasUsing = async (matches: (ref: string) => boolean): Promise<string | null> => {
+    const aliases = await repo.listAliases();
+    for (const name of Object.keys(aliases).sort()) {
+      const ref = resolveAlias(name, aliases);
+      if (ref && matches(ref)) return `alias ${name} uses ${ref}: point it elsewhere first`;
+    }
+    return null;
+  };
+
+  app.get(
+    '/llm/endpoints',
+    {
+      schema: {
+        ...base(
+          'listLlmEndpoints',
+          'List LLM endpoints and their models',
+          md`
+            **Admin token required.** Every endpoint, seeded from \`.env\` or added by an admin,
+            with every model the database knows for it: \`curated\` ones are offered in the
+            pickers, the others were discovered on the endpoint (suggestions). A key entered
+            here is never returned, only \`keySet\`. See [ADR 0010](${ADR}).`,
+        ),
+        response: { 200: res('The endpoints.', z.array(LlmEndpointViewSchema)), 403: ADMINS_ONLY },
+      },
+    },
+    async () => repo.listEndpoints(),
+  );
+
+  app.post(
+    '/llm/endpoints',
+    {
+      schema: {
+        ...base(
+          'createLlmEndpoint',
+          'Add an LLM endpoint',
+          md`
+            **Admin token required.** Adds an endpoint (\`source: ui\`) with the models to
+            offer. Its name becomes the model-ref prefix (\`name/model-id\`). An \`apiKey\` is
+            stored encrypted with \`LLM_SECRETS_KEY\` (409 without it). Workers pick the change
+            up within seconds.
+          `,
+        ),
+        body: EndpointCreateBodySchema,
+        response: {
+          201: res('The endpoint.', LlmEndpointViewSchema),
+          400: error('Zod issues.'),
+          403: ADMINS_ONLY,
+          409: error(`\`an endpoint named {name} already exists\`, or \`${NO_SECRETS}\`.`),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = EndpointCreateBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { apiKey, ...input } = body.data;
+      const apiKeyEnc = apiKey === undefined ? null : encrypt(apiKey);
+      if (apiKey !== undefined && apiKeyEnc === null) {
+        return reply.code(409).send({ error: NO_SECRETS });
+      }
+      const created = await repo.createEndpoint({ ...input, apiKeyEnc }, by(req));
+      if (created === 'exists') {
+        return reply.code(409).send({ error: `an endpoint named ${input.name} already exists` });
+      }
+      req.log.info({ endpoint: input.name, location: input.location }, 'llm endpoint added');
+      return reply.code(201).send(created);
+    },
+  );
+
+  app.patch<{ Params: { name: string } }>(
+    '/llm/endpoints/:name',
+    {
+      schema: {
+        ...base(
+          'updateLlmEndpoint',
+          'Change an LLM endpoint',
+          md`
+            **Admin token required.** Changes the kind, base URL, \`location\` (what the data
+            policy allows), enabled flag or key (\`apiKey\`: a new one, stored encrypted, or
+            \`null\` to remove it). The edit is recorded (\`editedAt\`, \`updatedBy\`) and
+            \`.env\` no longer changes the endpoint. Disabling an endpoint an alias uses is
+            refused.
+          `,
+        ),
+        params: NameParams,
+        body: EndpointPatchBodySchema,
+        response: {
+          200: res('The endpoint.', LlmEndpointViewSchema),
+          400: error('Zod issues (`nothing to change` for an empty body).'),
+          403: ADMINS_ONLY,
+          404: NOT_FOUND,
+          409: error(
+            `\`alias {name} uses {ref}: point it elsewhere first\`, or \`${NO_SECRETS}\`.`,
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = EndpointPatchBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { name } = req.params;
+      if (!(await repo.getEndpoint(name))) {
+        return reply.code(404).send({ error: 'endpoint not found' });
+      }
+      const { apiKey, ...rest } = body.data;
+      let apiKeyEnc: string | null | undefined;
+      if (typeof apiKey === 'string') {
+        apiKeyEnc = encrypt(apiKey);
+        if (apiKeyEnc === null) return reply.code(409).send({ error: NO_SECRETS });
+      } else {
+        apiKeyEnc = apiKey; // null removes the stored key; undefined keeps it
+      }
+      if (rest.enabled === false) {
+        const used = await aliasUsing((ref) => ref.startsWith(`${name}/`));
+        if (used) return reply.code(409).send({ error: used });
+      }
+      const updated = await repo.updateEndpoint(name, { ...rest, apiKeyEnc }, by(req));
+      req.log.info(
+        { endpoint: name, changed: Object.keys(body.data), by: by(req) },
+        'llm endpoint changed',
+      );
+      return updated ?? reply.code(404).send({ error: 'endpoint not found' });
+    },
+  );
+
+  app.put<{ Params: { name: string } }>(
+    '/llm/endpoints/:name/models',
+    {
+      schema: {
+        ...base(
+          'setLlmEndpointModels',
+          "Choose an endpoint's models",
+          md`
+            **Admin token required.** Exactly these models are offered in the pickers for this
+            endpoint: ids not known yet are added, curated ones left out are withdrawn (they stay
+            as suggestions). Withdrawing a model an alias uses is refused. \`.env\` no longer
+            changes these choices.
+          `,
+        ),
+        params: NameParams,
+        body: CuratedModelsBodySchema,
+        response: {
+          200: res('The endpoint.', LlmEndpointViewSchema),
+          400: error('Zod issues.'),
+          403: ADMINS_ONLY,
+          404: NOT_FOUND,
+          409: IN_USE,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = CuratedModelsBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { name } = req.params;
+      const models = [...new Set(body.data.models)];
+      if (!(await repo.getEndpoint(name))) {
+        return reply.code(404).send({ error: 'endpoint not found' });
+      }
+      const used = await aliasUsing(
+        (ref) => ref.startsWith(`${name}/`) && !models.includes(ref.slice(name.length + 1)),
+      );
+      if (used) return reply.code(409).send({ error: used });
+      const updated = await repo.setCuratedModels(name, models, by(req));
+      return updated ?? reply.code(404).send({ error: 'endpoint not found' });
+    },
+  );
+
+  app.delete<{ Params: { name: string } }>(
+    '/llm/endpoints/:name',
+    {
+      schema: {
+        ...base(
+          'deleteLlmEndpoint',
+          'Remove an LLM endpoint',
+          md`
+            **Admin token required.** Removes an endpoint added in the UI. One seeded from
+            \`.env\` would come back on the next worker start, so it can only be disabled.
+            Removing an endpoint an alias uses is refused.
+          `,
+        ),
+        params: NameParams,
+        response: {
+          204: noContent('Removed.'),
+          403: ADMINS_ONLY,
+          404: NOT_FOUND,
+          409: error(
+            '`{name} comes from .env: disable it instead`, or `alias {name} uses {ref}: point it ' +
+              'elsewhere first`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { name } = req.params;
+      const endpoint = await repo.getEndpoint(name);
+      if (!endpoint) return reply.code(404).send({ error: 'endpoint not found' });
+      if (endpoint.source === 'env') {
+        return reply.code(409).send({ error: `${name} comes from .env: disable it instead` });
+      }
+      const used = await aliasUsing((ref) => ref.startsWith(`${name}/`));
+      if (used) return reply.code(409).send({ error: used });
+      const outcome = await repo.deleteEndpoint(name);
+      if (outcome === 'missing') return reply.code(404).send({ error: 'endpoint not found' });
+      if (outcome === 'env') {
+        return reply.code(409).send({ error: `${name} comes from .env: disable it instead` });
+      }
+      req.log.info({ endpoint: name, by: by(req) }, 'llm endpoint removed');
+      return reply.code(204).send();
+    },
+  );
+}

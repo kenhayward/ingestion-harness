@@ -127,6 +127,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}
       # URL the data lake reads the publish bucket through (shown with new S3 keys; ADR 0008).
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      # Encrypts LLM endpoint keys entered on the Models page (ADR 0010); the worker decrypts.
+      LLM_SECRETS_KEY: ${LLM_SECRETS_KEY:-}
+      LLM_SECRETS_KEY_PREVIOUS: ${LLM_SECRETS_KEY_PREVIOUS:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
@@ -155,6 +158,16 @@ services:
       OCR_BASE_URL: ${OCR_BASE_URL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
+      # Seeded into the database on start (ADR 0010); an admin's edit there wins.
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-}
+      FAST_MODEL: ${FAST_MODEL:-}
+      ANTHROPIC_MODELS: ${ANTHROPIC_MODELS:-}
+      OPENAI_MODELS: ${OPENAI_MODELS:-}
+      LOCAL_LLM_MODELS: ${LOCAL_LLM_MODELS:-}
+      LLM_ENDPOINTS: ${LLM_ENDPOINTS:-}
+      LLM_ENDPOINT_KEYS: ${LLM_ENDPOINT_KEYS:-}
+      LLM_SECRETS_KEY: ${LLM_SECRETS_KEY:-}
+      LLM_SECRETS_KEY_PREVIOUS: ${LLM_SECRETS_KEY_PREVIOUS:-}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
       # Word (.docx) conversion; empty disables it (Word documents then need review).

@@ -1012,7 +1012,14 @@ export class PgRepo implements IngestionRepo {
       display_name: string | null;
       enabled: boolean;
       discovered_at: Date;
-    }>(`SELECT * FROM llm_models ORDER BY provider, model_id`);
+      curated: boolean;
+    }>(
+      // Curated counts only on an endpoint that still exists and is enabled (ADR 0010).
+      `SELECT m.provider, m.provider_kind, m.model_id, m.display_name, m.enabled, m.discovered_at,
+              (m.curated AND COALESCE(e.enabled, false)) AS curated
+         FROM llm_models m LEFT JOIN llm_endpoints e ON e.name = m.provider
+        ORDER BY m.provider, m.model_id`,
+    );
     return rows.map((r) => ({
       ref: modelRef(r.provider, r.model_id),
       provider: r.provider,
@@ -1021,6 +1028,7 @@ export class PgRepo implements IngestionRepo {
       displayName: r.display_name,
       enabled: r.enabled,
       discoveredAt: r.discovered_at.toISOString(),
+      curated: r.curated,
     }));
   }
 }

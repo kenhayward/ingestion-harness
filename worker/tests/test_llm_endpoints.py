@@ -1,0 +1,453 @@
+"""LLM endpoints in the database (ADR 0010): seeding from .env, the registry built from the
+store, and live reload. The store contract runs against the in-memory fake and, when
+IH_TEST_DATABASE_URL points at a THROWAWAY migrated database (it empties the llm_* tables),
+against Postgres."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, Protocol
+
+import pytest
+
+from ingest_worker.llm.base import LLMProvider
+from ingest_worker.llm.endpoints import (
+    LiveModels,
+    Seed,
+    parse_endpoints,
+    registry_from_seed,
+    seed_from_config,
+)
+from ingest_worker.llm.registry import (
+    LLMConfig,
+    ModelResolutionError,
+    OcrConfig,
+    ProviderConfig,
+    endpoint_key,
+    load_llm_config,
+)
+
+from .fakes import FakeProvider, MemoryLlmConfigStore
+
+
+def fake_factories(made: list[str] | None = None):  # type: ignore[no-untyped-def]
+    def make(cfg: ProviderConfig, api_key: str | None) -> LLMProvider:
+        if made is not None:
+            made.append(f"{cfg.name}:{api_key}")
+        return FakeProvider(cfg.name, kind=cfg.kind)
+
+    return {"anthropic": make, "openai-chat": make, "openai-responses": make}
+
+
+def endpoint(name: str, **over: Any) -> ProviderConfig:
+    data: dict[str, Any] = {
+        "name": name,
+        "kind": "openai-chat",
+        "baseUrl": f"http://{name}/v1",
+        "location": "local",
+        "apiKeyRequired": False,
+        "models": [f"{name}-model"],
+    }
+    data.update(over)
+    return ProviderConfig.model_validate(data)
+
+
+# --- seeding from the committed config and .env ---------------------------------------------
+
+
+def test_seed_from_the_committed_config_keeps_todays_defaults(llm_config_path: Path) -> None:
+    seed = seed_from_config(load_llm_config(llm_config_path, env={}), env={})
+    by_name = {e.name: e for e in seed.endpoints}
+    assert list(by_name) == ["anthropic", "openai", "local"]
+    assert by_name["anthropic"].models == [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+    ]
+    assert by_name["openai"].models == []
+    assert by_name["local"].models == ["qwen3.8-27b-mtp", "olmocr-2-7b-1025"]
+    assert by_name["local"].location == "local"
+    assert seed.aliases == {
+        "default": "local/qwen3.8-27b-mtp",
+        "fast": "anthropic/claude-haiku-5-5",
+        "draft": "local/qwen3.8-27b-mtp",
+        "ocr": "local/olmocr-2-7b-1025",
+    }
+
+
+def test_env_sets_the_model_lists_and_aliases(llm_config_path: Path) -> None:
+    env = {
+        "ANTHROPIC_MODELS": "claude-opus-5-5, claude-haiku-5-5",
+        "OPENAI_MODELS": "gpt-5",
+        "LOCAL_LLM_MODELS": "qwen3-32b,olmocr-2-7b-1025,",
+        "DEFAULT_MODEL": "local/qwen3-32b",
+        "FAST_MODEL": "openai/gpt-5",
+        "DRAFT_MODEL": "anthropic/claude-opus-5-5",
+        "OCR_MODEL": "local/olmocr-2-7b-1025",
+    }
+    seed = seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+    by_name = {e.name: e for e in seed.endpoints}
+    assert by_name["anthropic"].models == ["claude-opus-5-5", "claude-haiku-5-5"]
+    assert by_name["openai"].models == ["gpt-5"]
+    assert by_name["local"].models == ["qwen3-32b", "olmocr-2-7b-1025"]
+    assert seed.aliases["default"] == "local/qwen3-32b"
+    assert seed.aliases["fast"] == "openai/gpt-5"
+    assert seed.aliases["draft"] == "anthropic/claude-opus-5-5"
+
+
+def test_a_disabled_local_endpoint_is_seeded_disabled(llm_config_path: Path) -> None:
+    env = {"LOCAL_LLM_ENABLED": "false"}
+    seed = seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+    assert next(e for e in seed.endpoints if e.name == "local").enabled is False
+
+
+def test_more_endpoints_come_from_llm_endpoints(llm_config_path: Path) -> None:
+    env = {
+        "LLM_ENDPOINTS": (
+            "gpu2=http://192.168.1.140:8000/v1|llama-4-70b,qwen3-32b;"
+            " cloudy=https://llm.example.com/v1|big-model|external|openai-responses"
+        )
+    }
+    seed = seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+    by_name = {e.name: e for e in seed.endpoints}
+    assert list(by_name) == ["anthropic", "openai", "local", "gpu2", "cloudy"]
+    gpu2 = by_name["gpu2"]
+    assert (gpu2.kind, gpu2.base_url, gpu2.location) == (
+        "openai-chat",
+        "http://192.168.1.140:8000/v1",
+        "local",
+    )
+    assert gpu2.models == ["llama-4-70b", "qwen3-32b"]
+    assert gpu2.api_key_env == "LLM_ENDPOINT_KEYS"
+    assert gpu2.api_key_required is False
+    # Same server type as the shipped local endpoint: same request options.
+    assert gpu2.options == by_name["local"].options
+    cloudy = by_name["cloudy"]
+    assert (cloudy.kind, cloudy.location) == ("openai-responses", "external")
+    assert cloudy.options == {}
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("gpu2", "gpu2: expected name=baseUrl|models"),
+        ("gpu2=|m", "gpu2: a base URL is required"),
+        ("GPU 2=http://x/v1|m", "'GPU 2': names are lower-case"),
+        ("gpu2=http://x/v1|m|nearby", "gpu2: location must be local or external"),
+        ("gpu2=http://x/v1|m|local|grpc", "gpu2: kind must be"),
+        ("gpu2=http://x/v1|m;gpu2=http://y/v1|m", "gpu2: listed twice"),
+    ],
+)
+def test_bad_llm_endpoints_entries_are_refused(value: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_endpoints(value)
+
+
+def test_llm_endpoints_may_not_redefine_a_shipped_provider(llm_config_path: Path) -> None:
+    env = {"LLM_ENDPOINTS": "local=http://x/v1|m"}
+    with pytest.raises(ValueError, match="local: already defined"):
+        seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+
+
+@pytest.mark.parametrize(
+    ("cfg", "env", "key"),
+    [
+        (
+            endpoint("gpu2", apiKeyEnv="LLM_ENDPOINT_KEYS"),
+            {"LLM_ENDPOINT_KEYS": "gpu2=k2;x=k"},
+            "k2",
+        ),
+        (endpoint("gpu3", apiKeyEnv="LLM_ENDPOINT_KEYS"), {"LLM_ENDPOINT_KEYS": "gpu2=k2"}, None),
+        (endpoint("gpu2", apiKeyEnv="LLM_ENDPOINT_KEYS"), {}, None),
+        (endpoint("a", apiKeyEnv="ANTHROPIC_API_KEY"), {"ANTHROPIC_API_KEY": "sk"}, "sk"),
+        (endpoint("a", apiKeyEnv="ANTHROPIC_API_KEY"), {"ANTHROPIC_API_KEY": ""}, None),
+        (endpoint("a"), {"ANTHROPIC_API_KEY": "sk"}, None),
+    ],
+)
+def test_endpoint_keys(cfg: ProviderConfig, env: dict[str, str], key: str | None) -> None:
+    assert endpoint_key(cfg, env) == key
+
+
+# --- the registry built from the store ------------------------------------------------------
+
+
+def test_the_registry_comes_from_the_stored_endpoints_and_aliases() -> None:
+    seed = Seed(
+        endpoints=[
+            endpoint("local"),
+            endpoint("gpu2", location="external", apiKeyEnv="LLM_ENDPOINT_KEYS"),
+            endpoint("off", enabled=False),
+            endpoint(
+                "keyless", kind="anthropic", apiKeyEnv="ANTHROPIC_API_KEY", apiKeyRequired=True
+            ),
+        ],
+        aliases={"default": "gpu2/gpu2-model", "ocr": "local/olmocr"},
+    )
+    made: list[str] = []
+    registry = registry_from_seed(
+        seed, None, env={"LLM_ENDPOINT_KEYS": "gpu2=secret"}, factories=fake_factories(made)
+    )
+    # A missing key skips the endpoint (it may have been added in the UI): never a crash.
+    assert registry.provider_names == ["local", "gpu2"]
+    assert made == ["local:None", "gpu2:secret"]
+    provider, model = registry.resolve("default")
+    assert (provider.name, model) == ("gpu2", "gpu2-model")
+    assert registry.location("gpu2") == "external"
+    with pytest.raises(ModelResolutionError):
+        registry.resolve("off/x")
+
+
+def test_the_ocr_alias_picks_the_ocr_model() -> None:
+    seed = Seed(endpoints=[endpoint("local")], aliases={"ocr": "local/vision-2"})
+    ocr = OcrConfig.model_validate({"model": "local/olmocr", "baseUrl": "http://ocr-host/v1"})
+    live = LiveModels(MemoryLlmConfigStore(seed), ocr, env={}, factories=fake_factories())
+    assert live.ocr_model == "local/vision-2"
+    provider, model = live.registry.resolve_ocr("ocr")
+    assert model == "vision-2"
+    assert provider is not live.registry.resolve("local/x")[0]  # OCR keeps its own endpoint
+
+
+def test_live_models_rebuild_only_when_the_stored_config_changes() -> None:
+    store = MemoryLlmConfigStore(
+        Seed(endpoints=[endpoint("local")], aliases={"default": "local/a"})
+    )
+    made: list[str] = []
+    live = LiveModels(store, None, env={}, factories=fake_factories(made))
+    assert live.registry.resolve("default")[1] == "a"
+    assert live.refresh() is False
+    assert made == ["local:None"]
+    store.edit_alias("default", "local/b")
+    assert live.refresh() is True
+    assert live.registry.resolve("default")[1] == "b"
+    assert made == ["local:None", "local:None"]
+
+
+# --- the store contract: .env seeds, the UI wins --------------------------------------------
+
+
+class StoreHarness(Protocol):
+    store: Any
+
+    def edit_endpoint(self, name: str, base_url: str) -> None: ...
+    def edit_alias(self, name: str, ref: str) -> None: ...
+    def uncurate(self, provider: str, model_id: str) -> None: ...
+    def add_ui_endpoint(self, cfg: ProviderConfig) -> None: ...
+    def set_key(self, name: str, encrypted: str) -> None: ...
+
+
+class MemoryHarness:
+    def __init__(self) -> None:
+        self.store = MemoryLlmConfigStore()
+
+    def edit_endpoint(self, name: str, base_url: str) -> None:
+        self.store.edit_endpoint(name, base_url=base_url)
+
+    def edit_alias(self, name: str, ref: str) -> None:
+        self.store.edit_alias(name, ref)
+
+    def uncurate(self, provider: str, model_id: str) -> None:
+        self.store.uncurate(provider, model_id)
+
+    def add_ui_endpoint(self, cfg: ProviderConfig) -> None:
+        self.store.add_ui_endpoint(cfg)
+
+    def set_key(self, name: str, encrypted: str) -> None:
+        self.store.edit_endpoint(name, api_key_enc=encrypted)
+
+
+class PgHarness:
+    """PgLlmConfigStore on a throwaway database; edits are made the way the admin API will."""
+
+    def __init__(self, url: str) -> None:
+        import psycopg
+
+        from ingest_worker.llm.endpoints import PgLlmConfigStore
+
+        self.conn = psycopg.connect(url, autocommit=True)
+        self.store = PgLlmConfigStore(self.conn)
+
+    def edit_endpoint(self, name: str, base_url: str) -> None:
+        self.conn.execute(
+            "UPDATE llm_endpoints SET base_url = %s, edited_at = now() WHERE name = %s",
+            (base_url, name),
+        )
+
+    def edit_alias(self, name: str, ref: str) -> None:
+        self.conn.execute(
+            """INSERT INTO llm_aliases (name, ref, edited_at) VALUES (%s, %s, now())
+               ON CONFLICT (name) DO UPDATE SET ref = EXCLUDED.ref, edited_at = now()""",
+            (name, ref),
+        )
+
+    def uncurate(self, provider: str, model_id: str) -> None:
+        self.conn.execute(
+            """UPDATE llm_models SET curated = false, curated_edited_at = now()
+                WHERE provider = %s AND model_id = %s""",
+            (provider, model_id),
+        )
+
+    def set_key(self, name: str, encrypted: str) -> None:
+        self.conn.execute(
+            "UPDATE llm_endpoints SET api_key_enc = %s, edited_at = now() WHERE name = %s",
+            (encrypted, name),
+        )
+
+    def add_ui_endpoint(self, cfg: ProviderConfig) -> None:
+        self.conn.execute(
+            """INSERT INTO llm_endpoints (name, kind, base_url, location, source, edited_at)
+               VALUES (%s, %s, %s, %s, 'ui', now())""",
+            (cfg.name, cfg.kind, cfg.base_url, cfg.location),
+        )
+
+
+@pytest.fixture(params=["memory", pytest.param("pg", marks=pytest.mark.integration)])
+def harness(request: pytest.FixtureRequest) -> Iterator[StoreHarness]:
+    if request.param == "memory":
+        yield MemoryHarness()
+        return
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set (a throwaway database: the test empties llm_*)")
+    h = PgHarness(url)
+    # The tables are shared: start from nothing so seeding's deletes are observable.
+    h.conn.execute("DELETE FROM llm_aliases")
+    h.conn.execute("DELETE FROM llm_endpoints")
+    h.conn.execute("DELETE FROM llm_models")
+    yield h
+    h.conn.close()
+
+
+def names(seed: Seed) -> list[str]:
+    return [e.name for e in seed.endpoints]
+
+
+def test_seeding_inserts_then_follows_env_changes(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("local"), endpoint("gpu2")], {"default": "local/local-model"}))
+    loaded = store.load()
+    assert names(loaded) == ["gpu2", "local"]
+    assert loaded.aliases == {"default": "local/local-model"}
+    assert next(e for e in loaded.endpoints if e.name == "local").models == ["local-model"]
+
+    # .env changed: gpu2 gone, local moved and serves another model, the alias moved too.
+    store.seed(
+        Seed(
+            [endpoint("local", baseUrl="http://new/v1", models=["other"])],
+            {"default": "local/other", "fast": "local/other"},
+        )
+    )
+    loaded = store.load()
+    assert names(loaded) == ["local"]
+    local = loaded.endpoints[0]
+    assert (local.base_url, local.models) == ("http://new/v1", ["other"])
+    assert loaded.aliases == {"default": "local/other", "fast": "local/other"}
+
+
+def test_ui_edits_win_over_env(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(
+        Seed(
+            [endpoint("local", models=["a", "b"]), endpoint("gpu2")],
+            {"default": "local/a"},
+        )
+    )
+    harness.edit_endpoint("gpu2", "http://edited/v1")
+    harness.edit_alias("default", "gpu2/gpu2-model")
+    harness.uncurate("local", "b")
+    harness.add_ui_endpoint(endpoint("mine"))
+    # A restart with the same .env (or one without gpu2): the edits stay.
+    store.seed(Seed([endpoint("local", models=["a", "b"])], {"default": "local/a"}))
+    loaded = store.load()
+    assert names(loaded) == ["gpu2", "local", "mine"]
+    by_name = {e.name: e for e in loaded.endpoints}
+    assert by_name["gpu2"].base_url == "http://edited/v1"
+    assert by_name["local"].models == ["a"]
+    assert loaded.aliases == {"default": "gpu2/gpu2-model"}
+
+
+def test_the_version_moves_when_the_config_changes(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("local")], {"default": "local/local-model"}))
+    before = store.version()
+    harness.edit_alias("default", "local/other")
+    assert store.version() != before
+
+
+def test_the_stored_endpoint_round_trips(harness: StoreHarness) -> None:
+    store = harness.store
+    full = endpoint(
+        "gpu2",
+        kind="openai-responses",
+        location="external",
+        apiKeyEnv="LLM_ENDPOINT_KEYS",
+        apiKeyRequired=True,
+        discover=False,
+        modelFilter="^llama",
+        options={"temperature": 0, "timeoutS": 900},
+        enabled=False,
+        models=["b", "a"],
+    )
+    store.seed(Seed([full], {}))
+    (loaded,) = store.load().endpoints
+    assert loaded.model_dump() == {**full.model_dump(), "models": ["a", "b"], "optional": True}
+
+
+def test_llm_config_without_ocr_has_no_ocr_alias() -> None:
+    cfg = LLMConfig.model_validate({"providers": [], "aliases": {"default": "local/a"}})
+    assert seed_from_config(cfg, env={}).aliases == {"default": "local/a"}
+
+
+def test_an_unchanged_env_does_not_move_the_version(harness: StoreHarness) -> None:
+    # Every worker seeds on start: identical .env values must not make the others rebuild.
+    store = harness.store
+    seed = Seed([endpoint("local", models=["a", "b"])], {"default": "local/a"})
+    store.seed(seed)
+    before = store.version()
+    store.seed(seed)
+    assert store.version() == before
+
+
+def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
+    from ingest_worker.main import refresh_models
+    from ingest_worker.ocr import OcrSettings
+    from ingest_worker.pipeline import Buckets, PipelineDeps
+    from ingest_worker.specs import SpecRegistry
+    from ingest_worker.storage import MemoryObjectStore
+
+    store = MemoryLlmConfigStore(
+        Seed([endpoint("local")], {"default": "local/a", "ocr": "local/olmocr"})
+    )
+    ocr = OcrConfig.model_validate({"model": "local/olmocr"})
+    live = LiveModels(store, ocr, env={}, factories=fake_factories())
+    deps = PipelineDeps(
+        store=MemoryObjectStore(),
+        specs=SpecRegistry([]),
+        models=live.registry,
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        ocr=OcrSettings(model="local/olmocr", concurrency=2),
+    )
+    assert refresh_models(live, deps) is False
+    store.edit_alias("ocr", "local/vision-2")
+    store.edit_alias("default", "local/b")
+    assert refresh_models(live, deps) is True
+    assert deps.models is live.registry
+    assert deps.models.resolve("default")[1] == "b"
+    assert deps.ocr == OcrSettings(model="local/vision-2", concurrency=2)
+
+
+def test_a_key_set_in_the_ui_loads_and_survives_seeding(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("gpu2")], {}))
+    harness.set_key("gpu2", "v1:stored")
+    store.seed(Seed([endpoint("gpu2")], {}))
+    (loaded,) = store.load().endpoints
+    assert loaded.api_key_enc == "v1:stored"
+
+
+def test_an_endpoint_whose_stored_key_cannot_be_decrypted_is_skipped() -> None:
+    seed = Seed([endpoint("local"), endpoint("gpu2", apiKeyEnc="v1:not-for-this-master-key")], {})
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    assert registry.provider_names == ["local"]

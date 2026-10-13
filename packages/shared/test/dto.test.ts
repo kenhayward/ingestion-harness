@@ -7,6 +7,7 @@ import {
   GateViewSchema,
   IterationViewSchema,
   ModelInfoSchema,
+  isOffered,
   PrepareErrorSchema,
   ProjectSummarySchema,
   ProjectViewSchema,
@@ -57,6 +58,7 @@ const model = {
   displayName: null,
   enabled: true,
   discoveredAt: '2026-10-13T09:00:00.000Z',
+  curated: true,
 };
 
 const reference = {
@@ -310,5 +312,15 @@ describe.each([
     const rest: Record<string, unknown> = { ...example };
     delete rest[required];
     expect(schema.safeParse(rest).success).toBe(false);
+  });
+});
+
+describe('isOffered', () => {
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+  ])('enabled %s, curated %s → offered %s', (enabled, curated, offered) => {
+    expect(isOffered({ ...model, enabled, curated })).toBe(offered);
   });
 });

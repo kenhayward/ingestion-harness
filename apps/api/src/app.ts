@@ -5,6 +5,8 @@ import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import { registerOpenApi } from './openapi/plugin.js';
 import type { S3KeyService } from './s3keys/service.js';
+import type { LlmConfigRepo } from './llm/repo.js';
+import type { SecretsKeys } from './llm/secrets.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
@@ -24,6 +26,7 @@ import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
 import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
+import { llmRoutes } from './routes/llm.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -41,6 +44,10 @@ export interface AppDeps {
   access: AccessRepo | null;
   /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */
   s3Keys: S3KeyService | null;
+  /** LLM endpoints and curated models (ADR 0010), for the Models page. */
+  llm: LlmConfigRepo;
+  /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
+  llmSecrets: SecretsKeys | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };
@@ -85,6 +92,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchOverviewRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
+  await app.register(llmRoutes, { prefix: '/api' });
 
   return app;
 }

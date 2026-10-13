@@ -5,12 +5,16 @@ import signal
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
+
+import psycopg
 
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
-from .llm.registry import build_registry, load_llm_config
+from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
+from .llm.registry import load_llm_config
 from .ocr import OcrSettings
 from .outputs import RenderedOutput
 from .pdf import extract_pages
@@ -32,6 +36,9 @@ from .template_pipeline import publish_template_job, rerun_template_job
 from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
+
+#: How often the worker checks whether the stored LLM config changed (ADR 0010).
+CONFIG_CHECK_S = 5.0
 
 #: Review reason for a reference run (`params.forceReview`) that needed no review of its own.
 FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save as a reference"
@@ -132,6 +139,17 @@ def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     return publish_template_job(job, deps, queue, loaded, deliver=not job.test)
 
 
+def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
+    """Swap in a rebuilt registry (and OCR model) when an admin, or another worker's seed,
+    changed the stored LLM config. Jobs already running keep the registry they started with."""
+    if not live.refresh():
+        return False
+    deps.models = live.registry
+    if deps.ocr is not None and live.ocr_model:
+        deps.ocr = replace(deps.ocr, model=live.ocr_model)
+    return True
+
+
 def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
     """Nothing to claim: wait for a NOTIFY (or the poll interval), unless shutting down."""
     if not stop.is_set():
@@ -143,10 +161,17 @@ def main() -> None:
     settings = Settings.from_env()
     specs = load_specs(settings.specs_dir)
     llm_config = load_llm_config(settings.llm_config)
-    models = build_registry(llm_config)
+    ocr_config = llm_config.ocr if llm_config.ocr and llm_config.ocr.enabled else None
+    queue = PgJobQueue(settings.database_url)
+    # .env and config/llm-providers.yaml are the defaults; the database (and an admin's edits
+    # there) decides what the registry holds.
+    llm_store = PgLlmConfigStore(psycopg.connect(settings.database_url, autocommit=True))
+    llm_store.seed(seed_from_config(llm_config))
+    live = LiveModels(llm_store, ocr_config)
+    models = live.registry
     ocr = (
         OcrSettings(
-            model=llm_config.ocr.model,
+            model=live.ocr_model or llm_config.ocr.model,
             min_chars=llm_config.ocr.min_chars,
             longest_dim=llm_config.ocr.longest_dim,
             max_tokens=llm_config.ocr.max_tokens,
@@ -154,10 +179,9 @@ def main() -> None:
             concurrency=llm_config.ocr.concurrency,
             cache=llm_config.ocr.cache,
         )
-        if llm_config.ocr and llm_config.ocr.enabled
+        if llm_config.ocr and ocr_config is not None
         else None
     )
-    queue = PgJobQueue(settings.database_url)
     deps = PipelineDeps(
         store=S3ObjectStore(
             settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
@@ -199,10 +223,16 @@ def main() -> None:
 
     next_discovery = 0.0
     next_reap = 0.0
+    next_config_check = 0.0
     while not stop.is_set():
         now = time.monotonic()
+        if now >= next_config_check:
+            if refresh_models(live, deps):
+                log.info("LLM config changed: providers=%s", deps.models.provider_names)
+                next_discovery = now  # list the models of new or moved endpoints now
+            next_config_check = now + CONFIG_CHECK_S
         if now >= next_discovery:
-            discovered = models.discover()
+            discovered = deps.models.discover()
             queue.upsert_models(discovered)
             log.info("model discovery: %d models", len(discovered))
             next_discovery = now + settings.discovery_interval_s
