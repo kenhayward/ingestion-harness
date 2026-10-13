@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import base64
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from ingest_worker.llm.anthropic_provider import FALLBACK_BETA, AnthropicProvider
-from ingest_worker.llm.base import CompletionRequest, RefusalError, VisionRequest
+from ingest_worker.llm.base import (
+    DISCOVERY_TIMEOUT_S,
+    CompletionRequest,
+    RefusalError,
+    VisionRequest,
+)
 from ingest_worker.llm.openai_providers import OpenAIChatProvider, OpenAIResponsesProvider
 
 REQ = CompletionRequest(system="sys", prompt="doc", json_schema={"type": "object"}, schema_name="x")
@@ -97,15 +102,32 @@ def test_anthropic_refusal_raises() -> None:
         AnthropicProvider("a", client).complete_json("m", REQ)
 
 
+class ListingClient:
+    """Stub SDK client for model listing: records the options discovery asks for."""
+
+    def __init__(self, models: list[Any]) -> None:
+        self.options: dict[str, Any] | None = None
+        self.models = SimpleNamespace(list=self._unbounded)
+        self._listed = models
+
+    def _unbounded(self) -> list[Any]:
+        raise AssertionError("models.list() without with_options: inherits the request timeout")
+
+    def with_options(self, **options: Any) -> Any:
+        self.options = options
+        return SimpleNamespace(models=SimpleNamespace(list=lambda: self._listed))
+
+
 def test_anthropic_list_models() -> None:
-    models = [SimpleNamespace(id="claude-opus-5-5", display_name="Claude Opus 5.5")]
-    client: Any = SimpleNamespace(models=SimpleNamespace(list=lambda: models))
-    [d] = AnthropicProvider("anthropic", client).list_models()
+    client = ListingClient([SimpleNamespace(id="claude-opus-5-5", display_name="Claude Opus 5.5")])
+    [d] = AnthropicProvider("anthropic", cast(Any, client)).list_models()
     assert (d.ref, d.display_name, d.provider_kind) == (
         "anthropic/claude-opus-5-5",
         "Claude Opus 5.5",
         "anthropic",
     )
+    # A down endpoint must not hold the worker loop for the extraction timeout and retries.
+    assert client.options == {"timeout": DISCOVERY_TIMEOUT_S, "max_retries": 0}
 
 
 def chat_response(content: str | None = '{"a": 1}', refusal: str | None = None) -> Any:
@@ -178,10 +200,14 @@ def test_openai_responses_maps_request_and_output() -> None:
 
 
 def test_openai_model_filter() -> None:
-    models = [SimpleNamespace(id=i) for i in ("gpt-5", "text-embedding-3", "o4-mini")]
-    client: Any = SimpleNamespace(models=SimpleNamespace(list=lambda: models))
-    found = OpenAIResponsesProvider("openai", client, model_filter=r"^(gpt-|o\d)").list_models()
+    client = ListingClient(
+        [SimpleNamespace(id=i) for i in ("gpt-5", "text-embedding-3", "o4-mini")]
+    )
+    found = OpenAIResponsesProvider(
+        "openai", cast(Any, client), model_filter=r"^(gpt-|o\d)"
+    ).list_models()
     assert [d.model_id for d in found] == ["gpt-5", "o4-mini"]
+    assert client.options == {"timeout": DISCOVERY_TIMEOUT_S, "max_retries": 0}
 
 
 VISION = VisionRequest(
