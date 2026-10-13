@@ -4,7 +4,7 @@ import { ApiError } from '../src/api/client.js';
 import { PREVIEW_DEADLINE_MS, useSegmentPreview } from '../src/workbench/useSegmentPreview.js';
 import { fakeApi, segmentationView } from './fake-api.js';
 
-const grid = { anchorErrors: {}, samples: [] };
+const grid = { anchorErrors: {}, samples: [], suggestions: [] };
 
 describe('useSegmentPreview', () => {
   it('starts a preview and polls until it finishes', async () => {
@@ -72,7 +72,7 @@ describe('useSegmentPreview', () => {
     const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
     act(() => result.current.preview());
     await waitFor(() =>
-      expect(result.current.error).toBe('Preview was replaced; click Preview to try again'),
+      expect(result.current.error).toBe('Preview was replaced; edit an anchor to try again'),
     );
     expect(api.startSegmentation).toHaveBeenCalledTimes(2);
     expect(result.current.running).toBe(false);

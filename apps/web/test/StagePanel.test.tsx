@@ -176,6 +176,7 @@ describe('StagePanel', () => {
         ],
         anchorCheck: {
           anchorErrors: {},
+          suggestions: [],
           samples: [
             {
               sampleId: 'sa',
@@ -313,5 +314,77 @@ describe('StagePanel', () => {
     const check = screen.getByRole('checkbox', { name: /^Apply: CHECK totals/ }).closest('li')!;
     expect(within(check).getByText('CHECK')).toBeInTheDocument();
     expect(within(check).getByText('items.amount against total')).toBeInTheDocument();
+  });
+
+  it('keeps a stale stage without a new proposal', async () => {
+    const onConfirmed = vi.fn();
+    const { api, onApplied } = panel(
+      {
+        listProposals: vi.fn(async () => [
+          changeProposalView({ stage: 'sections', status: 'accepted' }),
+        ]),
+        confirmStage: vi.fn(async () => []),
+      },
+      {
+        stage: 'sections',
+        title: 'Sections',
+        item: {
+          stage: 'sections',
+          state: 'stale',
+          status: 'Stale — Outputs changed after it was accepted',
+          metrics: [],
+        },
+        onConfirmed,
+      },
+    );
+    const banner = await screen.findByRole('note');
+    expect(banner).toHaveTextContent('Stale — Outputs changed after it was accepted.');
+    await userEvent.click(within(banner).getByRole('button', { name: 'Keep these anchors' }));
+    expect(api.confirmStage).toHaveBeenCalledWith('letter', 'sections');
+    expect(api.startStage).not.toHaveBeenCalled();
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalled());
+    expect(onApplied).not.toHaveBeenCalled();
+  });
+
+  it('blocks Keep and Apply with a reason while the caller holds unsaved edits', async () => {
+    const stale = {
+      stage: 'sections' as const,
+      state: 'stale' as const,
+      status: 'Stale — Outputs changed',
+      metrics: [],
+    };
+    const { api } = panel(
+      { listProposals: vi.fn(async () => [changeProposalView({ stage: 'sections' })]) },
+      {
+        stage: 'sections',
+        title: 'Sections',
+        item: stale,
+        blockedReason: 'Save your anchors first',
+      },
+    );
+    const keep = await screen.findByRole('button', { name: 'Keep these anchors' });
+    expect(keep).toBeDisabled();
+    expect(keep).toHaveAttribute('title', 'Save your anchors first');
+    const apply = screen.getByRole('button', { name: /^Apply \d+ selected change/ });
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveAttribute('title', 'Save your anchors first');
+    expect(api.confirmStage).not.toHaveBeenCalled();
+  });
+
+  it('says why keeping failed', async () => {
+    panel(
+      {
+        listProposals: vi.fn(async () => [changeProposalView({ status: 'accepted' })]),
+        confirmStage: vi.fn(async () => {
+          throw new ApiError('stage outputs is not stale', 409);
+        }),
+      },
+      {
+        title: 'Outputs',
+        item: { stage: 'outputs', state: 'stale', status: 'Stale — Survey changed', metrics: [] },
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Keep these outputs' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('not stale');
   });
 });

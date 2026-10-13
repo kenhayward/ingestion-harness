@@ -225,6 +225,8 @@ export const StageViewSchema = z.object({
   state: StageStateSchema,
   /** Last time the stage was accepted (fully or partly) or skipped; null if never. */
   completedAt: z.string().nullable(),
+  /** The stage's newest skip, kept after later runs and acceptances (handoff SV1); null if never. */
+  skippedAt: z.string().nullable(),
 });
 export type StageView = z.infer<typeof StageViewSchema>;
 
@@ -232,6 +234,23 @@ export interface StageSkip {
   stage: DraftStage;
   skippedAt: string;
 }
+
+/** Stages whose stale state can be cleared without a new proposal (handoff SC1, migration 0026). */
+export const KEEPABLE_STAGES = ['outputs', 'sections', 'steps'] as const;
+export type KeepableStage = (typeof KEEPABLE_STAGES)[number];
+
+/**
+ * "Keep" on a stale stage (handoff SC1): the stage's content is confirmed against the earlier
+ * stages' completions up to `upTo`. It is not stale for those; a later one makes it stale again.
+ * It never changes `completedAt`, so the stages after it are unaffected.
+ */
+export interface StageConfirm {
+  stage: DraftStage;
+  confirmedAt: string;
+  upTo: string;
+}
+
+const newest = (times: string[]) => times.sort().at(-1) ?? null;
 
 type ProposalLike = {
   stage: DraftStage;
@@ -242,9 +261,14 @@ type ProposalLike = {
 
 /**
  * Stage state, derived (never stored): a stage is complete once accepted or skipped; it is
- * stale when an earlier stage completed after it; newer running/ready work shows over it.
+ * stale when an earlier stage completed after it and after the newest confirmation of it; newer
+ * running/ready work shows over it.
  */
-export function stageStates(proposals: ProposalLike[], skips: StageSkip[]): StageView[] {
+export function stageStates(
+  proposals: ProposalLike[],
+  skips: StageSkip[],
+  confirms: readonly StageConfirm[] = [],
+): StageView[] {
   const completions = STAGE_ORDER.map((stage) => {
     const done = [
       ...proposals
@@ -270,8 +294,10 @@ export function stageStates(proposals: ProposalLike[], skips: StageSkip[]): Stag
       latest !== undefined &&
       (latest.status === 'running' || latest.status === 'ready') &&
       (done === null || latest.createdAt > done.at);
-    const stale =
-      done !== null && completions.slice(0, i).some((c) => c !== null && c.at > done.at);
+    const keptUpTo = newest(confirms.filter((c) => c.stage === stage).map((c) => c.upTo));
+    const since =
+      done === null ? null : keptUpTo !== null && keptUpTo > done.at ? keptUpTo : done.at;
+    const stale = since !== null && completions.slice(0, i).some((c) => c !== null && c.at > since);
     const state: StageState = active
       ? latest.status === 'running'
         ? 'running'
@@ -281,7 +307,8 @@ export function stageStates(proposals: ProposalLike[], skips: StageSkip[]): Stag
           ? 'stale'
           : done.kind
         : 'pending';
-    return { stage, state, completedAt: done?.at ?? null };
+    const skippedAt = newest(skips.filter((s) => s.stage === stage).map((s) => s.skippedAt));
+    return { stage, state, completedAt: done?.at ?? null, skippedAt };
   });
 }
 
@@ -334,5 +361,5 @@ export function referencesStage(
       : input.hasRuns || input.verified > 0
         ? 'proposed'
         : 'pending';
-  return { stage: 'references', state, completedAt };
+  return { stage: 'references', state, completedAt, skippedAt: input.skippedAt };
 }

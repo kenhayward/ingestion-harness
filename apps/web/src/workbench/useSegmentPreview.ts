@@ -49,7 +49,7 @@ export function useSegmentPreview(api: Api, projectId: string, pollMs: number) {
               start(document, true);
               return;
             }
-            setError('Preview was replaced; click Preview to try again');
+            setError('Preview was replaced; edit an anchor to try again');
             return;
           }
           setError((err as Error).message);

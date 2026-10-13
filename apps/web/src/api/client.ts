@@ -19,6 +19,7 @@ import type {
   ExportView,
   JobDetail,
   JobSummary,
+  KeepableStage,
   LlmEndpointView,
   ModelInfo,
   PreparedText,
@@ -352,6 +353,8 @@ export interface Api {
     changes?: number[],
   ): Promise<ProposalView>;
   skipStage(projectId: string, stage: DraftStage): Promise<StageView[]>;
+  /** Keep a stale stage as it is (handoff SC1): no new proposal, the draft is unchanged. */
+  confirmStage(projectId: string, stage: KeepableStage): Promise<StageView[]>;
   /** Reference rows for the dev samples, or (set = 'holdout') the holdout samples. */
   listReferenceRows(projectId: string, set?: EvaluationSet): Promise<ReferenceRow[]>;
   /** Queue draft-model runs on unverified dev samples. */
@@ -667,6 +670,8 @@ export function createHttpApi(base = '/api'): Api {
       ),
     skipStage: (id, stage) =>
       post<StageView[]>(`${base}/workbench/projects/${id}/stages/${stage}/skip`, {}),
+    confirmStage: (id, stage) =>
+      post<StageView[]>(`${base}/workbench/projects/${id}/stages/${stage}/confirm`, {}),
     listReferenceRows: (id, set) =>
       apiFetch(
         `${base}/workbench/projects/${id}/references${set === 'holdout' ? '?set=holdout' : ''}`,

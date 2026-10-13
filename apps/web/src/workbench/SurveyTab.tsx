@@ -1,7 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Brief, DataPolicy, ProposalView } from '@ih/shared';
-import { EMPTY_BRIEF, surveyBodyOf } from '@ih/shared';
+import {
+  EMPTY_BRIEF,
+  candidateInBrief,
+  surveyBodyOf,
+  type Brief,
+  type DataPolicy,
+  type OverviewItem,
+  type ProposalView,
+  type StageView,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { relativeTime } from '../jobs/derive.js';
+import { Icon } from '../ui/Icon.js';
+import { Meter } from '../ui/Meter.js';
+import { StageStatusIcon } from '../ui/StageStatusIcon.js';
+import { StaleBanner } from './StaleBanner.js';
+import { TabHeader } from './TabHeader.js';
+import {
+  answerProgress,
+  candidateCounts,
+  saveAnswersLabel,
+  seenInText,
+  skipBanner,
+  skipBannerText,
+} from './survey.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
@@ -9,7 +31,10 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
     'Dev sample text may be sent to an external model provider; holdout samples are never sent.',
 };
 
-/** Drafting stage 1: the model surveys the dev samples and asks questions (ADR 0007). */
+const DESCRIPTION =
+  'The model reads the ready dev samples and describes what it found, then asks about anything the brief leaves open.';
+
+/** Drafting stage 1 (handoff §3): the model surveys the dev samples and asks questions. */
 export function SurveyTab({
   api,
   projectId,
@@ -18,6 +43,8 @@ export function SurveyTab({
   onBriefSaved,
   pollMs,
   onChanged,
+  item = null,
+  now = Date.now(),
 }: {
   api: Api;
   projectId: string;
@@ -27,23 +54,30 @@ export function SurveyTab({
   pollMs: number;
   /** Called after a decision or a skip, so the page can reload stage states. */
   onChanged?: () => void;
+  /** The overview item: the header's status line (same text as the rail). */
+  item?: OverviewItem | null;
+  now?: number;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
-  /** Answers typed in this session, by question; unedited questions show the brief's answer. */
+  const [stages, setStages] = useState<StageView[]>([]);
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const all = await api.listProposals(projectId);
+      const [all, states] = await Promise.all([
+        api.listProposals(projectId),
+        api.listStages(projectId),
+      ]);
       setProposal(all.find((p) => p.stage === 'survey') ?? null);
+      setStages(states);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
   }, [api, projectId]);
-
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -61,151 +95,281 @@ export function SurveyTab({
   }, [running, pollMs, refresh]);
 
   const act = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await action();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  const run = () =>
-    act(async () => {
-      setProposal(await api.startStage(projectId, 'survey'));
-    });
+  const body = proposal ? surveyBodyOf(proposal) : null;
+  const saved = brief?.body.answers ?? [];
+  const progress = body ? answerProgress(body.questions, saved, typed) : null;
+  const unsavedAnswers = (progress?.unsaved.length ?? 0) > 0;
+  const banner = skipBanner(stages, proposal ?? null);
+  const savedAnswer = (q: string) => saved.find((a) => a.question === q)?.answer ?? '';
 
+  const run = () => act(async () => setProposal(await api.startStage(projectId, 'survey')));
   const decide = (decision: 'accepted' | 'rejected') =>
     act(async () => {
       if (!proposal) return;
       setProposal(await api.decideProposal(projectId, proposal.id, decision));
+      setStages(await api.listStages(projectId));
       onChanged?.();
     });
-
   const skip = () =>
     act(async () => {
       await api.skipStage(projectId, 'survey');
       setMessage('Survey skipped');
+      void refresh();
       onChanged?.();
     });
-
-  const briefAnswers = brief?.body.answers ?? [];
-  const briefAnswer = (question: string) =>
-    briefAnswers.find((qa) => qa.question === question)?.answer ?? '';
-  // Only the displayed questions whose typed answer is non-empty and differs from the brief's.
-  const given = (proposal ? (surveyBodyOf(proposal)?.questions ?? []) : [])
-    .map((q) => [q.question, (typed[q.question] ?? '').trim()] as const)
-    .filter(([q, a]) => a !== '' && a !== briefAnswer(q));
-
   const saveAnswers = () =>
     act(async () => {
-      const body = brief?.body ?? EMPTY_BRIEF;
-      const kept = body.answers.filter((qa) => !given.some(([q]) => q === qa.question));
-      const saved = await api.saveBrief(projectId, {
-        ...body,
-        answers: [...kept, ...given.map(([question, answer]) => ({ question, answer }))],
+      if (!progress?.unsaved.length) return;
+      const base = brief?.body ?? EMPTY_BRIEF;
+      const kept = base.answers.filter(
+        (qa) => !progress.unsaved.some((u) => u.question === qa.question),
+      );
+      const next = await api.saveBrief(projectId, {
+        ...base,
+        answers: [...kept, ...progress.unsaved.filter((u) => u.answer !== '')],
       });
-      onBriefSaved(saved);
+      onBriefSaved(next);
       setTyped({});
-      setMessage(`Answers saved to brief version ${saved.version}`);
+      setMessage(`Answers saved to brief version ${next.version}`);
     });
 
-  if (proposal === undefined) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
-  const body = proposal ? surveyBodyOf(proposal) : null;
+  const actions = (
+    <>
+      <button
+        type="button"
+        className={proposal ? undefined : 'primary'}
+        disabled={running || busy || unsavedAnswers}
+        title={unsavedAnswers ? 'Save your answers first' : undefined}
+        onClick={() => void run()}
+      >
+        {proposal ? 'Run again' : 'Run survey'}
+      </button>
+      <button type="button" disabled={running || busy} onClick={() => void skip()}>
+        Skip this stage
+      </button>
+    </>
+  );
+  const header = (
+    <TabHeader
+      title="Survey"
+      item={item}
+      description={DESCRIPTION}
+      note={POLICY_NOTE[dataPolicy]}
+      actions={actions}
+    />
+  );
+
+  if (proposal === undefined) {
+    return (
+      <div className="survey-tab">
+        {header}
+        {error ? <p role="alert">{error}</p> : <p>Loading…</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="survey-tab">
-      <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
-      <button type="button" className="primary" disabled={running} onClick={() => void run()}>
-        {proposal ? 'Run survey again' : 'Run survey'}
-      </button>
-      <button type="button" disabled={running} onClick={() => void skip()}>
-        Skip this stage
-      </button>
-      {running && <span className="muted"> Surveying the dev samples…</span>}
+      {header}
+      {running && <p className="muted">Surveying the dev samples…</p>}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
-      {body && proposal && (
-        <section aria-label="Survey">
-          <p className="muted">
-            {proposal.model} · brief v{proposal.briefVersion ?? '–'} · {proposal.status}
-          </p>
-          <h3>Summary</h3>
-          <p>{body.summary}</p>
-          <h3>Structure</h3>
-          <ol>
-            {body.structure.map((s, i) => (
-              <li key={`${i}:${s.name}`}>
-                <strong>{s.name}</strong>: {s.description}{' '}
-                <small className="muted">({s.howToFind})</small>
-              </li>
-            ))}
-          </ol>
-          <h3>Variants</h3>
-          <ul>
-            {body.variants.map((v, i) => (
-              <li key={`${i}:${v}`}>{v}</li>
-            ))}
-          </ul>
-          <table aria-label="Candidate data">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Kind</th>
-                <th>What</th>
-                <th>Where</th>
-              </tr>
-            </thead>
-            <tbody>
-              {body.candidates.map((c, i) => (
-                <tr key={`${i}:${c.name}`}>
-                  <td>
-                    <code>{c.name}</code>
-                  </td>
-                  <td>{c.kind}</td>
-                  <td>{c.description}</td>
-                  <td>{c.where}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {body.questions.length > 0 && (
-            <>
-              <h3>Questions</h3>
-              {body.questions.map((q, i) => (
-                <div key={`${i}:${q.question}`} className="question">
-                  <p>
-                    {q.question} <small className="muted">{q.why}</small>
-                  </p>
-                  <textarea
-                    aria-label={q.question}
-                    rows={2}
-                    value={typed[q.question] ?? briefAnswer(q.question)}
-                    onChange={(e) => setTyped({ ...typed, [q.question]: e.target.value })}
+      {banner && <StaleBanner tone="skip">{skipBannerText(banner)}</StaleBanner>}
+      {proposal?.status === 'accepted' && (
+        <p className="survey-next">
+          Survey accepted. <a href={`#/workbench/${projectId}/outputs`}>Go to Outputs</a> to turn
+          the candidates into fields and tables.
+        </p>
+      )}
+      {body && proposal && progress && (
+        <div className="survey-layout">
+          <div className="survey-main">
+            {body.questions.length > 0 && (
+              <section className="card survey-questions" aria-labelledby="survey-questions-title">
+                <div className="survey-card-head">
+                  <h3 id="survey-questions-title">Questions from the model</h3>
+                  <span className="tone-text-warn">
+                    {progress.answered} of {progress.of} answered
+                  </span>
+                  <Meter
+                    label={`Answered ${progress.answered} of ${progress.of}`}
+                    value={progress.of ? progress.answered / progress.of : 0}
+                    tone="warn"
                   />
                 </div>
+                <ol className="survey-question-list">
+                  {body.questions.map((q, i) => {
+                    const value = typed[q.question] ?? savedAnswer(q.question);
+                    const done = value.trim() !== '';
+                    return (
+                      <li key={`${i}:${q.question}`} className="survey-question">
+                        <span
+                          className={`question-number tone-${done ? 'ok' : 'warn'}`}
+                          aria-hidden="true"
+                        >
+                          {i + 1}
+                        </span>
+                        <div className="survey-question-body">
+                          <p className="question-text">{q.question}</p>
+                          <p className="muted question-why">Why it asks: {q.why}</p>
+                          <textarea
+                            aria-label={q.question}
+                            rows={2}
+                            placeholder="Your answer — saved to the brief"
+                            value={value}
+                            onChange={(e) => setTyped({ ...typed, [q.question]: e.target.value })}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="survey-card-foot">
+                  <button
+                    type="button"
+                    disabled={progress.unsaved.length === 0 || busy}
+                    title={progress.unsaved.length === 0 ? 'Type an answer first' : undefined}
+                    onClick={() => void saveAnswers()}
+                  >
+                    {saveAnswersLabel(progress.unsaved.length, (brief?.version ?? 0) + 1)}
+                  </button>
+                  <span className="muted">
+                    Saving creates a new brief version; unanswered questions can wait.
+                  </span>
+                </div>
+              </section>
+            )}
+            <section className="card survey-found" aria-labelledby="survey-found-title">
+              <div className="survey-card-head">
+                <h3 id="survey-found-title">What the model found</h3>
+                <span className="muted survey-meta">
+                  {proposal.model ?? 'model'} · brief v{proposal.briefVersion ?? '–'} ·{' '}
+                  {relativeTime(proposal.createdAt, now)}
+                </span>
+              </div>
+              <p>{body.summary}</p>
+              {body.variants.length > 0 && (
+                <>
+                  <h4>Variants it noticed</h4>
+                  <ul className="variant-chips">
+                    {body.variants.map((v, i) => (
+                      <li key={`${i}:${v}`}>{v}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+            <section className="card survey-candidates" aria-labelledby="survey-candidates-title">
+              <div className="survey-card-head">
+                <h3 id="survey-candidates-title">Candidate data</h3>
+                <span className="muted">
+                  {candidateCounts(body.candidates)} · the Outputs stage turns these into fields and
+                  tables
+                </span>
+              </div>
+              <div className="table-scroll">
+                <table aria-label="Candidate data">
+                  <thead>
+                    <tr>
+                      <th scope="col">Kind</th>
+                      <th scope="col">Name</th>
+                      <th scope="col">What</th>
+                      <th scope="col">Where</th>
+                      <th scope="col">In brief</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {body.candidates.map((c, i) => {
+                      const seen = seenInText(c.seenIn);
+                      const inBrief = candidateInBrief(c.name, brief?.body ?? null);
+                      return (
+                        <tr key={`${i}:${c.name}`}>
+                          <td>
+                            <span className={`kind-tag tone-${c.kind === 'table' ? 'ok' : 'info'}`}>
+                              {c.kind === 'table' ? 'TABLE' : 'FIELD'}
+                            </span>
+                          </td>
+                          <td>
+                            <code>{c.name}</code>
+                          </td>
+                          <td>{c.description}</td>
+                          <td>
+                            {c.where}
+                            {seen && ` — ${seen}`}
+                          </td>
+                          <td className={inBrief ? 'tone-text-ok' : 'tone-text-warn'}>
+                            <StageStatusIcon
+                              state={inBrief ? 'accepted' : 'proposed'}
+                              size={14}
+                              decorative
+                            />{' '}
+                            {inBrief ? 'Yes' : 'Not yet'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+          <aside className="card survey-anatomy" aria-labelledby="survey-anatomy-title">
+            <h3 id="survey-anatomy-title">Document anatomy</h3>
+            <p className="muted">
+              The structure the model found, top to bottom — the Sections stage turns it into
+              anchors.
+            </p>
+            <ol className="anatomy-list">
+              {body.structure.map((s, i) => (
+                <li key={`${i}:${s.name}`} className="anatomy-card">
+                  <span className="anatomy-number" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <strong>{s.name}</strong>
+                    <p>{s.description}</p>
+                    <p className="muted anatomy-find">Find it: {s.howToFind}</p>
+                  </div>
+                </li>
               ))}
-              <button
-                type="button"
-                disabled={given.length === 0}
-                onClick={() => void saveAnswers()}
-              >
-                Save answers to brief
-              </button>
-            </>
-          )}
+            </ol>
+          </aside>
           {proposal.status === 'ready' && (
-            <div className="actions">
-              <button type="button" className="primary" onClick={() => void decide('accepted')}>
-                Accept
-              </button>
-              <button type="button" onClick={() => void decide('rejected')}>
-                Reject
-              </button>
+            <div className="card survey-decision">
+              <p className="muted">
+                Accepting completes the survey stage. Answers are saved to the brief separately —
+                save them first so the next stages can use them.
+              </p>
+              <div className="actions">
+                <button type="button" disabled={busy} onClick={() => void decide('rejected')}>
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy}
+                  onClick={() => void decide('accepted')}
+                >
+                  <Icon name="check" /> Accept survey
+                </button>
+              </div>
             </div>
           )}
-        </section>
+        </div>
       )}
     </div>
   );

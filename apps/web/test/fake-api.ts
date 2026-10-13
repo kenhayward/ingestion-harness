@@ -293,6 +293,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     skipStage: vi.fn(async () => {
       throw new Error('skipStage not stubbed');
     }),
+    confirmStage: vi.fn(async () => {
+      throw new Error('confirmStage not stubbed');
+    }),
     listStages: vi.fn(async () => []),
     listReferenceRows: vi.fn(async () => []),
     proposeReferences: vi.fn(async () => {

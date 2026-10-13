@@ -9,6 +9,7 @@ const a = sampleView({ id: 's1', filename: 'a.pdf' });
 const b = sampleView({ id: 's2', filename: 'b.pdf', role: 'holdout' });
 const result: SegmentationResult = {
   anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },
+  suggestions: [],
   samples: [
     {
       sampleId: 's1',
@@ -49,9 +50,11 @@ describe('SegmentationGrid', () => {
       within(table).getByRole('columnheader', { name: /header, matched in 1 of 1 samples/ }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'a.pdf · header' })).toHaveTextContent('p.1 · 120');
-    expect(screen.getByRole('button', { name: 'a.pdf · totals' })).toHaveTextContent('missing');
+    expect(screen.getByRole('button', { name: 'a.pdf · totals' })).toHaveTextContent(
+      'Missing (required)',
+    );
     expect(within(table).getByRole('row', { name: /b\.pdf/ })).toHaveTextContent('not prepared');
-    expect(within(table).getByRole('row', { name: /b\.pdf/ })).toHaveTextContent('holdout');
+    expect(within(table).getByRole('row', { name: /b\.pdf/ })).toHaveTextContent('HOLDOUT');
   });
 
   it('opens a cell', async () => {
@@ -68,7 +71,7 @@ describe('SegmentationGrid', () => {
       <SegmentationGrid result={result} sections={sections} samples={[a, b]} onOpen={vi.fn()} />,
     );
     expect(screen.getByRole('button', { name: 'a.pdf · totals' })).toHaveAccessibleDescription(
-      /missing \(required\)/,
+      /Missing \(required\)/,
     );
     expect(screen.getByRole('button', { name: 'a.pdf · header' })).toHaveAccessibleDescription(
       /p\.1 · 120/,
@@ -83,5 +86,76 @@ describe('SegmentationGrid', () => {
     const button = screen.getByRole('button', { name: 'a.pdf · notes' });
     expect(button).toHaveAccessibleDescription('not in preview yet');
     expect(button.closest('td')?.className ?? '').not.toMatch(/cell-/);
+  });
+
+  it('marks the selected cell, lists the states and flags a section that swallows the text', () => {
+    const swallowing: SegmentationResult = {
+      anchorErrors: {},
+      suggestions: [],
+      samples: [
+        {
+          ...result.samples[0]!,
+          missingRequired: [],
+          sections: [
+            { id: 'header', found: true, page: 1, line: 'INVOICE 42', chars: 80 },
+            { id: 'totals', found: true, page: 2, line: 'Total', chars: 920 },
+          ],
+        },
+      ],
+    };
+    render(
+      <SegmentationGrid
+        result={swallowing}
+        sections={sections}
+        samples={[a]}
+        selected={{ sampleId: 's1', sectionId: 'totals' }}
+        onOpen={vi.fn()}
+      />,
+    );
+    const totals = screen.getByRole('button', { name: 'a.pdf · totals' });
+    expect(totals).toHaveAttribute('aria-pressed', 'true');
+    expect(totals).toHaveTextContent('92% of text');
+    expect(totals).toHaveAccessibleDescription(/swallows more than 60% of the text/);
+    expect(screen.getByRole('button', { name: 'a.pdf · header' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    const legend = screen.getByRole('list', { name: 'Cell states' });
+    expect(legend).toHaveTextContent('Found');
+    expect(legend).toHaveTextContent('Swallows > 60% of the text');
+    expect(legend).toHaveTextContent('Missing (required)');
+    expect(legend).toHaveTextContent('Missing (optional)');
+  });
+
+  it('keeps one column and unique DOM ids when section ids are empty or repeated', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repeated = [
+      { id: 'header', required: true },
+      { id: '', required: true },
+      { id: 'header', required: true },
+      { id: '', required: false },
+    ];
+    const { container } = render(
+      <SegmentationGrid result={result} sections={repeated} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    const ids = [...container.querySelectorAll('[id]')].map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(screen.getAllByRole('button', { name: 'a.pdf · header' })).toHaveLength(1);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(2); // Sample + header
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    errors.mockRestore();
+  });
+
+  it('shows a section the preview has not seen as pending, not as 0 hits', () => {
+    const renamed = [
+      { id: 'header', required: true },
+      { id: 'totalz', required: true },
+    ];
+    render(
+      <SegmentationGrid result={result} sections={renamed} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    const head = screen.getByRole('columnheader', { name: /totalz/ });
+    expect(head).toHaveAccessibleName('totalz, not in the preview yet');
+    expect(head.querySelector('.tone-text-danger')).toBeNull();
   });
 });
