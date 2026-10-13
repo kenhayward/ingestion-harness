@@ -96,8 +96,23 @@ describe('HistoryCard', () => {
     expect(rows[1]).toHaveTextContent('Compare · default 75 · fast 50');
     expect(rows[2]).toHaveTextContent("Template's models · fresh");
     expect(rows[3]).toHaveTextContent('v1');
-    await userEvent.click(within(rows[0]!).getByRole('button', { name: 'Restore' }));
+    const restore = within(rows[0]!).getByRole('button', { name: /^Restore v2 holdout run of / });
+    expect(restore).toHaveAttribute('title', 'Replaces the open draft');
+    await userEvent.click(restore);
     expect(onRestore).toHaveBeenCalledWith('h2');
+  });
+
+  it('names every Restore button by version, set and date', () => {
+    card();
+    const buttons = screen.getAllByRole('button', { name: /^Restore / });
+    expect(buttons).toHaveLength(4);
+    for (const b of buttons) expect(b).toHaveAccessibleName(/^Restore v\d+ (dev|holdout) run of /);
+  });
+
+  it('captions the threshold line on the chart', () => {
+    card();
+    const caption = screen.getByText('90%', { selector: '.eval-threshold-label' });
+    expect(caption).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('shows the publications log below the history', () => {

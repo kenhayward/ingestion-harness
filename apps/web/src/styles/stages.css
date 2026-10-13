@@ -2521,6 +2521,13 @@ label.inline.list-select {
   right: 0;
   border-top: 1px dashed var(--ih-muted);
 }
+.eval-threshold-label {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  font-size: 0.7rem;
+  color: var(--ih-muted);
+}
 .eval-bar {
   display: block;
   border-radius: 3px 3px 0 0;
@@ -2627,6 +2634,9 @@ label.inline.list-select {
     position: static;
     max-height: none;
     overflow: visible;
+  }
+  .eval-history-row {
+    grid-template-columns: auto minmax(0, 1fr);
   }
   .eval-runbar-actions {
     margin-left: 0;

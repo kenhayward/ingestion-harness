@@ -89,7 +89,11 @@ export function HistoryCard({
       {bars.length > 0 && (
         <figure className="eval-chart">
           <div className="eval-bars" role="img" aria-label={historySummary(bars, threshold)}>
-            <span className="eval-threshold" style={{ bottom: `${threshold * 100}%` }} />
+            <span className="eval-threshold" style={{ bottom: `${threshold * 100}%` }}>
+              <span className="eval-threshold-label" aria-hidden="true">
+                {pct(threshold)}
+              </span>
+            </span>
             {bars.map((b) => (
               <span
                 key={b.id}
@@ -122,8 +126,9 @@ export function HistoryCard({
               <button
                 type="button"
                 disabled={busy}
-                title={busy ? 'Working…' : undefined}
-                onClick={() => onRestore(r.restoreId)}
+                title={busy ? 'Working…' : 'Replaces the open draft'}
+                aria-label={`Restore v${r.version} ${r.set} run of ${new Date(r.createdAt).toLocaleString()}`}
+                onClick={() => onRestore(r.id)}
               >
                 Restore
               </button>

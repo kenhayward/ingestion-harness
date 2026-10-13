@@ -15,6 +15,7 @@ import { AccuracyCard, HistoryCard } from './EvaluateHistory.js';
 import { LatestRun } from './EvaluateLatest.js';
 import { GateCard, useGate } from './GateCard.js';
 import { devScore, latestOf } from './evaluate.js';
+import { verified } from './references.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
@@ -48,6 +49,7 @@ export function EvaluateTab({
   pollMs,
   onRestored,
   onStarted,
+  onGateChanged,
 }: {
   api: Api;
   projectId: string;
@@ -59,6 +61,8 @@ export function EvaluateTab({
   onRestored: () => void;
   /** Called after an evaluation or a model comparison has been started. */
   onStarted?: () => void;
+  /** Called after the threshold was saved: the page's gate-dependent status is stale. */
+  onGateChanged?: () => void;
 }) {
   const [set, setSet] = useState<EvaluationSet>('dev');
   const [model, setModel] = useState<EvaluationModel | ''>('');
@@ -67,7 +71,11 @@ export function EvaluateTab({
   const [current, setCurrent] = useState<IterationView | null>(null);
   const [comparison, setComparison] = useState<ComparisonView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const error = actionError ?? pollError;
+  /** Verified references per set (null: not known yet; an unknown count never blocks). */
+  const [verifiedCount, setVerifiedCount] = useState<Partial<Record<EvaluationSet, number>>>({});
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -79,15 +87,30 @@ export function EvaluateTab({
       if (n !== seq.current) return; // a set switch or a newer poll superseded this one
       setHistory(list);
       setCurrent(view);
-      setError(null);
+      setPollError(null);
     } catch (err) {
-      if (n === seq.current) setError((err as Error).message);
+      if (n === seq.current) setPollError((err as Error).message);
     }
   }, [api, projectId, set]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let stale = false;
+    api.listReferenceRows(projectId, set).then(
+      (rows) => {
+        if (!stale) setVerifiedCount((c) => ({ ...c, [set]: rows.filter(verified).length }));
+      },
+      () => {
+        // The API decides when a start is refused; an unreadable list never blocks.
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [api, projectId, set]);
 
   const active = history?.some((h) => h.status === 'running') ?? false;
   useEffect(() => {
@@ -106,11 +129,11 @@ export function EvaluateTab({
         (next) => {
           if (stopped) return;
           setComparison(next);
-          setError(null);
+          setPollError(null);
           if (!next.iterations.some((i) => i.status === 'running')) void load();
         },
         (err: Error) => {
-          if (!stopped) setError(err.message);
+          if (!stopped) setPollError(err.message);
         },
       );
     }, pollMs);
@@ -122,33 +145,41 @@ export function EvaluateTab({
 
   const gateKey = (history ?? []).map((h) => `${h.id}:${h.status}`).join(',');
   const gate = useGate(api, projectId, draft, gateKey);
+  const reloadGate = gate.reload;
   const threshold = gate.gate?.threshold ?? gate.threshold?.value ?? DEFAULT_THRESHOLD;
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
       await action();
     } catch (err) {
-      setError((err as Error).message);
+      setActionError((err as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
   const holdout = set === 'holdout';
-  const running = current?.status === 'running';
+  const shown = current?.set === set ? current : null;
+  const running = shown?.status === 'running';
+  const noReferences =
+    verifiedCount[set] === 0
+      ? `No verified ${set} references yet — save some on the References tab`
+      : null;
   const evaluateBlocked =
     draft === null
       ? 'Start a draft version first'
-      : running
-        ? 'An evaluation of this set is still running'
-        : comparing
-          ? 'A model comparison is still running'
-          : busy
-            ? 'Starting…'
-            : null;
+      : noReferences
+        ? noReferences
+        : running
+          ? 'An evaluation of this set is still running'
+          : comparing
+            ? 'A model comparison is still running'
+            : busy
+              ? 'Starting…'
+              : null;
   const compareBlocked = draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked;
 
   const evaluate = () =>
@@ -171,6 +202,8 @@ export function EvaluateTab({
       if (!window.confirm('Replace the open draft with the template from this iteration?')) return;
       await api.restoreIteration(projectId, id);
       onRestored();
+      void reloadGate();
+      void load();
     });
 
   return (
@@ -185,7 +218,10 @@ export function EvaluateTab({
         publications={gate.publications}
         threshold={gate.threshold}
         devScore={history ? devScore(history, draft) : null}
-        onChanged={() => void gate.reload()}
+        onChanged={() => {
+          void reloadGate();
+          onGateChanged?.();
+        }}
         onPublished={onRestored}
       />
       {gate.error && <p role="alert">{gate.error}</p>}
@@ -275,13 +311,13 @@ export function EvaluateTab({
           <LatestRun
             api={api}
             projectId={projectId}
-            iteration={current}
+            iteration={shown}
             set={set}
             threshold={threshold}
           />
         </div>
-        <div className="eval-side">
-          {current && <AccuracyCard iteration={current} threshold={threshold} />}
+        <div className="eval-side" tabIndex={0} aria-label="Accuracy and history">
+          {shown && <AccuracyCard iteration={shown} threshold={threshold} />}
           <HistoryCard
             history={history ?? []}
             version={draft ?? published}

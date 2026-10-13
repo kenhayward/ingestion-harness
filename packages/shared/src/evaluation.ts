@@ -394,7 +394,7 @@ export const GateHintSchema = z.object({
 });
 export type GateHint = z.infer<typeof GateHintSchema>;
 
-/** `GET �/publish-gate`: the gate and what lowers its score. The overview's gate has no hints. */
+/** `GET /api/workbench/projects/:id/publish-gate`: the gate and what lowers its score. The overview's gate has no hints. */
 export const PublishGateViewSchema = GateViewSchema.extend({ hints: z.array(GateHintSchema) });
 export type PublishGateView = z.infer<typeof PublishGateViewSchema>;
 

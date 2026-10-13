@@ -798,7 +798,18 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       jobIds: [randomUUID()],
     });
     expect(i.gateCache).toBeNull();
-    const cache = { fingerprint: 'f'.repeat(64), score: 0.75, completed: 3, total: 4 };
+    const hints = [
+      { key: 'sent_on', accuracy: 0.5, cause: 'low_accuracy' as const, stage: 'revise' as const },
+      { key: 'lines.qty', accuracy: 0, cause: 'no_step' as const, stage: 'steps' as const },
+    ];
+    const cache = {
+      fingerprint: 'f'.repeat(64),
+      score: 0.75,
+      completed: 3,
+      total: 4,
+      hints,
+      hintsThreshold: 0.9,
+    };
     await workbench.setGateCache(i.id, cache);
     expect((await workbench.getIteration(projectId, i.id))!.gateCache).toEqual(cache);
     const unscored = { fingerprint: 'e'.repeat(64), score: null, completed: 0, total: 1 };

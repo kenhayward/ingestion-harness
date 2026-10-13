@@ -108,8 +108,6 @@ export function devScore(
 
 export interface HistoryRow {
   id: string;
-  /** The iteration Restore uses (a comparison's members share the definition snapshot). */
-  restoreId: string;
   version: number;
   set: EvaluationSet;
   label: string;
@@ -133,7 +131,6 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
   return history.flatMap((h): HistoryRow[] => {
     const base = {
       id: h.id,
-      restoreId: h.id,
       version: h.templateVersion,
       set: h.set,
       createdAt: h.createdAt,

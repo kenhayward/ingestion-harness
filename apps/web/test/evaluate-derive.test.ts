@@ -134,7 +134,7 @@ describe('historyRows', () => {
       h({ id: 't', uncached: true, score: 0.86 }),
       h({ id: 'r', set: 'holdout', status: 'running', score: null }),
     ]);
-    expect(rows.map((r) => [r.label, r.score, r.restoreId, r.running, r.set])).toEqual([
+    expect(rows.map((r) => [r.label, r.score, r.id, r.running, r.set])).toEqual([
       ['Compare · default 91 · fast 84 · draft 89', 0.91, 'x3', false, 'dev'],
       ["Template's models · fresh", 0.86, 't', false, 'dev'],
       ["Template's models", null, 'r', true, 'holdout'],

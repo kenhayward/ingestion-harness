@@ -7,12 +7,17 @@ import {
   EvaluateTab,
   HOLDOUT_MODEL_REASON,
 } from '../src/workbench/EvaluateTab.js';
-import { fakeApi, iterationView, projectView } from './fake-api.js';
+import { fakeApi, iterationView, projectView, referenceInfo, referenceRow } from './fake-api.js';
 
 function tab(overrides: Partial<Api> = {}, draft: number | null = 2, pollMs = 1) {
-  const api = fakeApi({ getProject: vi.fn(async () => projectView()), ...overrides });
+  const api = fakeApi({
+    getProject: vi.fn(async () => projectView()),
+    listReferenceRows: vi.fn(async () => [referenceRow({ reference: referenceInfo() })]),
+    ...overrides,
+  });
   const onRestored = vi.fn();
   const onStarted = vi.fn();
+  const onGateChanged = vi.fn();
   render(
     <EvaluateTab
       api={api}
@@ -23,9 +28,10 @@ function tab(overrides: Partial<Api> = {}, draft: number | null = 2, pollMs = 1)
       pollMs={pollMs}
       onRestored={onRestored}
       onStarted={onStarted}
+      onGateChanged={onGateChanged}
     />,
   );
-  return { api, onRestored, onStarted };
+  return { api, onRestored, onStarted, onGateChanged };
 }
 
 describe('EvaluateTab', () => {
@@ -265,10 +271,126 @@ describe('EvaluateTab', () => {
       restoreIteration: vi.fn(async () => projectView()),
     });
     const list = await screen.findByRole('list', { name: 'Evaluations' });
-    await userEvent.click(within(list).getByRole('button', { name: 'Restore' }));
+    await userEvent.click(within(list).getByRole('button', { name: /^Restore v2 dev run of/ }));
     expect(confirm).toHaveBeenCalled();
     expect(api.restoreIteration).toHaveBeenCalledWith('letter', iter.id);
     await waitFor(() => expect(onRestored).toHaveBeenCalled());
     confirm.mockRestore();
+  });
+
+  it('refreshes the page after the threshold is saved', async () => {
+    const { api, onGateChanged } = tab({ setPublishThreshold: vi.fn(async () => projectView()) });
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalled());
+    const input = await screen.findByLabelText('Publish threshold (%)');
+    await userEvent.clear(input);
+    await userEvent.type(input, '80');
+    const calls = vi.mocked(api.getPublishGate).mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
+    await waitFor(() => expect(onGateChanged).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(vi.mocked(api.getPublishGate).mock.calls.length).toBeGreaterThan(calls),
+    );
+  });
+
+  it('reloads the gate and the history after a restore', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const iter = iterationView();
+    const listIterations = vi.fn(async () => [iter]);
+    const { api } = tab({
+      listIterations,
+      getIteration: vi.fn(async () => iter),
+      restoreIteration: vi.fn(async () => projectView()),
+    });
+    const list = await screen.findByRole('list', { name: 'Evaluations' });
+    await waitFor(() => expect(api.getPublishGate).toHaveBeenCalled());
+    const gates = vi.mocked(api.getPublishGate).mock.calls.length;
+    const lists = listIterations.mock.calls.length;
+    await userEvent.click(within(list).getByRole('button', { name: /^Restore v2 dev run of/ }));
+    await waitFor(() =>
+      expect(vi.mocked(api.getPublishGate).mock.calls.length).toBeGreaterThan(gates),
+    );
+    expect(listIterations.mock.calls.length).toBeGreaterThan(lists);
+    confirm.mockRestore();
+  });
+
+  it('keeps a failed restore visible while polls succeed', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const running = iterationView({ status: 'running', score: null });
+    tab({
+      listIterations: vi.fn(async () => [running]),
+      getIteration: vi.fn(async () => running),
+      restoreIteration: vi.fn(async () => Promise.reject(new Error('restore failed'))),
+    });
+    const list = await screen.findByRole('list', { name: 'Evaluations' });
+    await userEvent.click(within(list).getByRole('button', { name: /^Restore/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('restore failed');
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByRole('alert')).toHaveTextContent('restore failed');
+    confirm.mockRestore();
+  });
+
+  it('never lets a slow response for the other set replace the selected one', async () => {
+    const dev = iterationView();
+    const holdout = iterationView({ set: 'holdout' });
+    let releaseDev: (v: typeof dev) => void = () => {};
+    const getIteration = vi.fn((_p: string, id: string) =>
+      id === dev.id ? new Promise<typeof dev>((r) => (releaseDev = r)) : Promise.resolve(holdout),
+    );
+    tab({ listIterations: vi.fn(async () => [holdout, dev]), getIteration });
+    await waitFor(() => expect(getIteration).toHaveBeenCalledWith('letter', dev.id));
+    await userEvent.click(screen.getByRole('button', { name: 'Holdout' }));
+    expect(await screen.findByRole('heading', { name: /^Latest holdout run/ })).toBeInTheDocument();
+    releaseDev(dev);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole('heading', { name: /^Latest holdout run/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Latest dev run/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show or act on the other set's run while the switched set's load fails", async () => {
+    const running = iterationView({ status: 'running', score: null });
+    tab(
+      {
+        listIterations: vi
+          .fn()
+          .mockResolvedValueOnce([running])
+          .mockRejectedValue(new Error('history unavailable')),
+        getIteration: vi.fn(async () => running),
+      },
+      2,
+      60_000,
+    );
+    expect(await screen.findByText(/2 of 2 compared/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Holdout' }));
+    await screen.findByText('history unavailable');
+    expect(screen.queryByText(/2 of 2 compared/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Latest dev run/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Evaluate v2 on holdout' })).toBeEnabled();
+  });
+
+  it.each([
+    ['dev', 'No verified dev references yet — save some on the References tab'],
+    ['holdout', 'No verified holdout references yet — save some on the References tab'],
+  ] as const)('needs a verified %s reference to evaluate, and says so', async (set, reason) => {
+    const rows = vi.fn(async (_id: string, s?: string) =>
+      s === set
+        ? [referenceRow({ reference: referenceInfo({ outdated: ['sent_on'] }) }), referenceRow()]
+        : [referenceRow({ reference: referenceInfo() })],
+    );
+    tab({ listReferenceRows: rows });
+    if (set === 'holdout')
+      await userEvent.click(await screen.findByRole('button', { name: 'Holdout' }));
+    const evaluate = await screen.findByRole('button', { name: `Evaluate v2 on ${set}` });
+    await waitFor(() => expect(evaluate).toBeDisabled());
+    expect(evaluate).toHaveAttribute('title', reason);
+    if (set === 'dev') {
+      const compare = screen.getByRole('button', { name: 'Compare models' });
+      expect(compare).toBeDisabled();
+      expect(compare).toHaveAttribute('title', reason);
+    } else {
+      expect(screen.getByRole('button', { name: 'Compare models' })).toHaveAttribute(
+        'title',
+        COMPARE_HOLDOUT_REASON,
+      );
+    }
   });
 });

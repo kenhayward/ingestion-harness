@@ -373,6 +373,7 @@ export function ProjectPage({
               pollMs={pollMs}
               onRestored={changed}
               onStarted={loadOverview}
+              onGateChanged={loadOverview}
             />
           )}
           {tab === 'revise' && header('revise')}
