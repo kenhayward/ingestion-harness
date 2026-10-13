@@ -1484,12 +1484,18 @@ button.danger-fill {
   padding: 0 12px;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-md);
+  justify-content: center;
   color: var(--ih-text);
   text-decoration: none;
   font-size: var(--ih-text-sm);
+  font-weight: 500;
 }
-.outputs a .mono {
-  flex: 1;
+.outputs a:hover {
+  background: var(--ih-neutral-bg);
+}
+.outputs p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
 }
 .panel-actions {
   display: flex;
