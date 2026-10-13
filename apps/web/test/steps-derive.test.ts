@@ -178,5 +178,8 @@ describe('step figures', () => {
     expect(retryWarning(metric(RETRY_WARN_ATTEMPTS))).toBe(
       'Needs a retry on many runs (1.5 attempts on average): the first answer often fails the checks. Narrow the sections it reads or add instructions on the Template tab.',
     );
+    expect(retryWarning(metric(2), true)).toBe(
+      'Needs a retry on many runs (2.0 attempts on average): the first answer often fails the checks. Narrow the sections it reads or add instructions below.',
+    );
   });
 });

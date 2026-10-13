@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
-import { pickedChoice, VALUE_TYPES, type JobSummary, type ModelChoice } from '@ih/shared';
+import { pickedChoice, VALUE_TYPES, type JobSummary } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
-import { Segmented } from '../ui/Segmented.js';
 import { EditorHeader } from './EditorHeader.js';
 import { tabCounts } from './editor-derive.js';
 import { StepCard } from './StepCard.js';
@@ -20,6 +19,8 @@ import {
   type Definition,
 } from './model.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
+import { Area, opt, Select, Text } from './fields.js';
+import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
 
 type Path = (string | number)[];
 type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
@@ -32,21 +33,6 @@ const TABS: [Tab, string][] = [
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
 ];
-
-const FILLS = [
-  { value: 'fields', label: 'Fields' },
-  { value: 'table', label: 'A table' },
-] as const;
-
-/** Empty text means "not set": the key is dropped rather than stored as "". */
-const opt = (value: string): string | undefined => (value.trim() === '' ? undefined : value);
-const intList = (text: string): number[] =>
-  text
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0);
-const optInt = (text: string): number | undefined =>
-  text.trim() === '' ? undefined : Math.trunc(Number(text));
 
 export function TemplateEditor({
   api,
@@ -521,210 +507,6 @@ export function TemplateEditor({
   );
 }
 
-/** ` (Main Production Model)`: the default choice's label, when there is one. */
-const defaultLabel = (models: readonly ModelChoice[]) => {
-  const choice = models.find((m) => m.isDefault);
-  return choice ? ` (${choice.label})` : '';
-};
-
-function ExtractStep({
-  step,
-  fields,
-  tables,
-  sections,
-  models,
-  typeModelLabel,
-  set,
-  replace,
-}: {
-  step: Definition;
-  fields: string[];
-  tables: string[];
-  sections: string[];
-  models: readonly ModelChoice[];
-  /** The empty option: what a step naming no model inherits. */
-  typeModelLabel: string;
-  set: (key: string, value: unknown) => void;
-  replace: (step: Definition) => void;
-}) {
-  const fillsTable = step.table !== undefined;
-  const toggle = (key: 'fields' | 'sections', id: string, on: boolean) => {
-    const current: string[] = step[key] ?? [];
-    set(key, on ? [...current, id] : current.filter((x) => x !== id));
-  };
-  return (
-    <div className="extract-step">
-      <div className="grid step-settings">
-        <Text label="Step id" value={step.id} onChange={(v) => set('id', v)} />
-        <div className="field">
-          <span className="field-label">Fills</span>
-          <Segmented
-            label="Fills"
-            options={FILLS}
-            value={fillsTable ? 'table' : 'fields'}
-            onChange={(v) => {
-              if (v === (fillsTable ? 'table' : 'fields')) return;
-              if (v === 'table') {
-                replace({ ...step, fields: [], table: tables[0] ?? '' });
-              } else {
-                const rest = { ...step };
-                delete rest.table;
-                delete rest.chunkPages;
-                replace({ ...rest, fields: [] });
-              }
-            }}
-          />
-        </div>
-        {fillsTable ? (
-          <>
-            <Select
-              label="Table"
-              value={step.table}
-              options={tables}
-              onChange={(v) => set('table', v)}
-            />
-            <Text
-              label="Chunk pages"
-              hint="Run once per N pages (large tables)"
-              value={step.chunkPages === undefined ? '' : String(step.chunkPages)}
-              onChange={(v) => set('chunkPages', optInt(v))}
-            />
-          </>
-        ) : (
-          <Checklist
-            label="Fields to fill"
-            options={fields}
-            selected={step.fields ?? []}
-            onToggle={(id, on) => toggle('fields', id, on)}
-          />
-        )}
-        <Checklist
-          label="Sections"
-          options={sections}
-          selected={step.sections ?? []}
-          onToggle={(id, on) => toggle('sections', id, on)}
-        />
-        <div className="field">
-          <span className="field-label">Model</span>
-          <ModelPicker
-            label="Model"
-            choices={models}
-            // No model, or `default`: the default choice, whichever it is when the step runs.
-            value={step.model === 'default' ? '' : (step.model ?? '')}
-            emptyLabel={typeModelLabel}
-            onChange={(id) => set('model', id || undefined)}
-          />
-        </div>
-        <Text
-          label="Page images"
-          hint="1-based pages sent as images, e.g. 1"
-          value={(step.pageImages ?? []).join(', ')}
-          onChange={(v) => set('pageImages', intList(v).length ? intList(v) : undefined)}
-        />
-        <Text
-          label="Max tokens"
-          value={step.maxTokens === undefined ? '' : String(step.maxTokens)}
-          onChange={(v) => set('maxTokens', optInt(v))}
-        />
-        <Text
-          label="Max attempts"
-          value={step.maxAttempts === undefined ? '' : String(step.maxAttempts)}
-          onChange={(v) => set('maxAttempts', optInt(v))}
-        />
-      </div>
-      <div className="step-prompts">
-        <ContextEditor
-          value={step.context ?? {}}
-          onChange={(context) => set('context', Object.keys(context).length ? context : undefined)}
-        />
-        <Area
-          label="Instructions"
-          value={step.instructions}
-          onChange={(v) => set('instructions', opt(v))}
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * Values from earlier steps for the prompt, one per line: `name = field` or `name = table.column`.
- * Keeps its own text so half-typed lines aren't lost; only complete lines are stored.
- */
-function ContextEditor({
-  value,
-  onChange,
-}: {
-  value: Record<string, string>;
-  onChange: (value: Record<string, string>) => void;
-}) {
-  const [text, setText] = useState(() =>
-    Object.entries(value)
-      .map(([name, path]) => `${name} = ${path}`)
-      .join('\n'),
-  );
-  return (
-    <label
-      className="context"
-      title="One per line: name = field or table.column (must be filled by an earlier step)"
-    >
-      Context
-      <textarea
-        rows={2}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          const entries = e.target.value
-            .split('\n')
-            .map((line) => line.split('='))
-            .filter((parts) => parts.length === 2 && parts[0]!.trim() && parts[1]!.trim())
-            .map(([name, path]) => [name!.trim(), path!.trim()] as const);
-          onChange(Object.fromEntries(entries));
-        }}
-      />
-    </label>
-  );
-}
-
-function CheckStep({
-  step,
-  paths,
-  set,
-}: {
-  step: Definition;
-  paths: string[];
-  set: (key: string, value: unknown) => void;
-}) {
-  return (
-    <div className="grid">
-      <Text label="Check id" value={step.id} onChange={(v) => set('id', v)} />
-      <Select
-        label="Values"
-        value={step.values}
-        options={paths}
-        onChange={(v) => set('values', v)}
-      />
-      <Select
-        label="Reference"
-        value={step.reference}
-        options={paths}
-        onChange={(v) => set('reference', v)}
-      />
-      <Select
-        label="Aliases"
-        value={step.aliases ?? ''}
-        options={['', ...paths]}
-        onChange={(v) => set('aliases', opt(v))}
-      />
-      <Text
-        label="Max distance"
-        value={step.maxDistance === undefined ? '' : String(step.maxDistance)}
-        onChange={(v) => set('maxDistance', optInt(v))}
-      />
-    </div>
-  );
-}
-
 /** Fields or table columns, one per row: id, name, type, enum values, description. */
 function ValueList({
   label,
@@ -1026,130 +808,5 @@ function TableOutputs({
         </section>
       )}
     </div>
-  );
-}
-
-function Checklist({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  options: string[];
-  selected: string[];
-  onToggle: (id: string, on: boolean) => void;
-}) {
-  return (
-    <fieldset className="choice">
-      <legend>{label}</legend>
-      {options.length === 0 && <small>None defined yet.</small>}
-      {options.map((id) => (
-        <label key={id} className="inline">
-          <input
-            type="checkbox"
-            checked={selected.includes(id)}
-            onChange={(e) => onToggle(id, e.target.checked)}
-          />
-          {id}
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
-/** `bare` drops the visible label (table cells under a heading); it stays the accessible name. */
-function Text({
-  label,
-  value,
-  hint,
-  bare,
-  className,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  hint?: string;
-  bare?: boolean;
-  className?: string;
-  onChange: (value: string) => void;
-}) {
-  const input = (
-    <input
-      aria-label={bare ? label : undefined}
-      title={bare ? hint : undefined}
-      className={className}
-      value={value === undefined || value === null ? '' : String(value)}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-  if (bare) return input;
-  return (
-    <label title={hint}>
-      {label}
-      {input}
-    </label>
-  );
-}
-
-function Area({
-  label,
-  value,
-  hint,
-  rows = 4,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  hint?: string;
-  rows?: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label title={hint}>
-      {label}
-      <textarea
-        rows={rows}
-        value={value === undefined || value === null ? '' : String(value)}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  value,
-  options,
-  bare,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  options: string[];
-  bare?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const current = value === undefined || value === null ? '' : String(value);
-  const select = (
-    <select
-      aria-label={bare ? label : undefined}
-      value={current}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {!options.includes(current) && <option value={current}>{current || '— choose —'}</option>}
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o || '—'}
-        </option>
-      ))}
-    </select>
-  );
-  if (bare) return select;
-  return (
-    <label>
-      {label}
-      {select}
-    </label>
   );
 }
