@@ -80,7 +80,7 @@ describe('ProjectPage tab headers', () => {
     }
   });
 
-  it('has one Propose button and no Skip on the Revise tab', async () => {
+  it('has one Ask button and no Skip on the Revise tab', async () => {
     const api = fakeApi({ getProject: vi.fn(async () => projectView({ draft: 1 })) });
     render(
       <ProjectPage
@@ -93,11 +93,9 @@ describe('ProjectPage tab headers', () => {
       />,
     );
     await screen.findByRole('heading', { level: 2, name: 'Revise' });
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: /^Propose (a revision|again)$/ })).toHaveLength(
-        1,
-      ),
-    );
+    expect(
+      await screen.findAllByRole('button', { name: 'Ask the model for a revision' }),
+    ).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
   });
 

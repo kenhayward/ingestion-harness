@@ -52,7 +52,7 @@ const PROPOSE: Record<ChangeStage, string> = {
   revise: 'Propose a revision',
 };
 
-const POLICY_NOTE: Record<DataPolicy, string> = {
+export const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
   external:
     'Dev sample text may be sent to an external model provider; holdout samples are never sent.',

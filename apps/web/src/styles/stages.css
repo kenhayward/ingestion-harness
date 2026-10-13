@@ -1633,7 +1633,10 @@ label.inline.list-select {
 .eval-history,
 .eval-runbar,
 .eval-compare,
-.revise-feedback {
+.revise-feedback,
+.revise-see-head,
+.revise-failures,
+.revise-earlier {
   padding: 12px 16px;
 }
 .brief-card h3,
@@ -1658,7 +1661,9 @@ label.inline.list-select {
 .eval-history h3,
 .eval-runbar h3,
 .eval-compare h3,
-.revise-feedback h3 {
+.revise-feedback h3,
+.revise-see-head h3,
+.revise-failures h3 {
   font-weight: 600;
 }
 
@@ -2714,4 +2719,102 @@ label.inline.list-select {
 .feedback-add textarea {
   flex: 1 1 240px;
   min-height: 52px;
+}
+
+/* Revise (handoff §9) */
+.revise-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.revise-see {
+  overflow: hidden;
+}
+.revise-see-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.revise-see-text {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.revise-see-text p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.revise-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+.revise-split > * {
+  min-width: 0;
+}
+.revise-failures {
+  border-left: 1px solid var(--ih-border);
+}
+.failure-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.failure-list li {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--ih-border);
+}
+.failure-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.failure-head code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.failure-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.failure-chips .diff-chip {
+  overflow-wrap: anywhere;
+}
+.revise-not-sent {
+  margin: 8px -16px -12px;
+  padding: 8px 16px;
+  background: var(--ih-skip-bg);
+}
+.revise-running {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+}
+.answers-badge {
+  font-size: var(--ih-text-sm);
+  white-space: nowrap;
+}
+.answer-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+}
+@media (max-width: 760px) {
+  .revise-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .revise-failures {
+    border-left: 0;
+    border-top: 1px solid var(--ih-border);
+  }
 }

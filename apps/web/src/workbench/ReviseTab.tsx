@@ -1,55 +1,135 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  FEEDBACK_MAX_CHARS,
-  FEEDBACK_TARGETS,
+  changeBodyOf,
   type DataPolicy,
+  type DraftChange,
   type FeedbackItem,
-  type FeedbackTarget,
+  type IterationSummary,
+  type ProposalView,
+  type RevisePreview,
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { StagePanel } from './StagePanel.js';
+import { ProposalCard, type NextStep } from './ProposalCard.js';
+import { ReviseFeedback } from './ReviseFeedback.js';
+import {
+  answerNumbers,
+  earlierRevisions,
+  failureChips,
+  failuresHeader,
+  latestRevise,
+  notSentText,
+  openProposalStage,
+  previewSummary,
+  revisionLine,
+  shownFeedback,
+  STAGE_NAME,
+} from './revise.js';
+import { POLICY_NOTE } from './StagePanel.js';
+import { StaleBanner } from './StaleBanner.js';
 
-/** Feedback on the draft, and the revision the model proposes in answer to it (ADR 0007). */
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+const NEXT = (projectId: string): NextStep => ({
+  href: `#/workbench/${projectId}/evaluate`,
+  label: 'Evaluate on dev',
+  text: 'Run the dev set to see whether the changes helped; when dev looks right, run holdout to check the gate.',
+});
+
+function AnswersBadge({ numbers }: { numbers: number[] }) {
+  return (
+    <span className="answers-badge">
+      Answers
+      {numbers.map((n) => (
+        <Fragment key={n}>
+          {' '}
+          <span className="answer-num">{n}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+interface Loaded {
+  preview: RevisePreview;
+  feedback: FeedbackItem[];
+  proposals: ProposalView[];
+  samples: SampleView[];
+  iterations: IterationSummary[];
+}
+
+/**
+ * Revise (handoff §9, RV1–RV3): what the next revision sends (preview), your feedback, the
+ * latest dev failures, the proposal with the feedback each change answers, earlier revisions.
+ */
 export function ReviseTab({
   api,
   projectId,
   dataPolicy,
-  hasDraft,
+  draft,
   pollMs,
   onApplied,
+  now = Date.now(),
 }: {
   api: Api;
   projectId: string;
   dataPolicy: DataPolicy;
-  hasDraft: boolean;
+  draft: number | null;
   pollMs: number;
   onApplied: () => void;
+  now?: number;
 }) {
-  const [items, setItems] = useState<FeedbackItem[] | null>(null);
-  const [samples, setSamples] = useState<SampleView[]>([]);
-  const [target, setTarget] = useState<FeedbackTarget>('field');
-  const [targetId, setTargetId] = useState('');
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
+  const seeId = useId();
+  const failId = useId();
+  const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const seq = useRef(0);
 
-  const reload = useCallback(async () => {
+  const load = useCallback(async () => {
+    const id = ++seq.current;
     try {
-      setItems(await api.listFeedback(projectId));
+      const [preview, feedback, proposals, samples, iterations] = await Promise.all([
+        api.getRevisePreview(projectId),
+        api.listFeedback(projectId),
+        api.listProposals(projectId),
+        api.listSamples(projectId),
+        api.listIterations(projectId),
+      ]);
+      if (id !== seq.current) return; // a newer load (or unmount) superseded this one
+      setData({ preview, feedback, proposals, samples, iterations });
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      if (id === seq.current) setError((err as Error).message);
     }
   }, [api, projectId]);
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void load();
+    const counter = seq; // the counter object itself, not a rendered node
+    return () => {
+      counter.current++;
+    };
+  }, [load, draft]);
 
+  const latest = data ? latestRevise(data.proposals) : null;
+  const running = latest?.status === 'running';
   useEffect(() => {
-    api.listSamples(projectId).then(setSamples, () => setSamples([]));
-  }, [api, projectId]);
+    if (!running) return;
+    const timer = setInterval(() => void load(), pollMs);
+    return () => clearInterval(timer);
+  }, [running, pollMs, load]);
+
+  // A new proposal starts with every change selected (reset during render, as StagePanel does).
+  const body = latest ? changeBodyOf(latest) : null;
+  const changeCount = body?.changes.length ?? 0;
+  const selectionKey = `${latest?.id ?? ''}:${changeCount}`;
+  const [selectedFor, setSelectedFor] = useState(selectionKey);
+  if (selectedFor !== selectionKey) {
+    setSelectedFor(selectionKey);
+    setSelected(new Set(Array.from({ length: changeCount }, (_, i) => i)));
+  }
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -63,116 +143,166 @@ export function ReviseTab({
       setBusy(false);
     }
   };
-
-  const add = () =>
+  const ask = () =>
     act(async () => {
-      await api.addFeedback(projectId, { target, targetId, body });
-      setTargetId('');
-      setBody('');
-      await reload();
+      await api.startStage(projectId, 'revise');
+      await load();
     });
-  const remove = (id: string) =>
+  const apply = () =>
     act(async () => {
-      await api.deleteFeedback(projectId, id);
-      await reload();
+      if (!latest) return;
+      await api.decideProposal(
+        projectId,
+        latest.id,
+        'accepted',
+        [...selected].sort((a, b) => a - b),
+      );
+      onApplied();
+      await load();
     });
+  const reject = () =>
+    act(async () => {
+      if (!latest) return;
+      await api.decideProposal(projectId, latest.id, 'rejected');
+      await load();
+    });
+  const toggle = (i: number) => {
+    const next = new Set(selected);
+    if (next.has(i)) next.delete(i);
+    else next.add(i);
+    setSelected(next);
+  };
 
-  const sampleName = (id: string) => samples.find((s) => s.id === id)?.filename ?? 'sample';
+  if (!data) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
+
+  const { preview } = data;
+  const shown = shownFeedback(data.feedback, latest);
+  const other = openProposalStage(data.proposals);
+  const header = failuresHeader(preview);
+  const earlier = earlierRevisions(data.proposals, data.feedback);
+  const askReason = !preview.draft
+    ? 'Start the next version on the Template tab first'
+    : running
+      ? 'A revision is being drafted'
+      : !preview.feedback.length
+        ? 'Add feedback first: a revision answers your feedback'
+        : null;
+  const badge = (c: DraftChange) => {
+    const numbers = answerNumbers(c, shown);
+    return numbers.length ? <AnswersBadge numbers={numbers} /> : null;
+  };
 
   return (
     <div className="revise-tab">
-      <h3>Feedback</h3>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void add();
-        }}
-      >
-        <label>
-          About{' '}
-          <select value={target} onChange={(e) => setTarget(e.target.value as FeedbackTarget)}>
-            {FEEDBACK_TARGETS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>{' '}
-        <label>
-          Id{' '}
-          <input
-            value={targetId}
-            aria-describedby="feedback-id-hint"
-            onChange={(e) => setTargetId(e.target.value)}
-          />
-        </label>{' '}
-        <small id="feedback-id-hint" className="muted">
-          lowercase id, e.g. sent_on
-        </small>
-        <label>
-          Feedback
-          <textarea
-            value={body}
-            maxLength={FEEDBACK_MAX_CHARS}
-            onChange={(e) => setBody(e.target.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          className="primary"
-          disabled={busy || !targetId.trim() || !body.trim()}
-        >
-          Add feedback
-        </button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-      {items && items.length > 0 && (
-        <table aria-label="Feedback">
-          <thead>
-            <tr>
-              <th>About</th>
-              <th>Id</th>
-              <th>Sample</th>
-              <th>Feedback</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((f) => (
-              <tr key={f.id}>
-                <td>{f.target}</td>
-                <td>{f.targetId}</td>
-                <td>{f.sampleId ? sampleName(f.sampleId) : ''}</td>
-                <td>{f.body}</td>
-                <td>{f.resolvedBy ? 'resolved' : 'open'}</td>
-                <td>
-                  {!f.resolvedBy && (
-                    <button type="button" disabled={busy} onClick={() => void remove(f.id)}>
-                      Delete
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
+      {other && (
+        <StaleBanner tone="warn">
+          <strong>{STAGE_NAME[other]} has an open proposal.</strong> Decide it first so this
+          revision does not spend itself proposing the same fix.{' '}
+          <a href={`#/workbench/${projectId}/${other}`}>Open {STAGE_NAME[other]}</a>
+        </StaleBanner>
       )}
-      <h3>Revision</h3>
-      <StagePanel
-        api={api}
-        projectId={projectId}
-        stage="revise"
-        dataPolicy={dataPolicy}
-        hasDraft={hasDraft}
-        pollMs={pollMs}
-        canSkip={false}
-        onApplied={() => {
-          onApplied();
-          void reload();
-        }}
-        onSkipped={() => undefined}
-      />
+      {error && <p role="alert">{error}</p>}
+      <section className="card revise-see" aria-labelledby={seeId}>
+        <div className="revise-see-head">
+          <div className="revise-see-text">
+            <h3 id={seeId}>What the model will see</h3>
+            <p className="muted">{previewSummary(preview)}</p>
+          </div>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || askReason !== null}
+            title={askReason ?? undefined}
+            onClick={() => void ask()}
+          >
+            Ask the model for a revision
+          </button>
+        </div>
+        <div className="revise-split">
+          <ReviseFeedback
+            api={api}
+            projectId={projectId}
+            items={shown}
+            samples={data.samples}
+            iterations={data.iterations}
+            definition={preview.draft?.definition ?? null}
+            onChanged={() => void load()}
+          />
+          <section className="revise-failures" aria-labelledby={failId}>
+            <h3 id={failId}>
+              Failures from the latest dev run
+              {header && <span className="muted"> {header}</span>}
+            </h3>
+            {preview.failuresFrom === null ? (
+              <p className="muted">
+                No complete dev run yet. Evaluate on dev to send its failures.
+              </p>
+            ) : preview.failures.length === 0 ? (
+              <p className="muted">Every dev sample scored 100%.</p>
+            ) : (
+              <ul className="failure-list">
+                {preview.failures.map((f, i) => (
+                  <li key={`${i}-${f.sample}`}>
+                    <span className="failure-head">
+                      <code>{f.sample}</code>
+                      <span>{pct(f.score)}</span>
+                    </span>
+                    <span className="failure-chips">
+                      {failureChips(f).map((chip, j) => (
+                        <code key={`${j}-${chip}`} className="diff-chip">
+                          {chip}
+                        </code>
+                      ))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {preview.failuresTotal > preview.failures.length && (
+              <p className="muted">
+                {preview.failuresTotal - preview.failures.length} more failing dev samples are not
+                sent (the worst {preview.limits.samples} are).
+              </p>
+            )}
+            <p className="holdout-note revise-not-sent">{notSentText(preview.notSent)}</p>
+          </section>
+        </div>
+      </section>
+      {running && (
+        <p role="status" className="revise-running">
+          The model is drafting a revision…
+        </p>
+      )}
+      {latest?.status === 'failed' && <p role="alert">{latest.error}</p>}
+      {latest && body && (
+        <ProposalCard
+          projectId={projectId}
+          proposal={latest}
+          body={body}
+          definition={preview.draft?.definition ?? null}
+          draftVersion={preview.draft?.version ?? draft}
+          selected={selected}
+          onToggle={toggle}
+          onApply={() => void apply()}
+          onReject={() => void reject()}
+          busy={busy}
+          now={now}
+          next={NEXT(projectId)}
+          badge={badge}
+          footerNote="Feedback a change answers is marked answered when you apply it."
+        />
+      )}
+      {earlier.length > 0 && (
+        <details className="card revise-earlier">
+          <summary>Earlier revisions · {earlier.length}</summary>
+          <ul>
+            {earlier.map((r) => (
+              <li key={r.id}>{revisionLine(r)}</li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
