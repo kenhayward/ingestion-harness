@@ -227,7 +227,7 @@ export interface WorkbenchRepo {
    * Deletes the project in one transaction: its jobs (with their history, queued and running
    * ones included), the type's project-less test jobs, feedback, iterations, publications,
    * proposals, stage skips, briefs, samples, the template's references, every document of the
-   * type that nothing else uses and the template's draft rows. Files are the caller's.
+   * type that nothing else uses and the template's draft rows with their change log (migration 0029). Files are the caller's.
    * `published` (nothing written) when any version of the template is published; null when the
    * project is unknown. Locks the template rows before the project row, as `publishDraft` does.
    */
@@ -1541,6 +1541,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
       }
       await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
+      // The cascade from templates would take them too; deleted explicitly as a child (TP1).
+      await client.query('DELETE FROM template_changes WHERE template_id = $1', [id]);
       await client.query(`DELETE FROM templates WHERE id = $1 AND status = 'draft'`, [id]);
       await client.query('COMMIT');
       return { jobs: [...jobs.values()], documents };

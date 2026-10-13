@@ -272,14 +272,24 @@ describe('MemoryWorkbenchRepo.deleteProject', () => {
     expect((await templates.list()).filter((t) => t.id === 'letter')).toHaveLength(2);
   });
 
-  it('deletes the draft template rows with the project', async () => {
+  it('deletes the draft template rows and their change log with the project', async () => {
     const { templates, workbench } = await project();
-    await templates.create('letter', 2, letter(2), 'draft');
-    await templates.create('other', 1, letter(1), 'draft');
+    const change = {
+      source: 'hand' as const,
+      stage: null,
+      proposalId: null,
+      summary: 'Changed the name',
+      diff: [],
+      by: null,
+    };
+    await templates.create('letter', 2, letter(2), 'draft', change);
+    await templates.create('other', 1, letter(1), 'draft', change);
 
     expect(await workbench.deleteProject('letter')).not.toBeNull();
     expect((await templates.list()).filter((t) => t.id === 'letter')).toEqual([]);
+    expect(await templates.listChanges('letter', 2)).toEqual([]);
     expect(await templates.get('other', 1)).not.toBeNull();
+    expect(await templates.listChanges('other', 1)).toHaveLength(1);
   });
 
   it('deletes the project-less test jobs of the type and their documents', async () => {

@@ -20,6 +20,7 @@ import {
   type NewDocument,
   type SegmentJobParams,
 } from '../../src/repositories/types.js';
+import { PgTemplateRepo } from '../../src/templates/repo.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
@@ -34,16 +35,21 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
   let pool: pg.Pool;
   let repo: PgRepo;
   let workbench: PgWorkbenchRepo;
+  let templates: PgTemplateRepo;
+  let templatesPool: pg.Pool;
 
   beforeAll(async () => {
     await migrate(url!, migrations);
     pool = new pg.Pool({ connectionString: url, max: 3 });
     repo = PgRepo.fromUrl(url!);
     workbench = new PgWorkbenchRepo(new pg.Pool({ connectionString: url, max: 3 }));
+    templatesPool = new pg.Pool({ connectionString: url, max: 3 });
+    templates = new PgTemplateRepo(templatesPool);
   });
 
   afterAll(async () => {
     await pool?.end();
+    await templatesPool?.end();
     await repo?.close();
   });
 
@@ -1114,6 +1120,11 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
         `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
         [projectId],
       );
+      await pool.query(
+        `INSERT INTO template_changes (template_id, version, source, summary)
+         VALUES ($1, 1, 'started', 'Draft v1 created')`,
+        [projectId],
+      );
       return { projectId, sampleDoc, run, upload };
     };
     const counts = async (projectId: string) => {
@@ -1131,6 +1142,7 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
            (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
            (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
            (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents,
+           (SELECT count(*)::int FROM template_changes WHERE template_id = $1) AS changes,
            (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
         [projectId],
       );
@@ -1515,5 +1527,104 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
         [queued.documentId, running.documentId, timed.id],
       ]);
     }
+  });
+
+  it('logs draft changes in the same statement, matching the base to the millisecond (TP1)', async () => {
+    const id = `tc-${randomUUID().slice(0, 8)}`;
+    const change = (source: 'hand' | 'started', summary: string) => ({
+      source,
+      stage: null,
+      proposalId: null,
+      summary,
+      diff: source === 'hand' ? ['+ a'] : [],
+      by: source === 'hand' ? 'Ken' : null,
+    });
+    const v1 = await templates.create(
+      id,
+      1,
+      { id, version: 1 },
+      'draft',
+      change('started', 'Draft v1 created'),
+    );
+    // updated_at has microseconds, the ISO string milliseconds: the base still matches.
+    const saved = await templates.updateDraft(
+      id,
+      1,
+      { id, version: 1, name: 'A' },
+      { change: change('hand', 'Changed the name'), expectedUpdatedAt: v1.updatedAt },
+    );
+    expect(saved).not.toBeNull();
+    // A stale base writes nothing: neither the definition nor a change.
+    expect(
+      await templates.updateDraft(
+        id,
+        1,
+        { id, version: 1, name: 'B' },
+        { change: change('hand', 'stale'), expectedUpdatedAt: v1.updatedAt },
+      ),
+    ).toBeNull();
+    expect((await templates.get(id, 1))!.definition).toMatchObject({ name: 'A' });
+    const proposalId = randomUUID();
+    await templates.updateDraft(
+      id,
+      1,
+      { id, version: 1, name: 'C' },
+      {
+        change: {
+          source: 'proposal',
+          stage: 'outputs',
+          proposalId,
+          summary: 'Changed the name',
+          diff: ['A → C'],
+          by: null,
+        },
+      },
+    );
+    const changes = await templates.listChanges(id, 1);
+    expect(changes.map((c) => c.source)).toEqual(['proposal', 'hand', 'started']);
+    expect(changes[0]).toMatchObject({
+      version: 1,
+      stage: 'outputs',
+      proposalId,
+      diff: ['A → C'],
+      by: null,
+    });
+    expect(changes[1]).toMatchObject({ summary: 'Changed the name', diff: ['+ a'], by: 'Ken' });
+    expect(Date.parse(changes[2]!.at)).not.toBeNaN();
+
+    // Published: nothing is written or logged; a published create logs nothing either.
+    await templates.publish(id, 1);
+    expect(
+      await templates.updateDraft(
+        id,
+        1,
+        { id, version: 1, name: 'D' },
+        { change: change('hand', 'x') },
+      ),
+    ).toBeNull();
+    expect(await templates.listChanges(id, 1)).toHaveLength(3);
+    await templates.create(id, 2, { id, version: 2 }, 'published', change('started', 'x'));
+    expect(await templates.listChanges(id, 2)).toEqual([]);
+    // A deleted draft takes its log (ON DELETE CASCADE).
+    await templates.create(
+      id,
+      3,
+      { id, version: 3 },
+      'draft',
+      change('started', 'Draft v3 created'),
+    );
+    expect(await templates.deleteDraft(id, 3)).toBe(true);
+    const left = await pool.query(
+      'SELECT 1 FROM template_changes WHERE template_id = $1 AND version = 3',
+      [id],
+    );
+    expect(left.rowCount).toBe(0);
+    // A proposal entry needs its stage (and nothing else may carry one).
+    await expect(
+      pool.query(
+        `INSERT INTO template_changes (template_id, version, source, summary) VALUES ($1, 1, 'proposal', 'x')`,
+        [id],
+      ),
+    ).rejects.toThrow(/check constraint/);
   });
 });
