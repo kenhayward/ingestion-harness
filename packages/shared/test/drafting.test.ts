@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DraftChangeSchema,
+  answeredFeedback,
   applyChanges,
   blockingStage,
   conflictingChanges,
@@ -404,5 +405,64 @@ describe('revise stage', () => {
     expect(parseChangeBody('revise', body)?.changes).toHaveLength(3);
     expect(blockingStage(stageStates([], []), 'revise')).toBeNull();
     expect(stageStates([], []).map((s) => s.stage)).not.toContain('revise');
+  });
+});
+
+describe('answers (RV2)', () => {
+  const field = { op: 'putField', field: { id: 'a', type: 'text' }, reason: 'r' };
+
+  it('parses a revise change that names the feedback it answers, and an old one without', () => {
+    expect(
+      parseChangeBody('revise', { notes: '', changes: [{ ...field, answers: ['f1', 'f2'] }] })
+        ?.changes[0],
+    ).toMatchObject({ answers: ['f1', 'f2'] });
+    expect(
+      parseChangeBody('revise', { notes: '', changes: [field] })?.changes[0],
+    ).not.toHaveProperty('answers');
+  });
+
+  it('only revise changes answer feedback', () => {
+    expect(
+      parseChangeBody('outputs', { notes: '', changes: [{ ...field, answers: ['f1'] }] }),
+    ).toBeNull();
+  });
+
+  it('rejects an empty feedback id', () => {
+    expect(
+      parseChangeBody('revise', { notes: '', changes: [{ ...field, answers: [''] }] }),
+    ).toBeNull();
+  });
+});
+
+describe('answeredFeedback (RV2)', () => {
+  const c = (answers?: string[]): DraftChange => ({
+    op: 'removeStep',
+    id: 's',
+    reason: 'r',
+    ...(answers ? { answers } : {}),
+  });
+
+  it.each<[string, DraftChange[], number[], string[], string[]]>([
+    [
+      'a proposal without answers resolves all it was sent',
+      [c(), c()],
+      [0],
+      ['f1', 'f2'],
+      ['f1', 'f2'],
+    ],
+    ['only the applied changes answer', [c(['f1']), c(['f2'])], [1], ['f1', 'f2'], ['f2']],
+    ['a change may answer several', [c(['f1', 'f2'])], [0], ['f1', 'f2', 'f3'], ['f1', 'f2']],
+    ['an id the proposal was not sent is ignored', [c(['f9', 'f1'])], [0], ['f1'], ['f1']],
+    [
+      'applied changes that answer nothing resolve nothing',
+      [c(['f1']), c()],
+      [1],
+      ['f1', 'f2'],
+      [],
+    ],
+    ['the order is the order sent', [c(['f2', 'f1'])], [0], ['f1', 'f2'], ['f1', 'f2']],
+    ['an out-of-range index answers nothing', [c(['f1'])], [3], ['f1'], []],
+  ])('%s', (_name, changes, applied, sent, expected) => {
+    expect(answeredFeedback(changes, applied, sent)).toEqual(expected);
   });
 });

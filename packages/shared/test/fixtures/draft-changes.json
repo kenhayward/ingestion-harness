@@ -890,5 +890,33 @@
         }
       ]
     }
+  },
+  {
+    "name": "revise answers ride along and change nothing themselves",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": []
+    },
+    "changes": [
+      {
+        "op": "setPreamble",
+        "preamble": "Letters from suppliers.",
+        "reason": "feedback 1",
+        "answers": ["9b7c0c1e-0000-4000-8000-000000000001"]
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": { "fields": [{ "id": "sender", "type": "text" }], "tables": [] },
+      "pipeline": [],
+      "preamble": "Letters from suppliers."
+    }
   }
 ]
