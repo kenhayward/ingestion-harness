@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { describe, expect, it } from 'vitest';
-import { MemoryAccessRepo } from '../src/access/repo.js';
-import { testApp } from './helpers.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { z } from 'zod';
+import { MemoryAccessRepo, type AccessToken } from '../src/access/repo.js';
+import { AccessTokenSchema } from '../src/access/routes.js';
+import { registeredRoutes, testApp } from './helpers.js';
 
 async function setup() {
   const access = new MemoryAccessRepo();
@@ -15,20 +17,6 @@ const cookieOf = (res: { headers: Record<string, unknown> }) => {
   const header = Array.isArray(raw) ? raw[0] : String(raw ?? '');
   return { header, value: /ih_session=([^;]*)/.exec(header)?.[1] ?? '' };
 };
-
-/** Full method + path list from Fastify's route tree (children are printed relative). */
-function registeredRoutes(tree: string): { method: string; path: string }[] {
-  const stack: string[] = [];
-  return tree.split('\n').flatMap((line) => {
-    const m = /^([│ ]*)[├└]── (\S+) \(([^)]+)\)/.exec(line);
-    if (!m) return [];
-    const depth = m[1]!.length / 4;
-    stack.length = depth;
-    stack.push(m[2]!);
-    const path = stack.join('');
-    return m[3]!.split(', ').map((method) => ({ method, path }));
-  });
-}
 
 async function login(app: FastifyInstance, token: string, headers: Record<string, string> = {}) {
   const res = await app.inject({
@@ -48,19 +36,38 @@ describe('token access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login and logout', async () => {
+  it('guards every /api route except login, logout and the API docs', async () => {
     const { app } = await setup();
     const routes = registeredRoutes(app.printRoutes({ commonPrefix: false }))
       .filter((r) => r.path.startsWith('/api/'))
-      .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method))
-      .filter((r) => !['/api/auth/login', '/api/auth/logout'].includes(r.path));
+      .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method));
     expect(routes.length).toBeGreaterThan(20);
+    const open: string[] = [];
     for (const { method, path } of routes) {
       const url = path.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000');
       const res = await app.inject({ method: method as 'GET', url });
-      expect(`${method} ${path} -> ${res.statusCode}`).toBe(`${method} ${path} -> 401`);
+      // Login's own 401 (no token) is not the access hook's.
+      const guarded = res.statusCode === 401 && res.json().error === 'sign in required';
+      if (!guarded) open.push(`${method} ${path}`);
     }
+    expect(open.sort()).toEqual([
+      'GET /api/docs',
+      'GET /api/docs/',
+      'GET /api/docs/js/scalar.js',
+      'GET /api/docs/openapi.json',
+      'GET /api/docs/openapi.yaml',
+      'POST /api/auth/login',
+      'POST /api/auth/logout',
+    ]);
   });
+
+  it.each(['/api/docs/', '/api/docs/openapi.json', '/api/docs/js/scalar.js', '/api/%64ocs/'])(
+    'serves %s without a session',
+    async (url) => {
+      const { app } = await setup();
+      expect((await app.inject(url)).statusCode).toBe(200);
+    },
+  );
 
   it('signs in with the admin token and sets a strict, http-only session cookie', async () => {
     const { app, adminToken } = await setup();
@@ -214,4 +221,10 @@ describe('token access path handling', () => {
       expect([401, 404]).toContain(res.statusCode);
     },
   );
+});
+
+describe('access token docs', () => {
+  it('describe the AccessToken type exactly', () => {
+    expectTypeOf<z.infer<typeof AccessTokenSchema>>().toEqualTypeOf<AccessToken>();
+  });
 });
