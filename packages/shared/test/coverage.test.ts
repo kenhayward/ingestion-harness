@@ -109,6 +109,18 @@ describe('outputCoverage', () => {
       },
     ],
     ['a raw draft with missing parts', {}, { outputs: [], uncovered: [], multiple: [] }],
+    [
+      'malformed parts are ignored',
+      {
+        outputs: { fields: [{ id: 1 }, 'x', { id: 'a' }], tables: 'nope' },
+        pipeline: [null, { type: 'extract', id: 's', fields: 'a' }],
+      },
+      {
+        outputs: [{ id: 'a', kind: 'field', steps: [] }],
+        uncovered: ['a'],
+        multiple: [],
+      },
+    ],
     ['not an object', null, { outputs: [], uncovered: [], multiple: [] }],
   ])('%s', (_name, definition, expected) => {
     expect(outputCoverage(definition)).toEqual(expected);
