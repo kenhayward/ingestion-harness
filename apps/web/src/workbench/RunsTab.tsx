@@ -239,12 +239,14 @@ export function RunsTab({
           confirmLabel="Retry"
           choices={choices}
           initialModel={retrying.modelOverride ?? ''}
-          emptyLabel="Template's models"
+          emptyLabel="Document type's model"
           dataPolicy={dataPolicy}
           // Reference and evaluation runs keep their own model: changing it would drop a
           // reference run from the References tracker or skew an evaluation.
           fixedModel={
-            retrying.batchId === null ? (retrying.modelOverride ?? "Template's models") : undefined
+            retrying.batchId === null
+              ? (retrying.modelOverride ?? "Document type's model")
+              : undefined
           }
           summary={
             <p>
