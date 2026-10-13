@@ -11,7 +11,7 @@ import type {
   EvaluationSet,
   FeedbackItem,
   FeedbackTarget,
-  GateView,
+  PublishGateView,
   ProjectOverview,
   IterationSummary,
   ComparisonView,
@@ -371,7 +371,7 @@ export interface Api {
   /** Queue template runs on unverified holdout samples. */
   startHoldoutReferenceRuns(projectId: string): Promise<JobSummary[]>;
   setPublishThreshold(projectId: string, threshold: number): Promise<ProjectView>;
-  getPublishGate(projectId: string): Promise<GateView>;
+  getPublishGate(projectId: string): Promise<PublishGateView>;
   /** Rail, header and Overview tab in one call (Workbench redesign W2). */
   getProjectOverview(projectId: string): Promise<ProjectOverview>;
   /** Rejects with an ApiError (409, the gate reason) below the threshold without an override. */
@@ -699,7 +699,7 @@ export function createHttpApi(base = '/api'): Api {
     setPublishThreshold: (id, publishThreshold) =>
       post<ProjectView>(`${base}/workbench/projects/${id}`, { publishThreshold }, 'PATCH'),
     getPublishGate: (id) =>
-      apiFetch(`${base}/workbench/projects/${id}/publish-gate`).then(json<GateView>),
+      apiFetch(`${base}/workbench/projects/${id}/publish-gate`).then(json<PublishGateView>),
     getProjectOverview: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/overview`).then(json<ProjectOverview>),
     publish: (id, overrideReason) =>

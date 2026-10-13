@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PublishPanel } from '../src/workbench/PublishPanel.js';
-import { fakeApi, gateView, projectView, publication } from './fake-api.js';
+import { fakeApi, publishGateView, projectView, publication } from './fake-api.js';
 
 function panel(overrides = {}, draft: number | null = 2) {
   const api = fakeApi({ getProject: vi.fn(async () => projectView()), ...overrides });
@@ -27,7 +27,7 @@ describe('PublishPanel', () => {
   it('publishes directly when the gate passes', async () => {
     const { api, onPublished } = panel({
       getPublishGate: vi.fn(async () =>
-        gateView({ passes: true, reason: 'holdout score 95% meets the threshold 90%' }),
+        publishGateView({ passes: true, reason: 'holdout score 95% meets the threshold 90%' }),
       ),
       publish: vi.fn(async () => ({
         publication: publication({ version: 2 }),
@@ -47,7 +47,10 @@ describe('PublishPanel', () => {
   it('publishes below the gate with no override reason: evaluation is optional', async () => {
     const { api } = panel({
       getPublishGate: vi.fn(async () =>
-        gateView({ passes: false, reason: 'no complete holdout evaluation of the current draft' }),
+        publishGateView({
+          passes: false,
+          reason: 'no complete holdout evaluation of the current draft',
+        }),
       ),
       publish: vi.fn(async () => ({ publication: publication(), project: projectView() })),
     });
@@ -95,7 +98,7 @@ describe('PublishPanel', () => {
 
   it('shows why the API refused', async () => {
     panel({
-      getPublishGate: vi.fn(async () => gateView({ passes: false })),
+      getPublishGate: vi.fn(async () => publishGateView({ passes: false })),
       publish: vi.fn(async () => {
         throw new Error('the draft is not valid');
       }),
@@ -106,7 +109,7 @@ describe('PublishPanel', () => {
 
   it('keeps "Published vN" once the draft is gone, with no Publish button', async () => {
     const { rerender } = panel({
-      getPublishGate: vi.fn(async () => gateView({ passes: true })),
+      getPublishGate: vi.fn(async () => publishGateView({ passes: true })),
       publish: vi.fn(async () => ({
         publication: publication({ version: 2 }),
         project: projectView(),

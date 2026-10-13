@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { EvaluateTab } from '../src/workbench/EvaluateTab.js';
-import { fakeApi, feedbackItem, gateView, iterationView, projectView } from './fake-api.js';
+import { fakeApi, feedbackItem, publishGateView, iterationView, projectView } from './fake-api.js';
 
 function tab(overrides = {}, hasDraft = true) {
   const api = fakeApi({ getProject: vi.fn(async () => projectView()), ...overrides });
@@ -121,7 +121,7 @@ describe('EvaluateTab', () => {
   });
 
   it('shows the publish panel only for an open draft', async () => {
-    tab({ getPublishGate: vi.fn(async () => gateView({ reason: 'gate reason' })) });
+    tab({ getPublishGate: vi.fn(async () => publishGateView({ reason: 'gate reason' })) });
     expect(
       await screen.findByText(/^Gate reason. References and evaluation are optional/),
     ).toBeInTheDocument();
