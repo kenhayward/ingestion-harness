@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import {
   changeBodyOf,
   type ChangeStage,
   type DataPolicy,
   type DraftChange,
+  type OverviewItem,
+  type ProposalStatus,
   type ProposalView,
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { relativeTime } from '../jobs/derive.js';
+import { stageStyle, TONE_COLOR, type DisplayState } from '../ui/stageStyle.js';
+import { changeParts } from './changes.js';
+import { TabHeader } from './TabHeader.js';
 
 const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
@@ -20,6 +26,16 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
   external:
     'Dev sample text may be sent to an external model provider; holdout samples are never sent.',
+};
+
+/** A proposal's status as a stage state: the card's border tone. */
+export const PROPOSAL_STATE: Record<ProposalStatus, DisplayState> = {
+  running: 'running',
+  ready: 'proposed',
+  accepted: 'accepted',
+  partially_accepted: 'accepted',
+  rejected: 'pending',
+  failed: 'warn',
 };
 
 /** One line per change, used as its checkbox label. */
@@ -61,6 +77,9 @@ export function StagePanel({
   onApplied,
   onSkipped,
   canSkip = true,
+  title,
+  item = null,
+  now = Date.now(),
 }: {
   api: Api;
   projectId: string;
@@ -72,6 +91,10 @@ export function StagePanel({
   onSkipped: () => void;
   /** False for stages the API refuses to skip (revise). */
   canSkip?: boolean;
+  /** With a title the panel opens with the tab header (Propose and Skip as its actions). */
+  title?: string;
+  item?: OverviewItem | null;
+  now?: number;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -79,6 +102,7 @@ export function StagePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const idBase = useId();
 
   const refresh = useCallback(async () => {
     try {
@@ -164,72 +188,101 @@ export function StagePanel({
   };
 
   if (proposal === undefined) {
-    return error ? (
+    return (
       <div>
-        <p role="alert">{error}</p>
-        <button type="button" onClick={() => void refresh()}>
-          Retry
-        </button>
+        {title !== undefined && (
+          <TabHeader title={title} item={item ?? null} note={POLICY_NOTE[dataPolicy]} />
+        )}
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button type="button" onClick={() => void refresh()}>
+              Retry
+            </button>
+          </>
+        ) : (
+          <p>Loading…</p>
+        )}
       </div>
-    ) : (
-      <p>Loading…</p>
     );
   }
   const applied = proposal?.acceptedChanges ?? null;
 
+  const actions = (
+    <>
+      <button
+        type="button"
+        className={proposal ? undefined : 'primary'}
+        disabled={running || busy || !hasDraft}
+        onClick={() => void run()}
+      >
+        {proposal ? 'Propose again' : PROPOSE[stage]}
+      </button>
+      {canSkip && (
+        <button type="button" disabled={busy} onClick={() => void skip()}>
+          Skip this stage
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="stage-panel">
-      <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
+      {title !== undefined ? (
+        <TabHeader title={title} item={item} note={POLICY_NOTE[dataPolicy]} actions={actions} />
+      ) : (
+        <>
+          <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
+          <div className="actions">{actions}</div>
+        </>
+      )}
       {!hasDraft && <p className="muted">Start the next version on the Template tab first.</p>}
-      <div className="actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={running || busy || !hasDraft}
-          onClick={() => void run()}
-        >
-          {proposal ? 'Propose again' : PROPOSE[stage]}
-        </button>
-        {canSkip && (
-          <button type="button" disabled={busy} onClick={() => void skip()}>
-            Skip this stage
-          </button>
-        )}
-      </div>
       {running && <p className="muted">Drafting…</p>}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
       {body && proposal && (
-        <section aria-label="Proposal">
-          <p className="muted">
-            {proposal.model} · brief v{proposal.briefVersion ?? '–'} ·{' '}
-            {proposal.status.replace('_', ' ')}
-          </p>
-          {body.notes && <p>{body.notes}</p>}
-          {applied && (
-            <p role="status">
-              {applied.length} of {body.changes.length} changes applied to the draft
+        <section
+          aria-label="Proposal"
+          className="proposal-card"
+          style={{ borderColor: TONE_COLOR[stageStyle(PROPOSAL_STATE[proposal.status]).tone] }}
+        >
+          <div className="proposal-meta">
+            <p>
+              <code>{proposal.model ?? '—'}</code> · brief v{proposal.briefVersion ?? '–'} ·{' '}
+              {proposal.status.replace('_', ' ')} · {relativeTime(proposal.createdAt, now)}
             </p>
-          )}
-          <ul className="changes">
+            {body.notes && <p>{body.notes}</p>}
+            {applied && (
+              <p role="status">
+                {applied.length} of {body.changes.length} changes applied to the draft
+              </p>
+            )}
+          </div>
+          <ul className="proposal-changes">
             {body.changes.map((c, i) => {
+              const parts = changeParts(c);
               const line = anchorLine(c);
               return (
                 <li key={`${i}-${c.op}`}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      disabled={proposal.status !== 'ready'}
-                      checked={
-                        proposal.status === 'ready' ? selected.has(i) : (applied ?? []).includes(i)
-                      }
-                      onChange={() => toggle(i)}
-                    />{' '}
-                    {describeChange(c)}
+                  <input
+                    id={`${idBase}-${i}`}
+                    type="checkbox"
+                    aria-label={`Apply: ${describeChange(c)}`}
+                    disabled={proposal.status !== 'ready'}
+                    checked={
+                      proposal.status === 'ready' ? selected.has(i) : (applied ?? []).includes(i)
+                    }
+                    onChange={() => toggle(i)}
+                  />
+                  <label className="proposal-change" htmlFor={`${idBase}-${i}`}>
+                    <span className="proposal-line">
+                      <span className={`kind-tag tone-${parts.tone}`}>{parts.kind}</span>
+                      {parts.id && <code>{parts.id}</code>} {parts.text}
+                    </span>
+                    <span className="proposal-line muted">{c.reason}</span>
+                    {line && <span className="proposal-line muted">{line}</span>}
                   </label>
-                  <small className="muted"> {c.reason}</small>
-                  {line && <p className="muted">{line}</p>}
                   <details>
                     <summary>Details</summary>
                     <pre>{JSON.stringify(c, null, 2)}</pre>
@@ -239,19 +292,27 @@ export function StagePanel({
             })}
           </ul>
           {proposal.status === 'ready' && (
-            <div className="actions">
+            <footer className="proposal-footer">
               <button
                 type="button"
                 className="primary"
                 disabled={busy || selected.size === 0}
                 onClick={() => void accept()}
               >
-                Apply selected changes
+                Apply {selected.size} selected {selected.size === 1 ? 'change' : 'changes'}
               </button>
-              <button type="button" disabled={busy} onClick={() => void reject()}>
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => void reject()}
+              >
                 Reject all
               </button>
-            </div>
+              <a className="proposal-edit" href={`#/workbench/${projectId}/template`}>
+                Edit by hand on the Template tab
+              </a>
+            </footer>
           )}
         </section>
       )}
