@@ -156,6 +156,42 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.listProjectJobs(projectId)).toEqual([]);
   });
 
+  it('reads the newest event per job and message', async () => {
+    const projectId = await newProject();
+    const opts = { projectId, task: 'prepare' as const, params: { dataPolicy: 'local' } };
+    const a = await repo.createWorkbenchJob(doc(projectId), opts);
+    const b = await repo.createWorkbenchJob(doc(projectId), opts);
+    const add = (jobId: string, message: string, data: unknown) =>
+      pool.query(
+        `INSERT INTO job_events (job_id, level, message, data) VALUES ($1, 'info', $2, $3)`,
+        [jobId, message, JSON.stringify(data)],
+      );
+    await add(a.id, 'prepare progress', { stage: 'text', page: 2, of: 2 });
+    await add(a.id, 'prepare progress', { stage: 'ocr', page: 1, of: 2 });
+    await add(a.id, 'prepared', { pages: 2 });
+    await add(b.id, 'prepare failed', { code: 'password', message: 'locked' });
+
+    const events = await repo.latestEvents([a.id, b.id], ['prepare progress', 'prepare failed']);
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        {
+          jobId: a.id,
+          message: 'prepare progress',
+          data: { stage: 'ocr', page: 1, of: 2 },
+          at: expect.any(String),
+        },
+        {
+          jobId: b.id,
+          message: 'prepare failed',
+          data: { code: 'password', message: 'locked' },
+          at: expect.any(String),
+        },
+      ]),
+    );
+    expect(await repo.latestEvents([], ['prepare progress'])).toEqual([]);
+  });
+
   it('creates, lists and decides proposals once', async () => {
     const projectId = await newProject();
     const a = await repo.createDraftJob(projectId, { stage: 'survey' });

@@ -16,6 +16,7 @@ import {
   ReferenceConflictError,
   type DeleteJobResult,
   type IngestionRepo,
+  type JobEventRecord,
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
@@ -47,8 +48,11 @@ export class MemoryRepo implements IngestionRepo {
   /** jobs.params of workbench jobs. */
   readonly jobParams = new Map<string, Record<string, unknown>>();
   readonly outputs = new Map<string, JobOutput[]>();
-  /** job_events (only what the API writes itself, e.g. cancellations). */
-  readonly events = new Map<string, { level: string; message: string }[]>();
+  /** job_events: what the API writes itself (cancellations) and what tests add for the worker. */
+  readonly events = new Map<
+    string,
+    { level: string; message: string; data: unknown; at: string }[]
+  >();
   /** jobId -> ISO publish time (job_outputs.created_at in Postgres); defaults to updatedAt. */
   readonly publishedAt = new Map<string, string>();
   readonly documents = new Map<string, NewDocument>();
@@ -326,10 +330,27 @@ export class MemoryRepo implements IngestionRepo {
     return this.publishedAt.get(jobId) ?? job.updatedAt;
   }
 
+  /** Test helper: an event as the worker's queue.event writes it. */
+  addEvent(jobId: string, level: string, message: string, data: unknown = null): void {
+    this.events.set(jobId, [
+      ...(this.events.get(jobId) ?? []),
+      { level, message, data, at: this.now() },
+    ]);
+  }
+
+  async latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]> {
+    return jobIds.flatMap((jobId) =>
+      messages.flatMap((message) => {
+        const event = (this.events.get(jobId) ?? []).filter((e) => e.message === message).at(-1);
+        return event ? [{ jobId, message, data: event.data, at: event.at }] : [];
+      }),
+    );
+  }
+
   async cancelJob(id: string): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
     if (!job || (job.status !== 'queued' && job.status !== 'running')) return null;
-    this.events.set(id, [...(this.events.get(id) ?? []), { level: 'warn', message: 'cancelled' }]);
+    this.addEvent(id, 'warn', 'cancelled');
     return this.update(id, { status: 'cancelled' });
   }
 

@@ -477,6 +477,8 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     state: 'ready',
     prepareJobId: crypto.randomUUID(),
     error: null,
+    prepare: null,
+    prepareError: null,
     triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
     holdoutRuns: 0,
     ...overrides,

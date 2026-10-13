@@ -88,6 +88,8 @@ import {
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { listProjectsPage } from '../workbench/list.js';
+import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
+import type { JobEventRecord } from '../repositories/types.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
@@ -296,6 +298,11 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
   const prepares = (await app.deps.repo.listProjectJobs(projectId)).filter(
     (j) => j.task === 'prepare',
   );
+  // Progress and failure reasons (handoff SM1-SM2): only jobs running or needing review have any.
+  const watched = prepares
+    .filter((j) => j.status === 'running' || j.status === 'needs_review')
+    .map((j) => j.id);
+  const events = watched.length ? await app.deps.repo.latestEvents(watched, PREPARE_EVENTS) : [];
   const records = await app.deps.workbench.listSamples(projectId);
   // Holdout history: the holdout iterations that evaluated this sample's PDF.
   const holdoutIterations = (await app.deps.workbench.listIterations(projectId)).filter(
@@ -312,6 +319,7 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         record,
         prepares.find((j) => j.documentId === record.documentId) ?? null,
         holdoutRuns(record.sha256),
+        events,
       ),
     })),
   );
@@ -341,6 +349,7 @@ async function toView(
   s: SampleRecord,
   job: JobSummary | null,
   holdoutRuns: number,
+  events: readonly JobEventRecord[],
 ): Promise<SampleView> {
   const state = stateOf(job);
   const triage = state === 'ready' ? await readJson(app, preparedTriageKey(s.sha256)) : null;
@@ -357,6 +366,8 @@ async function toView(
     state,
     prepareJobId: job?.id ?? null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
+    prepare: prepareProgress(job, events),
+    prepareError: prepareError(state, job, events),
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
     holdoutRuns,
   };
@@ -411,7 +422,7 @@ export async function addSampleFile(
       role,
       addedForVersion: version,
     });
-    return { view: await toView(app, record, job, 0) };
+    return { view: await toView(app, record, job, 0, []) };
   } catch (err) {
     if (err instanceof WorkbenchConflictError) return { code: 409, error: err.message };
     throw err;
@@ -1287,7 +1298,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           The project's sample PDFs with their role (\`dev\` or \`holdout\`) and preparation
           state: \`preparing\` while the worker extracts the text (with OCR where needed),
           \`ready\` with the triage (pages, OCR'd pages, characters), or \`failed\` with the
-          error. \`holdoutRuns\` counts the holdout evaluations that used the PDF.
+          error. \`holdoutRuns\` counts the holdout evaluations that used the PDF. While preparing,
+          \`prepare\` says how far the current attempt got (\`text\` read, or \`page\` of \`of\` OCR
+          pages done); a failed sample's \`prepareError\` gives a \`code\` (\`password\`,
+          \`corrupt\`, \`too_large\`, \`other\`) and the message.
         `,
         params: ProjectIdParams,
         response: { 200: res('The samples.', z.array(SampleViewSchema)), 404: PROJECT_NOT_FOUND },

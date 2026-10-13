@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_SAMPLES, preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
+import {
+  MAX_SAMPLES,
+  PREPARE_FAILED_EVENT,
+  PREPARE_PROGRESS_EVENT,
+  preparedTextKey,
+  preparedTriageKey,
+  type SampleView,
+} from '@ih/shared';
 import { WORKBENCH_PRIORITY } from '../src/repositories/types.js';
 import { DOCX_MIME } from '../src/uploads.js';
 import { docx, para } from './docx-fixtures.js';
@@ -160,7 +167,73 @@ describe('workbench samples', () => {
       error: 'OCR server unreachable',
     });
     const [listed] = (await app.inject('/api/workbench/projects/letter/samples')).json();
-    expect(listed).toMatchObject({ state: 'failed', error: 'OCR server unreachable' });
+    expect(listed).toMatchObject({
+      state: 'failed',
+      error: 'OCR server unreachable',
+      prepare: null,
+      prepareError: { code: 'other', message: 'OCR server unreachable' },
+    });
+  });
+
+  it('shows live preparation progress from the current attempt only', async () => {
+    const { app, repo, upload } = await withProject();
+    const sample = (await upload(pdf(1))).json() as SampleView;
+    const id = sample.prepareJobId!;
+    const listed = async () =>
+      ((await app.inject('/api/workbench/projects/letter/samples')).json() as SampleView[])[0]!;
+    expect(await listed()).toMatchObject({ state: 'preparing', prepare: null, prepareError: null });
+
+    // An event left by an earlier attempt does not count once the job is claimed again.
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 3, of: 3 });
+    repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'running', updatedAt: repo.now() });
+    expect((await listed()).prepare).toBeNull();
+
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'text', page: 3, of: 3 });
+    expect((await listed()).prepare).toEqual({ stage: 'text', page: 3, of: 3 });
+    repo.addEvent(id, 'info', 'ocr', { model: 'local/olmocr' }); // other events are ignored
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 1, of: 2 });
+    expect(await listed()).toMatchObject({
+      state: 'preparing',
+      prepare: { stage: 'ocr', page: 1, of: 2 },
+    });
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 'two' });
+    expect((await listed()).prepare).toBeNull(); // a malformed event shows no progress
+
+    repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'succeeded' });
+    expect((await listed()).prepare).toBeNull();
+  });
+
+  it('says why a sample could not be prepared', async () => {
+    const { app, repo, upload } = await withProject();
+    const sample = (await upload(pdf(1))).json() as SampleView;
+    const id = sample.prepareJobId!;
+    repo.addEvent(id, 'warn', PREPARE_FAILED_EVENT, {
+      code: 'password',
+      message: 'PDF is password-protected',
+    });
+    repo.jobs.set(id, {
+      ...repo.jobs.get(id)!,
+      status: 'needs_review',
+      error: 'PDF is password-protected',
+    });
+    const listed = async () =>
+      ((await app.inject('/api/workbench/projects/letter/samples')).json() as SampleView[])[0]!;
+    expect(await listed()).toMatchObject({
+      state: 'failed',
+      error: 'PDF is password-protected',
+      prepareError: { code: 'password', message: 'PDF is password-protected' },
+    });
+
+    // Retried, then failed for another reason: the old code no longer explains the error.
+    repo.jobs.set(id, {
+      ...repo.jobs.get(id)!,
+      status: 'needs_review',
+      error: 'no extractable text (scanned/image-only PDF?); OCR is not configured',
+    });
+    expect((await listed()).prepareError).toEqual({
+      code: 'other',
+      message: 'no extractable text (scanned/image-only PDF?); OCR is not configured',
+    });
   });
 
   it('changes roles and removes samples', async () => {

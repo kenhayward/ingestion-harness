@@ -18,6 +18,7 @@ import {
   ReferenceConflictError,
   type DeleteJobResult,
   type IngestionRepo,
+  type JobEventRecord,
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
@@ -417,6 +418,28 @@ export class PgRepo implements IngestionRepo {
       [id],
     );
     return rows[0]?.params ?? null;
+  }
+
+  async latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]> {
+    if (!jobIds.length || !messages.length) return [];
+    const { rows } = await this.pool.query<{
+      job_id: string;
+      message: string;
+      data: unknown;
+      at: Date;
+    }>(
+      `SELECT DISTINCT ON (job_id, message) job_id, message, data, at
+         FROM job_events
+        WHERE job_id = ANY($1::uuid[]) AND message = ANY($2::text[])
+        ORDER BY job_id, message, at DESC, id DESC`,
+      [jobIds, [...messages]],
+    );
+    return rows.map((r) => ({
+      jobId: r.job_id,
+      message: r.message,
+      data: r.data,
+      at: r.at.toISOString(),
+    }));
   }
 
   async getJob(id: string): Promise<JobDetail | null> {

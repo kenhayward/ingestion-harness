@@ -36,6 +36,14 @@ export interface SegmentJob {
 /** A document-less project job (segment previews, drafting runs, bundle exports). */
 export type ProjectJob = SegmentJob;
 
+/** A job_events row as the API reads it. */
+export interface JobEventRecord {
+  jobId: string;
+  message: string;
+  data: unknown;
+  at: string;
+}
+
 /** jobs.params of a segment job (worker: workbench.SegmentParams). */
 export interface SegmentJobParams {
   samples: { sampleId: string; sha256: string }[];
@@ -177,6 +185,8 @@ export interface IngestionRepo {
   getJob(id: string): Promise<JobDetail | null>;
   /** jobs.params (free-form; null when unset or the job is unknown). */
   getJobParams(id: string): Promise<Record<string, unknown> | null>;
+  /** The newest event with each of `messages` for each job (job_events); none: left out. */
+  latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
   getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */
