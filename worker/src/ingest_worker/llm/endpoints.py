@@ -1,7 +1,13 @@
-"""LLM endpoints, curated models and aliases in the database (ADR 0010).
+"""LLM endpoints, curated models, model choices and pipeline settings in the database
+(ADR 0010).
 
-`config/llm-providers.yaml` (with its `${VAR}` values) and `LLM_ENDPOINTS` are the defaults:
-the worker seeds them into `llm_endpoints`, `llm_models.curated` and `llm_aliases` on start
+People pick a **model choice** by its label ("Main Production Model"); one choice is the
+default (`settings.default_choice`), used by template steps that name none. The OCR model and
+the drafting model are pipeline **settings**, never a model a step or a job can name.
+
+`config/llm-providers.yaml` (with its `${VAR}` values), `LLM_ENDPOINTS` and `LLM_CHOICES` are
+the defaults: the worker seeds them into `llm_endpoints`, `llm_models.curated`, `llm_choices`
+and `llm_settings` on start
 (`seed_from_config` -> `LlmConfigStore.seed`) and builds its registry from what is stored
 (`LiveModels`), rebuilding it whenever the stored config's version moves. A row an admin edited
 (`edited_at`) or added (`source = 'ui'`) is never changed by seeding: the UI wins.
@@ -34,17 +40,97 @@ log = logging.getLogger(__name__)
 
 #: More endpoints from .env: `name=baseUrl|model1,model2[|local|external[|kind]]`, `;`-separated.
 ENDPOINTS_ENV = "LLM_ENDPOINTS"
+#: Model choices from .env: `id=Label|endpoint/model[|default]`, `;`-separated.
+CHOICES_ENV = "LLM_CHOICES"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _KINDS = ("anthropic", "openai-chat", "openai-responses")
+#: Names the worker resolves itself: never a choice id.
+RESERVED_CHOICE_IDS = frozenset({"default", "draft", "ocr"})
+#: The pipeline settings: the default choice's id, and the OCR and drafting models' refs.
+SETTINGS = ("default_choice", "drafting_model", "ocr_model")
+
+
+@dataclass(frozen=True)
+class Choice:
+    """A labelled model choice: what people pick ("Main Production Model"). Templates and jobs
+    store its `id`, so the label can change."""
+
+    id: str
+    label: str
+    ref: str
+    description: str = ""
 
 
 @dataclass(frozen=True)
 class Seed:
-    """Endpoints (each with its curated models) and aliases: what .env asks for, or what the
-    database holds."""
+    """Endpoints (each with its curated models), model choices and pipeline settings: what
+    .env asks for, or what the database holds."""
 
     endpoints: list[ProviderConfig]
-    aliases: dict[str, str] = field(default_factory=dict)
+    choices: list[Choice] = field(default_factory=list)
+    settings: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def aliases(self) -> dict[str, str]:
+        """The names the registry resolves: each choice's id, `default` (the default choice,
+        for steps that name none) and `draft` (the drafting model). The OCR model is the OCR
+        stage's alone, so it is not among them."""
+        out = {c.id: c.ref for c in self.choices}
+        if default := self.settings.get("default_choice"):
+            out["default"] = default
+        if drafting := self.settings.get("drafting_model"):
+            out["draft"] = drafting
+        return out
+
+
+def _choice_entries(value: str) -> list[tuple[Choice, bool]]:
+    out: list[tuple[Choice, bool]] = []
+    seen: set[str] = set()
+    for raw in value.split(";"):
+        entry = raw.strip()
+        if not entry:
+            continue
+        choice_id, sep, rest = entry.partition("=")
+        choice_id = choice_id.strip()
+        if not sep:
+            raise ValueError(f"{CHOICES_ENV}: {choice_id}: expected id=Label|endpoint/model")
+        if not _NAME.match(choice_id):
+            raise ValueError(
+                f"{CHOICES_ENV}: {choice_id!r}: ids are lower-case letters, digits, - and _"
+            )
+        if choice_id in RESERVED_CHOICE_IDS:
+            raise ValueError(
+                f"{CHOICES_ENV}: {choice_id}: reserved (default, draft and ocr are not choices)"
+            )
+        if choice_id in seen:
+            raise ValueError(f"{CHOICES_ENV}: {choice_id}: listed twice")
+        seen.add(choice_id)
+        parts = [p.strip() for p in rest.split("|")]
+        label = parts[0]
+        ref = parts[1] if len(parts) > 1 else ""
+        flag = parts[2] if len(parts) > 2 else ""
+        if not label:
+            raise ValueError(f"{CHOICES_ENV}: {choice_id}: a label is required")
+        if "/" not in ref.strip("/"):
+            raise ValueError(f"{CHOICES_ENV}: {choice_id}: the model must be endpoint/model-id")
+        if flag not in ("", "default") or len(parts) > 3:
+            raise ValueError(f"{CHOICES_ENV}: {choice_id}: only `default` may follow the model")
+        out.append((Choice(choice_id, label, ref), flag == "default"))
+    if sum(1 for _, is_default in out if is_default) > 1:
+        raise ValueError(f"{CHOICES_ENV}: only one choice can be the default")
+    return out
+
+
+def parse_choices(value: str) -> list[Choice]:
+    """`LLM_CHOICES` entries, in order."""
+    return [c for c, _ in _choice_entries(value)]
+
+
+def default_choice_of(value: str) -> str | None:
+    """The choice `LLM_CHOICES` marks `default`, else its first."""
+    entries = _choice_entries(value)
+    marked = [c.id for c, is_default in entries if is_default]
+    return marked[0] if marked else (entries[0][0].id if entries else None)
 
 
 def parse_endpoints(
@@ -100,8 +186,10 @@ def parse_endpoints(
 
 
 def seed_from_config(config: LLMConfig, env: Mapping[str, str] = os.environ) -> Seed:
-    """The defaults: the config file's providers, then `LLM_ENDPOINTS`; its aliases plus `ocr`
-    (the OCR model)."""
+    """The defaults: the config file's providers, then `LLM_ENDPOINTS`; the choices of
+    `LLM_CHOICES` (without it, for compatibility, `DEFAULT_MODEL` and `FAST_MODEL` as the choices
+    "Default model" and "Fast model"); the settings: the default choice, the drafting model
+    (`DRAFT_MODEL`) and the OCR model (`OCR_MODEL`)."""
     templates: dict[str, dict[str, Any]] = {}
     for p in config.providers:
         templates.setdefault(f"{p.kind}/{p.location}", p.options)
@@ -113,10 +201,29 @@ def seed_from_config(config: LLMConfig, env: Mapping[str, str] = os.environ) -> 
                 f"{ENDPOINTS_ENV}: {extra.name}: already defined in config/llm-providers.yaml"
             )
         endpoints.append(extra)
-    aliases = dict(config.aliases)
+    listed = (env.get(CHOICES_ENV) or "").strip()
+    if listed:
+        choices = parse_choices(listed)
+        default = default_choice_of(listed)
+    else:
+        choices = []
+        default = None
+        if ref := config.aliases.get("default"):
+            choices.append(Choice("main", "Default model", ref))
+            default = "main"
+        if ref := config.aliases.get("fast"):
+            choices.append(Choice("fast", "Fast model", ref))
+        for name, ref in config.aliases.items():
+            if name not in ("default", "fast", *RESERVED_CHOICE_IDS) and _NAME.match(name):
+                choices.append(Choice(name, name, ref))
+    settings: dict[str, str] = {}
+    if default:
+        settings["default_choice"] = default
+    if drafting := config.aliases.get("draft"):
+        settings["drafting_model"] = drafting
     if config.ocr is not None:
-        aliases.setdefault("ocr", config.ocr.model)
-    return Seed(endpoints, aliases)
+        settings["ocr_model"] = config.ocr.model
+    return Seed(endpoints, choices, settings)
 
 
 def registry_from_seed(
@@ -127,11 +234,11 @@ def registry_from_seed(
 ) -> ModelRegistry:
     """Every stored endpoint is optional: one without its key (added in the UI, say) is skipped
     with a warning, never a crash. Only the models offered on an endpoint resolve (aliases and
-    OCR included). The `ocr` alias, when stored, picks the OCR model."""
+    OCR included). The `ocr_model` setting, when stored, picks the OCR model."""
     providers = [e.model_copy(update={"optional": True}) for e in seed.endpoints]
     ocr_cfg = None
     if ocr is not None:
-        ocr_cfg = ocr.model_copy(update={"model": seed.aliases.get("ocr", ocr.model)})
+        ocr_cfg = ocr.model_copy(update={"model": seed.settings.get("ocr_model", ocr.model)})
     config = LLMConfig(providers=providers, aliases=dict(seed.aliases), ocr=ocr_cfg)
     return build_registry(config, env, factories, offered_only=True)
 
@@ -142,11 +249,11 @@ class LlmConfigStore(Protocol):
         ...
 
     def load(self) -> Seed:
-        """Every stored endpoint (by name, with its curated models) and alias."""
+        """Every stored endpoint (by name, with its curated models), choice and setting."""
         ...
 
     def version(self) -> int:
-        """Moves whenever endpoints, aliases or curated models change."""
+        """Moves whenever endpoints, curated models, choices or settings change."""
         ...
 
 
@@ -170,7 +277,7 @@ class LiveModels:
     def _build(self, seed: Seed) -> None:
         self.registry = registry_from_seed(seed, self._ocr, self._env, self._factories)
         self.ocr_model: str | None = (
-            seed.aliases.get("ocr", self._ocr.model) if self._ocr is not None else None
+            seed.settings.get("ocr_model", self._ocr.model) if self._ocr is not None else None
         )
 
     def refresh(self) -> bool:
@@ -261,17 +368,34 @@ class PgLlmConfigStore:
                       AND NOT ((provider || '/' || model_id) = ANY(%s))""",
                 ([*owned, *removed], [f"{p}/{m}" for p, m in wanted]),
             )
-            for name, ref in seed.aliases.items():
+            for c in seed.choices:
                 self._conn.execute(
-                    """INSERT INTO llm_aliases (name, ref) VALUES (%s, %s)
-                       ON CONFLICT (name) DO UPDATE SET ref = EXCLUDED.ref, updated_at = now()
-                       WHERE llm_aliases.edited_at IS NULL
-                         AND llm_aliases.ref IS DISTINCT FROM EXCLUDED.ref""",
-                    (name, ref),
+                    """INSERT INTO llm_choices (id, label, description, ref, source)
+                       VALUES (%s, %s, %s, %s, 'env')
+                       ON CONFLICT (id) DO UPDATE
+                         SET (label, description, ref, updated_at) =
+                             (EXCLUDED.label, EXCLUDED.description, EXCLUDED.ref, now())
+                       WHERE llm_choices.source = 'env' AND llm_choices.edited_at IS NULL
+                         AND (llm_choices.label, llm_choices.description, llm_choices.ref)
+                             IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.description, EXCLUDED.ref)""",
+                    (c.id, c.label, c.description, c.ref),
                 )
             self._conn.execute(
-                "DELETE FROM llm_aliases WHERE edited_at IS NULL AND NOT (name = ANY(%s))",
-                (list(seed.aliases),),
+                """DELETE FROM llm_choices
+                    WHERE source = 'env' AND edited_at IS NULL AND NOT (id = ANY(%s))""",
+                ([c.id for c in seed.choices],),
+            )
+            for name, value in seed.settings.items():
+                self._conn.execute(
+                    """INSERT INTO llm_settings (name, value) VALUES (%s, %s)
+                       ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+                       WHERE llm_settings.edited_at IS NULL
+                         AND llm_settings.value IS DISTINCT FROM EXCLUDED.value""",
+                    (name, value),
+                )
+            self._conn.execute(
+                "DELETE FROM llm_settings WHERE edited_at IS NULL AND NOT (name = ANY(%s))",
+                (list(seed.settings),),
             )
 
     def load(self) -> Seed:
@@ -302,10 +426,16 @@ class PgLlmConfigStore:
             )
             for r in rows
         ]
-        aliases = dict(
-            self._conn.execute("SELECT name, ref FROM llm_aliases ORDER BY name").fetchall()
+        choices = [
+            Choice(r[0], r[1], r[2], r[3])
+            for r in self._conn.execute(
+                "SELECT id, label, ref, description FROM llm_choices ORDER BY id"
+            ).fetchall()
+        ]
+        settings = dict(
+            self._conn.execute("SELECT name, value FROM llm_settings ORDER BY name").fetchall()
         )
-        return Seed(endpoints, aliases)
+        return Seed(endpoints, choices, settings)
 
     def version(self) -> int:
         row = self._conn.execute("SELECT version FROM llm_config_state").fetchone()

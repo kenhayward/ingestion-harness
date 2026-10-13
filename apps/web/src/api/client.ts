@@ -1,6 +1,8 @@
 import type {
   Brief,
   BriefBody,
+  ChoiceCreateInput,
+  ChoicePatchBody,
   BriefVersionView,
   DataPolicy,
   DraftStage,
@@ -20,6 +22,8 @@ import type {
   JobDetail,
   JobSummary,
   KeepableStage,
+  LlmChoicesView,
+  LlmChoiceView,
   LlmEndpointView,
   ModelInfo,
   PreparedText,
@@ -43,6 +47,7 @@ import type {
   StageView,
   StepRun,
   Template,
+  SettingsBody,
 } from '@ih/shared';
 
 /** document.json written by the worker for template documents. */
@@ -266,6 +271,14 @@ export interface Api {
   /** Exactly these models are offered in the pickers. */
   setLlmEndpointModels(name: string, models: string[]): Promise<LlmEndpointView>;
   deleteLlmEndpoint(name: string): Promise<void>;
+  /** Asks the workers to list every endpoint's models now (suggestions appear shortly). */
+  discoverLlmEndpoint(name: string): Promise<void>;
+  /** Model choices and pipeline settings (admins; ADR 0010 phase 4b). */
+  listModelChoices(): Promise<LlmChoicesView>;
+  createModelChoice(body: ChoiceCreateInput): Promise<LlmChoiceView>;
+  updateModelChoice(id: string, patch: ChoicePatchBody): Promise<LlmChoiceView>;
+  deleteModelChoice(id: string): Promise<void>;
+  setLlmSettings(body: SettingsBody): Promise<LlmChoicesView>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
@@ -566,6 +579,17 @@ export function createHttpApi(base = '/api'): Api {
       noContent(
         apiFetch(`${base}/llm/endpoints/${encodeURIComponent(name)}`, { method: 'DELETE' }),
       ),
+    discoverLlmEndpoint: (name) =>
+      noContent(
+        apiFetch(`${base}/llm/endpoints/${encodeURIComponent(name)}/discover`, { method: 'POST' }),
+      ),
+    listModelChoices: () => apiFetch(`${base}/llm/choices`).then(json<LlmChoicesView>),
+    createModelChoice: (body) => post<LlmChoiceView>(`${base}/llm/choices`, body),
+    updateModelChoice: (id, patch) =>
+      post<LlmChoiceView>(`${base}/llm/choices/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    deleteModelChoice: (id) =>
+      noContent(apiFetch(`${base}/llm/choices/${encodeURIComponent(id)}`, { method: 'DELETE' })),
+    setLlmSettings: (body) => post<LlmChoicesView>(`${base}/llm/settings`, body, 'PUT'),
     listS3Keys: () => apiFetch(`${base}/access/s3-keys`).then(json<S3KeysOverview>),
     createS3Key: (label, expiresInDays) =>
       post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays }),

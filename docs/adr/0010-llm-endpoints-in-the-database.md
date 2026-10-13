@@ -1,6 +1,6 @@
 # 0010: LLM endpoints and curated models live in the database; .env seeds them
 
-**Status:** accepted · 2026-10-13 · phases 1-3 and 4a of 4 implemented
+**Status:** accepted · 2026-10-13 · phases 1-3, 4a and 4b implemented
 
 ## Context
 Content Transformation Studio (CT Studio) had one local LLM endpoint (`LOCAL_LLM_BASE_URL`) next
@@ -19,7 +19,8 @@ rather than by editing files and restarting workers.
     It holds the kind, base URL, data-policy `location`, key, options and enabled flag.
   - **`llm_models.curated`:** the models offered in the pickers. Discovered models stay
     suggestions until curated.
-  - **`llm_aliases`:** `default`, `fast`, `draft` and `ocr` (the OCR model).
+  - **`llm_aliases`:** `default`, `fast`, `draft` and `ocr` (the OCR model). *Superseded in
+    4b:* replaced by labelled model choices and pipeline settings (see below).
 - **.env seeds; the UI wins.** On start the worker seeds the config file's providers (with their
   `${VAR}` values) and the endpoints in `LLM_ENDPOINTS`. It writes with insert-or-update, never
   touching a row an admin edited (`edited_at`) or added (`source = 'ui'`).
@@ -64,7 +65,15 @@ rather than by editing files and restarting workers.
    `ModelResolutionError` (the job goes to `needs_review`, no call is made); the API refuses a
    step re-run naming any other model (400) and reports a template step naming one as an issue
    (`pipeline.N.model`), which blocks publishing; the Review screen's re-run model is a picker.
-   **4b:** aliases and the OCR model in the UI; the `discover` job.
+   **4b:** model choices and pipeline settings replace the aliases (migration 0027). People
+   pick a labelled **model choice** ("Main Production Model"), stored by its id, pointing at an
+   offered model; one choice is the default (template steps naming none). The OCR model and
+   the drafting model are **pipeline settings**, never offered as a choice nor nameable by a
+   step or job. `LLM_CHOICES` seeds the choices (else `DEFAULT_MODEL`/`FAST_MODEL`, for
+   compatibility); the aliases move across with their edit marks. Discover is a flag on the
+   endpoint whose version bump makes workers rebuild and list models now.
+   **Next (4c, 4d):** one model picker of choices everywhere (aliases and refs alike replaced by
+   choices; Workbench evaluate and compare by choice), and one re-process dialog.
 
 ## Consequences
 - **The database is now the source of truth for models.** The config file and `.env` describe

@@ -216,6 +216,21 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('setLlmEndpointModels not stubbed');
     }),
     deleteLlmEndpoint: vi.fn(async () => undefined),
+    discoverLlmEndpoint: vi.fn(async () => undefined),
+    listModelChoices: vi.fn(async () => ({
+      choices: [],
+      settings: { defaultChoice: null, draftingModel: null, ocrModel: null },
+    })),
+    createModelChoice: vi.fn(async () => {
+      throw new Error('createModelChoice not stubbed');
+    }),
+    updateModelChoice: vi.fn(async () => {
+      throw new Error('updateModelChoice not stubbed');
+    }),
+    deleteModelChoice: vi.fn(async () => undefined),
+    setLlmSettings: vi.fn(async () => {
+      throw new Error('setLlmSettings not stubbed');
+    }),
     createS3Key: vi.fn(async () => {
       throw new Error('createS3Key not stubbed');
     }),

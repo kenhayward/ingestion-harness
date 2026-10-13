@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
-import type { EndpointPatchBody, LlmEndpointView, ProviderKind } from '@ih/shared';
+import type { EndpointPatchBody, LlmChoicesView, LlmEndpointView, ProviderKind } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
+import { ChoicesSection, PipelineSection } from './ChoicesSection.js';
 
 type Location = LlmEndpointView['location'];
 
@@ -30,19 +31,36 @@ function keyText(e: LlmEndpointView): string {
   return 'No key';
 }
 
+/** The models offered on enabled endpoints, as `endpoint/model-id`. */
+export function offeredRefs(endpoints: readonly LlmEndpointView[]): string[] {
+  return endpoints
+    .filter((e) => e.enabled)
+    .flatMap((e) =>
+      e.models.filter((m) => m.curated && m.enabled).map((m) => `${e.name}/${m.modelId}`),
+    )
+    .sort();
+}
+
 /**
- * Models (ADR 0010): the LLM endpoints the worker sends requests to and the models each one
- * offers in the pickers. .env seeds them; changes made here win. Admins only.
+ * Models (ADR 0010): the labelled model choices people pick, the pipeline's OCR and drafting
+ * models, and the LLM endpoints with the models each one offers. .env seeds them; changes made
+ * here win. Admins only.
  */
 export function ModelsPage({ api, me }: { api: Api; me: Me }) {
   const [endpoints, setEndpoints] = useState<LlmEndpointView[] | null>(null);
+  const [choices, setChoices] = useState<LlmChoicesView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const isAdmin = me.role === 'admin';
 
   const load = useCallback(async () => {
     try {
-      setEndpoints(await api.listLlmEndpoints());
+      const [nextEndpoints, nextChoices] = await Promise.all([
+        api.listLlmEndpoints(),
+        api.listModelChoices(),
+      ]);
+      setEndpoints(nextEndpoints);
+      setChoices(nextChoices);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -61,9 +79,9 @@ export function ModelsPage({ api, me }: { api: Api; me: Me }) {
         <div>
           <h1>Models</h1>
           <p className="muted">
-            The endpoints the worker sends requests to, and the models each one offers in the model
-            pickers. .env sets the defaults; what you change here wins and reaches the workers
-            within seconds.
+            The model choices people pick, the pipeline&apos;s own models, and the endpoints the
+            worker sends requests to with the models each one offers. .env sets the defaults; what
+            you change here wins and reaches the workers within seconds.
           </p>
         </div>
         <button type="button" className="primary" onClick={() => setAdding(true)}>
@@ -73,6 +91,23 @@ export function ModelsPage({ api, me }: { api: Api; me: Me }) {
       </div>
       {error && <p role="alert">{error}</p>}
       {endpoints === null && !error && <p>Loading…</p>}
+      {endpoints && choices && (
+        <>
+          <ChoicesSection
+            api={api}
+            view={choices}
+            offered={offeredRefs(endpoints)}
+            onChanged={load}
+          />
+          <PipelineSection
+            api={api}
+            view={choices}
+            offered={offeredRefs(endpoints)}
+            onChanged={load}
+          />
+          <h2 className="endpoints-heading">Endpoints</h2>
+        </>
+      )}
       {endpoints?.length === 0 && <p className="muted">No endpoints yet.</p>}
       {endpoints?.map((e) => (
         <EndpointCard key={e.name} api={api} endpoint={e} onChanged={load} />
@@ -108,6 +143,7 @@ function EndpointCard({
   const [key, setKey] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const curatedKey = curated.join('\n');
 
   // A reload brings the stored choice: start from it again.
@@ -157,6 +193,20 @@ function EndpointCard({
         </span>
         {!e.enabled && <span className="tag tone-warn">Disabled</span>}
         <span className="endpoint-actions">
+          <button
+            type="button"
+            onClick={() =>
+              void act(() => api.discoverLlmEndpoint(e.name)).then(
+                (ok) =>
+                  ok &&
+                  setNotice(
+                    'Discovery requested: new models appear as suggestions within a minute.',
+                  ),
+              )
+            }
+          >
+            Discover models
+          </button>
           <button type="button" onClick={() => void update({ enabled: !e.enabled })}>
             {e.enabled ? 'Disable' : 'Enable'}
           </button>
@@ -332,6 +382,7 @@ function EndpointCard({
           </button>
         </div>
       </fieldset>
+      {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
     </section>
   );

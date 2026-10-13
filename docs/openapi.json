@@ -28609,7 +28609,7 @@
             }
           },
           "409": {
-            "description": "`alias {name} uses {ref}: point it elsewhere first`.",
+            "description": "`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / `the OCR model …`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -28635,7 +28635,1155 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`alias {name} uses {ref}: point it elsewhere first`."
+                  "description": "`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / `the OCR model …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/endpoints/{name}/discover": {
+      "post": {
+        "operationId": "discoverLlmEndpoint",
+        "summary": "List the models an endpoint serves now",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** Asks the workers to list every endpoint's models now\nrather than at the next discovery interval; what they find shows as suggestions\n(`curated: false`) within seconds.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "description": "The endpoint name (model-ref prefix)."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "202": {
+            "description": "Requested."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`endpoint not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`endpoint not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/choices": {
+      "get": {
+        "operationId": "listModelChoices",
+        "summary": "List model choices and pipeline settings",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** The labelled model choices people pick (each pointing at\nan offered model) and the pipeline settings: the default choice (used by template\nsteps that name none), the drafting model and the OCR model. See [ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md).",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The choices and settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "env",
+                              "ui"
+                            ]
+                          },
+                          "editedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "description",
+                          "ref",
+                          "source",
+                          "editedAt",
+                          "updatedBy"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "defaultChoice": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "draftingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ocrModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "defaultChoice",
+                        "draftingModel",
+                        "ocrModel"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "choices",
+                    "settings"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choices and settings."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createModelChoice",
+        "summary": "Add a model choice",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** A labelled choice (\"Main Production Model\") pointing at an\noffered model. Its `id`, what templates and jobs store, is made from the label\nwhen left out (`main-production-model`, with a suffix if taken).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "maxLength": 40,
+                    "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  },
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                    "maxLength": 250
+                  }
+                },
+                "required": [
+                  "label",
+                  "ref"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "201": {
+            "description": "The choice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "description",
+                    "ref",
+                    "source",
+                    "editedAt",
+                    "updatedBy"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choice."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/choices/{id}": {
+      "patch": {
+        "operationId": "updateModelChoice",
+        "summary": "Change a model choice",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** Renames it, changes its description or points it at\nanother offered model. Templates and jobs keep naming it by id, so a rename changes\nnothing they do; a new model applies to every job queued from then on.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                    "maxLength": 250
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The model choice id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The choice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "description",
+                    "ref",
+                    "source",
+                    "editedAt",
+                    "updatedBy"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choice."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues (`nothing to change` for an empty body).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues (`nothing to change` for an empty body)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`model choice not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`model choice not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`model {ref} is not offered: add it on the Models page`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteModelChoice",
+        "summary": "Remove a model choice",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** Refused while it is the default choice, while a template\nstep (any version) names it, or while an unfinished job (queued, running or\nawaiting review) uses it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The model choice id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`model choice not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`model choice not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {template} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {template} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/settings": {
+      "put": {
+        "operationId": "setLlmSettings",
+        "summary": "Set the default choice and the pipeline models",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admin token required.** The default choice (used by template steps that name\nnone), the drafting model (the Workbench's proposal stages and dev reference runs)\nand the OCR model (the OCR stage only). Both models must be offered. The edit wins\nover `.env`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "defaultChoice": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "draftingModel": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                    "maxLength": 250
+                  },
+                  "ocrModel": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                    "maxLength": 250
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The choices and settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "env",
+                              "ui"
+                            ]
+                          },
+                          "editedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "description",
+                          "ref",
+                          "source",
+                          "editedAt",
+                          "updatedBy"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "defaultChoice": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "draftingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ocrModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "defaultChoice",
+                        "draftingModel",
+                        "ocrModel"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "choices",
+                    "settings"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choices and settings."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues (`nothing to change` for an empty body), or `no model choice {id}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues (`nothing to change` for an empty body), or `no model choice {id}`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`model {ref} is not offered: add it on the Models page`."
                 }
               }
             }

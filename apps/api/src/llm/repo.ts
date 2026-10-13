@@ -1,5 +1,11 @@
 import type pg from 'pg';
-import type { LlmEndpointView, LlmModelView, ProviderKind } from '@ih/shared';
+import type {
+  LlmChoiceView,
+  LlmEndpointView,
+  LlmModelView,
+  LlmSettingsView,
+  ProviderKind,
+} from '@ih/shared';
 
 /**
  * LLM endpoints and curated models (ADR 0010, migrations 0024-0025). The worker seeds the .env
@@ -43,8 +49,45 @@ export interface LlmConfigRepo {
     modelIds: string[],
     by: string | null,
   ): Promise<LlmEndpointView | null>;
-  listAliases(): Promise<Record<string, string>>;
+  /** The model choices (phase 4b), by id. */
+  listChoices(): Promise<LlmChoiceView[]>;
+  getChoice(id: string): Promise<LlmChoiceView | null>;
+  /** 'exists' when the id is taken. */
+  createChoice(input: NewChoice, by: string | null): Promise<LlmChoiceView | 'exists'>;
+  updateChoice(id: string, patch: ChoicePatch, by: string | null): Promise<LlmChoiceView | null>;
+  deleteChoice(id: string): Promise<boolean>;
+  getSettings(): Promise<LlmSettingsView>;
+  /** Sets the given settings as an admin's choice (`edited_at`): .env no longer changes them. */
+  setSettings(patch: Partial<LlmSettingsView>, by: string | null): Promise<LlmSettingsView>;
+  /** Marks the endpoint for discovery now (workers rebuild and list its models); false if unknown. */
+  requestDiscover(name: string): Promise<boolean>;
 }
+
+export interface NewChoice {
+  id: string;
+  label: string;
+  description: string;
+  ref: string;
+}
+
+export interface ChoicePatch {
+  label?: string;
+  description?: string;
+  ref?: string;
+}
+
+const SETTING_COLUMN = {
+  defaultChoice: 'default_choice',
+  draftingModel: 'drafting_model',
+  ocrModel: 'ocr_model',
+} as const;
+type SettingName = (typeof SETTING_COLUMN)[keyof typeof SETTING_COLUMN];
+
+const settingsView = (rows: Partial<Record<SettingName, string>>): LlmSettingsView => ({
+  defaultChoice: rows.default_choice ?? null,
+  draftingModel: rows.drafting_model ?? null,
+  ocrModel: rows.ocr_model ?? null,
+});
 
 interface StoredEndpoint {
   name: string;
@@ -65,7 +108,9 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
   private endpoints = new Map<string, StoredEndpoint>();
   /** provider -> model id -> row */
   private models = new Map<string, Map<string, LlmModelView>>();
-  aliases: Record<string, string> = {};
+  private choices = new Map<string, LlmChoiceView>();
+  private settings: Partial<Record<SettingName, string>> = {};
+  private discover = new Set<string>();
 
   /** What the worker's seeding writes (tests). */
   seedEnv(
@@ -87,6 +132,26 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
   /** What the worker's discovery writes (tests). */
   discovered(provider: string, modelId: string, displayName: string | null = null): void {
     this.row(provider, modelId).displayName = displayName;
+  }
+
+  /** What the worker's seeding writes (tests). */
+  seedChoice(c: { id: string; label: string; ref: string; description?: string }): void {
+    this.choices.set(c.id, {
+      description: '',
+      ...c,
+      source: 'env',
+      editedAt: null,
+      updatedBy: null,
+    });
+  }
+
+  /** What the worker's seeding writes (tests). */
+  seedSettings(settings: Partial<Record<SettingName, string>>): void {
+    this.settings = { ...this.settings, ...settings };
+  }
+
+  discoverRequested(name: string): boolean {
+    return this.discover.has(name);
   }
 
   storedKey(name: string): string | null {
@@ -161,8 +226,57 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     return this.view(e);
   }
 
-  async listAliases() {
-    return { ...this.aliases };
+  async listChoices() {
+    return [...this.choices.values()]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((c) => ({ ...c }));
+  }
+
+  async getChoice(id: string) {
+    const c = this.choices.get(id);
+    return c ? { ...c } : null;
+  }
+
+  async createChoice(input: NewChoice, by: string | null) {
+    if (this.choices.has(input.id)) return 'exists' as const;
+    const c: LlmChoiceView = {
+      ...input,
+      source: 'ui',
+      editedAt: new Date().toISOString(),
+      updatedBy: by,
+    };
+    this.choices.set(c.id, c);
+    return { ...c };
+  }
+
+  async updateChoice(id: string, patch: ChoicePatch, by: string | null) {
+    const c = this.choices.get(id);
+    if (!c) return null;
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    Object.assign(c, defined, { editedAt: new Date().toISOString(), updatedBy: by });
+    return { ...c };
+  }
+
+  async deleteChoice(id: string) {
+    return this.choices.delete(id);
+  }
+
+  async getSettings() {
+    return settingsView(this.settings);
+  }
+
+  async setSettings(patch: Partial<LlmSettingsView>, _by: string | null) {
+    for (const [key, column] of Object.entries(SETTING_COLUMN)) {
+      const value = patch[key as keyof LlmSettingsView];
+      if (value) this.settings[column] = value;
+    }
+    return settingsView(this.settings);
+  }
+
+  async requestDiscover(name: string) {
+    if (!this.endpoints.has(name)) return false;
+    this.discover.add(name);
+    return true;
   }
 }
 
@@ -341,10 +455,97 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
     }
   }
 
-  async listAliases() {
-    const { rows } = await this.pool.query<{ name: string; ref: string }>(
-      'SELECT name, ref FROM llm_aliases ORDER BY name',
+  async listChoices() {
+    const { rows } = await this.pool.query<ChoiceRow>(`${CHOICE_SELECT} ORDER BY id`);
+    return rows.map(toChoice);
+  }
+
+  async getChoice(id: string) {
+    const { rows } = await this.pool.query<ChoiceRow>(`${CHOICE_SELECT} WHERE id = $1`, [id]);
+    return rows[0] ? toChoice(rows[0]) : null;
+  }
+
+  async createChoice(input: NewChoice, by: string | null) {
+    const { rows } = await this.pool.query<ChoiceRow>(
+      `INSERT INTO llm_choices (id, label, description, ref, source, edited_at, updated_by)
+       VALUES ($1, $2, $3, $4, 'ui', now(), $5)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id, label, description, ref, source, edited_at, updated_by`,
+      [input.id, input.label, input.description, input.ref, by],
     );
-    return Object.fromEntries(rows.map((r) => [r.name, r.ref]));
+    return rows[0] ? toChoice(rows[0]) : ('exists' as const);
+  }
+
+  async updateChoice(id: string, patch: ChoicePatch, by: string | null) {
+    const sets = ['edited_at = now()', 'updated_at = now()', 'updated_by = $2'];
+    const values: unknown[] = [id, by];
+    for (const key of ['label', 'description', 'ref'] as const) {
+      if (patch[key] === undefined) continue;
+      values.push(patch[key]);
+      sets.push(`${key} = $${values.length}`);
+    }
+    const { rows } = await this.pool.query<ChoiceRow>(
+      `UPDATE llm_choices SET ${sets.join(', ')} WHERE id = $1
+       RETURNING id, label, description, ref, source, edited_at, updated_by`,
+      values,
+    );
+    return rows[0] ? toChoice(rows[0]) : null;
+  }
+
+  async deleteChoice(id: string) {
+    const { rowCount } = await this.pool.query('DELETE FROM llm_choices WHERE id = $1', [id]);
+    return (rowCount ?? 0) > 0;
+  }
+
+  async getSettings() {
+    const { rows } = await this.pool.query<{ name: SettingName; value: string }>(
+      'SELECT name, value FROM llm_settings',
+    );
+    return settingsView(Object.fromEntries(rows.map((r) => [r.name, r.value])));
+  }
+
+  async setSettings(patch: Partial<LlmSettingsView>, by: string | null) {
+    for (const [key, column] of Object.entries(SETTING_COLUMN)) {
+      const value = patch[key as keyof LlmSettingsView];
+      if (!value) continue;
+      await this.pool.query(
+        `INSERT INTO llm_settings (name, value, edited_at, updated_by) VALUES ($1, $2, now(), $3)
+         ON CONFLICT (name) DO UPDATE
+           SET value = EXCLUDED.value, edited_at = now(), updated_by = $3, updated_at = now()`,
+        [column, value, by],
+      );
+    }
+    return this.getSettings();
+  }
+
+  async requestDiscover(name: string) {
+    const { rowCount } = await this.pool.query(
+      'UPDATE llm_endpoints SET discover_requested_at = now() WHERE name = $1',
+      [name],
+    );
+    return (rowCount ?? 0) > 0;
   }
 }
+
+interface ChoiceRow {
+  id: string;
+  label: string;
+  description: string;
+  ref: string;
+  source: 'env' | 'ui';
+  edited_at: Date | null;
+  updated_by: string | null;
+}
+
+const CHOICE_SELECT =
+  'SELECT id, label, description, ref, source, edited_at, updated_by FROM llm_choices';
+
+const toChoice = (r: ChoiceRow): LlmChoiceView => ({
+  id: r.id,
+  label: r.label,
+  description: r.description,
+  ref: r.ref,
+  source: r.source,
+  editedAt: r.edited_at ? r.edited_at.toISOString() : null,
+  updatedBy: r.updated_by,
+});

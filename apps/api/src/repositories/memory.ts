@@ -242,6 +242,13 @@ export class MemoryRepo implements IngestionRepo {
       .map((j) => this.withModels(j));
   }
 
+  async countUnfinishedJobsWithModel(model: string): Promise<number> {
+    const unfinished = ['queued', 'running', 'awaiting_review'];
+    return [...this.jobs.values()].filter(
+      (j) => j.modelOverride === model && unfinished.includes(j.status),
+    ).length;
+  }
+
   async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
     return [...this.jobs.values()]
       .filter((j) => j.task !== 'prepare' && (!status || j.status === status))

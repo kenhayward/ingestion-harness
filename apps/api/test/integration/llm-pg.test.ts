@@ -149,9 +149,51 @@ describe.skipIf(!url)('LLM endpoints SQL against Postgres', { timeout: 30_000 },
     expect(rows).toEqual([{ curated: false }]);
   });
 
-  it('lists aliases', async () => {
-    const alias = name('alias');
-    await pool.query('INSERT INTO llm_aliases (name, ref) VALUES ($1, $2)', [alias, 'local/x']);
-    expect((await repo.listAliases())[alias]).toBe('local/x');
+  it('adds, edits and removes model choices; sets and reads the settings', async () => {
+    const id = name('choice');
+    const before = await version();
+    const created = await repo.createChoice(
+      { id, label: 'Main Production Model', description: '', ref: 'local/qwen' },
+      'ken',
+    );
+    expect(created).toMatchObject({ id, source: 'ui', updatedBy: 'ken' });
+    expect(created !== 'exists' && created.editedAt).toBeTruthy();
+    expect(await version()).toBeGreaterThan(before); // workers rebuild
+    expect(
+      await repo.createChoice({ id, label: 'Again', description: '', ref: 'local/qwen' }, null),
+    ).toBe('exists');
+    const renamed = await repo.updateChoice(id, { label: 'Renamed', ref: 'local/other' }, 'ann');
+    expect(renamed).toMatchObject({ label: 'Renamed', ref: 'local/other', updatedBy: 'ann' });
+    expect((await repo.listChoices()).some((c) => c.id === id)).toBe(true);
+    expect(await repo.updateChoice(name('nope'), { label: 'x' }, null)).toBeNull();
+
+    const settings = await repo.setSettings({ defaultChoice: id, ocrModel: 'local/olmocr' }, 'ken');
+    expect(settings).toMatchObject({ defaultChoice: id, ocrModel: 'local/olmocr' });
+    const { rows } = await pool.query(
+      "SELECT edited_at IS NOT NULL AS edited, updated_by FROM llm_settings WHERE name = 'default_choice'",
+    );
+    expect(rows[0]).toEqual({ edited: true, updated_by: 'ken' });
+
+    expect(await repo.deleteChoice(id)).toBe(true);
+    expect(await repo.deleteChoice(id)).toBe(false);
+  });
+
+  it('marks an endpoint for discovery now', async () => {
+    const gpu = name('gpu');
+    await repo.createEndpoint(
+      {
+        name: gpu,
+        kind: 'openai-chat',
+        baseUrl: 'http://x/v1',
+        location: 'local',
+        apiKeyEnc: null,
+        models: [],
+      },
+      null,
+    );
+    const before = await version();
+    expect(await repo.requestDiscover(gpu)).toBe(true);
+    expect(await version()).toBeGreaterThan(before);
+    expect(await repo.requestDiscover(name('nope'))).toBe(false);
   });
 });
