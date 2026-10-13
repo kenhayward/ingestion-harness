@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { JobStatus } from '@ih/shared';
-import { attentionCount, initials, matchesQuery, statusGroup } from '../src/shell/derive.js';
+import {
+  attentionCount,
+  initials,
+  matchesQuery,
+  pageTitle,
+  routeTitle,
+  statusGroup,
+} from '../src/shell/derive.js';
 import { job } from './fake-api.js';
 
 describe('statusGroup', () => {
@@ -52,4 +59,25 @@ describe('matchesQuery', () => {
   ])('%j in %j → %s', (query, fields, expected) =>
     expect(matchesQuery(query, ...fields)).toBe(expected),
   );
+});
+
+describe('routeTitle', () => {
+  it.each([
+    [{ name: 'jobs' }, 'Jobs · CT Studio'],
+    [{ name: 'review', jobId: 'j1' }, 'Review · CT Studio'],
+    [{ name: 'results' }, 'Results · CT Studio'],
+    [{ name: 'result', jobId: 'j1' }, 'Results · CT Studio'],
+    [{ name: 'templates' }, 'Document types · CT Studio'],
+    [{ name: 'template', templateId: 'invoice', version: 2 }, 'Document types · CT Studio'],
+    [{ name: 'workbench' }, 'Workbench · CT Studio'],
+    [{ name: 'project', projectId: 'invoice', tab: 'samples' }, 'Workbench · CT Studio'],
+    [{ name: 'access' }, 'Access · CT Studio'],
+  ] as const)('%o → %s', (route, title) => {
+    expect(routeTitle(route)).toBe(title);
+  });
+
+  it('is the bare name without a page', () => {
+    expect(pageTitle(null)).toBe('CT Studio');
+    expect(pageTitle('Sign in')).toBe('Sign in · CT Studio');
+  });
 });

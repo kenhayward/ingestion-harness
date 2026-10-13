@@ -8,7 +8,8 @@ import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
 import { navigate, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
-import { sectionOf } from './shell/derive.js';
+import { routeTitle, sectionOf } from './shell/derive.js';
+import { useDocumentTitle } from './shell/useDocumentTitle.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
@@ -92,6 +93,7 @@ function SignedInApp({
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
+  useDocumentTitle(routeTitle(route));
   const { jobs, error, refresh } = useJobs(api, pollMs);
   const [query, setQuery] = useState('');
   // The search filters the current section's list: moving to another section starts afresh,

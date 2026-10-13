@@ -57,3 +57,28 @@ export function matchesQuery(query: string, ...fields: (string | null | undefine
   const haystack = fields.filter((f): f is string => !!f).map((f) => f.toLowerCase());
   return terms.every((t) => haystack.some((f) => f.includes(t)));
 }
+
+/** The in-app product name (docs/brand/BRAND.md); docs use "Content Transformation Studio". */
+export const APP_NAME = 'CT Studio';
+
+/** Child screens take their parent page's name, as in the nav. */
+const PAGE: Record<Route['name'], string> = {
+  jobs: 'Jobs',
+  review: 'Review',
+  results: 'Results',
+  result: 'Results',
+  templates: 'Document types',
+  template: 'Document types',
+  workbench: 'Workbench',
+  project: 'Workbench',
+  access: 'Access',
+};
+
+/** Browser tab title: "<Page> · CT Studio", or just the name. */
+export function pageTitle(page: string | null): string {
+  return page === null ? APP_NAME : `${page} · ${APP_NAME}`;
+}
+
+export function routeTitle(route: Route): string {
+  return pageTitle(PAGE[route.name]);
+}

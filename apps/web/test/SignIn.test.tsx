@@ -8,6 +8,12 @@ const statusError = (status: number, message: string) =>
   Object.assign(new Error(message), { status });
 
 describe('sign-in gate', () => {
+  it('titles the sign-in tab', async () => {
+    render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
+    await screen.findByRole('button', { name: 'Sign in' });
+    expect(document.title).toBe('Sign in · CT Studio');
+  });
+
   it('shows the CT Studio mark and name', async () => {
     render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
     await screen.findByLabelText('Access token'); // past the loading layout, which has the same brand
