@@ -324,6 +324,11 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       missingRequired,
       sections: [],
     });
+    const [a, b, c] = [
+      await p.addSample(1, true),
+      await p.addSample(2, true),
+      await p.addSample(3, true),
+    ];
     await p.proposal(
       'sections',
       p.draftResult('sections', {
@@ -332,17 +337,16 @@ describe('GET /api/workbench/projects/:id/overview', () => {
         anchorCheck: {
           anchorErrors: {},
           samples: [
-            sample('a', null, []),
-            sample('b', 'not prepared', []),
-            sample('c', null, ['all']),
+            sample(a.id, null, []),
+            sample(b.id, 'not prepared', []),
+            sample(c.id, null, ['all']),
           ],
         },
       }),
     );
-    await p.addSample(1, true);
     expect((await p.metrics('sections'))[1]).toEqual({
       label: 'Anchors found',
-      value: '1 / 1 dev',
+      value: '1 / 3 dev',
       at: null,
     });
 
@@ -351,6 +355,35 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       label: 'Last revision',
       value: '—',
       at: revise.createdAt,
+    });
+  });
+
+  it('counts only anchors found in current dev samples', async () => {
+    const p = await project();
+    const [a, b] = [await p.addSample(1, true), await p.addSample(2, true)];
+    const found = (sampleId: string) => ({
+      sampleId,
+      firstPage: 1,
+      pageCount: 1,
+      error: null,
+      missingRequired: [],
+      sections: [],
+    });
+    await p.proposal(
+      'sections',
+      p.draftResult('sections', {
+        notes: '',
+        changes: [],
+        anchorCheck: {
+          anchorErrors: {},
+          samples: [found(a.id), found(b.id), found('removed-sample')],
+        },
+      }),
+    );
+    expect((await p.metrics('sections'))[1]).toEqual({
+      label: 'Anchors found',
+      value: '2 / 2 dev',
+      at: null,
     });
   });
 

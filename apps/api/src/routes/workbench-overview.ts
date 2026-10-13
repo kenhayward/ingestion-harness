@@ -93,6 +93,7 @@ async function gatherFacts(
     ]);
 
   const ready = samples.filter((s) => s.view.state === 'ready');
+  const devIds = new Set(ready.filter((s) => s.record.role === 'dev').map((s) => s.record.id));
   const answers = view.brief?.body.answers ?? [];
   const answered = answers.filter((a) => a.answer.trim() !== '').length;
   const definition = (template?.definition ?? {}) as {
@@ -144,9 +145,10 @@ async function gatherFacts(
       anchorsFound:
         anchorCheck === null
           ? null
-          : anchorCheck.samples.filter((s) => s.error === null && s.missingRequired.length === 0)
-              .length,
-      devSamples: ready.filter((s) => s.record.role === 'dev').length,
+          : anchorCheck.samples.filter(
+              (s) => devIds.has(s.sampleId) && s.error === null && s.missingRequired.length === 0,
+            ).length,
+      devSamples: devIds.size,
     },
     steps: {
       proposed: stepsResult?.body.changes.length ?? null,
