@@ -39,42 +39,46 @@ export const EMPTY_BRIEF: BriefBody = {
   answers: [],
 };
 
-export interface Brief {
-  projectId: string;
-  version: number;
-  body: BriefBody;
-  createdAt: string;
-}
+export const BriefSchema = z.object({
+  projectId: z.string(),
+  version: z.number().int(),
+  body: BriefBodySchema,
+  createdAt: z.string(),
+});
+export type Brief = z.infer<typeof BriefSchema>;
 
-export interface WorkbenchProject {
-  id: string;
-  name: string;
-  createdAt: string;
+export const WorkbenchProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
   /** Where sample text may go (ADR 0007): local models only, or external providers too. */
-  dataPolicy: DataPolicy;
-  dataPolicyChangedAt: string | null;
+  dataPolicy: DataPolicySchema,
+  dataPolicyChangedAt: z.string().nullable(),
   /** Label of the admin token that last changed the policy. */
-  dataPolicyChangedBy: string | null;
+  dataPolicyChangedBy: z.string().nullable(),
   /** Holdout score (0..1) a draft needs to publish without an override (ADR 0007). */
-  publishThreshold: number;
+  publishThreshold: z.number(),
   /** Label of the token that last changed the threshold (null: never, or no access control). */
-  thresholdSetBy: string | null;
-  thresholdSetAt: string | null;
-}
+  thresholdSetBy: z.string().nullable(),
+  thresholdSetAt: z.string().nullable(),
+});
+export type WorkbenchProject = z.infer<typeof WorkbenchProjectSchema>;
 
-export interface ProjectSummary extends WorkbenchProject {
-  draft: number | null;
-  published: number | null;
-  samples: number;
-}
+export const ProjectSummarySchema = WorkbenchProjectSchema.extend({
+  draft: z.number().int().nullable(),
+  published: z.number().int().nullable(),
+  samples: z.number().int(),
+});
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
 
-export interface ProjectView {
-  project: WorkbenchProject;
+export const ProjectViewSchema = z.object({
+  project: WorkbenchProjectSchema,
   /** The open draft version being developed; null when every version is published. */
-  draft: number | null;
-  published: number | null;
-  brief: Brief | null;
-}
+  draft: z.number().int().nullable(),
+  published: z.number().int().nullable(),
+  brief: BriefSchema.nullable(),
+});
+export type ProjectView = z.infer<typeof ProjectViewSchema>;
 
 /** Written by the worker's prepare task (runs bucket, preparedTextKey). */
 export const PreparedTextSchema = z.object({
@@ -97,28 +101,30 @@ export const PreparedTriageSchema = z.object({
 export type PreparedTriage = z.infer<typeof PreparedTriageSchema>;
 
 /** Derived from the sample's prepare job: queued/running, succeeded, anything else. */
-export type SampleState = 'preparing' | 'ready' | 'failed';
+export const SampleStateSchema = z.enum(['preparing', 'ready', 'failed']);
+export type SampleState = z.infer<typeof SampleStateSchema>;
 
-export interface SampleView {
-  id: string;
-  projectId: string;
-  documentId: string;
-  filename: string;
-  sizeBytes: number;
-  sha256: string;
-  role: SampleRole;
-  addedForVersion: number;
-  createdAt: string;
-  state: SampleState;
-  prepareJobId: string | null;
-  error: string | null;
-  triage: PreparedTriage | null;
+export const SampleViewSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string(),
+  documentId: z.string().uuid(),
+  filename: z.string(),
+  sizeBytes: z.number().int(),
+  sha256: z.string(),
+  role: SampleRoleSchema,
+  addedForVersion: z.number().int(),
+  createdAt: z.string(),
+  state: SampleStateSchema,
+  prepareJobId: z.string().uuid().nullable(),
+  error: z.string().nullable(),
+  triage: PreparedTriageSchema.nullable(),
   /**
    * The number of holdout evaluations (iterations) that evaluated this sample's PDF. A sample
    * moved back to dev keeps its count; the count survives the evaluation jobs being deleted.
    */
-  holdoutRuns: number;
-}
+  holdoutRuns: z.number().int(),
+});
+export type SampleView = z.infer<typeof SampleViewSchema>;
 
 /** The part of a template's `document` block the segmentation preview applies. */
 export const SegmentDocumentSchema = z

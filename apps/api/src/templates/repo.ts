@@ -1,17 +1,22 @@
 import type pg from 'pg';
+import { z } from 'zod';
 
-export type TemplateStatus = 'draft' | 'published';
+export const TemplateStatusSchema = z.enum(['draft', 'published']);
+export type TemplateStatus = z.infer<typeof TemplateStatusSchema>;
 
-export interface TemplateRecord {
-  id: string;
-  version: number;
-  status: TemplateStatus;
+export const TemplateRecordSchema = z.object({
+  id: z.string(),
+  version: z.number().int(),
+  status: TemplateStatusSchema,
   /** Stored as authored — drafts may be invalid while being edited. */
-  definition: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-  publishedAt: string | null;
-}
+  definition: z
+    .record(z.string(), z.unknown())
+    .describe('The definition as authored: a draft may not be valid yet.'),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  publishedAt: z.string().nullable(),
+});
+export type TemplateRecord = z.infer<typeof TemplateRecordSchema>;
 
 export class TemplateConflictError extends Error {}
 

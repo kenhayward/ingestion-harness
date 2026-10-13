@@ -3,18 +3,22 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import {
   DocumentSpecSchema,
+  SpecSummarySchema,
   TemplateSchema,
   type DocumentSpec,
-  type SpecSummary,
   type Template,
 } from '@ih/shared';
+import { z } from 'zod';
 
 /** A loaded document type definition: legacy spec.yaml or document template (template.yaml). */
 export type Definition =
   | { kind: 'spec'; id: string; version: number; spec: DocumentSpec }
   | { kind: 'template'; id: string; version: number; template: Template };
 
-export type DefinitionSummary = SpecSummary & { kind: Definition['kind'] };
+export const DefinitionSummarySchema = SpecSummarySchema.extend({
+  kind: z.enum(['spec', 'template']).describe('`spec`: a legacy spec.yaml; `template`: a template.'),
+});
+export type DefinitionSummary = z.infer<typeof DefinitionSummarySchema>;
 
 const issuesOf = (error: { issues: { path: (string | number)[]; message: string }[] }) =>
   error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
