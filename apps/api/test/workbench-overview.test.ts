@@ -69,14 +69,18 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       'template',
       'runs',
     ]);
-    expect(o.stages[0]).toEqual({ stage: 'samples', state: 'warn', status: 'No samples yet' });
-    expect(o.stages[1]).toEqual({ stage: 'brief', state: 'warn', status: 'Not written yet' });
-    expect(o.stages.find((s) => s.stage === 'publish')).toEqual({
+    expect(o.stages[0]).toMatchObject({
+      stage: 'samples',
+      state: 'warn',
+      status: 'No samples yet',
+    });
+    expect(o.stages[1]).toMatchObject({ stage: 'brief', state: 'warn', status: 'Not written yet' });
+    expect(o.stages.find((s) => s.stage === 'publish')).toMatchObject({
       stage: 'publish',
       state: 'locked',
       status: 'Locked by the gate',
     });
-    expect(o.stages.find((s) => s.stage === 'template')).toEqual({
+    expect(o.stages.find((s) => s.stage === 'template')).toMatchObject({
       stage: 'template',
       state: 'none',
       status: 'Draft v1',
@@ -92,20 +96,20 @@ describe('GET /api/workbench/projects/:id/overview', () => {
   it('follows sample preparation and the brief', async () => {
     const p = await project();
     await p.addSample(1, false);
-    expect(await p.item('samples')).toEqual({
+    expect(await p.item('samples')).toMatchObject({
       stage: 'samples',
       state: 'running',
-      status: 'Preparing 1 of 1',
+      status: '1 of 1 preparing',
     });
     await p.addSample(2, true);
-    expect((await p.item('samples')).status).toBe('Preparing 1 of 2');
+    expect((await p.item('samples')).status).toBe('1 of 2 preparing');
     const brief = await p.app.inject({
       method: 'PUT',
       url: '/api/workbench/projects/letter/brief',
       payload: { purpose: 'Letters to customers' },
     });
     expect(brief.statusCode).toBe(201);
-    expect(await p.item('brief')).toEqual({
+    expect(await p.item('brief')).toMatchObject({
       stage: 'brief',
       state: 'accepted',
       status: 'Saved v1',
@@ -119,7 +123,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       url: '/api/workbench/projects/letter/stages/survey/skip',
     });
     expect(res.statusCode).toBeLessThan(300);
-    expect(await p.item('survey')).toEqual({
+    expect(await p.item('survey')).toMatchObject({
       stage: 'survey',
       state: 'skipped',
       status: 'Skipped',
@@ -129,7 +133,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
   it('does not count sample preparation as test runs', async () => {
     const p = await project();
     await p.addSample(1, false);
-    expect(await p.item('runs')).toEqual({
+    expect(await p.item('runs')).toMatchObject({
       stage: 'runs',
       state: 'pending',
       status: 'No runs yet',
@@ -154,7 +158,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       model: null,
       jobIds: jobs.map((j) => j.id),
     });
-    expect(await p.item('evaluate')).toEqual({
+    expect(await p.item('evaluate')).toMatchObject({
       stage: 'evaluate',
       state: 'running',
       status: 'Running',
@@ -188,7 +192,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     for (const job of p.repo.jobs.values()) {
       if (job.task === 'process') p.repo.jobs.set(job.id, { ...job, status: 'awaiting_review' });
     }
-    expect(await p.item('runs')).toEqual({
+    expect(await p.item('runs')).toMatchObject({
       stage: 'runs',
       state: 'warn',
       status: '1 awaiting review',

@@ -253,12 +253,128 @@ export const OverviewStateSchema = z.enum([
   'warn',
 ]);
 
+export const OverviewMetricSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+  /** An ISO time the web shows as relative time; `value` is then the fallback text. */
+  at: z.string().nullable(),
+});
+export type OverviewMetric = z.infer<typeof OverviewMetricSchema>;
+
+/** Plain numbers the API gathers for the map's figures (null = not known yet). */
+export interface MetricFacts {
+  samples: { dev: number; holdout: number; ocrPages: number; pages: number };
+  brief: { answers: number; updatedAt: string | null };
+  template: { steps: number; sections: number; editedAt: string | null };
+  runs: { total: number; awaitingReview: number };
+  survey: { answered: number; questions: number; fields: number | null; tables: number | null };
+  outputs: { fields: number; tables: number; applied: number | null; proposed: number | null };
+  sections: { anchorsFound: number | null; devSamples: number };
+  steps: { proposed: number | null; model: string | null };
+  references: {
+    devVerified: number;
+    devTotal: number;
+    holdoutVerified: number;
+    holdoutTotal: number;
+  };
+  evaluate: { dev: number | null; holdout: number | null };
+  revise: { open: number; lastAt: string | null };
+  publish: { live: number | null };
+}
+
+export const EMPTY_FACTS: MetricFacts = {
+  samples: { dev: 0, holdout: 0, ocrPages: 0, pages: 0 },
+  brief: { answers: 0, updatedAt: null },
+  template: { steps: 0, sections: 0, editedAt: null },
+  runs: { total: 0, awaitingReview: 0 },
+  survey: { answered: 0, questions: 0, fields: null, tables: null },
+  outputs: { fields: 0, tables: 0, applied: null, proposed: null },
+  sections: { anchorsFound: null, devSamples: 0 },
+  steps: { proposed: null, model: null },
+  references: { devVerified: 0, devTotal: 0, holdoutVerified: 0, holdoutTotal: 0 },
+  evaluate: { dev: null, holdout: null },
+  revise: { open: 0, lastAt: null },
+  publish: { live: null },
+};
+
+const DASH = '—';
+const m = (label: string, value: string, at: string | null = null): OverviewMetric => ({
+  label,
+  value,
+  at,
+});
+const n = (x: number | null) => (x === null ? DASH : String(x));
+const pair = (a: number | null, b: number | null) =>
+  a === null || b === null ? DASH : `${a} · ${b}`;
+const score = (x: number | null) => (x === null ? DASH : percent(x));
+
+/** The two figures of each Overview map box (handoff §3 metrics table). */
+export function boxMetrics(
+  f: MetricFacts,
+  inputs: OverviewInputs,
+): Record<OverviewTab, OverviewMetric[]> {
+  const { survey, outputs } = f;
+  return {
+    samples: [
+      m('Dev · holdout', `${f.samples.dev} · ${f.samples.holdout}`),
+      m('OCR pages', f.samples.pages > 0 ? `${f.samples.ocrPages} of ${f.samples.pages}` : DASH),
+    ],
+    brief: [m('Answers', String(f.brief.answers)), m('Updated', DASH, f.brief.updatedAt)],
+    template: [
+      m('Steps · sections', `${f.template.steps} · ${f.template.sections}`),
+      m('Hand edit', DASH, f.template.editedAt),
+    ],
+    runs: [m('Runs', String(f.runs.total)), m('Awaiting review', String(f.runs.awaitingReview))],
+    survey: [
+      m(
+        'Questions',
+        survey.questions > 0 ? `${survey.answered} of ${survey.questions} answered` : DASH,
+      ),
+      m('Fields · tables', pair(survey.fields, survey.tables)),
+    ],
+    outputs: [
+      m('Fields · tables', `${outputs.fields} · ${outputs.tables}`),
+      m(
+        'Changes applied',
+        outputs.applied === null || outputs.proposed === null
+          ? DASH
+          : `${outputs.applied} of ${outputs.proposed}`,
+      ),
+    ],
+    sections: [
+      m('Sections', String(f.template.sections)),
+      m(
+        'Anchors found',
+        f.sections.anchorsFound === null
+          ? DASH
+          : `${f.sections.anchorsFound} / ${f.sections.devSamples} dev`,
+      ),
+    ],
+    steps: [m('Proposed changes', n(f.steps.proposed)), m('Model', f.steps.model ?? DASH)],
+    references: [
+      m('Dev', `${f.references.devVerified} / ${f.references.devTotal}`),
+      m('Holdout', `${f.references.holdoutVerified} / ${f.references.holdoutTotal}`),
+    ],
+    evaluate: [
+      m('Dev score', score(f.evaluate.dev)),
+      m('Holdout score', score(f.evaluate.holdout)),
+    ],
+    revise: [m('Feedback items', String(f.revise.open)), m('Last revision', DASH, f.revise.lastAt)],
+    publish: [
+      m('Needs holdout', `≥ ${percent(inputs.gate.threshold)}`),
+      m('Live version', f.publish.live === null ? DASH : `v${f.publish.live}`),
+    ],
+  };
+}
+
 export const OverviewItemSchema = z.object({
   stage: z.enum(OVERVIEW_TABS),
   /** `none`: Template, which has no status. */
   state: z.union([OverviewStateSchema, z.literal('none')]),
   /** Plain words after the stage name: "Stale — Outputs changed after it was accepted". */
   status: z.string(),
+  /** Two figures for the Overview map box (handoff §3). */
+  metrics: z.array(OverviewMetricSchema).max(2),
 });
 export type OverviewItem = z.infer<typeof OverviewItemSchema>;
 
@@ -286,6 +402,7 @@ export interface StatusContext {
   runs: { total: number; unfinished: number; awaitingReview: number };
   /** Feedback items no revise proposal has answered yet. */
   openFeedback: number;
+  facts: MetricFacts;
 }
 
 /** "holdout score …" → "Holdout score ….": gate reasons are sentence fragments. */
@@ -323,7 +440,7 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       const { total, preparing, failed } = inputs.samples;
       if (total === 0) return 'No samples yet';
       if (failed > 0) return `${failed} failed`;
-      return preparing > 0 ? `Preparing ${preparing} of ${total}` : 'Ready';
+      return preparing > 0 ? `${preparing} of ${total} preparing` : 'Ready';
     }
     case 'brief':
       return state === 'accepted'
@@ -365,6 +482,7 @@ export function overviewItems(ctx: StatusContext): OverviewItem[] {
   const entries = overviewStates(ctx.inputs);
   const { draft, published } = ctx.inputs;
   const runs = runsState(ctx.runs);
+  const metrics = boxMetrics(ctx.facts, ctx.inputs);
   const runsText =
     runs === 'running'
       ? `${ctx.runs.unfinished} running`
@@ -378,6 +496,7 @@ export function overviewItems(ctx: StatusContext): OverviewItem[] {
       stage: e.stage,
       state: e.state,
       status: statusText(e.stage, e.state, ctx),
+      metrics: metrics[e.stage],
     })),
     {
       stage: 'template' as const,
@@ -388,8 +507,9 @@ export function overviewItems(ctx: StatusContext): OverviewItem[] {
           : published !== null
             ? `v${published} published`
             : 'Not published',
+      metrics: metrics.template,
     },
-    { stage: 'runs' as const, state: runs, status: runsText },
+    { stage: 'runs' as const, state: runs, status: runsText, metrics: metrics.runs },
   ];
 }
 

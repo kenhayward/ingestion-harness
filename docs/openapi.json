@@ -23540,12 +23540,40 @@
                           },
                           "status": {
                             "type": "string"
+                          },
+                          "metrics": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "value",
+                                "at"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "maxItems": 2
                           }
                         },
                         "required": [
                           "stage",
                           "state",
-                          "status"
+                          "status",
+                          "metrics"
                         ],
                         "additionalProperties": true
                       }

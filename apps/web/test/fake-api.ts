@@ -360,6 +360,7 @@ export function projectOverview(overrides: Partial<ProjectOverview> = {}): Proje
       stage,
       state: stage === 'template' ? ('none' as const) : ('pending' as const),
       status: stage === 'template' ? 'Draft v1' : 'Not started',
+      metrics: [],
     })),
     next: null,
     gate: gateView(),

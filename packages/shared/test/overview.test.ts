@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EMPTY_FACTS,
   OVERVIEW_STAGES,
   OVERVIEW_TABS,
   ProjectOverviewSchema,
+  boxMetrics,
   briefSaved,
   nextAction,
   overviewItems,
@@ -13,6 +15,7 @@ import {
   urgency,
   type Brief,
   type GateView,
+  type MetricFacts,
   type OverviewInputs,
   type OverviewState,
   type StatusContext,
@@ -431,6 +434,7 @@ const ctx = (over: Partial<StatusContext> = {}, i: OverviewInputs = inputs()): S
   briefVersion: 3,
   runs: { total: 0, unfinished: 0, awaitingReview: 0 },
   openFeedback: 0,
+  facts: EMPTY_FACTS,
   ...over,
 });
 const status = (c: StatusContext, stage: (typeof OVERVIEW_TABS)[number]) =>
@@ -445,10 +449,10 @@ describe('overviewItems', () => {
   it.each([
     [{ total: 0, preparing: 0, failed: 0 }, 'warn', 'No samples yet'],
     [{ total: 4, preparing: 0, failed: 2 }, 'warn', '2 failed'],
-    [{ total: 4, preparing: 1, failed: 0 }, 'running', 'Preparing 1 of 4'],
+    [{ total: 4, preparing: 1, failed: 0 }, 'running', '1 of 4 preparing'],
     [{ total: 4, preparing: 0, failed: 0 }, 'accepted', 'Ready'],
   ] as const)('samples %o', (samples, state, text) => {
-    expect(status(ctx({}, inputs({ samples })), 'samples')).toEqual({
+    expect(status(ctx({}, inputs({ samples })), 'samples')).toMatchObject({
       stage: 'samples',
       state,
       status: text,
@@ -519,7 +523,11 @@ describe('overviewItems', () => {
       'Holdout 93% passes',
     ],
   ] as const)('evaluate %#', (i, state, text) => {
-    expect(status(ctx({}, i), 'evaluate')).toEqual({ stage: 'evaluate', state, status: text });
+    expect(status(ctx({}, i), 'evaluate')).toMatchObject({
+      stage: 'evaluate',
+      state,
+      status: text,
+    });
   });
 
   it.each([
@@ -533,19 +541,21 @@ describe('overviewItems', () => {
   });
 
   it('describes Publish, Template and Test runs', () => {
-    expect(status(ctx(), 'publish')).toEqual({
+    expect(status(ctx(), 'publish')).toMatchObject({
       stage: 'publish',
       state: 'locked',
       status: 'Locked by the gate',
     });
     const ready = inputs({ gate: gate({ iterationId: 'it1', score: 0.93, passes: true }) });
     expect(status(ctx({}, ready), 'publish').status).toBe('Ready to publish v2');
-    expect(status(ctx(), 'template')).toEqual({
+    expect(status(ctx(), 'template')).toMatchObject({
       stage: 'template',
       state: 'none',
       status: 'Draft v2',
     });
-    expect(status(ctx({ runs: { total: 6, unfinished: 2, awaitingReview: 1 } }), 'runs')).toEqual({
+    expect(
+      status(ctx({ runs: { total: 6, unfinished: 2, awaitingReview: 1 } }), 'runs'),
+    ).toMatchObject({
       stage: 'runs',
       state: 'running',
       status: '2 running',
@@ -568,7 +578,7 @@ describe('overviewItems', () => {
   it('shows a fully published type as done', () => {
     const items = overviewItems(ctx({}, inputs({ draft: null, published: 3 })));
     expect(items.find((x) => x.stage === 'publish')!.status).toBe('v3 published');
-    expect(items.find((x) => x.stage === 'outputs')).toEqual({
+    expect(items.find((x) => x.stage === 'outputs')).toMatchObject({
       stage: 'outputs',
       state: 'accepted',
       status: 'Done',
@@ -762,5 +772,150 @@ describe('ProjectOverviewSchema', () => {
       gate: i.gate,
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+const facts = (over: Partial<MetricFacts> = {}): MetricFacts => ({ ...EMPTY_FACTS, ...over });
+const rows = (f: MetricFacts, tab: (typeof OVERVIEW_TABS)[number], i: OverviewInputs = inputs()) =>
+  boxMetrics(f, i)[tab].map((m) => [m.label, m.value, m.at]);
+
+describe('boxMetrics', () => {
+  it('gives every tab exactly two rows', () => {
+    const all = boxMetrics(EMPTY_FACTS, inputs());
+    expect(Object.keys(all).sort()).toEqual([...OVERVIEW_TABS].sort());
+    for (const tab of OVERVIEW_TABS) expect(all[tab]).toHaveLength(2);
+  });
+
+  it('shows dashes, never null or NaN, when nothing is known', () => {
+    const text = JSON.stringify(boxMetrics(EMPTY_FACTS, inputs()));
+    expect(text).not.toMatch(/null"|NaN|undefined/);
+  });
+
+  it.each([
+    [
+      'samples',
+      facts({ samples: { dev: 6, holdout: 2, ocrPages: 3, pages: 41 } }),
+      [
+        ['Dev · holdout', '6 · 2', null],
+        ['OCR pages', '3 of 41', null],
+      ],
+    ],
+    [
+      'brief',
+      facts({ brief: { answers: 5, updatedAt: '2026-10-11T10:00:00Z' } }),
+      [
+        ['Answers', '5', null],
+        ['Updated', '—', '2026-10-11T10:00:00Z'],
+      ],
+    ],
+    [
+      'template',
+      facts({ template: { steps: 4, sections: 5, editedAt: '2026-10-13T09:00:00Z' } }),
+      [
+        ['Steps · sections', '4 · 5', null],
+        ['Hand edit', '—', '2026-10-13T09:00:00Z'],
+      ],
+    ],
+    [
+      'runs',
+      facts({ runs: { total: 6, awaitingReview: 1 } }),
+      [
+        ['Runs', '6', null],
+        ['Awaiting review', '1', null],
+      ],
+    ],
+    [
+      'survey',
+      facts({ survey: { answered: 3, questions: 4, fields: 9, tables: 1 } }),
+      [
+        ['Questions', '3 of 4 answered', null],
+        ['Fields · tables', '9 · 1', null],
+      ],
+    ],
+    [
+      'survey',
+      EMPTY_FACTS,
+      [
+        ['Questions', '—', null],
+        ['Fields · tables', '—', null],
+      ],
+    ],
+    [
+      'outputs',
+      facts({ outputs: { fields: 9, tables: 1, applied: 8, proposed: 9 } }),
+      [
+        ['Fields · tables', '9 · 1', null],
+        ['Changes applied', '8 of 9', null],
+      ],
+    ],
+    [
+      'sections',
+      facts({
+        sections: { anchorsFound: 6, devSamples: 6 },
+        template: { steps: 4, sections: 5, editedAt: null },
+      }),
+      [
+        ['Sections', '5', null],
+        ['Anchors found', '6 / 6 dev', null],
+      ],
+    ],
+    [
+      'steps',
+      facts({ steps: { proposed: 4, model: 'qwen3.8-27b' } }),
+      [
+        ['Proposed changes', '4', null],
+        ['Model', 'qwen3.8-27b', null],
+      ],
+    ],
+    [
+      'references',
+      facts({ references: { devVerified: 6, devTotal: 6, holdoutVerified: 2, holdoutTotal: 2 } }),
+      [
+        ['Dev', '6 / 6', null],
+        ['Holdout', '2 / 2', null],
+      ],
+    ],
+    [
+      'evaluate',
+      facts({ evaluate: { dev: 0.91, holdout: 0.88 } }),
+      [
+        ['Dev score', '91%', null],
+        ['Holdout score', '88%', null],
+      ],
+    ],
+    [
+      'revise',
+      facts({ revise: { open: 3, lastAt: '2026-10-13T10:00:00Z' } }),
+      [
+        ['Feedback items', '3', null],
+        ['Last revision', '—', '2026-10-13T10:00:00Z'],
+      ],
+    ],
+    [
+      'publish',
+      facts({ publish: { live: 3 } }),
+      [
+        ['Needs holdout', '≥ 90%', null],
+        ['Live version', 'v3', null],
+      ],
+    ],
+    [
+      'publish',
+      EMPTY_FACTS,
+      [
+        ['Needs holdout', '≥ 90%', null],
+        ['Live version', '—', null],
+      ],
+    ],
+  ] as const)('%s', (tab, f, expected) => {
+    expect(rows(f, tab)).toEqual(expected);
+  });
+
+  it('puts the metrics on the overview items', () => {
+    const items = overviewItems(ctx({ facts: facts({ runs: { total: 6, awaitingReview: 1 } }) }));
+    expect(items.find((x) => x.stage === 'runs')!.metrics).toEqual([
+      { label: 'Runs', value: '6', at: null },
+      { label: 'Awaiting review', value: '1', at: null },
+    ]);
   });
 });

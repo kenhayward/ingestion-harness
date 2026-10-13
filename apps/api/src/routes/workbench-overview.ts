@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import {
   ProjectOverviewSchema,
   briefSaved,
+  EMPTY_FACTS,
   overviewItems,
   overviewNext,
   type OverviewInputs,
@@ -104,6 +105,7 @@ export async function projectOverview(
         awaitingReview: runs.filter((j) => j.status === 'awaiting_review').length,
       },
       openFeedback: feedback.filter((f) => f.resolvedBy === null).length,
+      facts: EMPTY_FACTS, // Task 2 gathers the real facts
     }),
     next: overviewNext(inputs),
     gate: inputs.gate,
