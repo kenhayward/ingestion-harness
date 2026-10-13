@@ -211,6 +211,7 @@ def segment_samples(
 
     rows: list[dict[str, Any]] = []
     suggestions: list[dict[str, Any]] = []
+    found_in: dict[str, list[str]] = {}  # section id -> texts where its anchor matched
     for sample_id, pages in samples:
         if not pages:
             rows.append(
@@ -235,6 +236,8 @@ def segment_samples(
             offset += len(page) + len(PAGE_BREAK)
         spans, unmatched = section_spans(text, valid)
         by_id = {span.id: span for span in spans}
+        for span_id in by_id:
+            found_in.setdefault(span_id, []).append(text)
         cells: list[dict[str, Any]] = []
         for section in document.sections:
             span = by_id.get(section.id)
@@ -275,6 +278,12 @@ def segment_samples(
                             "reason": hint[1],
                         }
                     )
+    # A suggestion must not break a sample where the section was found: drop any that misses one.
+    suggestions = [
+        s
+        for s in suggestions
+        if all(re.search(s["anchor"], t, re.MULTILINE) for t in found_in.get(s["section"], []))
+    ]
     return {"anchorErrors": anchor_errors, "samples": rows, "suggestions": suggestions}
 
 

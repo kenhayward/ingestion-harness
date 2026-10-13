@@ -303,10 +303,25 @@ def test_a_required_section_that_misses_gets_a_label_variant_suggestion() -> Non
             "section": "supplier",
             "sampleId": "globex",
             "anchor": r"^(From|Supplier|Vendor)\b",
-            "reason": 'This sample labels it "Vendor:"; no alternative of the anchor matches that.',
+            "reason": 'This sample labels it "Vendor:"; the anchor has no alternative for that.',
         }
     ]
 
 
 def test_a_grid_without_misses_has_no_suggestions() -> None:
     assert segment_samples([("s1", PAGES)], doc())["suggestions"] == []
+
+
+def test_a_suggestion_that_breaks_a_sample_where_the_section_was_found_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ingest_worker.workbench.suggest_anchor", lambda anchor, text: (r"^Vendor\b", "x")
+    )
+    document = SegmentDocument.model_validate(
+        {"sections": [{"id": "supplier", "anchor": r"^Supplier\b"}]}
+    )
+    both = [("acme", ["Supplier: Acme\n"]), ("globex", ["Vendor: Globex\n"])]
+    assert segment_samples(both, document)["suggestions"] == []
+    only_misses = [("globex", ["Vendor: Globex\n"])]
+    assert len(segment_samples(only_misses, document)["suggestions"]) == 1

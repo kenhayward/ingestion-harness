@@ -16,22 +16,22 @@ LABEL_VARIANTS: tuple[frozenset[str], ...] = (
     frozenset({"supplier", "vendor", "seller", "from", "sold by", "issued by"}),
     frozenset({"customer", "client", "buyer", "bill to", "sold to", "invoice to"}),
     frozenset({"ship to", "deliver to", "delivery address"}),
-    frozenset({"invoice", "tax invoice", "bill"}),
+    frozenset({"invoice", "tax invoice"}),
     frozenset({"invoice no", "invoice number", "inv no"}),
     frozenset({"date", "dated", "invoice date", "issue date"}),
     frozenset({"due date", "payment due", "pay by"}),
     frozenset({"total", "grand total", "total due", "amount due", "balance due"}),
     frozenset({"sub total", "subtotal", "net total"}),
-    frozenset({"payment", "payment terms", "terms", "remit to", "bank details"}),
-    frozenset({"description", "item", "items", "details"}),
-    frozenset({"reference", "ref", "your ref", "our ref", "po", "purchase order"}),
+    frozenset({"payment", "payment terms", "remit to", "bank details"}),
+    frozenset({"description", "items", "details"}),
+    frozenset({"reference", "ref", "your ref", "our ref", "purchase order"}),
 )
 
 _HEAD = re.compile(r"(\(\?i\))?\^(\\s\*)?")
 _TAIL = re.compile(r"(\\b|:)$")
 _WILDCARD = re.compile(r"(?<!\\)\.")
 _GROUP = re.compile(r"\((?:\?:)?([^()]*)\)")
-_SPACE = re.compile(r"\\s[+*]?|\\ ")
+_SPACE = re.compile(r"\\s\+?|\\ ")  # `\s*` and `\s?` are left in place, so they are refused
 _ESCAPED = re.compile(r"\\([#&'./-])")
 _PLAIN = re.compile(r"[A-Za-z0-9 #&'./-]+")
 
@@ -65,6 +65,12 @@ def anchor_labels(anchor: str) -> tuple[bool, bool, list[str]] | None:
     return None if parsed is None else parsed[:3]
 
 
+#: Never proposed as a synonym: too often something else at the start of a line (a mail header).
+_NOT_PROPOSED = frozenset({"from"})
+#: After a synonym: a colon, the end of the line, or a gap of two or more spaces.
+_LABEL_END = r"(?=[ \t]*:|[ \t]*$|[ \t]{2})"
+
+
 def _pattern(label: str) -> str:
     return r"\s+".join(re.escape(word) for word in label.split())
 
@@ -77,9 +83,16 @@ def suggest_anchor(anchor: str, text: str) -> tuple[str, str] | None:
         return None
     insensitive, indented, labels, tail = parsed
     known = {label.lower() for label in labels}
-    synonyms = sorted({v for group in LABEL_VARIANTS if known & group for v in group} - known)
-    for label in [*labels, *synonyms]:
-        found = re.search(rf"^([ \t]*)({_pattern(label)})\b", text, re.MULTILINE | re.IGNORECASE)
+    synonyms = {v for group in LABEL_VARIANTS if known & group for v in group} - known
+    synonyms -= _NOT_PROPOSED
+    # Longest first, so "tax invoice" is tried before "invoice"; the anchor's own labels lead.
+    candidates = [(label, False) for label in labels]
+    candidates += [(label, True) for label in sorted(synonyms, key=lambda v: (-len(v), v))]
+    for label, synonym in candidates:
+        end_check = _LABEL_END if synonym else ""
+        found = re.search(
+            rf"^([ \t]*)({_pattern(label)})(?!\w){end_check}", text, re.MULTILINE | re.IGNORECASE
+        )
         if found is None:
             continue
         written = " ".join(found.group(2).split())
@@ -95,8 +108,15 @@ def suggest_anchor(anchor: str, text: str) -> tuple[str, str] | None:
             continue
         end = found.end(2)
         shown = text[found.start(2) : end + (1 if text[end : end + 1] == ":" else 0)]
-        return (
-            suggestion,
-            f'This sample labels it "{shown}"; no alternative of the anchor matches that.',
-        )
+        if same:
+            reason = (
+                f'This sample indents "{shown}"; the anchor expects it at the start of the line.'
+            )
+        elif written.lower() in known:
+            reason = f'This sample writes it "{shown}" in another case.'
+            if found.group(1):
+                reason = f'This sample writes it "{shown}" in another case and indents it.'
+        else:
+            reason = f'This sample labels it "{shown}"; the anchor has no alternative for that.'
+        return suggestion, reason
     return None
