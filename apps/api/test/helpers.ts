@@ -154,3 +154,17 @@ export function multipart(
 }
 
 export const fakePdf = Buffer.from('%PDF-1.7\n%fake test pdf\n%%EOF\n');
+
+/** Full method + path list from Fastify's route tree (children are printed relative). */
+export function registeredRoutes(tree: string): { method: string; path: string }[] {
+  const stack: string[] = [];
+  return tree.split('\n').flatMap((line) => {
+    const m = /^([│ ]*)[├└]── (\S+) \(([^)]+)\)/.exec(line);
+    if (!m) return [];
+    const depth = m[1]!.length / 4;
+    stack.length = depth;
+    stack.push(m[2]!);
+    const path = stack.join('');
+    return m[3]!.split(', ').map((method) => ({ method, path }));
+  });
+}

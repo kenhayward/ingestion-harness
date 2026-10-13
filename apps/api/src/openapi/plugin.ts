@@ -17,6 +17,10 @@ declare module 'fastify' {
 
 /** Scalar in the app's colours (apps/web/src/styles/tokens.css). */
 const CSS = `
+:root {
+  --scalar-font: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --scalar-font-code: 'IBM Plex Mono', Consolas, ui-monospace, monospace;
+}
 .light-mode {
   --scalar-background-1: #ffffff; --scalar-background-2: #f3f5f8; --scalar-background-3: #e9edf2;
   --scalar-border-color: #dce2ea; --scalar-color-1: #0f1b2d; --scalar-color-2: #4f5d70;
@@ -46,7 +50,17 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
     await docs.register(scalar, {
       routePrefix: DOCS_PREFIX,
       logLevel: 'silent',
-      configuration: { title: 'Ingestion Harness API', theme: 'none', customCss: CSS },
+      configuration: {
+        pageTitle: 'Ingestion Harness API',
+        theme: 'none',
+        customCss: CSS,
+        // Self-contained: no fonts from Scalar's CDN, no telemetry, none of the hosted extras.
+        withDefaultFonts: false,
+        telemetry: false,
+        showDeveloperTools: 'never',
+        agent: { disabled: true },
+        mcp: { disabled: true },
+      },
     });
   });
 }

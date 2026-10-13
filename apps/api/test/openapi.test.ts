@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { TAGS } from '../src/openapi/document.js';
 import { md, res } from '../src/openapi/zod.js';
-import { accessApp, testApp } from './helpers.js';
+import { accessApp, registeredRoutes, testApp } from './helpers.js';
 import { takeViolations } from './openapi-conformance.js';
 
 type Doc = OpenAPIV3_1.Document & { 'x-tagGroups': { name: string; tags: string[] }[] };
@@ -56,6 +56,7 @@ describe('route schemas', () => {
       '/api/echo',
       {
         schema: {
+          tags: ['Health'],
           body: z.object({ n: z.number() }),
           response: { 200: res('The echo', z.object({ n: z.number() })) },
         },
@@ -204,10 +205,19 @@ describe('docs sweep', () => {
   });
 
   it('lists only routes that exist and are still undocumented', async () => {
-    const undocumented = operations(await openapi())
-      .filter(({ op }) => !op.summary)
-      .map(({ key }) => key);
+    const { app } = await accessApp();
+    const doc = (await app.inject('/api/docs/openapi.json')).json<Doc>();
+    const documented = new Set(operations(doc).map(({ key }) => key));
+    const undocumented = registeredRoutes(app.printRoutes({ commonPrefix: false }))
+      .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method) && !r.path.startsWith('/api/docs'))
+      .map((r) => `${r.method} ${r.path.replace(/:([A-Za-z]+)/g, '{$1}')}`)
+      .filter((key) => !documented.has(key));
     expect([...UNDOCUMENTED].sort()).toEqual(undocumented.sort());
+  });
+
+  it('leaves routes out of the document until they are documented', async () => {
+    const untagged = operations(await openapi()).filter(({ op }) => !op.tags?.length);
+    expect(untagged.map(({ key }) => key)).toEqual([]);
   });
 
   it('marks exactly the admin-only routes with x-admin', async () => {
@@ -243,7 +253,12 @@ describe('response conformance', () => {
     const { app } = await testApp();
     app.get(
       '/api/conformance/:mode',
-      { schema: { response: { 200: res('A thing', z.object({ id: z.string() })) } } },
+      {
+        schema: {
+          tags: ['Health'],
+          response: { 200: res('A thing', z.object({ id: z.string() })) },
+        },
+      },
       async (req, reply) => {
         const { mode } = req.params as { mode: string };
         if (mode === 'teapot') return (reply as FastifyReply).code(418).send({ error: 'teapot' });

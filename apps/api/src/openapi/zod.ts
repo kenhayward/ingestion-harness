@@ -56,7 +56,7 @@ const SIGN_IN_REQUIRED = {
 /**
  * `@fastify/swagger` transform: Zod → JSON Schema, plus what every route shares. Public routes
  * (and the health checks outside /api) need no session; the rest gain the 401 the access hook
- * sends. The docs browser's own routes stay out of the document.
+ * sends.
  */
 export function transform({
   schema,
@@ -68,7 +68,8 @@ export function transform({
   route: { config?: unknown };
 }) {
   const out: RouteSchema = { ...(schema ?? {}) };
-  if (url.startsWith(DOCS_PREFIX)) return { schema: { ...out, hide: true }, url };
+  // The docs browser's own routes, and routes not documented yet (no tags), stay out.
+  if (url.startsWith(DOCS_PREFIX) || !schema?.tags) return { schema: { ...out, hide: true }, url };
   for (const key of ['params', 'querystring', 'body', 'headers'] as const) {
     if (out[key] !== undefined) out[key] = toJsonSchema(out[key]);
   }

@@ -3,7 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
 import { MemoryAccessRepo, type AccessToken } from '../src/access/repo.js';
 import { AccessTokenSchema } from '../src/access/routes.js';
-import { testApp } from './helpers.js';
+import { registeredRoutes, testApp } from './helpers.js';
 
 async function setup() {
   const access = new MemoryAccessRepo();
@@ -17,20 +17,6 @@ const cookieOf = (res: { headers: Record<string, unknown> }) => {
   const header = Array.isArray(raw) ? raw[0] : String(raw ?? '');
   return { header, value: /ih_session=([^;]*)/.exec(header)?.[1] ?? '' };
 };
-
-/** Full method + path list from Fastify's route tree (children are printed relative). */
-function registeredRoutes(tree: string): { method: string; path: string }[] {
-  const stack: string[] = [];
-  return tree.split('\n').flatMap((line) => {
-    const m = /^([│ ]*)[├└]── (\S+) \(([^)]+)\)/.exec(line);
-    if (!m) return [];
-    const depth = m[1]!.length / 4;
-    stack.length = depth;
-    stack.push(m[2]!);
-    const path = stack.join('');
-    return m[3]!.split(', ').map((method) => ({ method, path }));
-  });
-}
 
 async function login(app: FastifyInstance, token: string, headers: Record<string, string> = {}) {
   const res = await app.inject({
