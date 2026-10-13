@@ -16,6 +16,13 @@ import { storeFor } from '../storage/stage.js';
 const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50).describe('At most 500.'),
   status: JobStatusSchema.optional().describe('Only jobs in this status.'),
+  mine: z
+    .enum(['0', '1'])
+    .optional()
+    .describe(
+      '`1`: only jobs queued by the signed-in token (matched by its label); none without ' +
+        'access control.',
+    ),
 });
 
 const UUID = z.string().uuid();
@@ -68,9 +75,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listJobs',
         summary: 'List jobs',
         description: md`
-          The newest jobs first, optionally of one status. Lists the jobs of uploaded documents
-          (production, test and regression runs); the Workbench's preparation, preview, drafting
-          and export jobs are not listed.
+          The newest jobs first, optionally of one status, and with \`mine=1\` only those queued
+          by the signed-in token (\`createdBy\`, the token's label: a token issued again under
+          the same name sees the same jobs). Lists the jobs of uploaded documents (production,
+          test and regression runs); the Workbench's preparation, preview, drafting and export
+          jobs are not listed.
         `,
         querystring: ListQuery,
         response: {
@@ -82,7 +91,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const query = ListQuery.safeParse(req.query);
       if (!query.success) return reply.code(400).send({ error: query.error.issues });
-      return app.deps.repo.listJobs(query.data);
+      const { mine, ...rest } = query.data;
+      if (mine !== '1') return app.deps.repo.listJobs(rest);
+      // Without access control nobody is signed in, so nothing is "mine".
+      if (!req.auth) return [];
+      return app.deps.repo.listJobs({ ...rest, createdBy: req.auth.label });
     },
   );
 

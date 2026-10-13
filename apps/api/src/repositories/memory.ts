@@ -82,6 +82,7 @@ export class MemoryRepo implements IngestionRepo {
     test = false,
     referenceId: string | null = null,
     params: Record<string, unknown> | null = null,
+    createdBy: string | null = null,
   ): Promise<JobSummary> {
     this.documents.set(doc.id, doc);
     const now = new Date().toISOString();
@@ -101,6 +102,7 @@ export class MemoryRepo implements IngestionRepo {
       test,
       referenceId,
       projectId: null,
+      createdBy,
       reviewReasons: null,
       reviewer: null,
       reviewNote: null,
@@ -115,7 +117,7 @@ export class MemoryRepo implements IngestionRepo {
 
   async createWorkbenchJob(
     doc: NewDocument,
-    { projectId, task, params, referenceId, modelOverride }: WorkbenchJobOptions,
+    { projectId, task, params, referenceId, modelOverride, createdBy }: WorkbenchJobOptions,
   ) {
     const job = await this.createDocumentAndJob(
       doc,
@@ -123,6 +125,7 @@ export class MemoryRepo implements IngestionRepo {
       true,
       referenceId ?? null,
       params ?? null,
+      createdBy ?? null,
     );
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
     return this.update(job.id, { projectId, task });
@@ -234,9 +237,10 @@ export class MemoryRepo implements IngestionRepo {
       .map((j) => this.withModels(j));
   }
 
-  async listJobs({ limit, status }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
     return [...this.jobs.values()]
       .filter((j) => j.task !== 'prepare' && (!status || j.status === status))
+      .filter((j) => createdBy === undefined || j.createdBy === createdBy)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
       .map((j) => this.withModels(j));
@@ -515,10 +519,11 @@ export class MemoryRepo implements IngestionRepo {
     reference: Reference,
     version: number,
     params: Record<string, unknown> | null = null,
+    createdBy: string | null = null,
   ): Promise<JobSummary> {
     const source = this.documents.get(reference.documentId)!;
     const doc = { ...source, id: randomUUID(), specVersion: version };
-    return this.createDocumentAndJob(doc, null, true, reference.id, params);
+    return this.createDocumentAndJob(doc, null, true, reference.id, params, createdBy);
   }
 
   async listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {

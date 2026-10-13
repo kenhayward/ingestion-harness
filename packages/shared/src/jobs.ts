@@ -66,6 +66,11 @@ export const JobSummarySchema = z.object({
   referenceId: z.string().nullable(),
   /** Workbench project the job belongs to (prepare jobs and dev test runs). */
   projectId: z.string().nullable(),
+  /**
+   * Label of the access token that queued the job (migration 0023); null for older jobs and
+   * without access control. Retries keep it.
+   */
+  createdBy: z.string().nullable(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),

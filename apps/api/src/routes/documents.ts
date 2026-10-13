@@ -132,6 +132,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
         test,
         null,
         record ? draftOutputsSnapshot(record.definition) : null,
+        req.auth?.label ?? null,
       );
       return reply.code(201).send(job);
     },

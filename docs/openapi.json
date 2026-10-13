@@ -2199,6 +2199,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -2253,6 +2259,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -2458,7 +2465,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "The newest jobs first, optionally of one status. Lists the jobs of uploaded documents\n(production, test and regression runs); the Workbench's preparation, preview, drafting\nand export jobs are not listed.",
+        "description": "The newest jobs first, optionally of one status, and with `mine=1` only those queued\nby the signed-in token (`createdBy`, the token's label: a token issued again under\nthe same name sees the same jobs). Lists the jobs of uploaded documents (production,\ntest and regression runs); the Workbench's preparation, preview, drafting and export\njobs are not listed.",
         "parameters": [
           {
             "schema": {
@@ -2490,6 +2497,19 @@
             "name": "status",
             "required": false,
             "description": "Only jobs in this status."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            },
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "description": "`1`: only jobs queued by the signed-in token (matched by its label); none without access control."
           }
         ],
         "responses": {
@@ -2583,6 +2603,12 @@
                           "null"
                         ]
                       },
+                      "createdBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "reviewReasons": {
                         "anyOf": [
                           {
@@ -2637,6 +2663,7 @@
                       "test",
                       "referenceId",
                       "projectId",
+                      "createdBy",
                       "reviewReasons",
                       "reviewer",
                       "reviewNote",
@@ -2817,6 +2844,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -2921,6 +2954,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -3237,6 +3271,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -3291,6 +3331,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -3534,6 +3575,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -3588,6 +3635,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -4501,6 +4549,12 @@
                             "null"
                           ]
                         },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reviewReasons": {
                           "anyOf": [
                             {
@@ -4605,6 +4659,7 @@
                         "test",
                         "referenceId",
                         "projectId",
+                        "createdBy",
                         "reviewReasons",
                         "reviewer",
                         "reviewNote",
@@ -5606,6 +5661,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -5660,6 +5721,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -5926,6 +5988,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -5980,6 +6048,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -6435,6 +6504,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -6489,6 +6564,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -9007,6 +9083,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -9061,6 +9143,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -10163,6 +10246,12 @@
                             "null"
                           ]
                         },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reviewReasons": {
                           "anyOf": [
                             {
@@ -10217,6 +10306,7 @@
                         "test",
                         "referenceId",
                         "projectId",
+                        "createdBy",
                         "reviewReasons",
                         "reviewer",
                         "reviewNote",
@@ -14644,6 +14734,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -14698,6 +14794,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -14955,6 +15052,12 @@
                           "null"
                         ]
                       },
+                      "createdBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "reviewReasons": {
                         "anyOf": [
                           {
@@ -15009,6 +15112,7 @@
                       "test",
                       "referenceId",
                       "projectId",
+                      "createdBy",
                       "reviewReasons",
                       "reviewer",
                       "reviewNote",
@@ -16614,6 +16718,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -16668,6 +16778,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -18116,6 +18227,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -18170,6 +18287,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",

@@ -1102,6 +1102,29 @@ button.danger-fill {
   color: var(--ih-warn-fg);
 }
 
+/* Jobs: status chips, then the My jobs toggle after a divider */
+.jobs-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.mine-toggle {
+  padding: 0 14px;
+}
+.jobs-filters .chips + .mine-toggle {
+  position: relative;
+  margin-left: 13px;
+}
+.jobs-filters .chips + .mine-toggle::before {
+  content: '';
+  position: absolute;
+  left: -13px;
+  top: 8px;
+  bottom: 8px;
+  border-left: 1px solid var(--ih-border);
+}
+
 /* Upload strip */
 .upload-strip {
   display: flex;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { JobSummary, ModelInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { matchesQuery, statusGroup } from '../shell/derive.js';
+import { useJobs } from '../shell/useJobs.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { JobCleanup } from './JobCleanup.js';
 import { JobDetailPanel } from './JobDetailPanel.js';
@@ -11,12 +12,34 @@ import { chipCounts, inChip, type Chip } from './derive.js';
 
 const jobsText = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
 
-/** Jobs (UI handoff §1): upload strip, status chips, job list + detail panel, clean-up. */
+/** The My jobs toggle, remembered per browser. */
+const MINE_KEY = 'ih.jobsMine';
+function loadMine(): boolean {
+  try {
+    return localStorage.getItem(MINE_KEY) === '1';
+  } catch {
+    return false; // private mode or blocked storage
+  }
+}
+function saveMine(mine: boolean) {
+  try {
+    if (mine) localStorage.setItem(MINE_KEY, '1');
+    else localStorage.removeItem(MINE_KEY);
+  } catch {
+    // Private mode or blocked storage: the choice lasts for this visit only.
+  }
+}
+
+/**
+ * Jobs (UI handoff §1): upload strip, status chips, the My jobs toggle, job list + detail panel,
+ * clean-up. My jobs asks the server for the signed-in token's jobs (so the list limit applies
+ * to them, not to everyone's) and polls them itself; the status chips apply on top.
+ */
 export function JobsPage({
   api,
-  jobs,
-  error,
-  refresh,
+  jobs: allJobs,
+  error: allError,
+  refresh: refreshAll,
   query,
   pollMs,
   pickPending,
@@ -37,6 +60,18 @@ export function JobsPage({
   /** The upload strip's Model selection; Retry and Re-process use it too. */
   const [retryModel, setRetryModel] = useState('');
   const [chip, setChip] = useState<Chip>('all');
+  const [mine, setMine] = useState(loadMine);
+  const mineJobs = useJobs(api, pollMs, { mine: true, enabled: mine });
+  const jobs = mine ? mineJobs.jobs : allJobs;
+  const error = mine ? mineJobs.error : allError;
+  // Actions change both lists: the shared one also drives the nav badge.
+  const refresh = async () => {
+    await Promise.all([refreshAll(), mine ? mineJobs.refresh() : null]);
+  };
+  const toggleMine = () => {
+    saveMine(!mine);
+    setMine(!mine);
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
@@ -99,23 +134,36 @@ export function JobsPage({
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <div className="jobs-layout">
         <section className="jobs-main" aria-label="Job list">
-          <FilterChips
-            label="Filter jobs by status"
-            value={chip}
-            onChange={setChip}
-            chips={[
-              { value: 'all', label: 'All', count: counts.all },
-              {
-                value: 'attention',
-                label: 'Needs attention',
-                count: counts.attention,
-                tone: 'warn',
-              },
-              { value: 'active', label: 'In progress', count: counts.active },
-              { value: 'done', label: 'Finished', count: counts.done },
-            ]}
-          />
-          {jobs.length > 0 && visible.length === 0 ? (
+          <div className="jobs-filters">
+            <FilterChips
+              label="Filter jobs by status"
+              value={chip}
+              onChange={setChip}
+              chips={[
+                { value: 'all', label: 'All', count: counts.all },
+                {
+                  value: 'attention',
+                  label: 'Needs attention',
+                  count: counts.attention,
+                  tone: 'warn',
+                },
+                { value: 'active', label: 'In progress', count: counts.active },
+                { value: 'done', label: 'Finished', count: counts.done },
+              ]}
+            />
+            <button
+              type="button"
+              className="chip mine-toggle"
+              aria-pressed={mine}
+              title="Only the jobs queued by your token"
+              onClick={toggleMine}
+            >
+              My jobs
+            </button>
+          </div>
+          {mine && mineJobs.loaded && jobs.length === 0 && !error ? (
+            <p>You have not queued any jobs yet.</p>
+          ) : jobs.length > 0 && visible.length === 0 ? (
             <p>{query.trim() ? `No jobs match “${query.trim()}”.` : 'No jobs in this view.'}</p>
           ) : (
             <JobList
