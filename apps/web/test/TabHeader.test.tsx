@@ -35,4 +35,20 @@ describe('TabHeader', () => {
     );
     expect(container.querySelector('.tab-status')).toBeNull();
   });
+
+  it('says what the tab does above the policy note', () => {
+    render(
+      <TabHeader
+        title="Outputs"
+        item={null}
+        description="The fields and tables every document of this type produces."
+        note="Runs on local models; holdout samples are never sent."
+      />,
+    );
+    const [description, note] = Array.from(document.querySelectorAll('.tab-note'));
+    expect(description).toHaveTextContent(
+      'The fields and tables every document of this type produces.',
+    );
+    expect(note).toHaveTextContent('Runs on local models; holdout samples are never sent.');
+  });
 });

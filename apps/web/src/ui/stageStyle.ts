@@ -99,3 +99,11 @@ export const TONE_COLOR: Record<StageTone, string> = {
   lock: 'var(--ih-lock-fg)',
   neutral: 'var(--ih-border-strong)',
 };
+
+/** Section colours by order (handoff §0.6): a section keeps its colour on every tab. */
+export const SECTION_TONES: readonly StageTone[] = ['accent', 'ok', 'skip', 'warn', 'lock'];
+
+export function sectionTone(index: number): StageTone {
+  const n = SECTION_TONES.length;
+  return SECTION_TONES[((index % n) + n) % n]!;
+}
