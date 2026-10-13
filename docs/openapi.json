@@ -8234,6 +8234,1492 @@
         }
       }
     },
+    "/api/templates/{id}/references": {
+      "get": {
+        "operationId": "listReferences",
+        "summary": "List a document type's references",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "A reference is a document's verified values, kept as the expected result. Without\n`version`: every live reference of the document type. With `version`: the set\nthat version is regression-tested against, one per PDF. A reference pinned to the\nversion is preferred over an unpinned one; a reference verified against outputs the\nversion has since changed is left out until it is verified again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "description": "A version: the references it is regression-tested against."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The references.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "templateId": {
+                        "type": "string"
+                      },
+                      "templateVersion": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "documentId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "sourceJobId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "copiedFrom": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "verifiedOutputs": {},
+                      "supersededAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "expected": {
+                        "type": "object",
+                        "properties": {
+                          "fields": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "tables": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "fields",
+                          "tables"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "templateId",
+                      "templateVersion",
+                      "name",
+                      "documentId",
+                      "sourceJobId",
+                      "copiedFrom",
+                      "supersededAt",
+                      "expected",
+                      "createdAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The references."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid `version`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid `version`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createReference",
+        "summary": "Save a job's values as a reference",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "Saves a succeeded job's values as the expected result for its document type: the\nreviewed document when it was reviewed, else the draft.\n\nFor Workbench document types the reference is pinned to the job's version, together\nwith the outputs the run was checked against: the run's snapshot, else the published\nversion's outputs, else the draft's when it has not changed since the run (a 409\notherwise: run it again). Earlier versions' references are carried forward first.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "A succeeded job of this document type."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "jobId",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new reference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "templateId": {
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "documentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sourceJobId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "copiedFrom": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verifiedOutputs": {},
+                    "supersededAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "expected": {
+                      "type": "object",
+                      "properties": {
+                        "fields": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "tables": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": {}
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "fields",
+                        "tables"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "templateId",
+                    "templateVersion",
+                    "name",
+                    "documentId",
+                    "sourceJobId",
+                    "copiedFrom",
+                    "supersededAt",
+                    "expected",
+                    "createdAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The new reference."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid body, `job is not a {id} document`, `job is {status}; only finished jobs can be references` or `job has no document output`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid body, `job is not a {id} document`, `job is {status}; only finished jobs can be references` or `job has no document output`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document type not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the draft changed after this run; run it again`, or `reference \"{name}\" already exists`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the draft changed after this run; run it again`, or `reference \"{name}\" already exists`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/references/{ref}": {
+      "delete": {
+        "operationId": "deleteReference",
+        "summary": "Delete a reference",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "Removes a reference from the document type's live set. A reference pinned to a version\n(Workbench types) is marked superseded rather than deleted, so earlier evaluations keep\ntheir comparisons; an unpinned one is deleted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "description": "The reference id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted or superseded."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`reference not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`reference not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/versions/{version}/regression": {
+      "post": {
+        "operationId": "runRegression",
+        "summary": "Run a version against its references",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "Queues one test job per reference of the version (see `GET …/references?version=`),\nprocessing the reference's PDF with this version. Regression jobs are never delivered.\nRead the scores with `GET …/regression` once they finish.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The queued jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "documentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "specId": {
+                            "type": "string"
+                          },
+                          "specVersion": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "needs_review",
+                              "awaiting_review",
+                              "rejected",
+                              "cancelled"
+                            ]
+                          },
+                          "modelOverride": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "modelsUsed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "task": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "publish",
+                              "rerun",
+                              "prepare",
+                              "segment",
+                              "draft",
+                              "export"
+                            ]
+                          },
+                          "test": {
+                            "type": "boolean"
+                          },
+                          "referenceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "projectId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewReasons": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "documentId",
+                          "filename",
+                          "specId",
+                          "specVersion",
+                          "status",
+                          "modelOverride",
+                          "modelsUsed",
+                          "attempts",
+                          "error",
+                          "task",
+                          "test",
+                          "referenceId",
+                          "projectId",
+                          "reviewReasons",
+                          "reviewer",
+                          "reviewNote",
+                          "reviewedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "jobs"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued jobs."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`no references yet: save a reviewed job as a reference first`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no references yet: save a reviewed job as a reference first`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`template version not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`template version not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getRegression",
+        "summary": "Get a version's regression results",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "For each reference of the version, its latest regression job and, once the job has\nfinished, the comparison of expected and actual values: per field, and per table the\nmatched, missing, extra and changed rows and cell counts. `score` is (matched\nfields + equal cells) / (fields + cells); 1 means identical. The summary averages the\ncompleted scores.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The regression report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reference": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "job": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "queued",
+                                      "running",
+                                      "succeeded",
+                                      "failed",
+                                      "needs_review",
+                                      "awaiting_review",
+                                      "rejected",
+                                      "cancelled"
+                                    ]
+                                  },
+                                  "error": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "status",
+                                  "error"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The reference's latest regression job for this version; null if never run."
+                          },
+                          "comparison": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "score": {
+                                    "type": "number"
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {},
+                                        "actual": {},
+                                        "match": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "match"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  "tables": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {
+                                          "type": "integer"
+                                        },
+                                        "actual": {
+                                          "type": "integer"
+                                        },
+                                        "matched": {
+                                          "type": "integer"
+                                        },
+                                        "missing": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "extra": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "changed": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "expected": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "actual": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "columns": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "expected",
+                                              "actual",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
+                                        "cells": {
+                                          "type": "integer"
+                                        },
+                                        "cellsTotal": {
+                                          "type": "integer"
+                                        },
+                                        "columns": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "object",
+                                            "properties": {
+                                              "matched": {
+                                                "type": "integer"
+                                              },
+                                              "total": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "matched",
+                                              "total"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "expected",
+                                        "actual",
+                                        "matched",
+                                        "missing",
+                                        "extra",
+                                        "changed",
+                                        "cells",
+                                        "cellsTotal",
+                                        "columns"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "score",
+                                  "fields",
+                                  "tables"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Expected against actual values, once the job finished (or stopped for review)."
+                          }
+                        },
+                        "required": [
+                          "reference",
+                          "job",
+                          "comparison"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "references": {
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "type": "integer"
+                        },
+                        "averageScore": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "references",
+                        "completed",
+                        "averageScore"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "summary"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The regression report."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/diff": {
+      "get": {
+        "operationId": "diffTemplates",
+        "summary": "Compare two versions",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "The structural changes from one version to another. Sections, fields, tables, columns\nand steps are matched by id, so a moved or inserted item is one change, not a cascade.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "description": "The earlier version number."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "description": "The later version number."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "integer"
+                    },
+                    "to": {
+                      "type": "integer"
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "removed",
+                              "changed"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "description": "e.g. `outputs.fields[a].type`, `pipeline[s1].instructions`, `pipeline order`."
+                          },
+                          "before": {},
+                          "after": {}
+                        },
+                        "required": [
+                          "kind",
+                          "path"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "changes"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The changes."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`template version not found`: either version is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`template version not found`: either version is missing."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/metrics": {
+      "get": {
+        "operationId": "getTemplateMetrics",
+        "summary": "Get a document type's operational metrics",
+        "tags": [
+          "References & regression"
+        ],
+        "description": "How a document type performs in production, from its jobs: per version, job counts by\nstatus, review rate, edits per reviewed document and processing time (test runs\ncounted separately); per step, model calls, re-runs, failures, attempts, output tokens\nand time (cached Workbench steps left out); and the most edited fields and columns.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The metrics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "templateId": {
+                      "type": "string"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "integer"
+                          },
+                          "jobs": {
+                            "type": "integer",
+                            "description": "Real documents; test runs are counted separately."
+                          },
+                          "testJobs": {
+                            "type": "integer"
+                          },
+                          "byStatus": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "reviewed": {
+                            "type": "integer",
+                            "description": "Documents that needed review."
+                          },
+                          "reviewRate": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "editsPerReviewed": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "avgProcessingSeconds": {
+                            "type": [
+                              "number",
+                              "null"
+                            ],
+                            "description": "Upload to finish, for succeeded documents."
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "jobs",
+                          "testJobs",
+                          "byStatus",
+                          "reviewed",
+                          "reviewRate",
+                          "editsPerReviewed",
+                          "avgProcessingSeconds"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stepId": {
+                            "type": "string"
+                          },
+                          "runs": {
+                            "type": "integer"
+                          },
+                          "reruns": {
+                            "type": "integer"
+                          },
+                          "failures": {
+                            "type": "integer"
+                          },
+                          "avgAttempts": {
+                            "type": "number"
+                          },
+                          "avgOutputTokens": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "avgSeconds": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "stepId",
+                          "runs",
+                          "reruns",
+                          "failures",
+                          "avgAttempts",
+                          "avgOutputTokens",
+                          "avgSeconds"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "topEdited": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "target": {
+                            "type": "string"
+                          },
+                          "edits": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "target",
+                          "edits"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Where reviewers correct most: a field id or `table.column`."
+                    }
+                  },
+                  "required": [
+                    "templateId",
+                    "versions",
+                    "steps",
+                    "topEdited"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The metrics."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/results": {
       "get": {
         "operationId": "listResults",
