@@ -65,7 +65,7 @@ rather than by editing files and restarting workers.
    `ModelResolutionError` (the job goes to `needs_review`, no call is made); the API refuses a
    step re-run naming any other model (400) and reports a template step naming one as an issue
    (`pipeline.N.model`), which blocks publishing; the Review screen's re-run model is a picker.
-   **4b:** model choices and pipeline settings replace the aliases (migration 0026). People
+   **4b:** model choices and pipeline settings replace the aliases (migration 0027). People
    pick a labelled **model choice** ("Main Production Model"), stored by its id, pointing at an
    offered model; one choice is the default (template steps naming none). The OCR model and
    the drafting model are **pipeline settings**, never offered as a choice nor nameable by a
