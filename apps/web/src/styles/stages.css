@@ -425,3 +425,96 @@
     color: var(--ih-muted);
   }
 }
+
+.tab-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+.tab-header h2 {
+  margin: 0;
+  font-size: var(--ih-text-xl);
+}
+.tab-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+.tab-note {
+  margin: 6px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.proposal-card {
+  border: 1.5px solid;
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  overflow: hidden;
+}
+.proposal-meta {
+  padding: 12px 18px;
+  background: var(--ih-surface2);
+  border-bottom: 1px solid var(--ih-border);
+}
+.proposal-meta p {
+  margin: 0 0 4px;
+}
+.proposal-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proposal-changes li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ih-border-soft);
+}
+.proposal-change {
+  min-width: 0;
+}
+.proposal-line {
+  display: block;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+/* An open disclosure spans the row so long JSON wraps instead of squeezing the change text. */
+.proposal-changes li > details[open] {
+  grid-column: 2 / -1;
+}
+.proposal-changes pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kind-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.proposal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 18px;
+}
+.proposal-edit {
+  margin-left: auto;
+}

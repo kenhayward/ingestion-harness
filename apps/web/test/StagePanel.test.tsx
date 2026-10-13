@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { DraftChange } from '@ih/shared';
 import { ApiError } from '../src/api/client.js';
 import { StagePanel } from '../src/workbench/StagePanel.js';
 import { changeProposalView, fakeApi, sampleView } from './fake-api.js';
@@ -9,7 +10,7 @@ function panel(overrides = {}, props: Partial<Parameters<typeof StagePanel>[0]> 
   const api = fakeApi(overrides);
   const onApplied = vi.fn();
   const onSkipped = vi.fn();
-  render(
+  const view = render(
     <StagePanel
       api={api}
       projectId="letter"
@@ -22,7 +23,7 @@ function panel(overrides = {}, props: Partial<Parameters<typeof StagePanel>[0]> 
       {...props}
     />,
   );
-  return { api, onApplied, onSkipped };
+  return { api, onApplied, onSkipped, container: view.container };
 }
 
 describe('StagePanel', () => {
@@ -44,10 +45,13 @@ describe('StagePanel', () => {
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Propose outputs' }));
     expect(api.startStage).toHaveBeenCalledWith('letter', 'outputs');
-    const first = await screen.findByRole('checkbox', { name: /Field protocol_number/ });
+    const first = await screen.findByRole('checkbox', {
+      name: 'Apply: Field protocol_number (text)',
+    });
     expect(first).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Apply 2 selected changes' })).toBeEnabled();
     await userEvent.click(first);
-    await userEvent.click(screen.getByRole('button', { name: 'Apply selected changes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply 1 selected change' }));
     expect(api.decideProposal).toHaveBeenCalledWith('letter', p.id, 'accepted', [1]);
     expect(onApplied).toHaveBeenCalled();
     expect(await screen.findByText(/1 of 2 changes applied/)).toBeInTheDocument();
@@ -73,7 +77,7 @@ describe('StagePanel', () => {
         );
       }),
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Apply selected changes' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply 2 selected changes' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'the draft changed since this proposal',
     );
@@ -110,7 +114,7 @@ describe('StagePanel', () => {
         }),
     );
     panel({ listProposals: vi.fn(async () => [p]), decideProposal });
-    const apply = await screen.findByRole('button', { name: 'Apply selected changes' });
+    const apply = await screen.findByRole('button', { name: 'Apply 2 selected changes' });
     await userEvent.click(apply);
     expect(apply).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reject all' })).toBeDisabled();
@@ -119,6 +123,28 @@ describe('StagePanel', () => {
     expect(decideProposal).toHaveBeenCalledTimes(1);
     release({ ...p, status: 'accepted' as const });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull());
+  });
+
+  it('keeps the tab header when the proposals cannot be loaded', async () => {
+    panel(
+      { listProposals: vi.fn().mockRejectedValue(new Error('network down')) },
+      { stage: 'steps', title: 'Extraction steps' },
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    expect(screen.getByRole('heading', { level: 2, name: 'Extraction steps' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('toggles a change when its text is clicked', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    // Wait for the selection effect (select all) to run before toggling.
+    await screen.findByRole('button', { name: 'Apply 2 selected changes' });
+    const box = (await screen.findAllByRole('checkbox'))[0]!;
+    expect(box).toBeChecked();
+    const text = box.closest('li')!.querySelector('label')!;
+    await userEvent.click(text);
+    expect(box).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Apply 1 selected change' })).toBeInTheDocument();
   });
 
   it('offers a retry when the proposals cannot be loaded', async () => {
@@ -130,7 +156,7 @@ describe('StagePanel', () => {
     panel({ listProposals });
     expect(await screen.findByRole('alert')).toHaveTextContent('network down');
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByRole('button', { name: 'Apply selected changes' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Apply 2 selected changes' })).toBeEnabled();
     expect(listProposals).toHaveBeenCalledTimes(2);
   });
 
@@ -177,9 +203,115 @@ describe('StagePanel', () => {
       { listProposals: vi.fn(async () => [p]), listSamples: vi.fn(async () => [a, b]) },
       { stage: 'sections' },
     );
-    const item = (await screen.findByRole('checkbox', { name: /Section approval/ })).closest('li')!;
+    const item = (
+      await screen.findByRole('checkbox', { name: /^Apply: Section approval/ })
+    ).closest('li')!;
     expect(
       await within(item).findByText('found in 1 of 2 dev samples (missed: b.pdf)'),
     ).toBeInTheDocument();
+  });
+
+  it('cannot apply when no change is selected', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    await userEvent.click(
+      await screen.findByRole('checkbox', { name: 'Apply: Field protocol_number (text)' }),
+    );
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: 'Apply: Field approved_on (date)' }),
+    );
+    expect(screen.getByRole('button', { name: 'Apply 0 selected changes' })).toBeDisabled();
+  });
+
+  it('puts the title, the status and the actions in the tab header', async () => {
+    panel(
+      { listProposals: vi.fn(async () => [changeProposalView({ stage: 'steps' })]) },
+      {
+        stage: 'steps',
+        title: 'Extraction steps',
+        item: { stage: 'steps', state: 'proposed', status: 'Needs your decision', metrics: [] },
+      },
+    );
+    await screen.findByRole('button', { name: 'Propose again' });
+    const header = screen
+      .getByRole('heading', { level: 2, name: 'Extraction steps' })
+      .closest('header')!;
+    expect(header).not.toBeNull();
+    expect(
+      within(header).getByRole('heading', { level: 2, name: 'Extraction steps' }),
+    ).toBeInTheDocument();
+    expect(within(header).getByText('Needs your decision')).toBeInTheDocument();
+    expect(
+      within(header).getByText('Runs on local models; holdout samples are never sent.'),
+    ).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Propose again' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Skip this stage' })).toBeInTheDocument();
+  });
+
+  it('makes Propose the primary action before the first proposal', async () => {
+    panel({ listProposals: vi.fn(async () => []) });
+    expect(await screen.findByRole('button', { name: 'Propose outputs' })).toHaveClass('primary');
+  });
+
+  it('makes Propose again a plain button once a proposal exists', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    expect(await screen.findByRole('button', { name: 'Propose again' })).not.toHaveClass('primary');
+  });
+
+  it('shows a decided proposal read-only, bordered in its tone', async () => {
+    const p = changeProposalView({ status: 'partially_accepted', acceptedChanges: [0] });
+    panel({ listProposals: vi.fn(async () => [p]) });
+    const first = await screen.findByRole('checkbox', {
+      name: 'Apply: Field protocol_number (text)',
+    });
+    const second = screen.getByRole('checkbox', { name: 'Apply: Field approved_on (date)' });
+    expect(first).toBeDisabled();
+    expect(first).toBeChecked();
+    expect(second).toBeDisabled();
+    expect(second).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Proposal' }).style.borderColor).toBe(
+      'var(--ih-ok-fg)',
+    );
+  });
+
+  it('links to the Template tab for edits by hand', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    expect(
+      await screen.findByRole('link', { name: 'Edit by hand on the Template tab' }),
+    ).toHaveAttribute('href', '#/workbench/letter/template');
+  });
+
+  it('tags each change with its kind', async () => {
+    // Only the step parts the card shows; the rest of the step schema does not matter here.
+    const changes = [
+      {
+        op: 'putStep',
+        reason: 'header block',
+        step: { type: 'extract', id: 'header', fields: ['sender'], sections: ['header'] },
+      },
+      {
+        op: 'putStep',
+        reason: 'totals',
+        step: { type: 'check', id: 'totals', values: 'items.amount', reference: 'total' },
+      },
+    ] as unknown as DraftChange[];
+    panel(
+      {
+        listProposals: vi.fn(async () => [
+          changeProposalView({ stage: 'steps', body: { notes: '', changes } }),
+        ]),
+      },
+      { stage: 'steps' },
+    );
+    const extract = (
+      await screen.findByRole('checkbox', { name: /^Apply: Extract step header/ })
+    ).closest('li')!;
+    expect(within(extract).getByText('EXTRACT')).toBeInTheDocument();
+    expect(within(extract).getByText('header block')).toBeInTheDocument();
+    const check = screen
+      .getByRole('checkbox', { name: /^Apply: Check step totals/ })
+      .closest('li')!;
+    expect(within(check).getByText('CHECK')).toBeInTheDocument();
+    expect(within(check).getByText('items.amount against total')).toBeInTheDocument();
   });
 });
