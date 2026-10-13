@@ -1,10 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
+  ChoiceCreateBodySchema,
+  choiceIdFrom,
+  ChoicePatchBodySchema,
   CuratedModelsBodySchema,
   EndpointCreateBodySchema,
   EndpointPatchBodySchema,
+  isOffered,
+  LlmChoicesViewSchema,
+  LlmChoiceViewSchema,
   LlmEndpointViewSchema,
-  resolveAlias,
+  modelUses,
+  SettingsBodySchema,
 } from '@ih/shared';
 import { z } from 'zod';
 import { encryptSecret } from '../llm/secrets.js';
@@ -15,7 +22,12 @@ const ADR =
 const ADMINS_ONLY = error('`admins only`.');
 const NOT_FOUND = error('`endpoint not found`.');
 const NO_SECRETS = 'LLM_SECRETS_KEY is not set: the API cannot store keys';
-const IN_USE = error('`alias {name} uses {ref}: point it elsewhere first`.');
+const IN_USE = error(
+  '`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / ' +
+    '`the OCR model …`.',
+);
+const NOT_OFFERED = '{ref} is not offered: add it on the Models page';
+const ChoiceParams = z.object({ id: z.string().describe('The model choice id.') });
 const NameParams = z.object({ name: z.string().describe('The endpoint name (model-ref prefix).') });
 const base = (operationId: string, summary: string, description: string) => ({
   tags: ['Models'],
@@ -43,14 +55,20 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
   const encrypt = (key: string) =>
     app.deps.llmSecrets ? encryptSecret(key, app.deps.llmSecrets) : null;
 
-  /** The first alias (by name) that resolves to a ref `matches` accepts, as a 409 message. */
+  /** The first model choice (by id) or pipeline model whose ref `matches` accepts, as a 409. */
   const aliasUsing = async (matches: (ref: string) => boolean): Promise<string | null> => {
-    const aliases = await repo.listAliases();
-    for (const name of Object.keys(aliases).sort()) {
-      const ref = resolveAlias(name, aliases);
-      if (ref && matches(ref)) return `alias ${name} uses ${ref}: point it elsewhere first`;
-    }
-    return null;
+    const [choices, settings] = await Promise.all([repo.listChoices(), repo.getSettings()]);
+    const use = modelUses(choices, settings).find((u) => matches(u.ref));
+    return use ? `${use.what} uses ${use.ref}: point it elsewhere first` : null;
+  };
+  /** Choices and pipeline models may only point at offered models; null when `ref` is one. */
+  const notOffered = async (ref: string) => {
+    const offered = (await app.deps.repo.listModels()).some((m) => isOffered(m) && m.ref === ref);
+    return offered ? null : `model ${ref} is not offered: add it on the Models page`;
+  };
+  const choicesView = async () => {
+    const [choices, settings] = await Promise.all([repo.listChoices(), repo.getSettings()]);
+    return { choices, settings };
   };
 
   app.get(
@@ -251,6 +269,229 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
       }
       req.log.info({ endpoint: name, by: by(req) }, 'llm endpoint removed');
       return reply.code(204).send();
+    },
+  );
+
+  app.post<{ Params: { name: string } }>(
+    '/llm/endpoints/:name/discover',
+    {
+      schema: {
+        ...base(
+          'discoverLlmEndpoint',
+          'List the models an endpoint serves now',
+          md`
+            **Admin token required.** Asks the workers to list every endpoint's models now
+            rather than at the next discovery interval; what they find shows as suggestions
+            (\`curated: false\`) within seconds.
+          `,
+        ),
+        params: NameParams,
+        response: { 202: noContent('Requested.'), 403: ADMINS_ONLY, 404: NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await repo.requestDiscover(req.params.name))) {
+        return reply.code(404).send({ error: 'endpoint not found' });
+      }
+      return reply.code(202).send();
+    },
+  );
+
+  app.get(
+    '/llm/choices',
+    {
+      schema: {
+        ...base(
+          'listModelChoices',
+          'List model choices and pipeline settings',
+          md`
+            **Admin token required.** The labelled model choices people pick (each pointing at
+            an offered model) and the pipeline settings: the default choice (used by template
+            steps that name none), the drafting model and the OCR model. See [ADR 0010](${ADR}).`,
+        ),
+        response: { 200: res('The choices and settings.', LlmChoicesViewSchema), 403: ADMINS_ONLY },
+      },
+    },
+    async () => choicesView(),
+  );
+
+  app.post(
+    '/llm/choices',
+    {
+      schema: {
+        ...base(
+          'createModelChoice',
+          'Add a model choice',
+          md`
+            **Admin token required.** A labelled choice ("Main Production Model") pointing at an
+            offered model. Its \`id\`, what templates and jobs store, is made from the label
+            when left out (\`main-production-model\`, with a suffix if taken).
+          `,
+        ),
+        body: ChoiceCreateBodySchema,
+        response: {
+          201: res('The choice.', LlmChoiceViewSchema),
+          400: error('Zod issues.'),
+          403: ADMINS_ONLY,
+          409: error(`\`a model choice {id} already exists\`, or \`model ${NOT_OFFERED}\`.`),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = ChoiceCreateBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const problem = await notOffered(body.data.ref);
+      if (problem) return reply.code(409).send({ error: problem });
+      const { id: given, ...rest } = body.data;
+      let id = given ?? choiceIdFrom(rest.label);
+      if (!given) {
+        const taken = new Set((await repo.listChoices()).map((c) => c.id));
+        for (let n = 2; taken.has(id); n++) id = `${choiceIdFrom(rest.label)}-${n}`;
+      }
+      const created = await repo.createChoice({ id, ...rest }, by(req));
+      if (created === 'exists') {
+        return reply.code(409).send({ error: `a model choice ${id} already exists` });
+      }
+      req.log.info({ choice: id, ref: rest.ref, by: by(req) }, 'model choice added');
+      return reply.code(201).send(created);
+    },
+  );
+
+  app.patch<{ Params: { id: string } }>(
+    '/llm/choices/:id',
+    {
+      schema: {
+        ...base(
+          'updateModelChoice',
+          'Change a model choice',
+          md`
+            **Admin token required.** Renames it, changes its description or points it at
+            another offered model. Templates and jobs keep naming it by id, so a rename changes
+            nothing they do; a new model applies to every job queued from then on.
+          `,
+        ),
+        params: ChoiceParams,
+        body: ChoicePatchBodySchema,
+        response: {
+          200: res('The choice.', LlmChoiceViewSchema),
+          400: error('Zod issues (`nothing to change` for an empty body).'),
+          403: ADMINS_ONLY,
+          404: error('`model choice not found`.'),
+          409: error(`\`model ${NOT_OFFERED}\`.`),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = ChoicePatchBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (body.data.ref) {
+        const problem = await notOffered(body.data.ref);
+        if (problem) return reply.code(409).send({ error: problem });
+      }
+      const updated = await repo.updateChoice(req.params.id, body.data, by(req));
+      return updated ?? reply.code(404).send({ error: 'model choice not found' });
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    '/llm/choices/:id',
+    {
+      schema: {
+        ...base(
+          'deleteModelChoice',
+          'Remove a model choice',
+          md`
+            **Admin token required.** Refused while it is the default choice, while a template
+            step (any version) names it, or while an unfinished job (queued, running or
+            awaiting review) uses it.
+          `,
+        ),
+        params: ChoiceParams,
+        response: {
+          204: noContent('Removed.'),
+          403: ADMINS_ONLY,
+          404: error('`model choice not found`.'),
+          409: error(
+            '`{label} is the default choice: make another choice the default first`, ' +
+              '`{label} is used by {template} v{n} (step {id})`, or ' +
+              '`{label} is used by {n} unfinished job(s)`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+      const choice = await repo.getChoice(id);
+      if (!choice) return reply.code(404).send({ error: 'model choice not found' });
+      const settings = await repo.getSettings();
+      if (settings.defaultChoice === id) {
+        return reply.code(409).send({
+          error: `${choice.label} is the default choice: make another choice the default first`,
+        });
+      }
+      // Raw steps, not the parsed schema: a draft that is not valid yet still names the choice.
+      for (const record of await app.deps.templates.list()) {
+        const pipeline = (record.definition as { pipeline?: unknown }).pipeline;
+        const step = Array.isArray(pipeline)
+          ? (pipeline as { id?: unknown; model?: unknown }[]).find((s) => s?.model === id)
+          : undefined;
+        if (step) {
+          return reply.code(409).send({
+            error: `${choice.label} is used by ${record.id} v${record.version} (step ${String(step.id)})`,
+          });
+        }
+      }
+      const jobs = await app.deps.repo.countUnfinishedJobsWithModel(id);
+      if (jobs) {
+        return reply.code(409).send({
+          error: `${choice.label} is used by ${jobs} unfinished ${jobs === 1 ? 'job' : 'jobs'}`,
+        });
+      }
+      await repo.deleteChoice(id);
+      req.log.info({ choice: id, by: by(req) }, 'model choice removed');
+      return reply.code(204).send();
+    },
+  );
+
+  app.put(
+    '/llm/settings',
+    {
+      schema: {
+        ...base(
+          'setLlmSettings',
+          'Set the default choice and the pipeline models',
+          md`
+            **Admin token required.** The default choice (used by template steps that name
+            none), the drafting model (the Workbench's proposal stages and dev reference runs)
+            and the OCR model (the OCR stage only). Both models must be offered. The edit wins
+            over \`.env\`.
+          `,
+        ),
+        body: SettingsBodySchema,
+        response: {
+          200: res('The choices and settings.', LlmChoicesViewSchema),
+          400: error(
+            'Zod issues (`nothing to change` for an empty body), or `no model choice {id}`.',
+          ),
+          403: ADMINS_ONLY,
+          409: error(`\`model ${NOT_OFFERED}\`.`),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = SettingsBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { defaultChoice, draftingModel, ocrModel } = body.data;
+      if (defaultChoice && !(await repo.getChoice(defaultChoice))) {
+        return reply.code(400).send({ error: `no model choice ${defaultChoice}` });
+      }
+      for (const ref of [draftingModel, ocrModel]) {
+        const problem = ref ? await notOffered(ref) : null;
+        if (problem) return reply.code(409).send({ error: problem });
+      }
+      await repo.setSettings(body.data, by(req));
+      req.log.info({ changed: Object.keys(body.data), by: by(req) }, 'llm settings changed');
+      return choicesView();
     },
   );
 }

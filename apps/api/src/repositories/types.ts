@@ -193,6 +193,8 @@ export interface IngestionRepo {
   ): Promise<{ job: ProjectJob; removed: string[] }>;
   /** Export jobs of a project, newest first. */
   listExportJobs(projectId: string): Promise<ProjectJob[]>;
+  /** Jobs not finished yet (queued, running, awaiting review) whose override is this model. */
+  countUnfinishedJobsWithModel(model: string): Promise<number>;
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;

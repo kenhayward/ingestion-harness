@@ -30,10 +30,10 @@ describe('modelRefProblem (only configured models run)', () => {
     ['openai/gpt-oss-20b', 'model openai/gpt-oss-20b is not offered: add it on the Models page'],
     [
       'fast',
-      'alias fast uses anthropic/claude-haiku-5-5, which is not offered: add it on the Models page',
+      'model choice fast uses anthropic/claude-haiku-5-5, which is not offered: add it on the Models page',
     ],
-    ['loop', 'alias loop does not resolve to a model'],
-    ['nope', 'unknown model alias nope'],
+    ['loop', 'model choice loop does not resolve to a model'],
+    ['nope', 'unknown model choice nope'],
   ])('%s', (ref, problem) => {
     expect(modelRefProblem(ref, offered, aliases)).toBe(problem);
   });

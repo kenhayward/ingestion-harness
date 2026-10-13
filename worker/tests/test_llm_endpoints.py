@@ -14,8 +14,11 @@ import pytest
 
 from ingest_worker.llm.base import LLMProvider
 from ingest_worker.llm.endpoints import (
+    Choice,
     LiveModels,
     Seed,
+    default_choice_of,
+    parse_choices,
     parse_endpoints,
     registry_from_seed,
     seed_from_config,
@@ -57,6 +60,22 @@ def endpoint(name: str, **over: Any) -> ProviderConfig:
 # --- seeding from the committed config and .env ---------------------------------------------
 
 
+def seeded(endpoints: list[ProviderConfig], aliases: dict[str, str] | None = None) -> Seed:
+    """A Seed from the old alias shape: `default` becomes the default choice (`main`), `draft`
+    and `ocr` the pipeline settings, any other name a choice of that id."""
+    aliases = aliases or {}
+    choices = [Choice(k, k, v) for k, v in aliases.items() if k not in ("default", "draft", "ocr")]
+    settings: dict[str, str] = {}
+    if "default" in aliases:
+        choices.append(Choice("main", "Main", aliases["default"]))
+        settings["default_choice"] = "main"
+    if "draft" in aliases:
+        settings["drafting_model"] = aliases["draft"]
+    if "ocr" in aliases:
+        settings["ocr_model"] = aliases["ocr"]
+    return Seed(endpoints, choices, settings)
+
+
 def test_seed_from_the_committed_config_keeps_todays_defaults(llm_config_path: Path) -> None:
     seed = seed_from_config(load_llm_config(llm_config_path, env={}), env={})
     by_name = {e.name: e for e in seed.endpoints}
@@ -69,15 +88,27 @@ def test_seed_from_the_committed_config_keeps_todays_defaults(llm_config_path: P
     assert by_name["openai"].models == []
     assert by_name["local"].models == ["qwen3.8-27b-mtp", "olmocr-2-7b-1025"]
     assert by_name["local"].location == "local"
+    # Without LLM_CHOICES, DEFAULT_MODEL and FAST_MODEL seed two labelled choices.
+    assert seed.choices == [
+        Choice("main", "Default model", "local/qwen3.8-27b-mtp"),
+        Choice("fast", "Fast model", "anthropic/claude-haiku-5-5"),
+    ]
+    assert seed.settings == {
+        "default_choice": "main",
+        "drafting_model": "local/qwen3.8-27b-mtp",
+        "ocr_model": "local/olmocr-2-7b-1025",
+    }
+    # What the worker resolves: the choices, `default` (the default choice) and `draft`. The OCR
+    # model is the OCR stage's alone: it is never a model a step or a job can name.
     assert seed.aliases == {
-        "default": "local/qwen3.8-27b-mtp",
+        "main": "local/qwen3.8-27b-mtp",
         "fast": "anthropic/claude-haiku-5-5",
+        "default": "main",
         "draft": "local/qwen3.8-27b-mtp",
-        "ocr": "local/olmocr-2-7b-1025",
     }
 
 
-def test_env_sets_the_model_lists_and_aliases(llm_config_path: Path) -> None:
+def test_env_sets_the_model_lists_and_the_compatible_choices(llm_config_path: Path) -> None:
     env = {
         "ANTHROPIC_MODELS": "claude-opus-5-5, claude-haiku-5-5",
         "OPENAI_MODELS": "gpt-5",
@@ -92,9 +123,55 @@ def test_env_sets_the_model_lists_and_aliases(llm_config_path: Path) -> None:
     assert by_name["anthropic"].models == ["claude-opus-5-5", "claude-haiku-5-5"]
     assert by_name["openai"].models == ["gpt-5"]
     assert by_name["local"].models == ["qwen3-32b", "olmocr-2-7b-1025"]
-    assert seed.aliases["default"] == "local/qwen3-32b"
-    assert seed.aliases["fast"] == "openai/gpt-5"
-    assert seed.aliases["draft"] == "anthropic/claude-opus-5-5"
+    assert [(c.id, c.ref) for c in seed.choices] == [
+        ("main", "local/qwen3-32b"),
+        ("fast", "openai/gpt-5"),
+    ]
+    assert seed.settings["drafting_model"] == "anthropic/claude-opus-5-5"
+
+
+def test_llm_choices_define_the_labelled_choices(llm_config_path: Path) -> None:
+    env = {
+        "LLM_CHOICES": (
+            "main=Main Production Model|local/qwen3.8-27b-mtp;"
+            " test=New for testing only|anthropic/claude-haiku-5-5|default"
+        ),
+        "DEFAULT_MODEL": "local/ignored",
+        "FAST_MODEL": "local/ignored-too",
+    }
+    seed = seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+    assert seed.choices == [
+        Choice("main", "Main Production Model", "local/qwen3.8-27b-mtp"),
+        Choice("test", "New for testing only", "anthropic/claude-haiku-5-5"),
+    ]
+    assert seed.settings["default_choice"] == "test"
+    assert seed.settings["ocr_model"] == "local/olmocr-2-7b-1025"
+
+
+def test_the_first_choice_is_the_default_unless_one_is_marked() -> None:
+    assert [c.id for c in parse_choices("a=A|local/a;b=B|local/b")] == ["a", "b"]
+    assert default_choice_of("a=A|local/a;b=B|local/b") == "a"
+    assert default_choice_of("a=A|local/a;b=B|local/b|default") == "b"
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("main", "main: expected id=Label|endpoint/model"),
+        ("Main=Label|local/a", "'Main': ids are lower-case"),
+        ("main=|local/a", "main: a label is required"),
+        ("main=Label|qwen", "main: the model must be endpoint/model-id"),
+        ("main=Label|local/a|primary", "main: only `default` may follow the model"),
+        ("a=A|local/a|default;b=B|local/b|default", "only one choice can be the default"),
+        ("a=A|local/a;a=B|local/b", "a: listed twice"),
+        ("ocr=OCR|local/olmocr", "ocr: reserved"),
+        ("default=Default|local/a", "default: reserved"),
+        ("draft=Draft|local/a", "draft: reserved"),
+    ],
+)
+def test_bad_llm_choices_entries_are_refused(value: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_choices(value)
 
 
 def test_a_disabled_local_endpoint_is_seeded_disabled(llm_config_path: Path) -> None:
@@ -173,9 +250,9 @@ def test_endpoint_keys(cfg: ProviderConfig, env: dict[str, str], key: str | None
 # --- the registry built from the store ------------------------------------------------------
 
 
-def test_the_registry_comes_from_the_stored_endpoints_and_aliases() -> None:
-    seed = Seed(
-        endpoints=[
+def test_the_registry_comes_from_the_stored_endpoints_and_choices() -> None:
+    seed = seeded(
+        [
             endpoint("local"),
             endpoint("gpu2", location="external", apiKeyEnv="LLM_ENDPOINT_KEYS"),
             endpoint("off", enabled=False),
@@ -183,7 +260,7 @@ def test_the_registry_comes_from_the_stored_endpoints_and_aliases() -> None:
                 "keyless", kind="anthropic", apiKeyEnv="ANTHROPIC_API_KEY", apiKeyRequired=True
             ),
         ],
-        aliases={"default": "gpu2/gpu2-model", "ocr": "local/olmocr"},
+        {"default": "gpu2/gpu2-model", "ocr": "local/olmocr"},
     )
     made: list[str] = []
     registry = registry_from_seed(
@@ -199,28 +276,29 @@ def test_the_registry_comes_from_the_stored_endpoints_and_aliases() -> None:
         registry.resolve("off/x")
 
 
-def test_the_ocr_alias_picks_the_ocr_model() -> None:
-    seed = Seed(
-        endpoints=[endpoint("local", models=["vision-2"])], aliases={"ocr": "local/vision-2"}
-    )
+def test_the_ocr_setting_picks_the_ocr_model_and_is_not_a_model_to_name() -> None:
+    seed = seeded([endpoint("local", models=["vision-2"])], {"ocr": "local/vision-2"})
     ocr = OcrConfig.model_validate({"model": "local/olmocr", "baseUrl": "http://ocr-host/v1"})
     live = LiveModels(MemoryLlmConfigStore(seed), ocr, env={}, factories=fake_factories())
     assert live.ocr_model == "local/vision-2"
-    provider, model = live.registry.resolve_ocr("ocr")
+    provider, model = live.registry.resolve_ocr(live.ocr_model)
     assert model == "vision-2"
     assert provider is not live.registry.resolve("local/vision-2")[0]  # OCR keeps its own endpoint
+    # Only the OCR stage uses it: a step or a job cannot name it.
+    with pytest.raises(ModelResolutionError):
+        live.registry.resolve("ocr")
 
 
 def test_live_models_rebuild_only_when_the_stored_config_changes() -> None:
     store = MemoryLlmConfigStore(
-        Seed(endpoints=[endpoint("local", models=["a", "b"])], aliases={"default": "local/a"})
+        seeded([endpoint("local", models=["a", "b"])], {"default": "local/a"})
     )
     made: list[str] = []
     live = LiveModels(store, None, env={}, factories=fake_factories(made))
     assert live.registry.resolve("default")[1] == "a"
     assert live.refresh() is False
     assert made == ["local:None"]
-    store.edit_alias("default", "local/b")
+    store.edit_choice("main", "local/b")
     assert live.refresh() is True
     assert live.registry.resolve("default")[1] == "b"
     assert made == ["local:None", "local:None"]
@@ -233,7 +311,9 @@ class StoreHarness(Protocol):
     store: Any
 
     def edit_endpoint(self, name: str, base_url: str) -> None: ...
-    def edit_alias(self, name: str, ref: str) -> None: ...
+    def edit_choice(self, choice_id: str, ref: str) -> None: ...
+    def set_setting(self, name: str, value: str) -> None: ...
+    def add_ui_choice(self, choice: Choice) -> None: ...
     def uncurate(self, provider: str, model_id: str) -> None: ...
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None: ...
     def set_key(self, name: str, encrypted: str) -> None: ...
@@ -247,8 +327,14 @@ class MemoryHarness:
     def edit_endpoint(self, name: str, base_url: str) -> None:
         self.store.edit_endpoint(name, base_url=base_url)
 
-    def edit_alias(self, name: str, ref: str) -> None:
-        self.store.edit_alias(name, ref)
+    def edit_choice(self, choice_id: str, ref: str) -> None:
+        self.store.edit_choice(choice_id, ref)
+
+    def set_setting(self, name: str, value: str) -> None:
+        self.store.set_setting(name, value)
+
+    def add_ui_choice(self, choice: Choice) -> None:
+        self.store.add_ui_choice(choice)
 
     def uncurate(self, provider: str, model_id: str) -> None:
         self.store.uncurate(provider, model_id)
@@ -280,11 +366,23 @@ class PgHarness:
             (base_url, name),
         )
 
-    def edit_alias(self, name: str, ref: str) -> None:
+    def edit_choice(self, choice_id: str, ref: str) -> None:
         self.conn.execute(
-            """INSERT INTO llm_aliases (name, ref, edited_at) VALUES (%s, %s, now())
-               ON CONFLICT (name) DO UPDATE SET ref = EXCLUDED.ref, edited_at = now()""",
-            (name, ref),
+            "UPDATE llm_choices SET ref = %s, edited_at = now() WHERE id = %s", (ref, choice_id)
+        )
+
+    def set_setting(self, name: str, value: str) -> None:
+        self.conn.execute(
+            """INSERT INTO llm_settings (name, value, edited_at) VALUES (%s, %s, now())
+               ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, edited_at = now()""",
+            (name, value),
+        )
+
+    def add_ui_choice(self, choice: Choice) -> None:
+        self.conn.execute(
+            """INSERT INTO llm_choices (id, label, description, ref, source, edited_at)
+               VALUES (%s, %s, %s, %s, 'ui', now())""",
+            (choice.id, choice.label, choice.description, choice.ref),
         )
 
     def uncurate(self, provider: str, model_id: str) -> None:
@@ -324,7 +422,8 @@ def harness(request: pytest.FixtureRequest) -> Iterator[StoreHarness]:
         pytest.skip("IH_TEST_DATABASE_URL not set (a throwaway database: the test empties llm_*)")
     h = PgHarness(url)
     # The tables are shared: start from nothing so seeding's deletes are observable.
-    h.conn.execute("DELETE FROM llm_aliases")
+    h.conn.execute("DELETE FROM llm_choices")
+    h.conn.execute("DELETE FROM llm_settings")
     h.conn.execute("DELETE FROM llm_endpoints")
     h.conn.execute("DELETE FROM llm_models")
     yield h
@@ -337,53 +436,76 @@ def names(seed: Seed) -> list[str]:
 
 def test_seeding_inserts_then_follows_env_changes(harness: StoreHarness) -> None:
     store = harness.store
-    store.seed(Seed([endpoint("local"), endpoint("gpu2")], {"default": "local/local-model"}))
+    store.seed(seeded([endpoint("local"), endpoint("gpu2")], {"default": "local/local-model"}))
     loaded = store.load()
     assert names(loaded) == ["gpu2", "local"]
-    assert loaded.aliases == {"default": "local/local-model"}
+    assert loaded.choices == [Choice("main", "Main", "local/local-model")]
+    assert loaded.settings == {"default_choice": "main"}
     assert next(e for e in loaded.endpoints if e.name == "local").models == ["local-model"]
 
     # .env changed: gpu2 gone, local moved and serves another model, the alias moved too.
     store.seed(
-        Seed(
+        seeded(
             [endpoint("local", baseUrl="http://new/v1", models=["other"])],
-            {"default": "local/other", "fast": "local/other"},
+            {"default": "local/other", "fast": "local/other", "draft": "local/other"},
         )
     )
     loaded = store.load()
     assert names(loaded) == ["local"]
     local = loaded.endpoints[0]
     assert (local.base_url, local.models) == ("http://new/v1", ["other"])
-    assert loaded.aliases == {"default": "local/other", "fast": "local/other"}
+    assert loaded.choices == [
+        Choice("fast", "fast", "local/other"),
+        Choice("main", "Main", "local/other"),
+    ]
+    assert loaded.settings == {"default_choice": "main", "drafting_model": "local/other"}
+
+    # .env dropped the fast choice and the drafting model: both go (nobody edited them).
+    store.seed(seeded([endpoint("local", models=["other"])], {"default": "local/other"}))
+    loaded = store.load()
+    assert [c.id for c in loaded.choices] == ["main"]
+    assert loaded.settings == {"default_choice": "main"}
 
 
 def test_ui_edits_win_over_env(harness: StoreHarness) -> None:
     store = harness.store
     store.seed(
-        Seed(
+        seeded(
             [endpoint("local", models=["a", "b"]), endpoint("gpu2")],
-            {"default": "local/a"},
+            {"default": "local/a", "fast": "local/b", "ocr": "local/b"},
         )
     )
     harness.edit_endpoint("gpu2", "http://edited/v1")
-    harness.edit_alias("default", "gpu2/gpu2-model")
+    harness.edit_choice("main", "gpu2/gpu2-model")
     harness.uncurate("local", "b")
     harness.add_ui_endpoint(endpoint("mine"))
-    # A restart with the same .env (or one without gpu2): the edits stay.
-    store.seed(Seed([endpoint("local", models=["a", "b"])], {"default": "local/a"}))
+    harness.add_ui_choice(Choice("test", "New for testing only", "local/a", "Try it"))
+    harness.set_setting("default_choice", "test")
+    harness.set_setting("ocr_model", "local/a")
+    # A restart with the same .env (or one without gpu2 and fast): the edits stay.
+    store.seed(
+        seeded([endpoint("local", models=["a", "b"])], {"default": "local/a", "ocr": "local/b"})
+    )
     loaded = store.load()
     assert names(loaded) == ["gpu2", "local", "mine"]
     by_name = {e.name: e for e in loaded.endpoints}
     assert by_name["gpu2"].base_url == "http://edited/v1"
     assert by_name["local"].models == ["a"]
-    assert loaded.aliases == {"default": "gpu2/gpu2-model"}
+    assert loaded.choices == [
+        Choice("main", "Main", "gpu2/gpu2-model"),
+        Choice("test", "New for testing only", "local/a", "Try it"),
+    ]
+    assert loaded.settings == {"default_choice": "test", "ocr_model": "local/a"}
 
 
 def test_the_version_moves_when_the_config_changes(harness: StoreHarness) -> None:
     store = harness.store
-    store.seed(Seed([endpoint("local")], {"default": "local/local-model"}))
+    store.seed(seeded([endpoint("local")], {"default": "local/local-model"}))
     before = store.version()
-    harness.edit_alias("default", "local/other")
+    harness.edit_choice("main", "local/other")
+    assert store.version() != before
+    before = store.version()
+    harness.set_setting("drafting_model", "local/other")
     assert store.version() != before
 
 
@@ -401,20 +523,23 @@ def test_the_stored_endpoint_round_trips(harness: StoreHarness) -> None:
         enabled=False,
         models=["b", "a"],
     )
-    store.seed(Seed([full], {}))
+    store.seed(Seed([full]))
     (loaded,) = store.load().endpoints
     assert loaded.model_dump() == {**full.model_dump(), "models": ["a", "b"], "optional": True}
 
 
-def test_llm_config_without_ocr_has_no_ocr_alias() -> None:
+def test_llm_config_without_ocr_has_no_ocr_model() -> None:
     cfg = LLMConfig.model_validate({"providers": [], "aliases": {"default": "local/a"}})
-    assert seed_from_config(cfg, env={}).aliases == {"default": "local/a"}
+    assert seed_from_config(cfg, env={}).settings == {"default_choice": "main"}
 
 
 def test_an_unchanged_env_does_not_move_the_version(harness: StoreHarness) -> None:
     # Every worker seeds on start: identical .env values must not make the others rebuild.
     store = harness.store
-    seed = Seed([endpoint("local", models=["a", "b"])], {"default": "local/a"})
+    seed = seeded(
+        [endpoint("local", models=["a", "b"])],
+        {"default": "local/a", "fast": "local/b", "draft": "local/a"},
+    )
     store.seed(seed)
     before = store.version()
     store.seed(seed)
@@ -429,7 +554,7 @@ def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
     from ingest_worker.storage import MemoryObjectStore
 
     store = MemoryLlmConfigStore(
-        Seed(
+        seeded(
             [endpoint("local", models=["a", "b", "olmocr", "vision-2"])],
             {"default": "local/a", "ocr": "local/olmocr"},
         )
@@ -445,8 +570,8 @@ def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
         ocr=OcrSettings(model="local/olmocr", concurrency=2),
     )
     assert refresh_models(live, deps) is False
-    store.edit_alias("ocr", "local/vision-2")
-    store.edit_alias("default", "local/b")
+    store.set_setting("ocr_model", "local/vision-2")
+    store.edit_choice("main", "local/b")
     assert refresh_models(live, deps) is True
     assert deps.models is live.registry
     assert deps.models.resolve("default")[1] == "b"
@@ -455,15 +580,15 @@ def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
 
 def test_a_key_set_in_the_ui_loads_and_survives_seeding(harness: StoreHarness) -> None:
     store = harness.store
-    store.seed(Seed([endpoint("gpu2")], {}))
+    store.seed(Seed([endpoint("gpu2")]))
     harness.set_key("gpu2", "v1:stored")
-    store.seed(Seed([endpoint("gpu2")], {}))
+    store.seed(Seed([endpoint("gpu2")]))
     (loaded,) = store.load().endpoints
     assert loaded.api_key_enc == "v1:stored"
 
 
 def test_an_endpoint_whose_stored_key_cannot_be_decrypted_is_skipped() -> None:
-    seed = Seed([endpoint("local"), endpoint("gpu2", apiKeyEnc="v1:not-for-this-master-key")], {})
+    seed = Seed([endpoint("local"), endpoint("gpu2", apiKeyEnc="v1:not-for-this-master-key")])
     registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
     assert registry.provider_names == ["local"]
 
@@ -476,11 +601,12 @@ def test_an_endpoint_whose_stored_key_cannot_be_decrypted_is_skipped() -> None:
     [
         ("local/a", ("local", "a")),
         ("default", ("local", "a")),
+        ("main", ("local", "a")),
         ("ryzen/openai/gpt-oss-20b", ("ryzen", "openai/gpt-oss-20b")),
     ],
 )
 def test_offered_models_resolve(ref: str, resolved: tuple[str, str]) -> None:
-    seed = Seed(
+    seed = seeded(
         [endpoint("local", models=["a"]), endpoint("ryzen", models=["openai/gpt-oss-20b"])],
         {"default": "local/a"},
     )
@@ -498,7 +624,7 @@ def test_offered_models_resolve(ref: str, resolved: tuple[str, str]) -> None:
     ],
 )
 def test_models_not_offered_never_run(ref: str, message: str) -> None:
-    seed = Seed(
+    seed = seeded(
         [endpoint("local", models=["a"]), endpoint("ryzen", models=["openai/gpt-oss-20b"])],
         {"stale": "local/gone"},
     )
@@ -522,7 +648,7 @@ def test_a_registry_built_from_the_config_file_alone_is_not_restricted() -> None
 
 def test_a_disabled_model_is_not_offered(harness: StoreHarness) -> None:
     store = harness.store
-    store.seed(Seed([endpoint("local", models=["a", "b"])], {}))
+    store.seed(Seed([endpoint("local", models=["a", "b"])]))
     harness.disable_model("local", "b")
     (local,) = store.load().endpoints
     assert local.models == ["a"]
