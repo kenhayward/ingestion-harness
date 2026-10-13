@@ -137,11 +137,14 @@ describe('StagePanel', () => {
 
   it('toggles a change when its text is clicked', async () => {
     panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    // Wait for the selection effect (select all) to run before toggling.
+    await screen.findByRole('button', { name: 'Apply 2 selected changes' });
     const box = (await screen.findAllByRole('checkbox'))[0]!;
     expect(box).toBeChecked();
     const text = box.closest('li')!.querySelector('label')!;
     await userEvent.click(text);
     expect(box).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Apply 1 selected change' })).toBeInTheDocument();
   });
 
   it('offers a retry when the proposals cannot be loaded', async () => {
