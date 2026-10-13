@@ -212,6 +212,10 @@ export class MemoryRepo implements IngestionRepo {
     return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
   }
 
+  async getJobParams(id: string): Promise<Record<string, unknown> | null> {
+    return this.jobParams.get(id) ?? null;
+  }
+
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
     const job = this.jobs.get(jobId);
     const doc = job && this.documents.get(job.documentId);
@@ -419,8 +423,10 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
+    // A version with any row, live or superseded (deleted), already has its own set.
+    const rows = [...this.references.values()].filter((r) => r.templateId === templateId);
+    if (rows.some((r) => r.templateVersion === toVersion)) return 0;
     const live = this.liveReferences(templateId);
-    if (live.some((r) => r.templateVersion === toVersion)) return 0;
     const earlier = live
       .map((r) => r.templateVersion)
       .filter((v): v is number => v !== null && v < toVersion);
@@ -433,7 +439,6 @@ export class MemoryRepo implements IngestionRepo {
         id: randomUUID(),
         templateVersion: toVersion,
         copiedFrom: s.id,
-        createdAt: this.now(),
       };
       this.references.set(copy.id, copy);
     }
@@ -441,7 +446,15 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async deleteReference(templateId: string, id: string): Promise<boolean> {
-    if (this.references.get(id)?.templateId !== templateId) return false;
+    const ref = this.references.get(id);
+    if (ref?.templateId !== templateId) return false;
+    // A pinned reference is superseded, not removed: iterations keep their comparison and the
+    // version keeps a row, so the next read does not carry the earlier set back.
+    if (ref.templateVersion !== null) {
+      if (ref.supersededAt !== null) return false;
+      this.references.set(id, { ...ref, supersededAt: this.now() });
+      return true;
+    }
     // copied_from REFERENCES template_references ON DELETE SET NULL
     for (const r of this.references.values()) {
       if (r.copiedFrom === id) this.references.set(r.id, { ...r, copiedFrom: null });

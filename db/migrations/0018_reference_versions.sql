@@ -8,11 +8,12 @@ ALTER TABLE template_references
   ADD COLUMN verified_outputs jsonb,
   ADD COLUMN superseded_at    timestamptz;
 
--- Existing Workbench references: pinned to the version their source job ran, verified against
--- that version's outputs. Without a source job they stay unpinned (every version).
+-- Existing Workbench references stay unpinned (every version, as before 5b, so nothing disappears
+-- from an open draft and they are never carried), but remember the outputs of the version their
+-- source job ran, so a later outputs change marks them outdated. Without a source job (or its
+-- template version) verified_outputs stays NULL: trusted, as before.
 UPDATE template_references r
-   SET template_version = d.spec_version,
-       verified_outputs = t.definition -> 'outputs'
+   SET verified_outputs = t.definition -> 'outputs'
   FROM jobs j
   JOIN documents d ON d.id = j.document_id
   JOIN templates t ON t.id = d.spec_id AND t.version = d.spec_version

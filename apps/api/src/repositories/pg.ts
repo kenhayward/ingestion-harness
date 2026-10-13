@@ -363,6 +363,14 @@ export class PgRepo implements IngestionRepo {
     return row ? { bucket: row.bucket, key: row.object_key, filename: row.filename } : null;
   }
 
+  async getJobParams(id: string): Promise<Record<string, unknown> | null> {
+    const { rows } = await this.pool.query<{ params: Record<string, unknown> | null }>(
+      'SELECT params FROM jobs WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.params ?? null;
+  }
+
   async getJob(id: string): Promise<JobDetail | null> {
     const { rows } = await this.pool.query<JobRow>(`${JOB_SELECT} WHERE j.id = $1`, [id]);
     if (!rows[0]) return null;
@@ -635,13 +643,24 @@ export class PgRepo implements IngestionRepo {
     try {
       await client.query('BEGIN');
       if (version !== null) {
+        const { rows: docs } = await client.query<{ sha256: string }>(
+          'SELECT sha256 FROM documents WHERE id = $1',
+          [input.documentId],
+        );
+        const sha = docs[0]?.sha256 ?? '';
+        // Two saves of the same PDF at the same version serialize here, so the second one
+        // sees (and supersedes) the first instead of both staying live.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2 || ':' || $3))`, [
+          input.templateId,
+          String(version),
+          sha,
+        ]);
         // Re-verifying a sample at this version: the old reference is kept for older iterations.
         await client.query(
           `UPDATE template_references SET superseded_at = now()
             WHERE template_id = $1 AND template_version = $2 AND superseded_at IS NULL
-              AND document_id IN (SELECT id FROM documents
-                                   WHERE sha256 = (SELECT sha256 FROM documents WHERE id = $3))`,
-          [input.templateId, version, input.documentId],
+              AND document_id IN (SELECT id FROM documents WHERE sha256 = $3)`,
+          [input.templateId, version, sha],
         );
       }
       // Names are unique among live references of one version (template_references_live_name_idx).
@@ -694,20 +713,21 @@ export class PgRepo implements IngestionRepo {
 
   async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
     // Concurrent callers both pass NOT EXISTS; the live-name unique index makes the second a no-op.
+    // Any row of the target version, live or superseded (deleted), means it has its own set.
+    // Copies keep the source's created_at: when the sample was verified.
     const { rowCount } = await this.pool.query(
       `INSERT INTO template_references
          (template_id, template_version, name, document_id, source_job_id, expected,
-          verified_outputs, copied_from)
+          verified_outputs, copied_from, created_at)
        SELECT r.template_id, $2, r.name, r.document_id, r.source_job_id, r.expected,
-              r.verified_outputs, r.id
+              r.verified_outputs, r.id, r.created_at
          FROM template_references r
         WHERE r.template_id = $1 AND r.superseded_at IS NULL
           AND r.template_version = (SELECT max(template_version) FROM template_references
                                      WHERE template_id = $1 AND superseded_at IS NULL
                                        AND template_version < $2)
           AND NOT EXISTS (SELECT 1 FROM template_references
-                           WHERE template_id = $1 AND superseded_at IS NULL
-                             AND template_version = $2)
+                           WHERE template_id = $1 AND template_version = $2)
         ORDER BY r.created_at, r.id
        ON CONFLICT DO NOTHING`,
       [templateId, toVersion],
@@ -716,8 +736,17 @@ export class PgRepo implements IngestionRepo {
   }
 
   async deleteReference(templateId: string, id: string): Promise<boolean> {
+    // A pinned reference is superseded, not removed: iterations keep their comparison and the
+    // version keeps a row, so the next read does not carry the earlier set back.
+    const pinned = await this.pool.query(
+      `UPDATE template_references SET superseded_at = now()
+        WHERE template_id = $1 AND id = $2 AND template_version IS NOT NULL
+          AND superseded_at IS NULL`,
+      [templateId, id],
+    );
+    if ((pinned.rowCount ?? 0) > 0) return true;
     const { rowCount } = await this.pool.query(
-      'DELETE FROM template_references WHERE template_id = $1 AND id = $2',
+      'DELETE FROM template_references WHERE template_id = $1 AND id = $2 AND template_version IS NULL',
       [templateId, id],
     );
     return (rowCount ?? 0) > 0;

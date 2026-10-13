@@ -279,4 +279,114 @@ describe('references across versions (workbench)', () => {
       reason: 'holdout evaluation covered 1 of 2 holdout samples',
     });
   });
+
+  it('saves a reference against the outputs its run was checked against, not the draft at save', async () => {
+    const { app, add, skipAll, rows, finish, repo, templates } = await project();
+    await add(1);
+    await skipAll();
+    const started = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/stages/references',
+    });
+    expect(started.statusCode).toBe(201);
+    const [job] = started.json().jobs as { id: string }[];
+    expect(repo.jobParams.get(job!.id)).toMatchObject({ outputs: letter(1).outputs });
+    // the outputs change while the run waits for review
+    await templates.updateDraft('letter', 1, {
+      ...letter(1),
+      outputs: { fields: [{ id: 'sender', type: 'date' }] },
+    });
+    await finish(job!.id, 1);
+    const saved = await app.inject({
+      method: 'POST',
+      url: '/api/templates/letter/references',
+      payload: { jobId: job!.id, name: 's1' },
+    });
+    expect(saved.statusCode).toBe(201);
+    expect(saved.json().verifiedOutputs).toEqual(letter(1).outputs);
+    const [row] = await rows();
+    expect(row!.reference).toMatchObject({ version: 1, outdated: ['field:sender'] });
+  });
+
+  it('holdout reference runs snapshot the draft outputs too', async () => {
+    const { app, add, repo } = await project();
+    await add(1, 'holdout');
+    const runs = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/holdout/reference-runs',
+    });
+    expect(runs.statusCode).toBe(201);
+    const [job] = runs.json().jobs as { id: string }[];
+    expect(repo.jobParams.get(job!.id)).toMatchObject({
+      forceReview: true,
+      outputs: letter(1).outputs,
+    });
+  });
+
+  it('a reference pinned to the version wins over an unpinned one for the same sample', async () => {
+    const { add, skipAll, rows, verify, repo } = await project();
+    const s = await add(1);
+    await skipAll();
+    const pinned = await verify(s, 1);
+    const doc = [...repo.documents.values()].find((d) => d.sha256 === s.sha256)!;
+    // newer, so it would come first without the precedence rule
+    await repo.createReference({
+      templateId: 'letter',
+      name: 'unpinned',
+      documentId: doc.id,
+      sourceJobId: null,
+      expected: { fields: {}, tables: {} },
+    });
+    const [row] = await rows();
+    expect(row!.reference).toMatchObject({ id: pinned.id, version: 1 });
+  });
+
+  it('keeps a pre-5b (unpinned, backfilled) reference on every version and marks it outdated', async () => {
+    const { add, skipAll, rows, nextVersion, repo } = await project();
+    const s = await add(1);
+    await skipAll();
+    const doc = [...repo.documents.values()].find((d) => d.sha256 === s.sha256)!;
+    const legacy = await repo.createReference({
+      templateId: 'letter',
+      name: 'legacy',
+      documentId: doc.id,
+      sourceJobId: null,
+      expected: { fields: {}, tables: {} },
+    });
+    // what migration 0018 leaves behind: unpinned, verified against v1's outputs
+    repo.references.set(legacy.id, { ...legacy, verifiedOutputs: letter(1).outputs });
+    expect((await rows())[0]!.reference).toMatchObject({ id: legacy.id, outdated: [] });
+    await nextVersion({ fields: [{ id: 'sender', type: 'date' }] });
+    const [row] = await rows();
+    expect(row!.reference).toMatchObject({
+      id: legacy.id,
+      version: null,
+      carriedFrom: null,
+      outdated: ['field:sender'],
+    });
+    // never carried: v2 has no copy of it
+    expect((await repo.listReferences('letter', 2)).map((r) => r.id)).toEqual([legacy.id]);
+  });
+
+  it('deleting every carried reference does not bring them back', async () => {
+    const { app, add, skipAll, rows, verify, nextVersion } = await project();
+    const s1 = await add(1);
+    const s2 = await add(2);
+    await skipAll();
+    await verify(s1, 1);
+    await verify(s2, 1);
+    await nextVersion();
+    const carried = await rows();
+    expect(carried.map((r) => r.reference?.version)).toEqual([2, 2]);
+    for (const r of carried) {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/templates/letter/references/${r.reference!.id}`,
+      });
+      expect(res.statusCode).toBe(204);
+    }
+    expect((await rows()).map((r) => r.reference)).toEqual([null, null]);
+    const v1 = await app.inject('/api/templates/letter/references?version=1');
+    expect(v1.json()).toHaveLength(2);
+  });
 });

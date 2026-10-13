@@ -95,8 +95,35 @@ describe('references across versions (repository)', () => {
     expect((await repo.listReferences('letter', 2)).map((r) => r.id)).toEqual([a.id, b.id]);
     // nothing earlier: nothing to carry
     expect(await repo.carryReferencesForward('letter', 1)).toBe(0);
-    // deleting the source keeps the copy (copied_from ON DELETE SET NULL)
-    await repo.deleteReference('letter', a.id);
-    expect((await repo.listReferences('letter', 3)).map((r) => r.copiedFrom)).toEqual([null, b.id]);
+    // copies keep the source's created_at (when the sample was verified)
+    expect(v3.map((r) => r.createdAt)).toEqual([a.createdAt, b.createdAt]);
+    // deleting a pinned source supersedes it: the copy keeps its link
+    expect(await repo.deleteReference('letter', a.id)).toBe(true);
+    expect((await repo.listReferences('letter', 3)).map((r) => r.copiedFrom)).toEqual([a.id, b.id]);
+    expect((await repo.listReferences('letter', 2)).map((r) => r.id)).toEqual([b.id]);
+  });
+
+  it('deleting a pinned reference supersedes it; an unpinned one is removed', async () => {
+    const repo = new MemoryRepo();
+    const pinned = await repo.createReference(input(await docOf(repo, 'a'), 'a', 1));
+    const unpinned = await repo.createReference(input(await docOf(repo, 'b'), 'b'));
+    expect(await repo.deleteReference('letter', pinned.id)).toBe(true);
+    expect(await repo.deleteReference('letter', pinned.id)).toBe(false); // already gone
+    expect(await repo.deleteReference('letter', unpinned.id)).toBe(true);
+    const all = await repo.listReferencesWithSha('letter');
+    expect(all.map((r) => [r.id, r.supersededAt !== null])).toEqual([[pinned.id, true]]);
+    expect(await repo.listReferences('letter')).toEqual([]);
+  });
+
+  it('does not carry into a version whose references were all deleted', async () => {
+    const repo = new MemoryRepo();
+    await repo.createReference(input(await docOf(repo, 'a'), 'a', 1));
+    expect(await repo.carryReferencesForward('letter', 2)).toBe(1);
+    const [copy] = await repo.listReferences('letter', 2);
+    await repo.deleteReference('letter', copy!.id);
+    expect(await repo.carryReferencesForward('letter', 2)).toBe(0);
+    expect((await repo.listReferences('letter', 2)).filter((r) => r.templateVersion === 2)).toEqual(
+      [],
+    );
   });
 });

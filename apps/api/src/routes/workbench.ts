@@ -315,6 +315,15 @@ function sampleDocument(sample: SampleRecord, projectId: string, version: number
 
 const activeJob = (status: JobStatus) => status === 'queued' || status === 'running';
 
+/**
+ * Params of a reference run: forced review, plus a snapshot of the draft's outputs so a reference
+ * saved from it remembers what the run was checked against (the worker ignores `outputs`).
+ */
+const referenceRunParams = (
+  dataPolicy: z.infer<typeof DataPolicySchema>,
+  definition: Record<string, unknown>,
+) => ({ dataPolicy, forceReview: true, outputs: definition.outputs ?? null });
+
 /** A reference row plus the sample's newest reference run (draft model), for stage state. */
 interface ReferenceEntry {
   row: ReferenceRow;
@@ -1095,7 +1104,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         .code(409)
         .send({ error: 'no open draft; start the next version on the Template tab' });
     }
-    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    const { definition } = (await templates.get(projectId, draft))!;
+    const issues = validateTemplate(definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
     const entries = await referenceEntries(app, projectId, 'dev');
     if (!entries.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
@@ -1120,8 +1130,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             projectId,
             task: 'process',
             // forceReview: the worker stops every reference run for review, so it can be
-            // verified, approved and saved as a reference.
-            params: { dataPolicy: project.dataPolicy, forceReview: true },
+            // verified, approved and saved as a reference. outputs: what it is verified against.
+            params: referenceRunParams(project.dataPolicy, definition),
             modelOverride: 'draft',
           },
         ),
@@ -1332,7 +1342,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           .code(409)
           .send({ error: 'no open draft; start the next version on the Template tab' });
       }
-      const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+      const { definition } = (await templates.get(projectId, draft))!;
+      const issues = validateTemplate(definition);
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
       const holdout = await referenceEntries(app, projectId, 'holdout');
       if (!holdout.length) {
@@ -1358,7 +1369,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             {
               projectId,
               task: 'process',
-              params: { dataPolicy: project.dataPolicy, forceReview: true },
+              params: referenceRunParams(project.dataPolicy, definition),
               // The template's own models: drafting never sees holdout, so no draft model.
               modelOverride: null,
             },

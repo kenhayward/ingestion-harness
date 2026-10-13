@@ -155,6 +155,8 @@ export interface IngestionRepo {
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
+  /** jobs.params (free-form; null when unset or the job is unknown). */
+  getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
   getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */

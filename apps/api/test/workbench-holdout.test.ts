@@ -112,7 +112,11 @@ describe('holdout', () => {
     expect(res.statusCode).toBe(201);
     const [job] = res.json().jobs as { id: string; modelOverride: string | null }[];
     expect(job!.modelOverride).toBeNull();
-    expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local', forceReview: true });
+    expect(repo.jobParams.get(job!.id)).toEqual({
+      dataPolicy: 'local',
+      forceReview: true,
+      outputs: letter(1).outputs,
+    });
     const rows = (await app.inject('/api/workbench/projects/letter/references?set=holdout')).json();
     expect(rows.map((r: { filename: string }) => r.filename)).toEqual(['s2.pdf']);
     const dev = (await app.inject('/api/workbench/projects/letter/references')).json();

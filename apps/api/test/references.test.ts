@@ -392,5 +392,69 @@ describe('references across versions', () => {
     expect(r2.statusCode).toBe(400); // v2's only reference is outdated
     const report = await ctx.app.inject('/api/templates/letter/versions/1/regression');
     expect(report.json().summary.references).toBe(1);
+    // the version listing is the regression set: outdated references are left out
+    const listed = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect(listed.json()).toEqual([]);
+  });
+
+  describe('the outputs a saved reference was verified against', () => {
+    const save = (ctx: Awaited<ReturnType<typeof setup>>, jobId: string) =>
+      ctx.app.inject(post('/api/templates/letter/references', { jobId, name: 'r' }));
+    const backdate = (ctx: Awaited<ReturnType<typeof setup>>, jobId: string) =>
+      ctx.repo.jobs.set(jobId, {
+        ...ctx.repo.jobs.get(jobId)!,
+        createdAt: '2000-01-01T00:00:00.000Z',
+      });
+    const changed = { fields: [{ id: 'sender', type: 'date' }], tables: [] };
+
+    it("prefer the run's snapshot (params.outputs) over the draft", async () => {
+      const ctx = await setup();
+      await project(ctx);
+      const job = await processedJob(ctx, undefined, 'succeeded', 2);
+      ctx.repo.jobParams.set(job.id, { forceReview: true, outputs: changed });
+      backdate(ctx, job.id); // the snapshot is trusted even after a draft edit
+      await ctx.templates.updateDraft('letter', 2, definition(2, 'edited'));
+      const res = await save(ctx, job.id);
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({ templateVersion: 2, verifiedOutputs: changed });
+    });
+
+    it('refuses a draft run without a snapshot when the draft changed after the run', async () => {
+      const ctx = await setup();
+      await project(ctx);
+      const job = await processedJob(ctx, undefined, 'succeeded', 2);
+      backdate(ctx, job.id);
+      await ctx.templates.updateDraft('letter', 2, definition(2, 'edited'));
+      const res = await save(ctx, job.id);
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('the draft changed after this run; run it again');
+      expect(await ctx.repo.listReferences('letter')).toEqual([]);
+    });
+
+    it("use a published version's outputs", async () => {
+      const ctx = await setup();
+      await project(ctx);
+      const job = await processedJob(ctx, undefined, 'succeeded', 1);
+      backdate(ctx, job.id); // a published version cannot change
+      const res = await save(ctx, job.id);
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({
+        templateVersion: 1,
+        verifiedOutputs: definition(1).outputs,
+      });
+    });
+
+    it('never trust a run of a version that no longer exists', async () => {
+      const ctx = await setup();
+      await project(ctx);
+      const job = await processedJob(ctx, undefined, 'succeeded', 3);
+      const res = await save(ctx, job.id);
+      expect(res.statusCode).toBe(201);
+      expect(res.json().templateVersion).toBe(3);
+      expect(res.json().verifiedOutputs).toEqual({});
+      await ctx.templates.create('letter', 3, definition(3), 'draft');
+      const listed = await ctx.app.inject('/api/templates/letter/references?version=3');
+      expect(listed.json()).toEqual([]); // outdated: re-verify first
+    });
   });
 });
