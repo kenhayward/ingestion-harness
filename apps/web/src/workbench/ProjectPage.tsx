@@ -388,14 +388,15 @@ export function ProjectPage({
               onChanged={loadOverview}
             />
           )}
-          {tab === 'runs' && header('runs')}
           {tab === 'runs' && (
             <RunsTab
               api={api}
               projectId={project.id}
               dataPolicy={project.dataPolicy}
               draft={draft}
+              item={itemOf('runs')}
               pollMs={pollMs}
+              onChanged={loadOverview}
             />
           )}
           {tab === 'template' && header('template')}
