@@ -18467,7 +18467,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "One row per ready sample of the set (`dev` by default, or `holdout`): its\nreference for the open draft's version, if any (pinned version, the version it was\ncarried from, and `outdated`: output changes since it was verified, which mean\nverify it again), and its latest reference or test run.",
+        "description": "One row per ready sample of the set (`dev` by default, or `holdout`): its\nreference for the open draft's version, if any (pinned version, the version it was\ncarried from, `outdated`: output changes since it was verified, which mean verify it\nagain, and `reverified`: the carried copy a re-verification replaced and why), and its\nlatest reference or test run. `corrections` (handoff RF1) is derived from the\nreviewed run's edits: `corrected` where the model proposed a value the reviewer\nchanged, `entered` where it proposed nothing; keys are a field id or\n`table[row].column` (1-based row). It is `null` when unknown: no source run, or the\nrun was re-run or reviewed again after the save. `verifiedBy` is the run's approver,\nelse its last editor.",
         "parameters": [
           {
             "schema": {
@@ -18551,6 +18551,80 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "sourceJobId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "verifiedBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "corrections": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "corrected",
+                                            "entered"
+                                          ]
+                                        },
+                                        "proposed": {}
+                                      },
+                                      "required": [
+                                        "key",
+                                        "kind"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reverified": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "from": {
+                                        "type": "integer"
+                                      },
+                                      "changed": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "from",
+                                      "changed"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -18559,7 +18633,11 @@
                               "createdAt",
                               "version",
                               "carriedFrom",
-                              "outdated"
+                              "outdated",
+                              "sourceJobId",
+                              "verifiedBy",
+                              "corrections",
+                              "reverified"
                             ],
                             "additionalProperties": true
                           },
@@ -18713,6 +18791,389 @@
                   ],
                   "additionalProperties": true,
                   "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/references/{sid}": {
+      "get": {
+        "operationId": "getReferenceDetail",
+        "summary": "Read one sample's reference",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "The References tab's detail panel (handoff RF2): the sample's reference for the\ncurrent version (as in the list), the run that proposed its values (job, model\noverride, the models its step runs used) and one entry per output of the current\nversion with the expected value (a table's rows) and its provenance: `model` (the\nmodel proposed it and nobody changed it), `corrected` (with the model's value in\n`proposed` for a field) or `entered` (the model proposed nothing); `null` when the\ncorrections are unknown or the reference is outdated for that output (listed in\n`reference.outdated`: re-verify). A run saved without a review counts as unknown. Dev and holdout samples alike: holdout values are shown to\nthe user, never to a model.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "description": "The sample id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sampleId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "dev",
+                        "holdout"
+                      ]
+                    },
+                    "reference": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "carriedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outdated": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "sourceJobId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "verifiedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "corrections": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "corrected",
+                                      "entered"
+                                    ]
+                                  },
+                                  "proposed": {}
+                                },
+                                "required": [
+                                  "key",
+                                  "kind"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reverified": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "from": {
+                                  "type": "integer"
+                                },
+                                "changed": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "from",
+                                "changed"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "createdAt",
+                        "version",
+                        "carriedFrom",
+                        "outdated",
+                        "sourceJobId",
+                        "verifiedBy",
+                        "corrections",
+                        "reverified"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "jobId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "modelOverride": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "models": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "jobId",
+                            "modelOverride",
+                            "models"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "field",
+                              "table"
+                            ]
+                          },
+                          "value": {},
+                          "provenance": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "model",
+                                  "corrected",
+                                  "entered"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "proposed": {},
+                          "corrections": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "corrected",
+                                    "entered"
+                                  ]
+                                },
+                                "proposed": {}
+                              },
+                              "required": [
+                                "key",
+                                "kind"
+                              ],
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "provenance",
+                          "corrections"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "corrections": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "corrected",
+                                  "entered"
+                                ]
+                              },
+                              "proposed": {}
+                            },
+                            "required": [
+                              "key",
+                              "kind"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sampleId",
+                    "filename",
+                    "role",
+                    "reference",
+                    "run",
+                    "values",
+                    "corrections"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The reference."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`, `sample not found` or `no reference for this sample` (none yet, or the sample is not ready).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`, `sample not found` or `no reference for this sample` (none yet, or the sample is not ready)."
                 }
               }
             }

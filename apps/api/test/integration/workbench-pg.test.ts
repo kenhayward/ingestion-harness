@@ -137,6 +137,58 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     });
   });
 
+  it('lists job reviews with their edits in one query, edits in id order with ISO times', async () => {
+    const projectId = await newProject();
+    const a = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      modelOverride: 'draft',
+    });
+    const b = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    await pool.query(`UPDATE jobs SET status = 'awaiting_review' WHERE id = $1`, [a.id]);
+    const first = await repo.addEdit(a.id, {
+      field: 'total',
+      table: null,
+      row: null,
+      column: null,
+      oldValue: '1',
+      newValue: '2',
+      editor: 'kim',
+      reason: null,
+    });
+    const second = await repo.addEdit(a.id, {
+      field: null,
+      table: 'line_items',
+      row: 2,
+      column: 'qty',
+      oldValue: null,
+      newValue: 5,
+      editor: 'kim',
+      reason: 'missing',
+    });
+    await repo.approve(a.id, 'ken', null);
+    await pool.query(`UPDATE jobs SET status = 'succeeded' WHERE id = $1`, [a.id]);
+
+    const reviews = await repo.listJobReviews([b.id, a.id, randomUUID()]);
+    const byId = new Map(reviews.map((r) => [r.jobId, r]));
+    expect(reviews).toHaveLength(2);
+    expect(byId.get(a.id)).toEqual({
+      jobId: a.id,
+      status: 'succeeded',
+      reviewer: 'ken',
+      reviewedAt: expect.stringMatching(/Z$/),
+      modelOverride: 'draft',
+      edits: [first, second],
+    });
+    expect(byId.get(b.id)).toMatchObject({
+      status: 'queued',
+      reviewer: null,
+      reviewedAt: null,
+      edits: [],
+    });
+    expect(await repo.listJobReviews([])).toEqual([]);
+  });
+
   it('keeps one export job per project, even when two start at once', async () => {
     const projectId = await newProject();
     const other = await newProject();

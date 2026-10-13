@@ -29,6 +29,7 @@ import type {
   Publication,
   ProjectView,
   Reference,
+  ReferenceDetail,
   ReferenceRow,
   RerunRequest,
   ResultDetail,
@@ -357,6 +358,8 @@ export interface Api {
   confirmStage(projectId: string, stage: KeepableStage): Promise<StageView[]>;
   /** Reference rows for the dev samples, or (set = 'holdout') the holdout samples. */
   listReferenceRows(projectId: string, set?: EvaluationSet): Promise<ReferenceRow[]>;
+  /** One sample's reference with each output's provenance (handoff RF2). */
+  getReferenceDetail(projectId: string, sampleId: string): Promise<ReferenceDetail>;
   /** Queue draft-model runs on unverified dev samples. */
   proposeReferences(projectId: string): Promise<JobSummary[]>;
   /** `uncached` makes every step call its model (the step cache is not read). */
@@ -676,6 +679,8 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(
         `${base}/workbench/projects/${id}/references${set === 'holdout' ? '?set=holdout' : ''}`,
       ).then(json<ReferenceRow[]>),
+    getReferenceDetail: (id, sid) =>
+      apiFetch(`${base}/workbench/projects/${id}/references/${sid}`).then(json<ReferenceDetail>),
     proposeReferences: (id) =>
       post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/stages/references`, {}).then(
         (r) => r.jobs,
