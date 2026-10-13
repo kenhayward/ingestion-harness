@@ -85,14 +85,18 @@ def run_extraction(
     max_tokens: int = 64000,
     system: str = SYSTEM_PROMPT,
     check: Callable[[dict[str, Any]], list[str]] | None = None,
+    on_attempt: Callable[[int], None] | None = None,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
-    cannot express; its errors are fed back the same way."""
+    cannot express; its errors are fed back the same way. `on_attempt(n)` is called before each
+    model call (progress reporting)."""
     validator = Draft202012Validator(schema)
     attempts: list[Attempt] = []
     current_prompt = prompt
     for n in range(1, max_attempts + 1):
+        if on_attempt is not None:
+            on_attempt(n)
         result = provider.complete_json(
             model_id,
             CompletionRequest(

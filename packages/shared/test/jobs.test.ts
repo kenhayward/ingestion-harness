@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { JobSummarySchema } from '../src/index.js';
+import { JobSummarySchema, StepProgressSchema, TestRunSchema } from '../src/index.js';
 
 const summary = {
   id: '6f1c2c1e-0000-4000-8000-000000000001',
@@ -46,5 +47,39 @@ describe('JobSummary timing and batch (TR2)', () => {
 
   it('requires the fields (every producer sets them)', () => {
     expect(JobSummarySchema.safeParse(summary).success).toBe(false);
+  });
+});
+
+const fixture = JSON.parse(
+  readFileSync(new URL('./fixtures/step-progress.json', import.meta.url), 'utf8'),
+) as { templateRun: unknown[] };
+
+describe('step progress (TR3)', () => {
+  it.each(fixture.templateRun.map((e, i) => [i, e] as const))(
+    "parses the worker's event %i",
+    (_i, event) => {
+      expect(StepProgressSchema.parse(event)).toEqual(event);
+    },
+  );
+
+  it.each([
+    ['a zero attempt', { step: 'a', index: 1, of: 1, attempt: 0, chunk: null }],
+    ['a missing chunk key', { step: 'a', index: 1, of: 1, attempt: 1 }],
+    ['a half chunk', { step: 'a', index: 1, of: 1, attempt: 1, chunk: { n: 1 } }],
+  ])('rejects %s', (_name, event) => {
+    expect(StepProgressSchema.safeParse(event).success).toBe(false);
+  });
+
+  it('a test run is a job summary with its progress', () => {
+    const run = {
+      ...summary,
+      status: 'running',
+      batchId: null,
+      startedAt: '2026-10-13T10:00:05.000Z',
+      finishedAt: null,
+      progress: fixture.templateRun[2],
+    };
+    expect(TestRunSchema.parse(run).progress).toEqual(fixture.templateRun[2]);
+    expect(TestRunSchema.safeParse({ ...run, progress: null }).success).toBe(true);
   });
 });

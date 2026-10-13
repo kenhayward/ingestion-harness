@@ -92,6 +92,30 @@ export const JobSummarySchema = z.object({
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
 
+/** Job event a Workbench run's worker writes per model call (worker: template_pipeline.STEP_PROGRESS). */
+export const STEP_PROGRESS_EVENT = 'step progress';
+
+/**
+ * Where a running Workbench extraction is (handoff TR3): extract step `index` of `of` (check
+ * steps are not counted), its id, the attempt of the current call and, for a chunked step, the
+ * chunk. Shared fixture: packages/shared/test/fixtures/step-progress.json.
+ */
+export const StepProgressSchema = z.object({
+  step: z.string(),
+  index: z.number().int().positive(),
+  of: z.number().int().positive(),
+  attempt: z.number().int().positive(),
+  chunk: z.object({ n: z.number().int().positive(), of: z.number().int().positive() }).nullable(),
+});
+export type StepProgress = z.infer<typeof StepProgressSchema>;
+
+/** A project's job as the Test runs tab lists it: the summary plus a running run's progress. */
+export const TestRunSchema = JobSummarySchema.extend({
+  /** While running: the latest progress of this attempt; null otherwise or before any. */
+  progress: StepProgressSchema.nullable(),
+});
+export type TestRun = z.infer<typeof TestRunSchema>;
+
 export const JobOutputSchema = z.object({
   outputId: z.string(),
   /** draft: outputs bucket (pre-review); published: final target. */
