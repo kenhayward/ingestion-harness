@@ -378,8 +378,11 @@ describe('EvaluateTab', () => {
     const { api, onGateChanged } = tab({ setPublishThreshold: vi.fn(async () => projectView()) });
     await waitFor(() => expect(api.getPublishGate).toHaveBeenCalled());
     const input = await screen.findByLabelText('Publish threshold (%)');
+    // Edit the stored threshold once it is shown (the late-arrival race has its own test).
+    await waitFor(() => expect(input).toHaveValue(90));
     await userEvent.clear(input);
     await userEvent.type(input, '80');
+    expect(input).toHaveValue(80);
     const calls = vi.mocked(api.getPublishGate).mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
     await waitFor(() => expect(onGateChanged).toHaveBeenCalledTimes(1));
