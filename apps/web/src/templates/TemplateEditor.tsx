@@ -15,6 +15,8 @@ import { TabHeader } from '../workbench/TabHeader.js';
 import { EditorHeader } from './EditorHeader.js';
 import { EmbeddedHeader } from './EmbeddedHeader.js';
 import { publishBlocker, tabCounts, unsavedText } from './editor-derive.js';
+import { PipelineEditor } from './PipelineEditor.js';
+import type { StepMetric } from '../workbench/steps.js';
 import { StepCard } from './StepCard.js';
 import { TestRail } from './TestRail.js';
 import { QualityPanel } from './QualityPanel.js';
@@ -129,6 +131,25 @@ export function TemplateEditor({
       () => setPublishedVersion(null),
     );
   }, [api, templateId, version]);
+
+  /** The open step on the Template tab's Pipeline (clamped to the list when rendered). */
+  const [selectedStep, setSelectedStep] = useState(0);
+  const [metrics, setMetrics] = useState<ReadonlyMap<string, StepMetric>>(new Map());
+  // `embedded` is a new object on every render: depend on whether it is set.
+  const isEmbedded = embedded !== undefined;
+  useEffect(() => {
+    if (!isEmbedded) return;
+    let live = true;
+    api.getMetrics(templateId).then(
+      (m) => {
+        if (live) setMetrics(new Map(m.steps.map((s) => [s.stepId, s])));
+      },
+      () => {}, // figures are optional: the form works without them
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, templateId, isEmbedded]);
 
   const issues = useMemo(() => validateDefinition(def), [def]);
 
@@ -524,7 +545,30 @@ export function TemplateEditor({
             )}
           </fieldset>
           {/* Outside the disabled fieldset: a published version's steps still open (read-only). */}
-          {tab === 'pipeline' && (
+          {tab === 'pipeline' && embedded && (
+            <PipelineEditor
+              pipeline={pipeline}
+              // -1 only when there are no steps (removing the last one leaves -1 behind).
+              selected={
+                pipeline.length === 0
+                  ? -1
+                  : Math.min(Math.max(selectedStep, 0), pipeline.length - 1)
+              }
+              onSelect={setSelectedStep}
+              onChange={(next) => update(['pipeline'], next)}
+              readOnly={!editable}
+              definition={def}
+              models={models}
+              typeModelLabel={
+                typeModel
+                  ? `Document type's model (${modelName(typeModel)})`
+                  : `Default choice${defaultLabel(models)}`
+              }
+              paths={paths}
+              metrics={metrics}
+            />
+          )}
+          {tab === 'pipeline' && !embedded && (
             <div className="pipeline">
               {pipeline.map((step, i) => (
                 <StepCard

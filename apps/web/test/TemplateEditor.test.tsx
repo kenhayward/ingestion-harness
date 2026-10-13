@@ -963,3 +963,157 @@ describe('TemplateEditor review fixes', () => {
     expect(screen.getByRole('button', { name: 'Keep' })).toHaveFocus();
   });
 });
+
+describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
+  const invoice = () => ({
+    id: 'letter',
+    version: 1,
+    name: 'Invoice',
+    document: {
+      sections: ['header', 'supplier', 'line_items', 'totals', 'payment'].map((id) => ({
+        id,
+        anchor: `^${id}`,
+      })),
+    },
+    outputs: {
+      fields: ['supplier_name', 'due_date', 'subtotal', 'total'].map((id) => ({
+        id,
+        type: 'text',
+      })),
+      tables: [{ id: 'line_items', columns: [{ id: 'amount', type: 'number' }] }],
+    },
+    pipeline: [
+      {
+        type: 'extract',
+        id: 'header',
+        fields: ['supplier_name'],
+        sections: ['header', 'supplier'],
+      },
+      { type: 'extract', id: 'line_items', table: 'line_items', sections: ['line_items'] },
+      {
+        type: 'extract',
+        id: 'totals',
+        fields: ['subtotal', 'total'],
+        sections: ['totals', 'payment'],
+      },
+    ],
+  });
+  const open = (overrides = {}) => setup(view(invoice()), overrides, { onChanged: vi.fn() });
+  const savedPipeline = (api: ReturnType<typeof open>['api']) =>
+    (vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as { pipeline: Record<string, unknown>[] })
+      .pipeline;
+
+  it('lists the steps as pressable rows and opens the first', async () => {
+    open();
+    const first = await screen.findByRole('button', {
+      name: /^1 header Fills 1 · reads header, supplier/,
+    });
+    expect(first).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('region', { name: 'Step 1' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^3 totals/ }));
+    expect(screen.getByRole('button', { name: /^3 totals/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(first).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('region', { name: 'Step 3' })).toBeInTheDocument();
+  });
+
+  it('toggles the sections a step reads', async () => {
+    const { api } = open();
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const step = screen.getByRole('region', { name: 'Step 3' });
+    const payment = within(step).getByRole('checkbox', { name: 'payment' });
+    expect(payment).toBeChecked();
+    await userEvent.click(payment);
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+    expect(savedPipeline(api)[2]!.sections).toEqual(['totals']);
+  });
+
+  it('removes a filled output and offers unfilled outputs first', async () => {
+    const { api } = open();
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const step = screen.getByRole('region', { name: 'Step 3' });
+    await userEvent.click(within(step).getByRole('button', { name: 'Stop filling total' }));
+    const add = within(step).getByRole('combobox', { name: 'Add output' });
+    const groups = [...add.querySelectorAll('optgroup')].map((g) => [
+      g.label,
+      [...g.querySelectorAll('option')].map((o) => o.value),
+    ]);
+    expect(groups).toEqual([
+      ['Not filled by any step', ['due_date', 'total']],
+      ['Filled by another step', ['supplier_name']],
+    ]);
+    await userEvent.selectOptions(add, 'due_date');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+    expect(savedPipeline(api)[2]!.fields).toEqual(['subtotal', 'due_date']);
+  });
+
+  it('a table step fills one table: Add output says why it is disabled', async () => {
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: /^2 line_items/ }));
+    const add = within(screen.getByRole('region', { name: 'Step 2' })).getByRole('combobox', {
+      name: 'Add output',
+    });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute(
+      'title',
+      'A table step fills one table: remove it to fill fields instead',
+    );
+    expect(
+      within(screen.getByRole('region', { name: 'Step 2' })).getByLabelText('Pages per call'),
+    ).toHaveAttribute('placeholder', 'all');
+  });
+
+  it('adds a step, opens it, and lets it fill a table', async () => {
+    const { api } = open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Add extract step' }));
+    const step = screen.getByRole('region', { name: 'Step 4' });
+    await userEvent.type(within(step).getByLabelText('Step id'), 'rows');
+    await userEvent.selectOptions(
+      within(step).getByRole('combobox', { name: 'Add output' }),
+      'line_items',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+    expect(savedPipeline(api)[3]).toMatchObject({ id: 'rows', table: 'line_items', fields: [] });
+  });
+
+  it('shows the last runs and explains a step that keeps retrying', async () => {
+    open({
+      getMetrics: vi.fn(async () => ({
+        templateId: 'letter',
+        versions: [],
+        topEdited: [],
+        steps: [
+          {
+            stepId: 'totals',
+            runs: 18,
+            reruns: 0,
+            failures: 0,
+            avgAttempts: 2,
+            avgOutputTokens: null,
+            avgSeconds: 5,
+          },
+        ],
+      })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const step = screen.getByRole('region', { name: 'Step 3' });
+    expect(await within(step).findByText(/2\.0 attempts on average/)).toHaveTextContent(
+      'add instructions below',
+    );
+    expect(within(step).getByText('18')).toBeInTheDocument();
+  });
+
+  it('says why the first step cannot move up', async () => {
+    open();
+    const up = await screen.findByRole('button', { name: 'Move step 1 up' });
+    expect(up).toBeDisabled();
+    expect(up).toHaveAttribute('title', 'Already the first step');
+    await userEvent.click(screen.getByRole('button', { name: 'Move step 1 down' }));
+    expect(screen.getByRole('button', { name: /^2 header/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});
