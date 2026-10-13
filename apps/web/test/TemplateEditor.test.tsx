@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor } from '../src/templates/TemplateEditor.js';
-import { fakeApi, job } from './fake-api.js';
+import { fakeApi, job, projectView, publication } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
 import { setYaml } from './yaml-editor.js';
 
@@ -227,16 +227,26 @@ describe('TemplateEditor', () => {
       expect(screen.queryByLabelText('Sample document')).not.toBeInTheDocument();
     });
 
-    it('reports a publish instead of navigating', async () => {
+    it('publishes through the Workbench, without references or evaluation, and reports it', async () => {
       const definition = { ...validDefinition(), version: 1 };
       const onChanged = vi.fn();
-      const { onNavigate } = setup(
+      const getTemplate = vi
+        .fn()
+        .mockResolvedValueOnce(view(definition))
+        .mockResolvedValue(view(definition, 'published'));
+      const { onNavigate, api } = setup(
         view(definition),
-        { publishTemplate: vi.fn(async () => view(definition, 'published')) },
+        {
+          getTemplate,
+          publish: vi.fn(async () => ({ publication: publication(), project: projectView() })),
+        },
         { onChanged },
       );
       await userEvent.click(await screen.findByRole('button', { name: /^Publish v1/ }));
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+      expect(api.publish).toHaveBeenCalledWith('letter');
+      expect(api.publishTemplate).not.toHaveBeenCalled();
+      expect(await screen.findByText('Published v1.')).toBeInTheDocument();
       expect(onNavigate).not.toHaveBeenCalled();
     });
 

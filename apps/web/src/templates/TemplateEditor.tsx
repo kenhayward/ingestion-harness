@@ -63,8 +63,9 @@ export function TemplateEditor({
   jobs?: readonly JobSummary[];
   /**
    * Set when hosted by the workbench: the Runs tab replaces the single-sample test run (no Test
-   * this draft rail), and publish / new draft / delete draft report back instead of navigating
-   * to Document types.
+   * this draft rail), publish goes through the Workbench (`api.publish`: no references or
+   * evaluation needed, and the publication is logged), and publish / new draft / delete draft
+   * report back instead of navigating to Document types.
    */
   embedded?: { onChanged: () => void };
 }) {
@@ -125,7 +126,12 @@ export function TemplateEditor({
     });
   const publish = () =>
     act(async () => {
-      accept(await api.publishTemplate(templateId, version));
+      if (embedded) {
+        await api.publish(templateId);
+        accept(await api.getTemplate(templateId, version));
+      } else {
+        accept(await api.publishTemplate(templateId, version));
+      }
       setMessage(`Published v${version}.`);
       embedded?.onChanged();
     });

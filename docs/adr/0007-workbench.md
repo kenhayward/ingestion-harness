@@ -57,7 +57,10 @@ documents may be confidential, and the default models are local for that reason.
   "Re-run uncached" and reference runs bypass the lookup (they still write).
   Production and regression jobs never use it.
 - **Publish gate:** a per-project holdout threshold (default 0.9). Publishing below it needs an
-  override reason, recorded on the iteration.
+  override reason, recorded on the iteration. *Amended:* the gate is now informational.
+  References and evaluation are optional, any valid draft can be published (also from the
+  Template tab), and no override is needed or recorded; each publication still records the
+  gate's iteration and score, if any.
 
 ## Consequences
 - **Contract changes on both sides:** new job tasks, `priority`, `project_id`, nullable

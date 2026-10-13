@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type { GateView, Publication } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
-const MIN_OVERRIDE_CHARS = 10;
-const MAX_OVERRIDE_CHARS = 1000;
 const DOT = '·';
 const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
 
 /**
- * Publish gate (ADR 0007): the newest holdout score of this draft against the threshold, and the
- * publication log. Without an open draft only the log and the threshold are shown.
+ * Publish (ADR 0007): the newest holdout score of this draft against the threshold, and the
+ * publication log. References and evaluation are optional, so the gate is informational: Publish
+ * never needs it. Without an open draft only the log and the threshold are shown.
  */
 export function PublishPanel({
   api,
@@ -30,7 +29,6 @@ export function PublishPanel({
   const [publications, setPublications] = useState<Publication[]>([]);
   const [threshold, setThreshold] = useState('');
   const [thresholdSet, setThresholdSet] = useState<{ by: string; at: string } | null>(null);
-  const [overrideReason, setOverrideReason] = useState('');
   const [published, setPublished] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,15 +77,12 @@ export function PublishPanel({
     });
   const publish = () =>
     act(async () => {
-      const reason = gate && !gate.passes ? overrideReason.trim() : '';
-      const result = await api.publish(projectId, reason || undefined);
+      const result = await api.publish(projectId, undefined);
       setPublished(result.publication.version);
-      setOverrideReason('');
       onPublished();
       await load();
     });
 
-  const needsOverride = gate !== null && !gate.passes;
   const thresholdValid = threshold !== '' && Number(threshold) >= 0 && Number(threshold) <= 100;
 
   return (
@@ -96,7 +91,13 @@ export function PublishPanel({
       {draft === null ? (
         <p>Every version is published; start the next version on the Template tab</p>
       ) : (
-        gate && <p>{gate.reason}</p>
+        gate && (
+          <p>
+            {gate.passes
+              ? gate.reason
+              : `${gate.reason.charAt(0).toUpperCase()}${gate.reason.slice(1)}. References and evaluation are optional; you can publish anyway.`}
+          </p>
+        )
       )}
       <div className="actions">
         <label>
@@ -125,26 +126,12 @@ export function PublishPanel({
           </small>
         </p>
       )}
-      {draft !== null && needsOverride && (
-        <label>
-          Override reason
-          <textarea
-            value={overrideReason}
-            maxLength={MAX_OVERRIDE_CHARS}
-            onChange={(e) => setOverrideReason(e.target.value)}
-          />
-        </label>
-      )}
       {draft !== null && (
         <div className="actions">
           <button
             type="button"
             className="primary"
-            disabled={
-              busy ||
-              gate === null ||
-              (needsOverride && overrideReason.trim().length < MIN_OVERRIDE_CHARS)
-            }
+            disabled={busy || gate === null}
             onClick={() => void publish()}
           >
             Publish v{draft}

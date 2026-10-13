@@ -115,7 +115,7 @@ describe('OverviewMap', () => {
       expect(screen.getByRole('region', { name })).toBeInTheDocument();
     }
     expect(container.querySelector('svg.map-connectors')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByText('publish when the gate passes')).toBeInTheDocument();
+    expect(screen.getByText('publish; verifying is optional')).toBeInTheDocument();
     expect(screen.getByText('hand edits change the draft')).toBeInTheDocument();
     expect(screen.getByText('revision changes the draft')).toBeInTheDocument();
   });

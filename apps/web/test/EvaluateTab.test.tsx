@@ -122,7 +122,9 @@ describe('EvaluateTab', () => {
 
   it('shows the publish panel only for an open draft', async () => {
     tab({ getPublishGate: vi.fn(async () => gateView({ reason: 'gate reason' })) });
-    expect(await screen.findByText('gate reason')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/^Gate reason. References and evaluation are optional/),
+    ).toBeInTheDocument();
   });
 
   it('keeps the publish panel without an open draft, with no Publish button', async () => {

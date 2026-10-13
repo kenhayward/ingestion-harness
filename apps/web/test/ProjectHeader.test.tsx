@@ -21,7 +21,7 @@ describe('ProjectHeader', () => {
     expect(screen.getByText('letter')).toBeInTheDocument();
   });
 
-  it('locks Publish until the gate passes and explains why', () => {
+  it('never locks Publish: references and evaluation are optional', () => {
     render(
       <ProjectHeader
         view={projectView({ draft: 4 })}
@@ -30,13 +30,9 @@ describe('ProjectHeader', () => {
         onTogglePolicy={vi.fn()}
       />,
     );
-    const publish = screen.getByRole('link', { name: /^Publish v4/ });
-    expect(publish).toHaveAttribute('href', '#/workbench/letter/evaluate');
-    expect(publish).toHaveClass('locked');
-    expect(publish).toHaveAttribute('title', 'no complete holdout evaluation of the current draft');
-    expect(publish).toHaveAccessibleName(
-      'Publish v4 (locked: no complete holdout evaluation of the current draft)',
-    );
+    const publish = screen.getByRole('link', { name: 'Publish v4' });
+    expect(publish).toHaveAttribute('href', '#/workbench/letter/template');
+    expect(publish).not.toHaveClass('locked');
   });
 
   it('hides Publish while the gate is unknown but keeps the policy controls', () => {
