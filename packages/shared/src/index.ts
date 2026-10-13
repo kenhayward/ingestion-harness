@@ -9,6 +9,7 @@ export * from './workbench.js';
 export * from './drafting.js';
 export * from './evaluation.js';
 export * from './references.js';
+export * from './corrections.js';
 export * from './bundle.js';
 export * from './overview.js';
 export * from './brief.js';
