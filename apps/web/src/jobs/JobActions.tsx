@@ -3,6 +3,7 @@ import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelChoice }
 import type { Api } from '../api/client.js';
 import { isWordDocument } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
+import { typeModelLabel } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { menuPosition, primaryAction } from './derive.js';
 
@@ -38,6 +39,7 @@ export function JobActions({
   job,
   onChanged,
   models,
+  typeModel,
   variant,
 }: {
   api: Api;
@@ -45,6 +47,8 @@ export function JobActions({
   onChanged: () => void;
   /** The model choices Retry and Re-process offer. */
   models: readonly ModelChoice[];
+  /** The job's document type's model, to name the "no override" option (unknown: unnamed). */
+  typeModel?: { model?: string };
   variant: 'row' | 'panel';
 }) {
   const [confirm, setConfirm] = useState<InlineAction | null>(null);
@@ -214,7 +218,7 @@ export function JobActions({
       confirmLabel={dialog === 'retry' ? 'Retry' : 'Re-process'}
       choices={models}
       initialModel={job.modelOverride ?? ''}
-      emptyLabel="Document type's models"
+      emptyLabel={typeModelLabel(models, typeModel)}
       summary={<p>{RUNS[dialog](file)}</p>}
       onConfirm={async (model) => {
         await api.retryJob(job.id, model);

@@ -344,7 +344,7 @@ def rerun_template_job(
     if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
         ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
     try:
-        ref = params.get("model") or job.model_override or step.model
+        ref = params.get("model") or job.model_override or ex.model
         model = deps.models.resolve(ref)
     except ModelResolutionError as exc:
         raise DocumentError(f"re-run of {step.id!r}: {exc}") from exc

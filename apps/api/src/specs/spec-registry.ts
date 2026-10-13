@@ -124,6 +124,7 @@ export class SpecRegistry {
               version: d.version,
               title: d.template.name,
               description: d.template.description,
+              ...(d.template.model ? { model: d.template.model } : {}),
               kind: d.kind,
             },
       )

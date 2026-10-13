@@ -57,6 +57,7 @@ export const ExtractStepSchema = z
     instructions: z.string().optional(),
     /** Custom Jinja2 prompt file (replaces the built-in prompt). */
     prompt: z.string().optional(),
+    /** A model choice; `default` (the default) inherits the template's `model`. */
     model: z.string().default('default'),
     pageImages: z.array(z.number().int().positive()).default([]),
     maxAttempts: z.number().int().min(1).max(5).default(2),
@@ -143,6 +144,11 @@ export const TemplateSchema = z
     name: z.string().min(1),
     description: z.string().optional(),
     preamble: z.string().optional(),
+    /**
+     * The document type's model choice, inherited by every extract step that names none
+     * (absent: the default model choice).
+     */
+    model: z.string().min(1).optional(),
     document: z
       .object({
         pages: z
@@ -241,3 +247,14 @@ export const TemplateSchema = z
   });
 
 export type Template = z.infer<typeof TemplateSchema>;
+
+/**
+ * The model an extract step runs (before any job override): its own, else the template's,
+ * else the default choice. Held in step with `Template.step_model` in the worker.
+ */
+export function stepModel(
+  template: Pick<Template, 'model'>,
+  step: Pick<z.infer<typeof ExtractStepSchema>, 'model'>,
+): string {
+  return step.model !== 'default' ? step.model : (template.model ?? 'default');
+}

@@ -217,7 +217,7 @@ export function RunsTab({
           title={`Run v${draft} on ${selected.size} dev sample${selected.size === 1 ? '' : 's'}`}
           confirmLabel="Run"
           choices={choices}
-          emptyLabel="Template's models"
+          emptyLabel="Document type's model"
           dataPolicy={dataPolicy}
           summary={
             <p>

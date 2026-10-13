@@ -6,7 +6,7 @@ import { relativeTime } from '../jobs/derive.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { recentTestRuns } from './editor-derive.js';
-import { useModelChoices } from '../ui/ModelPicker.js';
+import { typeModelLabel, useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 /**
@@ -19,11 +19,14 @@ export function TestRail({
   templateId,
   version,
   jobs,
+  typeModel,
 }: {
   api: Api;
   templateId: string;
   version: number;
   jobs: readonly JobSummary[];
+  /** The draft's own model choice, to name the "no override" option. */
+  typeModel: { model?: string };
 }) {
   const inputId = useId();
   const [sample, setSample] = useState<File | null>(null);
@@ -91,7 +94,7 @@ export function TestRail({
           title={`Test v${version} on ${sample.name}`}
           confirmLabel="Run test"
           choices={choices}
-          emptyLabel="Template's models"
+          emptyLabel={typeModelLabel(choices, typeModel)}
           summary={
             <p>
               Runs {sample.name} through v{version}: reviewable, never published.

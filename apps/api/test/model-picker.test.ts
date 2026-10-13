@@ -296,3 +296,38 @@ describe('Workbench dev test runs pick a model choice (phase 4d)', () => {
     );
   });
 });
+
+describe('the document type model (inherited by steps naming none)', () => {
+  const withTypeModel = (model: string) => ({ ...letter(1), model });
+
+  it('checks it like a step model: a choice, never a raw model in a draft', async () => {
+    const ctx = await testApp();
+    seedModelChoices(ctx);
+    ctx.llm.seedChoice({ id: 'gone', label: 'Gone', ref: 'ryzen/other' });
+    await ctx.templates.create('letter', 1, withTypeModel('local/qwen'), 'draft');
+    const issuesOf = async () =>
+      (await ctx.app.inject('/api/templates/letter/versions/1')).json().issues;
+    expect(await issuesOf()).toEqual([
+      { path: 'model', message: 'pick a model choice instead of the model local/qwen' },
+    ]);
+    await ctx.templates.updateDraft('letter', 1, withTypeModel('gone'));
+    expect(await issuesOf()).toEqual([
+      {
+        path: 'model',
+        message:
+          'model choice gone uses ryzen/other, which is not offered: add it on the Models page',
+      },
+    ]);
+    await ctx.templates.updateDraft('letter', 1, withTypeModel('fast'));
+    expect(await issuesOf()).toEqual([]);
+  });
+  it('lists it with the document types, for the pickers', async () => {
+    const ctx = await testApp();
+    await ctx.templates.create('letter', 1, withTypeModel('fast'), 'published');
+    await ctx.templates.create('memo', 1, { ...letter(1), id: 'memo' }, 'published');
+    const specs = (await ctx.app.inject('/api/specs')).json() as { id: string; model?: string }[];
+    expect(specs.find((s) => s.id === 'letter')?.model).toBe('fast');
+    expect(specs.find((s) => s.id === 'memo')).not.toHaveProperty('model');
+    expect(specs.find((s) => s.id === 'demo')).not.toHaveProperty('model'); // spec.yaml
+  });
+});

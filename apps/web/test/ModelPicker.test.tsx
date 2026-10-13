@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ModelPicker } from '../src/ui/ModelPicker.js';
+import { ModelPicker, typeModelLabel } from '../src/ui/ModelPicker.js';
 import { MODEL_CHOICES } from './fake-api.js';
 
 const CHOICES = MODEL_CHOICES;
@@ -73,5 +73,16 @@ describe('ModelPicker', () => {
       'main',
     );
     expect(screen.getByText('local/qwen')).toBeInTheDocument();
+  });
+});
+
+describe('typeModelLabel (the "no override" option)', () => {
+  it.each<[{ model?: string } | undefined, string]>([
+    [{ model: 'test' }, "Document type's model (New for testing only)"],
+    [{}, "Document type's model (Main Production Model)"], // none set: the default choice
+    [{ model: 'gone' }, "Document type's model (gone)"],
+    [undefined, "Document type's model"], // the type is not known here
+  ])('%o -> %s', (type, label) => {
+    expect(typeModelLabel(CHOICES, type)).toBe(label);
   });
 });

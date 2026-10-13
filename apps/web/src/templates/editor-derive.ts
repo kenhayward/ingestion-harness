@@ -32,6 +32,7 @@ export function tabCounts(def: {
 export function stepSummary(
   step: Record<string, unknown>,
   modelName: (id: string) => string = (id) => id,
+  inherited = 'default model',
 ): string {
   if (step.type === 'check') {
     const values = text(step.values).trim();
@@ -40,7 +41,7 @@ export function stepSummary(
   }
   if (step.type !== 'extract') return '';
   const named = text(step.model);
-  const model = named && named !== 'default' ? modelName(named) : 'default model';
+  const model = named && named !== 'default' ? modelName(named) : inherited;
   if (typeof step.table === 'string') {
     const chunk = typeof step.chunkPages === 'number' ? [`${step.chunkPages} pages per call`] : [];
     return [`Table ${step.table}`, ...chunk, model].join(' · ');

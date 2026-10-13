@@ -89,3 +89,20 @@ export function ModelPicker({
     </span>
   );
 }
+
+/**
+ * The "no override" option: run each step with its own model, else the document type's model,
+ * else the default choice. Names the choice when the type is known (`{ model? }` from its
+ * definition or spec summary).
+ */
+export function typeModelLabel(
+  choices: readonly ModelChoice[],
+  type: { model?: string } | undefined,
+): string {
+  const base = "Document type's model";
+  if (!type) return base;
+  const name = type.model
+    ? (pickedChoice(type.model, choices)?.label ?? type.model)
+    : choices.find((c) => c.isDefault)?.label;
+  return name ? `${base} (${name})` : base;
+}

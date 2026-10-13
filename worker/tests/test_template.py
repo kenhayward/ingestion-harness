@@ -154,3 +154,26 @@ def test_step_instructions_and_template_preamble_reach_the_prompt_context() -> N
     ex = compile_step(t, t.pipeline[1])  # type: ignore[arg-type]
     assert ex.prompt_context["preamble"] == "Pharma document rules."
     assert ex.prompt_context["instructions"].startswith("The execution date")
+
+
+@pytest.mark.parametrize(
+    ("template_model", "step_model", "runs"),
+    [
+        (None, None, "default"),  # nothing set: the default model choice
+        ("fast", None, "fast"),  # the document type's model, inherited
+        ("fast", "default", "fast"),  # `default` on a step means "inherit" too
+        ("fast", "main", "main"),  # a step's own model wins
+        (None, "main", "main"),
+    ],
+)
+def test_steps_inherit_the_document_types_model(
+    template_model: str | None, step_model: str | None, runs: str
+) -> None:
+    raw = template()
+    if template_model is not None:
+        raw["model"] = template_model
+    if step_model is not None:
+        raw["pipeline"][0]["model"] = step_model
+    t = Template.model_validate(raw)
+    assert t.step_model(t.extract_steps()[0]) == runs
+    assert compile_step(t, t.extract_steps()[0]).model == runs

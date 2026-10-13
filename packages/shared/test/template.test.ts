@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TemplateSchema } from '../src/template.js';
+import { stepModel, TemplateSchema } from '../src/template.js';
 
 const valid = {
   id: 'demo',
@@ -114,5 +114,33 @@ describe('TemplateSchema', () => {
     ],
   ])('rejects %s', (_label, mutate, message) => {
     expect(issues(mutate(structuredClone(valid)))).toContain(message);
+  });
+});
+
+describe('stepModel (steps inherit the document type model)', () => {
+  // Same table as worker/tests/test_template.py::test_steps_inherit_the_document_types_model.
+  it.each<[string | undefined, string | undefined, string]>([
+    [undefined, undefined, 'default'],
+    ['fast', undefined, 'fast'],
+    ['fast', 'default', 'fast'],
+    ['fast', 'main', 'main'],
+    [undefined, 'main', 'main'],
+  ])('template %s, step %s -> %s', (templateModel, step, runs) => {
+    const raw = {
+      ...valid,
+      ...(templateModel ? { model: templateModel } : {}),
+      pipeline: [
+        { ...valid.pipeline[0]!, ...(step ? { model: step } : {}) },
+        ...valid.pipeline.slice(1),
+      ],
+    };
+    const t = TemplateSchema.parse(raw);
+    const step0 = t.pipeline[0]!;
+    if (step0.type !== 'extract') throw new Error('expected an extract step');
+    expect(stepModel(t, step0)).toBe(runs);
+  });
+
+  it('refuses an empty document type model', () => {
+    expect(TemplateSchema.safeParse({ ...valid, model: '' }).success).toBe(false);
   });
 });

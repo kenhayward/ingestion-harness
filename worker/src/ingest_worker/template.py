@@ -62,6 +62,7 @@ class ExtractStep(_Model):
     instructions: str | None = None
     #: Custom Jinja2 prompt file relative to the template directory (replaces the built-in).
     prompt: str | None = None
+    #: A model choice; `default` (or absent) inherits the template's `model`.
     model: str = "default"
     page_images: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, alias="pageImages")
     max_attempts: int = Field(default=2, ge=1, le=5, alias="maxAttempts")
@@ -115,6 +116,9 @@ class Template(_Model):
     description: str | None = None
     #: Domain guidance placed at the top of every built-in prompt.
     preamble: str | None = None
+    #: The document type's model choice, inherited by every extract step that names none
+    #: (absent: the default model choice).
+    model: str | None = None
     document: TemplateDocument
     outputs: OutputsDef
     pipeline: list[Step] = Field(min_length=1)
@@ -130,6 +134,12 @@ class Template(_Model):
 
     def extract_steps(self) -> list[ExtractStep]:
         return [s for s in self.pipeline if isinstance(s, ExtractStep)]
+
+    def step_model(self, step: ExtractStep) -> str:
+        """The model a step runs: its own, else the template's, else the default choice."""
+        if step.model != "default":
+            return step.model
+        return self.model or "default"
 
     def filler_of_field(self, field_id: str) -> ExtractStep:
         return next(s for s in self.extract_steps() if field_id in s.fields)
@@ -329,7 +339,7 @@ def compile_step(template: Template, step: ExtractStep) -> Extraction:
             "id": step.id,
             "sections": step.sections,
             "prompt": step.prompt or BUILTIN_PROMPT,
-            "model": step.model,
+            "model": template.step_model(step),
             "schema": schema,
             "maxAttempts": step.max_attempts,
             "pageImages": step.page_images,
