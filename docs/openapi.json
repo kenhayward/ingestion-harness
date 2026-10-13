@@ -18467,7 +18467,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "One row per ready sample of the set (`dev` by default, or `holdout`): its\nreference for the open draft's version, if any (pinned version, the version it was\ncarried from, and `outdated`: output changes since it was verified, which mean\nverify it again), and its latest reference or test run.",
+        "description": "One row per ready sample of the set (`dev` by default, or `holdout`): its\nreference for the open draft's version, if any (pinned version, the version it was\ncarried from, `outdated`: output changes since it was verified, which mean verify it\nagain, and `reverified`: the carried copy a re-verification replaced and why), and its\nlatest reference or test run. `corrections` (handoff RF1) is derived from the\nreviewed run's edits: `corrected` where the model proposed a value the reviewer\nchanged, `entered` where it proposed nothing; keys are a field id or\n`table[row].column` (1-based row). It is `null` when unknown: no source run, or the\nrun was re-run or reviewed again after the save. `verifiedBy` is the run's approver,\nelse its last editor.",
         "parameters": [
           {
             "schema": {

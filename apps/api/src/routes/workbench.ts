@@ -89,6 +89,8 @@ import {
   type StageView,
   type SurveyBody,
   type WorkbenchProject,
+  referenceCorrections,
+  type ReferenceInfo,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { listProjectsPage } from '../workbench/list.js';
@@ -466,9 +468,24 @@ const referenceRunParams = (
   definition: Record<string, unknown>,
 ) => ({ dataPolicy, forceReview: true, ...draftOutputsSnapshot(definition) });
 
+/** The project's current version (open draft, else latest published) and its definition. */
+async function currentDefinition(app: FastifyInstance, projectId: string) {
+  const { draft, published } = await versionsOf(app.deps.templates, projectId);
+  const version = draft ?? published;
+  const record = version === null ? null : await app.deps.templates.get(projectId, version);
+  return {
+    draft,
+    version,
+    definition: (record?.definition as Record<string, unknown> | undefined) ?? null,
+  };
+}
+
+type CurrentReference = Awaited<ReturnType<typeof currentReferences>>[number];
+
 /** A reference row plus the sample's newest reference run (draft model), for stage state. */
 interface ReferenceEntry {
   row: ReferenceRow;
+  reference: CurrentReference | null;
   draftRun: JobSummary | null;
 }
 
@@ -482,23 +499,41 @@ const verifiedRow = (row: ReferenceRow) =>
  * each one's `outputChanges` against the current outputs.
  */
 async function currentReferences(app: FastifyInstance, projectId: string) {
-  const { draft, published } = await versionsOf(app.deps.templates, projectId);
-  const version = draft ?? published;
+  const { draft, version, definition } = await currentDefinition(app, projectId);
   if (draft !== null) await app.deps.repo.carryReferencesForward(projectId, draft);
   const all = await app.deps.repo.listReferencesWithSha(projectId);
-  const record = version === null ? null : await app.deps.templates.get(projectId, version);
-  const outputs = (record?.definition as { outputs?: unknown } | undefined)?.outputs ?? null;
+  const outputs = definition?.outputs ?? null;
   const versionOfRow = new Map(all.map((r) => [r.id, r.templateVersion]));
+  // A re-verification supersedes the carried copy of the same PDF at the same version: that
+  // copy says which version it came from and which output changes made it outdated.
+  const replacedCopy = (r: (typeof all)[number]) =>
+    r.copiedFrom !== null || r.templateVersion === null
+      ? null
+      : (all.find(
+          (o) =>
+            o.supersededAt !== null &&
+            o.copiedFrom !== null &&
+            o.sha256 === r.sha256 &&
+            o.templateVersion === r.templateVersion,
+        ) ?? null); // `all` is newest first
   return all
     .filter(
       (r) =>
         r.supersededAt === null && (r.templateVersion === null || r.templateVersion === version),
     )
-    .map((r) => ({
-      ...r,
-      carriedFrom: r.copiedFrom === null ? null : (versionOfRow.get(r.copiedFrom) ?? null),
-      outdated: outputChanges(r.verifiedOutputs, outputs),
-    }));
+    .map((r) => {
+      const copy = replacedCopy(r);
+      const from = copy === null ? null : (versionOfRow.get(copy.copiedFrom!) ?? null);
+      return {
+        ...r,
+        carriedFrom: r.copiedFrom === null ? null : (versionOfRow.get(r.copiedFrom) ?? null),
+        outdated: outputChanges(r.verifiedOutputs, outputs),
+        reverified:
+          copy === null || from === null
+            ? null
+            : { from, changed: outputChanges(copy.verifiedOutputs, r.verifiedOutputs) },
+      };
+    });
 }
 
 /**
@@ -531,33 +566,44 @@ async function referenceEntries(
   const runs = (await app.deps.repo.listProjectRuns(projectId)).filter(
     (r) => r.job.referenceId === null,
   );
-  return samples.map((s) => {
-    // Newest first; a reference pinned to the current version wins over an unpinned one.
-    const reference =
+  // Newest first; a reference pinned to the current version wins over an unpinned one.
+  const picked = samples.map(
+    (s) =>
       references.find((r) => r.sha256 === s.sha256 && r.templateVersion !== null) ??
       references.find((r) => r.sha256 === s.sha256) ??
-      null;
+      null,
+  );
+  const sourceIds = picked.flatMap((r) => (r?.sourceJobId ? [r.sourceJobId] : []));
+  const reviews = new Map(
+    (sourceIds.length ? await app.deps.repo.listJobReviews(sourceIds) : []).map((r) => [
+      r.jobId,
+      r,
+    ]),
+  );
+  const info = (r: CurrentReference): ReferenceInfo => ({
+    id: r.id,
+    name: r.name,
+    createdAt: r.createdAt,
+    version: r.templateVersion,
+    carriedFrom: r.carriedFrom,
+    outdated: r.outdated,
+    sourceJobId: r.sourceJobId,
+    ...referenceCorrections((r.sourceJobId && reviews.get(r.sourceJobId)) || null, r.createdAt),
+    reverified: r.reverified,
+  });
+  return samples.map((s, i) => {
+    const reference = picked[i]!;
     const run = runs.find((r) => r.sha256 === s.sha256)?.job ?? null;
     const draftRun =
       runs.find((r) => r.sha256 === s.sha256 && r.job.modelOverride === 'draft')?.job ?? null;
     return {
       draftRun,
+      reference,
       row: {
         sampleId: s.id,
         filename: s.filename,
         sha256: s.sha256,
-        reference: reference && {
-          id: reference.id,
-          name: reference.name,
-          createdAt: reference.createdAt,
-          version: reference.templateVersion,
-          carriedFrom: reference.carriedFrom,
-          outdated: reference.outdated,
-          sourceJobId: reference.sourceJobId,
-          verifiedBy: null,
-          corrections: null,
-          reverified: null,
-        },
+        reference: reference && info(reference),
         run: run && {
           jobId: run.id,
           status: run.status,
@@ -2189,8 +2235,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           One row per ready sample of the set (\`dev\` by default, or \`holdout\`): its
           reference for the open draft's version, if any (pinned version, the version it was
-          carried from, and \`outdated\`: output changes since it was verified, which mean
-          verify it again), and its latest reference or test run.
+          carried from, \`outdated\`: output changes since it was verified, which mean verify it
+          again, and \`reverified\`: the carried copy a re-verification replaced and why), and its
+          latest reference or test run. \`corrections\` (handoff RF1) is derived from the
+          reviewed run's edits: \`corrected\` where the model proposed a value the reviewer
+          changed, \`entered\` where it proposed nothing; keys are a field id or
+          \`table[row].column\` (1-based row). It is \`null\` when unknown: no source run, or the
+          run was re-run or reviewed again after the save. \`verifiedBy\` is the run's approver,
+          else its last editor.
         `,
         params: ProjectIdParams,
         querystring: ReferencesQuery,

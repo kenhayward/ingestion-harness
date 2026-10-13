@@ -111,7 +111,12 @@ describe('references across versions (workbench)', () => {
     const v1 = await verify(s, 1);
     await nextVersion();
     const [row] = await rows();
-    expect(row!.reference).toMatchObject({ version: 2, carriedFrom: 1, outdated: [] });
+    expect(row!.reference).toMatchObject({
+      version: 2,
+      carriedFrom: 1,
+      outdated: [],
+      reverified: null,
+    });
     expect(row!.reference!.id).not.toBe(v1.id);
     expect((await stage())!.state).toBe('accepted');
     expect((await repo.listReferences('letter', 1)).map((r) => r.id)).toEqual([v1.id]);
@@ -157,6 +162,7 @@ describe('references across versions (workbench)', () => {
       version: 2,
       carriedFrom: null,
       outdated: [],
+      reverified: { from: 1, changed: ['field:sender'] },
     });
     expect((await repo.listReferences('letter', 1)).map((r) => r.id)).toEqual([v1.id]);
   });
