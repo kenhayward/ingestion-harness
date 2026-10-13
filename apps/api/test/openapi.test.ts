@@ -154,13 +154,6 @@ describe('md', () => {
   });
 });
 
-/**
- * Routes not documented yet (docs/design/api-docs.md, rollout). This list only shrinks: an
- * entry that is documented, or no longer exists, fails the sweep. The last rollout PR deletes it.
- */
-const UNDOCUMENTED = new Set([
-]);
-
 const METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;
 type Operation = OpenAPIV3_1.OperationObject & { 'x-admin'?: boolean };
 
@@ -174,11 +167,10 @@ function operations(doc: Doc) {
 }
 
 describe('docs sweep', () => {
-  it('documents every route not on the undocumented list', async () => {
+  it('describes every documented route fully', async () => {
     const problems: string[] = [];
     const ids = new Set<string>();
     for (const { key, op } of operations(await openapi())) {
-      if (UNDOCUMENTED.has(key)) continue;
       const missing = [
         !op.tags?.length && 'tags',
         op.tags?.some((t) => !(t in TAGS)) && 'known tags',
@@ -194,7 +186,7 @@ describe('docs sweep', () => {
     expect(problems).toEqual([]);
   });
 
-  it('lists only routes that exist and are still undocumented', async () => {
+  it('documents every route (a route without tags is left out until it is)', async () => {
     const { app } = await accessApp();
     const doc = (await app.inject('/api/docs/openapi.json')).json<Doc>();
     const documented = new Set(operations(doc).map(({ key }) => key));
@@ -202,7 +194,7 @@ describe('docs sweep', () => {
       .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method) && !r.path.startsWith('/api/docs'))
       .map((r) => `${r.method} ${r.path.replace(/:([A-Za-z]+)/g, '{$1}')}`)
       .filter((key) => !documented.has(key));
-    expect([...UNDOCUMENTED].sort()).toEqual(undocumented.sort());
+    expect(undocumented, 'routes without docs: give each a schema with tags').toEqual([]);
   });
 
   it('leaves routes out of the document until they are documented', async () => {
@@ -217,7 +209,7 @@ describe('docs sweep', () => {
     for (const { key, path, method, op } of operations(doc)) {
       // Public routes are never admin-only (and logout would end the user's session).
       const isPublic = op.security?.length === 0;
-      if (UNDOCUMENTED.has(key) || !path.startsWith('/api/') || isPublic) continue;
+      if (!path.startsWith('/api/') || isPublic) continue;
       const reply = await app.inject({
         method: method.toUpperCase() as 'GET',
         url: path.replace(/\{[A-Za-z]+\}/g, '00000000-0000-4000-8000-000000000000'),
