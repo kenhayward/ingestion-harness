@@ -78,7 +78,7 @@ export interface OverviewInputs {
   /** Dev and holdout samples: all of them, those still preparing, those whose prepare failed. */
   samples: { total: number; preparing: number; failed: number };
   /** Survey, outputs, sections, steps and references, as `GET /stages` returns them. */
-  stages: readonly StageView[];
+  stages: readonly Pick<StageView, 'stage' | 'state' | 'completedAt'>[];
   /** The newest revise proposal's status; null when revise never ran. */
   revise: ProposalStatus | null;
   /** An evaluation of the open draft (dev or holdout) is queued or running. */
