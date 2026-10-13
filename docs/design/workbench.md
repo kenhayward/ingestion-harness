@@ -321,13 +321,16 @@ How it works (migration 0018):
   (dev and holdout), dev test runs, evaluations (dev and holdout), model comparisons, regression
   runs of a draft version and Templates test uploads (`draftOutputsSnapshot`). "Save as
   reference" uses that snapshot, so a later draft edit (say, to the steps) does not block the
-  save. Without one (jobs created before the snapshot), it uses the published version's outputs,
+  save. Retrying a draft test run refreshes the snapshot to the current draft; a step re-run
+  keeps it (a stale snapshot only makes a saved reference outdated). Without one (jobs created before the snapshot), it uses the published version's outputs,
   or the draft's when the draft has not changed since the run was created; a draft edited after
   the run is a 409 (`the draft changed after this run; run it again`). A run of a version that no
   longer exists saves `{}`, which is outdated as soon as the version has outputs again.
 - `GET /api/templates/:id/references?version=N` returns the version's regression set
-  (`versionReferences`): outdated references are left out, and there is one reference per PDF
-  (sha256), the one pinned to the version over an unpinned one, so a PDF is never run twice.
+  (`versionReferences`): one reference per PDF (sha256), the one pinned to the version over an
+  unpinned one, then the newest, so a PDF is never run twice; a PDF whose pick is outdated is
+  left out (no fallback to an unpinned reference), matching the Workbench, which marks that
+  sample unverified.
 - Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
   instead of deleting it, so older iterations keep their comparisons. Deleting a pinned reference
   supersedes it too. Carrying skips a version that has any row, live or superseded, so deleted

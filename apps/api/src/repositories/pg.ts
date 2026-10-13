@@ -528,7 +528,7 @@ export class PgRepo implements IngestionRepo {
 
   async retryJob(
     id: string,
-    { model, specVersion }: RetryOptions = {},
+    { model, specVersion, outputs }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
       // A cancelled publish/rerun resumes as that task; a preparation stays a preparation; other
@@ -544,7 +544,10 @@ export class PgRepo implements IngestionRepo {
                 review_reasons = CASE WHEN status = 'succeeded' THEN NULL ELSE review_reasons END,
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
                 locked_by = NULL, locked_at = NULL, updated_at = now(),
-                model_override = CASE WHEN $2 THEN $3 ELSE model_override END
+                model_override = CASE WHEN $2 THEN $3 ELSE model_override END,
+                params = CASE WHEN $5 THEN COALESCE(params, '{}'::jsonb)
+                                           || jsonb_build_object('outputs', $6::jsonb)
+                              ELSE params END
           -- document_id IS NOT NULL: segment previews (document-less) are not retryable
           WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled', 'succeeded')
             AND document_id IS NOT NULL
@@ -555,7 +558,14 @@ export class PgRepo implements IngestionRepo {
             AND (SELECT status FROM prev) = 'succeeded')
        UPDATE documents d SET spec_version = COALESCE($4::int, d.spec_version)
          FROM retried WHERE d.id = retried.document_id`,
-      [id, model !== undefined, model ?? null, specVersion ?? null],
+      [
+        id,
+        model !== undefined,
+        model ?? null,
+        specVersion ?? null,
+        outputs !== undefined,
+        JSON.stringify(outputs ?? null),
+      ],
     );
     return rowCount ? await this.getJob(id) : null;
   }

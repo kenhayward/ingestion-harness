@@ -74,6 +74,8 @@ export type DeleteJobResult =
 export interface RetryOptions {
   model?: string | null;
   specVersion?: number;
+  /** Set `params.outputs` (a draft test run's snapshot), keeping the other params. */
+  outputs?: unknown;
 }
 
 /** Workbench jobs run after production work (jobs.priority; ADR 0007). */

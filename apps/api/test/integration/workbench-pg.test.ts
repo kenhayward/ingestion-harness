@@ -498,6 +498,26 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf((await repo.createRegressionJob(reference, 2)).id)).toBeNull();
   });
 
+  it('refreshes the outputs snapshot on retry, keeping the other params', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      params: { dataPolicy: 'local', outputs: { fields: [] } },
+    });
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [job.id]);
+    const outputs = { fields: [{ id: 'sender' }] };
+    expect(await repo.retryJob(job.id, { outputs })).not.toBeNull();
+    expect(await paramsOf(job.id)).toEqual({ dataPolicy: 'local', outputs });
+    const plain = await repo.createDocumentAndJob(doc(projectId), null, true);
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [plain.id]);
+    expect(await repo.retryJob(plain.id, { outputs: null })).not.toBeNull();
+    expect(await paramsOf(plain.id)).toEqual({ outputs: null });
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [plain.id]);
+    expect(await repo.retryJob(plain.id)).not.toBeNull();
+    expect(await paramsOf(plain.id)).toEqual({ outputs: null }); // untouched without the option
+  });
+
   it('serializes concurrent saves of the same PDF at one version', async () => {
     const projectId = await newProject();
     const source = doc(projectId);

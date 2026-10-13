@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { JobStatusSchema, pagePreviewKey, type JobSummary } from '@ih/shared';
 import { z } from 'zod';
 import { removeJobFiles } from '../jobs/delete.js';
-import { resolveDefinition } from '../templates/definitions.js';
+import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
 import { storeFor } from '../storage/stage.js';
 
 const ListQuery = z.object({
@@ -67,6 +67,17 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     return latest?.ok ? latest.definition.version : undefined;
   }
 
+  /**
+   * A retried test run of a draft re-processes against the draft as it is now: refresh its
+   * outputs snapshot (`params.outputs`), which Save as reference trusts.
+   */
+  async function draftSnapshotFor(job: JobSummary): Promise<{ outputs?: unknown }> {
+    const reprocesses = job.status !== 'cancelled' || job.task === 'process';
+    if (!reprocesses || !job.test || job.task === 'prepare') return {};
+    const record = await app.deps.templates.get(job.specId, job.specVersion);
+    return record?.status === 'draft' ? draftOutputsSnapshot(record.definition) : {};
+  }
+
   app.post<{ Params: { id: string } }>('/jobs/:id/retry', async (req, reply) => {
     if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
     const body = RetryBody.safeParse(req.body ?? {});
@@ -80,6 +91,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     const job = await app.deps.repo.retryJob(req.params.id, {
       model,
       specVersion: current ? await latestVersionFor(current) : undefined,
+      ...(current ? await draftSnapshotFor(current) : {}),
     });
     return job ?? reply.code(409).send({ error: 'job not found or not in a retryable state' });
   });

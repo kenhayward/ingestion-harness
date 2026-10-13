@@ -431,6 +431,54 @@ describe('references across versions', () => {
     expect((v1.json() as { name: string }[]).map((r) => r.name)).toEqual(['legacy']);
   });
 
+  it('leaves a PDF out of regression when its pinned reference is outdated, even with a legacy one', async () => {
+    const ctx = await setup();
+    await project(ctx);
+    // processedJob always uses sha256 'abc': both references are of the same PDF
+    const legacyJob = await processedJob(ctx, undefined, 'succeeded', 1);
+    const pinnedJob = await processedJob(ctx, undefined, 'succeeded', 2);
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'legacy',
+      documentId: legacyJob.documentId,
+      sourceJobId: legacyJob.id,
+      expected: { fields: {}, tables: {} },
+    }); // verifiedOutputs null: never outdated on its own
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: 'pinned',
+      documentId: pinnedJob.documentId,
+      sourceJobId: pinnedJob.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 2,
+      verifiedOutputs: { fields: [{ id: 'gone' }], tables: [] }, // outdated against v2
+    });
+    const listed = await ctx.app.inject('/api/templates/letter/references?version=2');
+    expect(listed.json()).toEqual([]);
+    const run = await ctx.app.inject(post('/api/templates/letter/versions/2/regression', {}));
+    expect(run.statusCode).toBe(400);
+  });
+
+  it("refreshes a draft test run's outputs snapshot on retry, keeping its other params", async () => {
+    const ctx = await setup();
+    const job = await processedJob(ctx, undefined, 'succeeded', 2);
+    ctx.repo.jobs.set(job.id, { ...ctx.repo.jobs.get(job.id)!, test: true, status: 'failed' });
+    ctx.repo.jobParams.set(job.id, { dataPolicy: 'local', outputs: { fields: [], tables: [] } });
+    const res = await ctx.app.inject(post(`/api/jobs/${job.id}/retry`, {}));
+    expect(res.statusCode).toBe(200);
+    expect(await ctx.repo.getJobParams(job.id)).toEqual({
+      dataPolicy: 'local',
+      outputs: definition(2, 'two').outputs,
+    });
+    // a run of a published version has nothing to refresh
+    const published = await processedJob(ctx, undefined, 'succeeded', 1);
+    ctx.repo.jobs.set(published.id, { ...ctx.repo.jobs.get(published.id)!, test: true });
+    expect((await ctx.app.inject(post(`/api/jobs/${published.id}/retry`, {}))).statusCode).toBe(
+      200,
+    );
+    expect(await ctx.repo.getJobParams(published.id)).toBeNull();
+  });
+
   it("snapshots a draft version's outputs on its regression jobs, not a published one's", async () => {
     const ctx = await setup();
     const job = await processedJob(ctx, undefined, 'succeeded', 1);

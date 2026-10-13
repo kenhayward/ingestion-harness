@@ -62,9 +62,10 @@ export async function regressionReport(
 }
 
 /**
- * The references a version is regression-tested against: live ones pinned to it or unpinned,
- * minus those verified against outputs this version has changed (re-verify them first), and one
- * per PDF (sha256), preferring the pinned one. Oldest first.
+ * The references a version is regression-tested against: one live reference per PDF (sha256),
+ * pinned to the version or unpinned, preferring the pinned one, then the newest; a PDF whose
+ * pick was verified against outputs this version has changed is left out (re-verify it first),
+ * as the Workbench marks that sample unverified. Oldest first.
  */
 export async function versionReferences(
   app: FastifyInstance,
@@ -80,12 +81,16 @@ export async function versionReferences(
   for (const r of all) {
     if (r.supersededAt !== null) continue;
     if (r.templateVersion !== null && r.templateVersion !== version) continue;
-    if (outputChanges(r.verifiedOutputs, outputs).length) continue;
     const kept = bySha.get(r.sha256);
-    if (!kept || (kept.templateVersion === null && r.templateVersion !== null))
+    if (!kept || (kept.templateVersion === null && r.templateVersion !== null)) {
       bySha.set(r.sha256, r);
+    }
   }
-  const keep = new Set([...bySha.values()].map((r) => r.id));
+  const keep = new Set(
+    [...bySha.values()]
+      .filter((r) => outputChanges(r.verifiedOutputs, outputs).length === 0)
+      .map((r) => r.id),
+  );
   return all
     .filter((r) => keep.has(r.id))
     .reverse()
