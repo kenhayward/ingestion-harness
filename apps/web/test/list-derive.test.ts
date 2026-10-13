@@ -24,8 +24,29 @@ describe('pagerPages', () => {
     [20, 40, [1, '…', 19, 20, 21, '…', 40]],
     [40, 40, [1, '…', 38, 39, 40]],
     [3, 40, [1, 2, 3, 4, '…', 40]],
+    [4, 40, [1, 2, 3, 4, 5, '…', 40]],
+    [37, 40, [1, '…', 36, 37, 38, 39, 40]],
   ] as const)('page %i of %i', (current, last, expected) => {
     expect(pagerPages(current, last)).toEqual(expected);
+  });
+
+  it('is sorted and unique, keeps the ends and current, and never hides a single page', () => {
+    for (let last = 1; last <= 40; last++) {
+      for (let current = 1; current <= last; current++) {
+        const out = pagerPages(current, last);
+        const nums = out.filter((p): p is number => p !== '…');
+        expect(nums).toEqual([...new Set(nums)].sort((a, b) => a - b));
+        expect(nums).toContain(1);
+        expect(nums).toContain(last);
+        expect(nums).toContain(current);
+        out.forEach((p, i) => {
+          if (p !== '…') return;
+          const before = out[i - 1] as number;
+          const after = out[i + 1] as number;
+          expect(after - before).toBeGreaterThan(2);
+        });
+      }
+    }
   });
 });
 

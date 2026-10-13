@@ -12,7 +12,12 @@ export function pagerPages(current: number, last: number): (number | '…')[] {
   const pages = [...keep].sort((a, b) => a - b);
   const out: (number | '…')[] = [];
   pages.forEach((p, i) => {
-    if (i > 0 && p - pages[i - 1]! > 1) out.push('…');
+    if (i > 0) {
+      const gap = p - pages[i - 1]!;
+      // A gap of one page is shown as that page: '…' would hide nothing worth hiding.
+      if (gap === 2) out.push(p - 1);
+      else if (gap > 2) out.push('…');
+    }
     out.push(p);
   });
   return out;
