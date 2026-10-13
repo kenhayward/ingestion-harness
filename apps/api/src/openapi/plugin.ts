@@ -33,6 +33,15 @@ const CSS = `
 }`;
 
 /**
+ * Fastify's own errors (413, 406, …) reach the serializer as Error objects whose fields are not
+ * enumerable: give them the body Fastify sends when a route has no schema.
+ */
+function errorBody(err: Error) {
+  const { statusCode, code, error } = err as Error & Record<string, unknown>;
+  return { statusCode, code, error, message: err.message };
+}
+
+/**
  * The OpenAPI document and the docs browser (docs/design/api-docs.md). Route `schema` blocks are
  * documentation only: handlers validate with Zod themselves, so the compilers pass requests
  * through untouched and serialise responses with JSON.stringify (a schema never drops a field).
@@ -40,7 +49,9 @@ const CSS = `
  */
 export async function registerOpenApi(app: FastifyInstance): Promise<void> {
   app.setValidatorCompiler(() => (value) => ({ value }));
-  app.setSerializerCompiler(() => (data) => JSON.stringify(data));
+  app.setSerializerCompiler(
+    () => (data) => JSON.stringify(data instanceof Error ? errorBody(data) : data),
+  );
   await app.register(swagger, { openapi: OPENAPI as never, transform: transform as never });
   await app.register(async (docs) => {
     // Every route the docs browser adds (page, script, document) is public.
