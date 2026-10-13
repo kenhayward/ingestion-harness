@@ -454,3 +454,60 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.proposal-card {
+  border: 1.5px solid;
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  overflow: hidden;
+}
+.proposal-meta {
+  padding: 12px 18px;
+  background: var(--ih-surface2);
+  border-bottom: 1px solid var(--ih-border);
+}
+.proposal-meta p {
+  margin: 0 0 4px;
+}
+.proposal-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.proposal-changes li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ih-border-soft);
+}
+.proposal-change p {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.kind-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.proposal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 18px;
+}
+.proposal-edit {
+  margin-left: auto;
+}
+/* A quiet destructive action: outlined like a plain button, danger text. */
+button.danger-text {
+  border-color: var(--ih-border);
+  background: transparent;
+  color: var(--ih-danger-fg);
+}
