@@ -235,7 +235,7 @@ export interface StageSkip {
   skippedAt: string;
 }
 
-/** Stages whose stale state can be cleared without a new proposal (handoff SC1, migration 0024). */
+/** Stages whose stale state can be cleared without a new proposal (handoff SC1, migration 0026). */
 export const KEEPABLE_STAGES = ['outputs', 'sections', 'steps'] as const;
 export type KeepableStage = (typeof KEEPABLE_STAGES)[number];
 

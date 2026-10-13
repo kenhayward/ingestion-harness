@@ -201,7 +201,7 @@ export interface WorkbenchRepo {
   addSkip(projectId: string, stage: DraftStage): Promise<StageSkipRecord>;
   /** Newest first. */
   listSkips(projectId: string): Promise<StageSkipRecord[]>;
-  /** "Keep" on a stale stage (handoff SC1, migration 0024): its content stands up to `upTo`. */
+  /** "Keep" on a stale stage (handoff SC1, migration 0026): its content stands up to `upTo`. */
   addConfirm(projectId: string, stage: KeepableStage, upTo: string): Promise<StageConfirmRecord>;
   /** Newest first. */
   listConfirms(projectId: string): Promise<StageConfirmRecord[]>;
