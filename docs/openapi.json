@@ -14685,6 +14685,525 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/feedback": {
+      "get": {
+        "operationId": "listFeedback",
+        "summary": "List a project's feedback",
+        "tags": [
+          "Feedback & revise"
+        ],
+        "description": "Every feedback note, open or resolved. `resolvedBy` names the revise proposal that\nanswered it (accepted fully or partly); null while it is open.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The feedback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string",
+                        "enum": [
+                          "field",
+                          "table",
+                          "step",
+                          "section"
+                        ]
+                      },
+                      "targetId": {
+                        "type": "string"
+                      },
+                      "sampleId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "iterationId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "body": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "resolvedBy": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "projectId",
+                      "target",
+                      "targetId",
+                      "sampleId",
+                      "iterationId",
+                      "body",
+                      "createdAt",
+                      "resolvedBy"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The feedback."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addFeedback",
+        "summary": "Add feedback for the revise stage",
+        "tags": [
+          "Feedback & revise"
+        ],
+        "description": "A note on what the draft gets wrong, aimed at a field, table, step or section\n(`targetId`), optionally about one sample and one iteration. Open feedback is what\nthe `revise` stage answers. Feedback is sent to the drafting model, so it may only\nname a ready **dev** sample and a **dev** iteration (the holdout rule).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "field",
+                      "table",
+                      "step",
+                      "section"
+                    ]
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "sampleId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "iterationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "target",
+                  "targetId",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new feedback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string",
+                      "enum": [
+                        "field",
+                        "table",
+                        "step",
+                        "section"
+                      ]
+                    },
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "sampleId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "iterationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "body": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "resolvedBy": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "target",
+                    "targetId",
+                    "sampleId",
+                    "iterationId",
+                    "body",
+                    "createdAt",
+                    "resolvedBy"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The new feedback."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, `feedback can only refer to dev samples`, `unknown iteration`, or `feedback can only refer to dev iterations`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, `feedback can only refer to dev samples`, `unknown iteration`, or `feedback can only refer to dev iterations`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/feedback/{fid}": {
+      "delete": {
+        "operationId": "deleteFeedback",
+        "summary": "Delete open feedback",
+        "tags": [
+          "Feedback & revise"
+        ],
+        "description": "Deletes a feedback note that is still open. Resolved feedback is kept: it records what\na revision answered.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "fid",
+            "required": true,
+            "description": "The feedback id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`feedback not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`feedback not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`resolved feedback cannot be deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`resolved feedback cannot be deleted`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/stages/{stage}": {
       "post": {
         "operationId": "startStage",
@@ -18269,6 +18788,2621 @@
                   ],
                   "additionalProperties": true,
                   "description": "`proposal is {status}`, `proposal was already decided`, `the draft version changed since this proposal; re-run the stage`, `the draft changed since this proposal where these changes apply: …`, or `the draft is no longer open; …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/evaluations": {
+      "post": {
+        "operationId": "evaluate",
+        "summary": "Evaluate the draft against the references",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "Runs the open draft on every sample of the set (`dev` by default, or `holdout`)\nthat has a verified reference, one test job each, and records an iteration with a\nsnapshot of the definition. The scorecard fills in as the jobs finish (poll\n`GET …/iterations/{iid}`).\n\n`model` overrides every step with an alias (`default`, `fast` or `draft`)\nfor exploration; only iterations with the template's own models count for the publish\ngate. `uncached` makes every step call its model instead of reusing the step cache.\nHoldout scores always compare the models' raw output, never reviewed values.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "enum": [
+                      "default",
+                      "fast",
+                      "draft"
+                    ]
+                  },
+                  "uncached": {
+                    "type": "boolean"
+                  },
+                  "set": {
+                    "type": "string",
+                    "enum": [
+                      "dev",
+                      "holdout"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new iteration, running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "type": "integer"
+                    },
+                    "briefVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "set": {
+                      "type": "string",
+                      "enum": [
+                        "dev",
+                        "holdout"
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "default",
+                            "fast",
+                            "draft"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "groupId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "uncached": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "complete"
+                      ]
+                    },
+                    "score": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "completed": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "cache": {
+                      "type": "object",
+                      "properties": {
+                        "reused": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "reused",
+                        "total"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "scorecard": {
+                      "type": "object",
+                      "properties": {
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "completed": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "matched": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "accuracy": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "matched",
+                              "total",
+                              "accuracy"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "matched": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "accuracy": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "matched",
+                              "total",
+                              "accuracy"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "score",
+                        "completed",
+                        "total",
+                        "fields",
+                        "columns"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "samples": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sampleId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "jobId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "succeeded",
+                                  "failed",
+                                  "needs_review",
+                                  "awaiting_review",
+                                  "rejected",
+                                  "cancelled"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "comparison": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "score": {
+                                    "type": "number"
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {},
+                                        "actual": {},
+                                        "match": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "match"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  "tables": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {
+                                          "type": "integer"
+                                        },
+                                        "actual": {
+                                          "type": "integer"
+                                        },
+                                        "matched": {
+                                          "type": "integer"
+                                        },
+                                        "missing": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "extra": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "changed": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "expected": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "actual": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "columns": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "expected",
+                                              "actual",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
+                                        "cells": {
+                                          "type": "integer"
+                                        },
+                                        "cellsTotal": {
+                                          "type": "integer"
+                                        },
+                                        "columns": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "object",
+                                            "properties": {
+                                              "matched": {
+                                                "type": "integer"
+                                              },
+                                              "total": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "matched",
+                                              "total"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "expected",
+                                        "actual",
+                                        "matched",
+                                        "missing",
+                                        "extra",
+                                        "changed",
+                                        "cells",
+                                        "cellsTotal",
+                                        "columns"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "score",
+                                  "fields",
+                                  "tables"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "sampleId",
+                          "filename",
+                          "jobId",
+                          "status",
+                          "error",
+                          "comparison"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "templateVersion",
+                    "briefVersion",
+                    "set",
+                    "model",
+                    "groupId",
+                    "uncached",
+                    "createdAt",
+                    "status",
+                    "score",
+                    "completed",
+                    "total",
+                    "cache",
+                    "scorecard",
+                    "samples"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The new iteration, running."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid body, or `the draft is not valid` (with `issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {},
+                    "issues": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid body, or `the draft is not valid` (with `issues`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/evaluations/compare": {
+      "post": {
+        "operationId": "compareModels",
+        "summary": "Compare models on the dev samples",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "Evaluates the open draft on the dev samples three times, overriding every step with\nthe `default`, `fast` and `draft` aliases, as one comparison group. Read it\nwith `GET …/comparisons/{groupId}`. Comparisons are dev-only: they inform drafting,\nwhich never sees holdout.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uncached": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The comparison, running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groupId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "iterations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "templateVersion": {
+                            "type": "integer"
+                          },
+                          "briefVersion": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "set": {
+                            "type": "string",
+                            "enum": [
+                              "dev",
+                              "holdout"
+                            ]
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "fast",
+                                  "draft"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "groupId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "uncached": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "running",
+                              "complete"
+                            ]
+                          },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "completed": {
+                            "type": "integer"
+                          },
+                          "total": {
+                            "type": "integer"
+                          },
+                          "cache": {
+                            "type": "object",
+                            "properties": {
+                              "reused": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "reused",
+                              "total"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "scorecard": {
+                            "type": "object",
+                            "properties": {
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "completed": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "matched": {
+                                      "type": "integer"
+                                    },
+                                    "total": {
+                                      "type": "integer"
+                                    },
+                                    "accuracy": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "matched",
+                                    "total",
+                                    "accuracy"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              "columns": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "matched": {
+                                      "type": "integer"
+                                    },
+                                    "total": {
+                                      "type": "integer"
+                                    },
+                                    "accuracy": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "matched",
+                                    "total",
+                                    "accuracy"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "required": [
+                              "score",
+                              "completed",
+                              "total",
+                              "fields",
+                              "columns"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "samples": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sampleId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "filename": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "status": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "queued",
+                                        "running",
+                                        "succeeded",
+                                        "failed",
+                                        "needs_review",
+                                        "awaiting_review",
+                                        "rejected",
+                                        "cancelled"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "comparison": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "score": {
+                                          "type": "number"
+                                        },
+                                        "fields": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string"
+                                              },
+                                              "expected": {},
+                                              "actual": {},
+                                              "match": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "match"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
+                                        "tables": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string"
+                                              },
+                                              "expected": {
+                                                "type": "integer"
+                                              },
+                                              "actual": {
+                                                "type": "integer"
+                                              },
+                                              "matched": {
+                                                "type": "integer"
+                                              },
+                                              "missing": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "additionalProperties": {}
+                                                }
+                                              },
+                                              "extra": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "additionalProperties": {}
+                                                }
+                                              },
+                                              "changed": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "expected": {
+                                                      "type": "object",
+                                                      "additionalProperties": {}
+                                                    },
+                                                    "actual": {
+                                                      "type": "object",
+                                                      "additionalProperties": {}
+                                                    },
+                                                    "columns": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "expected",
+                                                    "actual",
+                                                    "columns"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              },
+                                              "cells": {
+                                                "type": "integer"
+                                              },
+                                              "cellsTotal": {
+                                                "type": "integer"
+                                              },
+                                              "columns": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "matched": {
+                                                      "type": "integer"
+                                                    },
+                                                    "total": {
+                                                      "type": "integer"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "matched",
+                                                    "total"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "expected",
+                                              "actual",
+                                              "matched",
+                                              "missing",
+                                              "extra",
+                                              "changed",
+                                              "cells",
+                                              "cellsTotal",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "score",
+                                        "fields",
+                                        "tables"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "sampleId",
+                                "filename",
+                                "jobId",
+                                "status",
+                                "error",
+                                "comparison"
+                              ],
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "projectId",
+                          "templateVersion",
+                          "briefVersion",
+                          "set",
+                          "model",
+                          "groupId",
+                          "uncached",
+                          "createdAt",
+                          "status",
+                          "score",
+                          "completed",
+                          "total",
+                          "cache",
+                          "scorecard",
+                          "samples"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "groupId",
+                    "iterations"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The comparison, running."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid body, or `the draft is not valid` (with `issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {},
+                    "issues": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid body, or `the draft is not valid` (with `issues`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/comparisons/{groupId}": {
+      "get": {
+        "operationId": "getComparison",
+        "summary": "Get a model comparison",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "The comparison group's iterations in the order `default`, `fast`, `draft`,\neach with its scorecard: the overall score and the accuracy of every field and table\ncolumn.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "description": "The comparison group id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The comparison.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groupId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "iterations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "templateVersion": {
+                            "type": "integer"
+                          },
+                          "briefVersion": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "set": {
+                            "type": "string",
+                            "enum": [
+                              "dev",
+                              "holdout"
+                            ]
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "fast",
+                                  "draft"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "groupId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "uncached": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "running",
+                              "complete"
+                            ]
+                          },
+                          "score": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "completed": {
+                            "type": "integer"
+                          },
+                          "total": {
+                            "type": "integer"
+                          },
+                          "cache": {
+                            "type": "object",
+                            "properties": {
+                              "reused": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "reused",
+                              "total"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "scorecard": {
+                            "type": "object",
+                            "properties": {
+                              "score": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "completed": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "matched": {
+                                      "type": "integer"
+                                    },
+                                    "total": {
+                                      "type": "integer"
+                                    },
+                                    "accuracy": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "matched",
+                                    "total",
+                                    "accuracy"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              "columns": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "matched": {
+                                      "type": "integer"
+                                    },
+                                    "total": {
+                                      "type": "integer"
+                                    },
+                                    "accuracy": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "matched",
+                                    "total",
+                                    "accuracy"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            },
+                            "required": [
+                              "score",
+                              "completed",
+                              "total",
+                              "fields",
+                              "columns"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "samples": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sampleId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "filename": {
+                                  "type": "string"
+                                },
+                                "jobId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "status": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "queued",
+                                        "running",
+                                        "succeeded",
+                                        "failed",
+                                        "needs_review",
+                                        "awaiting_review",
+                                        "rejected",
+                                        "cancelled"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "comparison": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "score": {
+                                          "type": "number"
+                                        },
+                                        "fields": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string"
+                                              },
+                                              "expected": {},
+                                              "actual": {},
+                                              "match": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "match"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
+                                        "tables": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string"
+                                              },
+                                              "expected": {
+                                                "type": "integer"
+                                              },
+                                              "actual": {
+                                                "type": "integer"
+                                              },
+                                              "matched": {
+                                                "type": "integer"
+                                              },
+                                              "missing": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "additionalProperties": {}
+                                                }
+                                              },
+                                              "extra": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "additionalProperties": {}
+                                                }
+                                              },
+                                              "changed": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "expected": {
+                                                      "type": "object",
+                                                      "additionalProperties": {}
+                                                    },
+                                                    "actual": {
+                                                      "type": "object",
+                                                      "additionalProperties": {}
+                                                    },
+                                                    "columns": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "expected",
+                                                    "actual",
+                                                    "columns"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              },
+                                              "cells": {
+                                                "type": "integer"
+                                              },
+                                              "cellsTotal": {
+                                                "type": "integer"
+                                              },
+                                              "columns": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "matched": {
+                                                      "type": "integer"
+                                                    },
+                                                    "total": {
+                                                      "type": "integer"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "matched",
+                                                    "total"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "expected",
+                                              "actual",
+                                              "matched",
+                                              "missing",
+                                              "extra",
+                                              "changed",
+                                              "cells",
+                                              "cellsTotal",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "score",
+                                        "fields",
+                                        "tables"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "sampleId",
+                                "filename",
+                                "jobId",
+                                "status",
+                                "error",
+                                "comparison"
+                              ],
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "projectId",
+                          "templateVersion",
+                          "briefVersion",
+                          "set",
+                          "model",
+                          "groupId",
+                          "uncached",
+                          "createdAt",
+                          "status",
+                          "score",
+                          "completed",
+                          "total",
+                          "cache",
+                          "scorecard",
+                          "samples"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "groupId",
+                    "iterations"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The comparison."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`comparison not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`comparison not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/iterations": {
+      "get": {
+        "operationId": "listIterations",
+        "summary": "List a project's iterations",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "Every evaluation, newest first, with its set, model override, comparison group,\nstatus and score (`completed` of `total` samples compared). A complete\niteration's score is cached; a running one is computed from its jobs.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The iterations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "templateVersion": {
+                        "type": "integer"
+                      },
+                      "briefVersion": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "set": {
+                        "type": "string",
+                        "enum": [
+                          "dev",
+                          "holdout"
+                        ]
+                      },
+                      "model": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "default",
+                              "fast",
+                              "draft"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "groupId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "uncached": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "running",
+                          "complete"
+                        ]
+                      },
+                      "score": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "completed": {
+                        "type": "integer"
+                      },
+                      "total": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "projectId",
+                      "templateVersion",
+                      "briefVersion",
+                      "set",
+                      "model",
+                      "groupId",
+                      "uncached",
+                      "createdAt",
+                      "status",
+                      "score",
+                      "completed",
+                      "total"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The iterations."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/iterations/{iid}": {
+      "get": {
+        "operationId": "getIteration",
+        "summary": "Get an iteration",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "An iteration with its scorecard (overall score, then each field's and column's\naccuracy, worst first), how many step runs were served from the step cache, and per\nsample the job and its comparison with the reference. A job that failed, needs\nreview, was cancelled or was deleted has no comparison.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "iid",
+            "required": true,
+            "description": "The iteration id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The iteration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "templateVersion": {
+                      "type": "integer"
+                    },
+                    "briefVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "set": {
+                      "type": "string",
+                      "enum": [
+                        "dev",
+                        "holdout"
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "default",
+                            "fast",
+                            "draft"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "groupId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "uncached": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "complete"
+                      ]
+                    },
+                    "score": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "completed": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "cache": {
+                      "type": "object",
+                      "properties": {
+                        "reused": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "reused",
+                        "total"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "scorecard": {
+                      "type": "object",
+                      "properties": {
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "completed": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "matched": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "accuracy": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "matched",
+                              "total",
+                              "accuracy"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "columns": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "matched": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "accuracy": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "matched",
+                              "total",
+                              "accuracy"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "score",
+                        "completed",
+                        "total",
+                        "fields",
+                        "columns"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "samples": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sampleId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "jobId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "succeeded",
+                                  "failed",
+                                  "needs_review",
+                                  "awaiting_review",
+                                  "rejected",
+                                  "cancelled"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "comparison": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "score": {
+                                    "type": "number"
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {},
+                                        "actual": {},
+                                        "match": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "match"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  "tables": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "expected": {
+                                          "type": "integer"
+                                        },
+                                        "actual": {
+                                          "type": "integer"
+                                        },
+                                        "matched": {
+                                          "type": "integer"
+                                        },
+                                        "missing": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "extra": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                          }
+                                        },
+                                        "changed": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "expected": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "actual": {
+                                                "type": "object",
+                                                "additionalProperties": {}
+                                              },
+                                              "columns": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "expected",
+                                              "actual",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
+                                        "cells": {
+                                          "type": "integer"
+                                        },
+                                        "cellsTotal": {
+                                          "type": "integer"
+                                        },
+                                        "columns": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "object",
+                                            "properties": {
+                                              "matched": {
+                                                "type": "integer"
+                                              },
+                                              "total": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "matched",
+                                              "total"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "expected",
+                                        "actual",
+                                        "matched",
+                                        "missing",
+                                        "extra",
+                                        "changed",
+                                        "cells",
+                                        "cellsTotal",
+                                        "columns"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "score",
+                                  "fields",
+                                  "tables"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "sampleId",
+                          "filename",
+                          "jobId",
+                          "status",
+                          "error",
+                          "comparison"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "templateVersion",
+                    "briefVersion",
+                    "set",
+                    "model",
+                    "groupId",
+                    "uncached",
+                    "createdAt",
+                    "status",
+                    "score",
+                    "completed",
+                    "total",
+                    "cache",
+                    "scorecard",
+                    "samples"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The iteration."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`iteration not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`iteration not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/iterations/{iid}/restore": {
+      "post": {
+        "operationId": "restoreIteration",
+        "summary": "Restore an iteration's definition",
+        "tags": [
+          "Evaluation, iterations & comparisons"
+        ],
+        "description": "Writes the definition the iteration evaluated into the open draft, replacing it, to\ngo back to a version that scored better.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "iid",
+            "required": true,
+            "description": "The iteration id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "dataPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "external"
+                          ]
+                        },
+                        "dataPolicyChangedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dataPolicyChangedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishThreshold": {
+                          "type": "number"
+                        },
+                        "thresholdSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "thresholdSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "createdAt",
+                        "dataPolicy",
+                        "dataPolicyChangedAt",
+                        "dataPolicyChangedBy",
+                        "publishThreshold",
+                        "thresholdSetBy",
+                        "thresholdSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "brief": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "body": {
+                              "type": "object",
+                              "properties": {
+                                "purpose": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "outputs": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "exampleOutput": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "glossary": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "variants": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "rules": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "answers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "answer": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "answer"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "version",
+                            "body",
+                            "createdAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "draft",
+                    "published",
+                    "brief"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The project."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`iteration not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`iteration not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no open draft; start the next version on the Template tab`, or `the draft is no longer open`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no open draft; start the next version on the Template tab`, or `the draft is no longer open`."
                 }
               }
             }

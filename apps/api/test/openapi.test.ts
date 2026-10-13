@@ -160,22 +160,13 @@ describe('md', () => {
  */
 const UNDOCUMENTED = new Set([
   'DELETE /api/access/s3-keys/{id}',
-  'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'GET /api/access/s3-keys',
-  'GET /api/workbench/projects/{id}/comparisons/{groupId}',
-  'GET /api/workbench/projects/{id}/feedback',
-  'GET /api/workbench/projects/{id}/iterations',
-  'GET /api/workbench/projects/{id}/iterations/{iid}',
   'GET /api/workbench/projects/{id}/publications',
   'GET /api/workbench/projects/{id}/publish-gate',
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/workbench/projects/{id}/evaluations',
-  'POST /api/workbench/projects/{id}/evaluations/compare',
-  'POST /api/workbench/projects/{id}/feedback',
   'POST /api/workbench/projects/{id}/holdout/reference-runs',
-  'POST /api/workbench/projects/{id}/iterations/{iid}/restore',
   'POST /api/workbench/projects/{id}/publish',
 ]);
 

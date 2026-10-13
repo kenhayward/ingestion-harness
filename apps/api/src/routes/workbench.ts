@@ -5,6 +5,7 @@ import {
   AVAILABLE_STAGES,
   BriefBodySchema,
   BriefSchema,
+  ComparisonViewSchema,
   DRAFT_STAGES,
   DataPolicySchema,
   EVALUATION_MODELS,
@@ -12,6 +13,9 @@ import {
   DraftResultSchema,
   EMPTY_BRIEF,
   FeedbackBodySchema,
+  FeedbackItemSchema,
+  IterationSummarySchema,
+  IterationViewSchema,
   MAX_SAMPLES,
   JobSummarySchema,
   PreparedTextSchema,
@@ -118,6 +122,19 @@ const DRAFT_NOT_VALID = res(
 );
 const STAGE_ORDER_CONFLICT = '`finish the {stage} stage first (accept or skip it)`';
 const JobsCreated = z.object({ jobs: z.array(JobSummarySchema) });
+const EVALUATION_REFUSED = {
+  400: DRAFT_NOT_VALID,
+  404: PROJECT_NOT_FOUND,
+  409: error(
+    '`no open draft; start the next version on the Template tab`, or `no verified references ' +
+      'for the {set} samples; verify …`.',
+  ),
+};
+const IterationIdParams = z.object({
+  id: z.string().describe('The project id.'),
+  iid: z.string().uuid().describe('The iteration id.'),
+});
+const ITERATION_NOT_FOUND = error('`iteration not found`.');
 const WORKBENCH_DOCS =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
 
@@ -1686,48 +1703,113 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     };
   }
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/feedback', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const items: FeedbackItem[] = await workbench.listFeedback(req.params.id);
-    return items;
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/feedback',
+    {
+      schema: {
+        tags: ['Feedback & revise'],
+        operationId: 'listFeedback',
+        summary: "List a project's feedback",
+        description: md`
+          Every feedback note, open or resolved. \`resolvedBy\` names the revise proposal that
+          answered it (accepted fully or partly); null while it is open.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The feedback.', z.array(FeedbackItemSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const items: FeedbackItem[] = await workbench.listFeedback(req.params.id);
+      return items;
+    },
+  );
 
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/feedback', async (req, reply) => {
-    const projectId = req.params.id;
-    if (!(await workbench.getProject(projectId))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const body = FeedbackBodySchema.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const { sampleId, iterationId, ...rest } = body.data;
-    if (sampleId !== undefined) {
-      // Holdout rule (ADR 0007): feedback may only name a ready dev sample.
-      const sample = await findSample(projectId, sampleId);
-      if (!sample || sample.view.role !== 'dev' || sample.view.state !== 'ready') {
-        return reply.code(400).send({ error: 'feedback can only refer to dev samples' });
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/feedback',
+    {
+      schema: {
+        tags: ['Feedback & revise'],
+        operationId: 'addFeedback',
+        summary: 'Add feedback for the revise stage',
+        description: md`
+          A note on what the draft gets wrong, aimed at a field, table, step or section
+          (\`targetId\`), optionally about one sample and one iteration. Open feedback is what
+          the \`revise\` stage answers. Feedback is sent to the drafting model, so it may only
+          name a ready **dev** sample and a **dev** iteration (the holdout rule).
+        `,
+        params: ProjectIdParams,
+        body: FeedbackBodySchema,
+        response: {
+          201: res('The new feedback.', FeedbackItemSchema),
+          400: error(
+            'Zod issues, `feedback can only refer to dev samples`, `unknown iteration`, or ' +
+              '`feedback can only refer to dev iterations`.',
+          ),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const projectId = req.params.id;
+      if (!(await workbench.getProject(projectId))) {
+        return reply.code(404).send({ error: 'project not found' });
       }
-    }
-    if (iterationId !== undefined) {
-      const iteration = await workbench.getIteration(projectId, iterationId);
-      if (!iteration) return reply.code(400).send({ error: 'unknown iteration' });
-      // Holdout rule (ADR 0007): feedback, which a revision sends to a model, names dev runs only.
-      if (iteration.set !== 'dev') {
-        return reply.code(400).send({ error: 'feedback can only refer to dev iterations' });
+      const body = FeedbackBodySchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { sampleId, iterationId, ...rest } = body.data;
+      if (sampleId !== undefined) {
+        // Holdout rule (ADR 0007): feedback may only name a ready dev sample.
+        const sample = await findSample(projectId, sampleId);
+        if (!sample || sample.view.role !== 'dev' || sample.view.state !== 'ready') {
+          return reply.code(400).send({ error: 'feedback can only refer to dev samples' });
+        }
       }
-    }
-    const item = await workbench.createFeedback({
-      projectId,
-      ...rest,
-      sampleId: sampleId ?? null,
-      iterationId: iterationId ?? null,
-    });
-    return reply.code(201).send(item);
-  });
+      if (iterationId !== undefined) {
+        const iteration = await workbench.getIteration(projectId, iterationId);
+        if (!iteration) return reply.code(400).send({ error: 'unknown iteration' });
+        // Holdout rule (ADR 0007): feedback, which a revision sends to a model, names dev runs only.
+        if (iteration.set !== 'dev') {
+          return reply.code(400).send({ error: 'feedback can only refer to dev iterations' });
+        }
+      }
+      const item = await workbench.createFeedback({
+        projectId,
+        ...rest,
+        sampleId: sampleId ?? null,
+        iterationId: iterationId ?? null,
+      });
+      return reply.code(201).send(item);
+    },
+  );
 
   app.delete<{ Params: { id: string; fid: string } }>(
     '/workbench/projects/:id/feedback/:fid',
+    {
+      schema: {
+        tags: ['Feedback & revise'],
+        operationId: 'deleteFeedback',
+        summary: 'Delete open feedback',
+        description: md`
+          Deletes a feedback note that is still open. Resolved feedback is kept: it records what
+          a revision answered.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          fid: z.string().uuid().describe('The feedback id.'),
+        }),
+        response: {
+          204: noContent('Deleted.'),
+          404: error('`feedback not found`.'),
+          409: error('`resolved feedback cannot be deleted`.'),
+        },
+      },
+    },
     async (req, reply) => {
       const params = FeedbackParams.safeParse(req.params);
       if (!params.success) return reply.code(404).send({ error: 'feedback not found' });
@@ -2160,23 +2242,77 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/evaluations', async (req, reply) => {
-    const body = EvaluateBody.safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const set = body.data.set ?? 'dev';
-    const inputs = await evaluationInputs(app, req.params.id, reply, set);
-    if (!inputs) return reply;
-    const iteration = await startIteration(app, req, inputs, {
-      set,
-      model: body.data.model ?? null,
-      uncached: body.data.uncached ?? false,
-      groupId: null,
-    });
-    return reply.code(201).send(await iterationView(app, iteration));
-  });
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/evaluations',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'evaluate',
+        summary: 'Evaluate the draft against the references',
+        description: md`
+          Runs the open draft on every sample of the set (\`dev\` by default, or \`holdout\`)
+          that has a verified reference, one test job each, and records an iteration with a
+          snapshot of the definition. The scorecard fills in as the jobs finish (poll
+          \`GET …/iterations/{iid}\`).
+
+          \`model\` overrides every step with an alias (\`default\`, \`fast\` or \`draft\`)
+          for exploration; only iterations with the template's own models count for the publish
+          gate. \`uncached\` makes every step call its model instead of reusing the step cache.
+          Holdout scores always compare the models' raw output, never reviewed values.
+        `,
+        params: ProjectIdParams,
+        body: EvaluateBody,
+        response: {
+          201: res('The new iteration, running.', IterationViewSchema),
+          ...EVALUATION_REFUSED,
+          400: res(
+            'Zod issues for an invalid body, or `the draft is not valid` (with `issues`).',
+            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = EvaluateBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const set = body.data.set ?? 'dev';
+      const inputs = await evaluationInputs(app, req.params.id, reply, set);
+      if (!inputs) return reply;
+      const iteration = await startIteration(app, req, inputs, {
+        set,
+        model: body.data.model ?? null,
+        uncached: body.data.uncached ?? false,
+        groupId: null,
+      });
+      return reply.code(201).send(await iterationView(app, iteration));
+    },
+  );
 
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/evaluations/compare',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'compareModels',
+        summary: 'Compare models on the dev samples',
+        description: md`
+          Evaluates the open draft on the dev samples three times, overriding every step with
+          the \`default\`, \`fast\` and \`draft\` aliases, as one comparison group. Read it
+          with \`GET …/comparisons/{groupId}\`. Comparisons are dev-only: they inform drafting,
+          which never sees holdout.
+        `,
+        params: ProjectIdParams,
+        body: CompareBody,
+        response: {
+          201: res('The comparison, running.', ComparisonViewSchema),
+          ...EVALUATION_REFUSED,
+          400: res(
+            'Zod issues for an invalid body, or `the draft is not valid` (with `issues`).',
+            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       const body = CompareBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
@@ -2205,6 +2341,26 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string; groupId: string } }>(
     '/workbench/projects/:id/comparisons/:groupId',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'getComparison',
+        summary: 'Get a model comparison',
+        description: md`
+          The comparison group's iterations in the order \`default\`, \`fast\`, \`draft\`,
+          each with its scorecard: the overall score and the accuracy of every field and table
+          column.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          groupId: z.string().uuid().describe('The comparison group id.'),
+        }),
+        response: {
+          200: res('The comparison.', ComparisonViewSchema),
+          404: error('`comparison not found`.'),
+        },
+      },
+    },
     async (req, reply) => {
       const params = ComparisonParams.safeParse(req.params);
       if (!params.success) return reply.code(404).send({ error: 'comparison not found' });
@@ -2221,26 +2377,46 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/iterations', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const iterations = await workbench.listIterations(req.params.id);
-    return Promise.all(
-      iterations.map(async (iteration): Promise<IterationSummary> => {
-        if (iteration.scores)
-          return { ...summaryOf(iteration), status: 'complete', ...iteration.scores };
-        const view = await iterationView(app, iteration);
-        return {
-          ...summaryOf(iteration),
-          status: view.status,
-          score: view.score,
-          completed: view.completed,
-          total: view.total,
-        };
-      }),
-    );
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/iterations',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'listIterations',
+        summary: "List a project's iterations",
+        description: md`
+          Every evaluation, newest first, with its set, model override, comparison group,
+          status and score (\`completed\` of \`total\` samples compared). A complete
+          iteration's score is cached; a running one is computed from its jobs.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The iterations.', z.array(IterationSummarySchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const iterations = await workbench.listIterations(req.params.id);
+      return Promise.all(
+        iterations.map(async (iteration): Promise<IterationSummary> => {
+          if (iteration.scores)
+            return { ...summaryOf(iteration), status: 'complete', ...iteration.scores };
+          const view = await iterationView(app, iteration);
+          return {
+            ...summaryOf(iteration),
+            status: view.status,
+            score: view.score,
+            completed: view.completed,
+            total: view.total,
+          };
+        }),
+      );
+    },
+  );
 
   /** The iteration named by the route params, or null for an unknown or malformed id. */
   async function iterationOf(params: unknown) {
@@ -2250,6 +2426,21 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string; iid: string } }>(
     '/workbench/projects/:id/iterations/:iid',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'getIteration',
+        summary: 'Get an iteration',
+        description: md`
+          An iteration with its scorecard (overall score, then each field's and column's
+          accuracy, worst first), how many step runs were served from the step cache, and per
+          sample the job and its comparison with the reference. A job that failed, needs
+          review, was cancelled or was deleted has no comparison.
+        `,
+        params: IterationIdParams,
+        response: { 200: res('The iteration.', IterationViewSchema), 404: ITERATION_NOT_FOUND },
+      },
+    },
     async (req, reply) => {
       const iteration = await iterationOf(req.params);
       if (!iteration) return reply.code(404).send({ error: 'iteration not found' });
@@ -2259,6 +2450,26 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string; iid: string } }>(
     '/workbench/projects/:id/iterations/:iid/restore',
+    {
+      schema: {
+        tags: ['Evaluation, iterations & comparisons'],
+        operationId: 'restoreIteration',
+        summary: "Restore an iteration's definition",
+        description: md`
+          Writes the definition the iteration evaluated into the open draft, replacing it, to
+          go back to a version that scored better.
+        `,
+        params: IterationIdParams,
+        response: {
+          200: res('The project.', ProjectViewSchema),
+          404: ITERATION_NOT_FOUND,
+          409: error(
+            '`no open draft; start the next version on the Template tab`, or `the draft is no ' +
+              'longer open`.',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       const iteration = await iterationOf(req.params);
       if (!iteration) return reply.code(404).send({ error: 'iteration not found' });
