@@ -386,6 +386,8 @@ def ocr_pages(
 
     # Pages are independent, so OCR them concurrently; results are written back in page order
     # and the first exception (transient or DocumentError) propagates.
+    if progress is not None and todo:
+        progress(len(cached), len(targets))  # the first page can take the whole run
     with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
         for done, page in enumerate(pool.map(run, todo), start=1):
             pages[page.index] = page.text

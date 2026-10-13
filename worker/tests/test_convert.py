@@ -131,6 +131,19 @@ def test_gotenberg_rejections(status: int, body: bytes) -> None:
         converter.to_pdf(DOCX)
 
 
+@pytest.mark.parametrize(
+    ("status", "expected"), [(200, None), (400, 400), (413, 413), (500, 500)]
+)
+def test_a_rejection_carries_the_http_status(status: int, expected: int | None) -> None:
+    body = b"<html>not a pdf</html>" if status == 200 else b"nope"
+    if status == 500:
+        body = b"LibreOffice failed to convert the document"
+    converter = gotenberg(httpx.MockTransport(lambda _r: httpx.Response(status, content=body)))
+    with pytest.raises(ConversionRejected) as raised:
+        converter.to_pdf(DOCX)
+    assert raised.value.status == expected
+
+
 def _raise(exc: Exception) -> httpx.MockTransport:
     def handle(_request: httpx.Request) -> httpx.Response:
         raise exc

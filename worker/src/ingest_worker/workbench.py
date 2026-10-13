@@ -62,7 +62,7 @@ def prepare_error_code(exc: DocumentError) -> PrepareErrorCode:
         return exc.code
     cause = exc.__cause__
     if isinstance(cause, ConversionRejected):
-        return "too_large" if str(cause).startswith("413") else "corrupt"
+        return "too_large" if cause.status == 413 else "corrupt"
     return "other"
 
 

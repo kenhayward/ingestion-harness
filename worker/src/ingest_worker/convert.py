@@ -51,6 +51,10 @@ def _attr(tag: str, name: str) -> str | None:
 class ConversionRejected(Exception):
     """The converter could not convert this document: a property of the file (needs review)."""
 
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status  # the converter's HTTP status, when it answered with one
+
 
 class ConverterUnavailable(Exception):
     """The converter is down, busy or slow: transient, so the job is retried."""
@@ -90,7 +94,7 @@ class GotenbergConverter:
             raise ConversionRejected("the converter returned something other than a PDF")
         detail = body[:300].decode("utf-8", errors="replace").strip()
         if 400 <= response.status_code < 500 or body.startswith(_LIBREOFFICE_FAILED):
-            raise ConversionRejected(f"{response.status_code}: {detail}")
+            raise ConversionRejected(f"{response.status_code}: {detail}", status=response.status_code)
         raise ConverterUnavailable(f"converter error {response.status_code}: {detail}")
 
     def fingerprint(self) -> str:

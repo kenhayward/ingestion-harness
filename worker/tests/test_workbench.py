@@ -156,6 +156,7 @@ def test_prepare_reports_the_text_layer_then_each_ocr_page(fixture_specs_dir: Pa
     assert queue.completed
     assert events_named(queue, PREPARE_PROGRESS) == [
         {"stage": "text", "page": 3, "of": 3},
+        {"stage": "ocr", "page": 0, "of": 2},  # before the first page finishes
         {"stage": "ocr", "page": 1, "of": 2},
         {"stage": "ocr", "page": 2, "of": 2},
     ]
@@ -212,15 +213,15 @@ def test_an_unreadable_pdf_goes_to_review_with_its_reason(
 
 
 @pytest.mark.parametrize(
-    ("rejection", "code"),
-    [("413: Request Entity Too Large", "too_large"), ("400: not a Word file", "corrupt")],
+    ("status", "code"),
+    [(413, "too_large"), (400, "corrupt"), (None, "corrupt")],
 )
 def test_a_word_sample_the_converter_rejects_says_why(
-    fixture_specs_dir: Path, rejection: str, code: str
+    fixture_specs_dir: Path, status: int | None, code: str
 ) -> None:
     deps = make_deps(fixture_specs_dir, [TEXT_PAGE])
     deps.store.put("inbox", "letter/v1/doc-s.pdf", DOCX, DOCX_MIME)
-    deps.converter = FakeConverter(error=ConversionRejected(rejection))
+    deps.converter = FakeConverter(error=ConversionRejected("rejected", status=status))
     queue = FakeQueue(jobs=[prepare_job()])
 
     run_once(queue, deps, "w1")

@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 import yaml
 
-from ingest_worker.bundle import build_bundle, run_export
+from ingest_worker.bundle import BUNDLE_EXPORTED, build_bundle, run_export
 from ingest_worker.convert import DOCX_MIME
 from ingest_worker.drafting import MAX_CONTEXT_SAMPLES, STAGES, DraftSample, build_context
 from ingest_worker.llm.registry import ModelRegistry
@@ -318,6 +318,6 @@ def test_export_records_the_size_of_its_zip(fixture_specs_dir: Path) -> None:
     assert queue.event_details[-1] == (
         "job-x",
         "info",
-        "bundle exported",
+        BUNDLE_EXPORTED,
         {"samples": ["s1"], "bytes": len(zipped)},
     )
