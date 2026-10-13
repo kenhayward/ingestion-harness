@@ -196,6 +196,9 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     reviewedAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+    batchId: null,
+    startedAt: null,
+    finishedAt: null,
     ...overrides,
   };
 }

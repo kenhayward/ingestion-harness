@@ -178,3 +178,26 @@ def test_wait_for_work_returns_as_soon_as_a_job_is_queued() -> None:
         writer._conn.execute("DELETE FROM documents WHERE id = %s", (doc,))
         listener.close()
         writer.close()
+
+
+def test_the_database_times_a_claimed_extraction(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    """Migration 0028: the claim and the finish set started_at/finished_at (worker unchanged)."""
+    q, job_id = queue_with_queued_job
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.id == job_id
+
+    def times() -> tuple[object, object]:
+        row = q._conn.execute(
+            "SELECT started_at, finished_at FROM jobs WHERE id = %s", (job_id,)
+        ).fetchone()
+        assert row is not None
+        return row[0], row[1]
+
+    started, finished = times()
+    assert started is not None and finished is None
+    q.complete(claimed, [], "outputs")
+    started_after, finished_after = times()
+    assert started_after == started
+    assert finished_after is not None and finished_after >= started  # type: ignore[operator]

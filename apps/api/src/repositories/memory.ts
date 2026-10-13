@@ -114,6 +114,9 @@ export class MemoryRepo implements IngestionRepo {
       reviewedAt: null,
       createdAt: now,
       updatedAt: now,
+      batchId: typeof params?.batchId === 'string' ? params.batchId : null,
+      startedAt: null,
+      finishedAt: null,
     };
     this.jobs.set(job.id, job);
     if (params) this.jobParams.set(job.id, params);

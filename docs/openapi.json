@@ -2241,6 +2241,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -2265,7 +2283,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The queued job."
@@ -2645,6 +2666,24 @@
                       },
                       "updatedAt": {
                         "type": "string"
+                      },
+                      "batchId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finishedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -2669,7 +2708,10 @@
                       "reviewNote",
                       "reviewedAt",
                       "createdAt",
-                      "updatedAt"
+                      "updatedAt",
+                      "batchId",
+                      "startedAt",
+                      "finishedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -2887,6 +2929,24 @@
                     "updatedAt": {
                       "type": "string"
                     },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "outputs": {
                       "type": "array",
                       "items": {
@@ -2961,6 +3021,9 @@
                     "reviewedAt",
                     "createdAt",
                     "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt",
                     "outputs"
                   ],
                   "additionalProperties": true,
@@ -3313,6 +3376,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -3337,7 +3418,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The queued job."
@@ -3617,6 +3701,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -3641,7 +3743,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The cancelled job."
@@ -4686,6 +4791,24 @@
                         "updatedAt": {
                           "type": "string"
                         },
+                        "batchId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "outputs": {
                           "type": "array",
                           "items": {
@@ -4760,6 +4883,9 @@
                         "reviewedAt",
                         "createdAt",
                         "updatedAt",
+                        "batchId",
+                        "startedAt",
+                        "finishedAt",
                         "outputs"
                       ],
                       "additionalProperties": true
@@ -5797,6 +5923,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -5821,7 +5965,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The job, queued to publish."
@@ -6124,6 +6271,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6148,7 +6313,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The rejected job."
@@ -6640,6 +6808,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6664,7 +6850,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The job, queued to re-run the step."
@@ -9219,6 +9408,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -9243,7 +9450,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -10382,6 +10592,24 @@
                         },
                         "updatedAt": {
                           "type": "string"
+                        },
+                        "batchId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -10406,7 +10634,10 @@
                         "reviewNote",
                         "reviewedAt",
                         "createdAt",
-                        "updatedAt"
+                        "updatedAt",
+                        "batchId",
+                        "startedAt",
+                        "finishedAt"
                       ],
                       "additionalProperties": true
                     },
@@ -15417,6 +15648,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -15441,7 +15690,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -15714,6 +15966,24 @@
                       },
                       "updatedAt": {
                         "type": "string"
+                      },
+                      "batchId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finishedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -15738,7 +16008,10 @@
                       "reviewNote",
                       "reviewedAt",
                       "createdAt",
-                      "updatedAt"
+                      "updatedAt",
+                      "batchId",
+                      "startedAt",
+                      "finishedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -17815,6 +18088,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -17839,7 +18130,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -19901,6 +20195,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -19925,7 +20237,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }

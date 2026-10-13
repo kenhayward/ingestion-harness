@@ -77,6 +77,18 @@ export const JobSummarySchema = z.object({
   reviewedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /**
+   * Workbench test runs started together (one `POST …/test-runs`) share this id
+   * (`params.batchId`; handoff TR2). Null for every other job and for runs from before batches.
+   */
+  batchId: z.string().nullable(),
+  /**
+   * The latest extraction attempt's start and end (migration 0028: a database trigger on
+   * `process` runs; approving and step re-runs keep them). Null before the first claim, for
+   * other tasks, and for jobs from before the migration; `finishedAt` is null while running.
+   */
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
 

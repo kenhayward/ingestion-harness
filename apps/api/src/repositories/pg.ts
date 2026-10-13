@@ -40,6 +40,7 @@ const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.created_by, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
+         j.params->>'batchId' AS batch_id, j.started_at, j.finished_at,
          array(SELECT model FROM step_runs
                 WHERE job_id = j.id AND model IS NOT NULL
                 GROUP BY model ORDER BY min(started_at)) AS models_used
@@ -86,6 +87,9 @@ interface JobRow {
   reviewed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  batch_id: string | null;
+  started_at: Date | null;
+  finished_at: Date | null;
 }
 
 function toSummary(r: JobRow): JobSummary {
@@ -112,6 +116,9 @@ function toSummary(r: JobRow): JobSummary {
     reviewedAt: r.reviewed_at ? r.reviewed_at.toISOString() : null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
+    batchId: r.batch_id,
+    startedAt: r.started_at ? r.started_at.toISOString() : null,
+    finishedAt: r.finished_at ? r.finished_at.toISOString() : null,
   };
 }
 
