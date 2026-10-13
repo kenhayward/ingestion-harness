@@ -3,7 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
 import { ProjectPage } from '../src/workbench/ProjectPage.js';
-import { fakeApi, projectView } from './fake-api.js';
+import type { OverviewItem } from '@ih/shared';
+import { fakeApi, projectOverview, projectView } from './fake-api.js';
+
+/** The fixture overview with some items replaced. */
+const overviewWith = (items: Partial<Record<OverviewItem['stage'], Omit<OverviewItem, 'stage'>>>) =>
+  projectOverview({
+    stages: projectOverview().stages.map((s) => {
+      const item = items[s.stage];
+      return item ? { stage: s.stage, ...item } : s;
+    }),
+  });
 
 const page = (api = fakeApi(), tab: 'samples' | 'brief' | 'template' | 'runs' = 'samples') =>
   render(
@@ -20,15 +30,90 @@ const page = (api = fakeApi(), tab: 'samples' | 'brief' | 'template' | 'runs' = 
 describe('ProjectPage', () => {
   it('shows the project with tab links', async () => {
     page(fakeApi({ getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })) }));
-    expect(await screen.findByRole('heading', { name: 'Letter' })).toBeInTheDocument();
-    expect(screen.getByText(/developing v2/)).toBeInTheDocument();
-    const nav = screen.getByRole('navigation', { name: 'Project' });
-    expect(screen.getByRole('link', { name: 'Brief' })).toHaveAttribute(
+    expect(await screen.findByRole('heading', { level: 1, name: 'Letter' })).toBeInTheDocument();
+    expect(await screen.findByText('Developing v2')).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Project steps' });
+    expect(within(nav).getByRole('link', { name: 'Brief: Not started' })).toHaveAttribute(
       'href',
       '#/workbench/letter/brief',
     );
-    expect(nav).toContainElement(screen.getByRole('link', { name: 'Samples' }));
-    expect(screen.getByRole('link', { name: 'Samples' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Samples: Not started' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.queryByRole('navigation', { name: 'Project' })).toBeNull();
+  });
+
+  it('opens on the Overview tab with the next step', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      getProjectOverview: vi.fn(async () =>
+        projectOverview({
+          next: {
+            stage: 'samples',
+            title: 'Next: add sample PDFs',
+            reason: 'Upload 3–8 dev samples and a few holdout samples.',
+          },
+        }),
+      ),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="overview"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    expect(await screen.findByText('Next: add sample PDFs')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('polls the overview only while something is running', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const running = overviewWith({ samples: { state: 'running', status: 'Preparing 1 of 1' } });
+      const getProjectOverview = vi
+        .fn()
+        .mockResolvedValueOnce(running)
+        .mockResolvedValue(projectOverview());
+      const api = fakeApi({ getProject: vi.fn(async () => projectView()), getProjectOverview });
+      const { unmount } = render(
+        <ProjectPage
+          api={api}
+          projectId="letter"
+          tab="overview"
+          onNavigate={vi.fn()}
+          pollMs={1000}
+          role="admin"
+        />,
+      );
+      const nav = await screen.findByRole('navigation', { name: 'Project steps' });
+      await within(nav).findByRole('link', { name: 'Samples: Preparing 1 of 1' });
+      await vi.advanceTimersByTimeAsync(1000);
+      await within(nav).findByRole('link', { name: 'Samples: Not started' });
+      const calls = getProjectOverview.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(getProjectOverview.mock.calls.length).toBe(calls);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refetches the overview when the window regains focus', async () => {
+    const getProjectOverview = vi.fn(async () => projectOverview());
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()), getProjectOverview });
+    const { unmount } = page(api);
+    await screen.findByRole('navigation', { name: 'Project steps' });
+    const calls = getProjectOverview.mock.calls.length;
+    window.dispatchEvent(new Event('focus'));
+    expect(getProjectOverview.mock.calls.length).toBe(calls + 1);
+    unmount();
+    window.dispatchEvent(new Event('focus'));
+    expect(getProjectOverview.mock.calls.length).toBe(calls + 1);
   });
 
   it('offers the drafting bundle export on the Brief tab', async () => {
@@ -136,7 +221,7 @@ describe('ProjectPage', () => {
     });
     page(api);
     expect(await screen.findByText('Local models only')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Allow external models' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Allow external models…' }));
     expect(confirm).toHaveBeenCalled();
     expect(api.setDataPolicy).toHaveBeenCalledWith('letter', 'external');
     expect(await screen.findByText('External models allowed')).toBeInTheDocument();
@@ -147,7 +232,7 @@ describe('ProjectPage', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const api = fakeApi({ getProject: vi.fn(async () => projectView()) });
     page(api);
-    await userEvent.click(await screen.findByRole('button', { name: 'Allow external models' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow external models…' }));
     expect(api.setDataPolicy).not.toHaveBeenCalled();
     confirm.mockRestore();
   });
@@ -166,33 +251,27 @@ describe('ProjectPage', () => {
     expect(screen.queryByRole('button', { name: /external models/i })).toBeNull();
   });
 
-  it('shows each drafting stage state in the tab bar', async () => {
+  it('shows each drafting stage state in the step rail', async () => {
     const api = fakeApi({
       getProject: vi.fn(async () => projectView()),
-      listStages: vi.fn(async () => [
-        {
-          stage: 'survey' as const,
-          state: 'accepted' as const,
-          completedAt: '2026-10-12T10:00:00.000Z',
-        },
-        {
-          stage: 'outputs' as const,
-          state: 'stale' as const,
-          completedAt: '2026-10-12T09:00:00.000Z',
-        },
-        { stage: 'sections' as const, state: 'pending' as const, completedAt: null },
-        { stage: 'steps' as const, state: 'pending' as const, completedAt: null },
-      ]),
+      getProjectOverview: vi.fn(async () =>
+        overviewWith({
+          survey: { state: 'accepted', status: 'Accepted' },
+          outputs: { state: 'stale', status: 'Stale — Survey changed after it was accepted' },
+        }),
+      ),
     });
     render(
       <ProjectPage api={api} projectId="letter" tab="outputs" onNavigate={vi.fn()} role="admin" />,
     );
-    const tabs = await screen.findByRole('navigation', { name: 'Project' });
+    const rail = await screen.findByRole('navigation', { name: 'Project steps' });
     expect(
-      await within(tabs).findByRole('link', { name: /Outputs \u00b7 stale/ }),
+      await within(rail).findByRole('link', {
+        name: 'Outputs: Stale — Survey changed after it was accepted',
+      }),
     ).toBeInTheDocument();
-    expect(within(tabs).getByRole('link', { name: /Survey \u00b7 accepted/ })).toBeInTheDocument();
-    expect(within(tabs).getByRole('link', { name: /^Sections$/ })).toBeInTheDocument();
+    expect(within(rail).getByRole('link', { name: 'Survey: Accepted' })).toBeInTheDocument();
+    expect(within(rail).getByRole('link', { name: 'Sections: Not started' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Propose outputs' })).toBeInTheDocument();
   });
 
@@ -213,9 +292,9 @@ describe('ProjectPage', () => {
   it('shows the references stage state and renders the References and Evaluate tabs', async () => {
     const api = fakeApi({
       getProject: vi.fn(async () => projectView()),
-      listStages: vi.fn(async () => [
-        { stage: 'references' as const, state: 'proposed' as const, completedAt: null },
-      ]),
+      getProjectOverview: vi.fn(async () =>
+        overviewWith({ references: { state: 'proposed', status: 'Needs your decision' } }),
+      ),
     });
     const { unmount } = render(
       <ProjectPage
@@ -226,9 +305,9 @@ describe('ProjectPage', () => {
         role="admin"
       />,
     );
-    const tabs = await screen.findByRole('navigation', { name: 'Project' });
+    const rail = await screen.findByRole('navigation', { name: 'Project steps' });
     expect(
-      await within(tabs).findByRole('link', { name: /References · proposed/ }),
+      await within(rail).findByRole('link', { name: 'References: Needs your decision' }),
     ).toBeInTheDocument();
     expect(
       await screen.findByRole('button', { name: 'Run the draft model on unverified samples' }),

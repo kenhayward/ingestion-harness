@@ -1829,22 +1829,6 @@ input.danger-border {
 .workbench .muted {
   color: var(--ih-muted);
 }
-.workbench-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--ih-border);
-  margin: 12px 0 16px;
-}
-.workbench-tabs a {
-  padding: 8px 12px;
-  color: var(--ih-muted);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-}
-.workbench-tabs a[aria-current='page'] {
-  color: var(--ih-accent);
-  border-bottom-color: var(--ih-accent);
-}
 .sample-text section {
   border: 1px solid var(--ih-border-soft);
   border-radius: var(--ih-radius-md);

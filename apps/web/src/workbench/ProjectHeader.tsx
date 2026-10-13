@@ -33,7 +33,7 @@ export function ProjectHeader({
       </div>
       <div className="project-actions">
         <span className={`pill ${external ? 'tone-warn' : 'tone-ok'}`}>
-          <Icon name="lock" size={14} />
+          {!external && <Icon name="lock" size={14} />}
           {external ? 'External models allowed' : 'Local models only'}
         </span>
         {role === 'admin' && (
