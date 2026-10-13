@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DataPolicy, OverviewItem, QueueSummary, SampleView, TestRun } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { choiceName } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { RunBatchCard, RunHead, RunRows } from './RunBatchCard.js';
@@ -245,7 +246,9 @@ export function RunsTab({
           // reference run from the References tracker or skew an evaluation.
           fixedModel={
             retrying.batchId === null
-              ? (retrying.modelOverride ?? "Document type's model")
+              ? retrying.modelOverride === null
+                ? "Document type's model"
+                : choiceName(retrying.modelOverride, choices)
               : undefined
           }
           summary={

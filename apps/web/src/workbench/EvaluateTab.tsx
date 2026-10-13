@@ -73,7 +73,7 @@ export function EvaluateTab({
   const [ticked, setTicked] = useState<string[] | null>(null);
   const usable = choices.filter((c) => dataPolicy === 'external' || c.location === 'local');
   const compared = ticked ?? usable.map((c) => c.id);
-  /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
+  /** An iteration's model by its choice's label; a name no choice has reads as not offered. */
   const nameOf = (m: string | null) => (m === null ? "recipe's models" : choiceName(m, choices));
   const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { pickedChoice, type ModelChoice, type SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { CHOICES_FAILED, CHOICES_LOADING } from './derive.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 import { ModelPicker, typeModelLabel } from '../ui/ModelPicker.js';
@@ -56,7 +57,7 @@ export function UploadStrip({
 }) {
   const inputId = useId();
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
-  const [models, setModels] = useState<ModelChoice[]>([]);
+  const [models, setModels] = useState<readonly ModelChoice[]>(CHOICES_LOADING);
   const [spec, setSpec] = useState('');
   const [model, setModel] = useState('');
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -108,7 +109,7 @@ export function UploadStrip({
           saveModel('');
         }
       },
-      () => setModels([]),
+      () => setModels(CHOICES_FAILED),
     );
   }, [api]);
 

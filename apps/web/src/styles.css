@@ -1512,7 +1512,7 @@ button.danger-fill {
   flex-direction: column;
   gap: 6px;
 }
-.outputs h3 {
+.outputs h3:not(.card-label) {
   margin: 0;
   font-size: var(--ih-text-sm);
   font-weight: 500;
@@ -1705,6 +1705,7 @@ h3.card-label {
   color: var(--ih-danger-fg);
 }
 .job-panel.wide .job-columns {
+  container-type: inline-size;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 24px 32px;
@@ -1720,6 +1721,13 @@ h3.card-label {
 .job-panel.wide .job-details {
   padding-left: 24px;
   border-left: 1px solid var(--ih-border-soft);
+}
+/* Two columns need 2 x 300px + the 32px gap; below that they stack, and Details drops its rule. */
+@container (width < 632px) {
+  .job-panel.wide .job-details {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 .job-panel.wide .panel-actions > :first-child {
   flex-basis: auto;

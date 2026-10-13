@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { JobStatus, JobSummary, StepRun } from '@ih/shared';
+import type { JobStatus, JobSummary, ModelChoice, StepRun } from '@ih/shared';
 import {
+  CHOICES_FAILED,
+  CHOICES_LOADING,
   chipCounts,
   choiceName,
   draftingModelName,
@@ -232,11 +234,36 @@ describe('choiceName', () => {
   it.each<[string, string]>([
     ['main', 'Main Production Model'],
     ['default', 'Main Production Model'],
-    ['fast', 'fast'],
+    ['fast', 'Model no longer offered'],
+    ['gone', 'Model no longer offered'],
     ['draft', 'Drafting model'],
     ['local/qwen', 'Main Production Model'],
     ['local/other', 'Model no longer offered'],
   ])('%s -> %s', (name, text) => expect(choiceName(name, MODEL_CHOICES)).toBe(text));
+});
+
+describe('choices not known yet', () => {
+  it.each<[string, readonly ModelChoice[], string]>([
+    ['loading', CHOICES_LOADING, '…'],
+    ['failed', CHOICES_FAILED, '—'],
+  ])('%s: a placeholder, never "Model no longer offered" or a ref', (_n, choices, text) => {
+    expect(modelDisplayName('local/qwen', choices)).toBe(text);
+    expect(modelDisplayName('main', choices)).toBe(text);
+    expect(choiceName('fast', choices)).toBe(text);
+    expect(modelLabel(job({ modelsUsed: ['local/qwen'] }), choices)).toBe(text);
+    expect(modelLabel(job({ modelsUsed: [], modelOverride: 'main' }), choices)).toBe(text);
+  });
+
+  it('still names the drafting model, and reads a spec default as such', () => {
+    expect(modelDisplayName('draft', CHOICES_LOADING)).toBe('Drafting model');
+    expect(choiceName('draft', CHOICES_FAILED)).toBe('Drafting model');
+    expect(modelLabel(job({ modelsUsed: [], modelOverride: 'draft' }), CHOICES_LOADING)).toBe(
+      'Drafting model',
+    );
+    expect(modelLabel(job({ modelsUsed: [], modelOverride: null }), CHOICES_LOADING)).toBe(
+      'Spec default',
+    );
+  });
 });
 
 describe('draftingModelName', () => {
@@ -259,6 +286,21 @@ describe('modelLabel', () => {
     [job({ modelsUsed: ['local/qwen'], modelOverride: 'draft' }), 'Main Production Model'],
     [job({ modelsUsed: [], modelOverride: 'draft' }), 'Drafting model'],
   ])('%#', (j, text) => expect(modelLabel(j, MODEL_CHOICES)).toBe(text));
+});
+
+describe('modelLabel with two choices on one ref', () => {
+  const shared: ModelChoice[] = [
+    { ...MODEL_CHOICES[0]!, id: 'main', label: 'Main Model', ref: 'local/q', isDefault: true },
+    { ...MODEL_CHOICES[0]!, id: 'fast', label: 'Fast Model', ref: 'local/q', isDefault: false },
+  ];
+  it('names the choice that was asked for', () => {
+    expect(modelLabel(job({ modelsUsed: ['local/q'], modelOverride: 'fast' }), shared)).toBe(
+      'Fast Model',
+    );
+    expect(modelLabel(job({ modelsUsed: ['local/q'], modelOverride: null }), shared)).toBe(
+      'Main Model',
+    );
+  });
 });
 
 describe('menuPosition', () => {

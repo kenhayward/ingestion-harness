@@ -283,10 +283,31 @@ describe('RunsTab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry ref.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry ref.pdf' });
     expect(within(dialog).queryByRole('combobox')).toBeNull();
-    expect(within(dialog).getByText('draft')).toBeInTheDocument();
+    expect(within(dialog).getByText('Drafting model')).toBeInTheDocument();
+    expect(within(dialog).queryByText('draft')).toBeNull();
     expect(dialog).not.toHaveTextContent('batch');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
     expect(api.retryJob).toHaveBeenCalledWith(ref.id);
+  });
+
+  it.each<[string, string]>([
+    ['main', 'Main Production Model'],
+    ['local/qwen', 'Main Production Model'],
+    ['local/legacy', 'Model no longer offered'],
+    ['fast', 'Model no longer offered'],
+  ])('names the fixed model of a retried run (%s) by its label', async (override, text) => {
+    const run = testRunView({
+      batchId: null,
+      filename: 'ref.pdf',
+      status: 'failed',
+      modelOverride: override,
+    });
+    tab(fakeApi({ listTestRuns: vi.fn(async () => [run]) }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Show other runs (1)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry ref.pdf' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Retry ref.pdf' });
+    await waitFor(() => expect(within(dialog).getByText(text)).toBeInTheDocument());
+    expect(dialog).not.toHaveTextContent(override === 'main' ? 'main' : override);
   });
 
   it('polls only while a run is active', async () => {

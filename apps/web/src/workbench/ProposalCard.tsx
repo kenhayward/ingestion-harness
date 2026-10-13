@@ -170,7 +170,7 @@ export function ProposalCard({
         <ul className="proposal-changes">
           {body.changes.map((c, i) => {
             const verb = definition ? changeVerb(c, definition) : null;
-            const diff = definition ? changeDiff(c, definition) : null;
+            const diff = definition ? changeDiff(c, definition, models) : null;
             const line = note?.(c) ?? null;
             const badgeNode = badge?.(c, i);
             return (

@@ -81,13 +81,12 @@ export function prepareNote(s: SampleView): { text: string; tone: NoteTone } | n
   }
   const t = s.triage;
   if (!t || t.ocrPages.length === 0) return null;
-  const by = t.ocrModel ? ` (${t.ocrModel})` : '';
   if (t.ocrPages.length === t.pageCount) {
     const which = t.pageCount === 1 ? 'its page' : `all ${t.pageCount} pages`;
-    return { text: `Scanned — ${which} read by OCR${by}`, tone: 'muted' };
+    return { text: `Scanned — ${which} read by OCR`, tone: 'muted' };
   }
   const label = t.ocrPages.length === 1 ? 'Page' : 'Pages';
-  return { text: `${label} ${t.ocrPages.join(', ')} read by OCR${by}`, tone: 'muted' };
+  return { text: `${label} ${t.ocrPages.join(', ')} read by OCR`, tone: 'muted' };
 }
 
 /** Holdout rows (handoff §1): how often the gate used it; never sent to a model (§0.3). */

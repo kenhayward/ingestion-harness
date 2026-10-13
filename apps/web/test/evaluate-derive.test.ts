@@ -139,7 +139,7 @@ describe('historyRows', () => {
     );
     expect(rows.map((r) => [r.label, r.score, r.id, r.running, r.set])).toEqual([
       [
-        'Compare · Main Production Model 91 · fast 84 · Drafting model 89',
+        'Compare · Main Production Model 91 · Model no longer offered 84 · Drafting model 89',
         0.91,
         'x3',
         false,

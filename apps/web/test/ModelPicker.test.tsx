@@ -66,6 +66,11 @@ describe('ModelPicker', () => {
     expect(screen.queryByText(/local\/qwen/)).toBeNull();
   });
 
+  it('reads a stored `draft` as the drafting model', () => {
+    render(<ModelPicker label="Model" choices={CHOICES} value="draft" onChange={() => {}} />);
+    expect(screen.getByRole('option', { name: 'Drafting model' })).toBeInTheDocument();
+  });
+
   it('reads `default` as the default choice', () => {
     render(<ModelPicker label="Model" choices={CHOICES} value="default" onChange={() => {}} />);
     expect((screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe(

@@ -187,11 +187,28 @@ const DRAFTING_MODEL = 'Drafting model';
 export const MODEL_NOT_OFFERED = 'Model no longer offered';
 
 /**
+ * Stand-ins for "the choices are not known": still loading, or the load failed. They are empty
+ * arrays (pickers offer nothing), told apart by identity, so a display never reads a missing
+ * label as "Model no longer offered" (and never falls back to a ref).
+ */
+export const CHOICES_LOADING: readonly ModelChoice[] = Object.freeze([]);
+export const CHOICES_FAILED: readonly ModelChoice[] = Object.freeze([]);
+const LOADING_TEXT = '…';
+const FAILED_TEXT = '—';
+
+/** The placeholder to show instead of a name while the choices are unknown, else null. */
+const unknownText = (choices: readonly ModelChoice[]): string | null =>
+  choices === CHOICES_LOADING ? LOADING_TEXT : choices === CHOICES_FAILED ? FAILED_TEXT : null;
+
+/**
  * The model's name for people: a choice id, `default`, or a choice's ref -> its label. Anything
- * else (a ref no choice has) is never shown; it reads "Model no longer offered".
+ * else (a ref no choice has) is never shown; it reads "Model no longer offered". While the
+ * choices load it is "…", and "—" if they could not be read.
  */
 export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoice[]): string {
   if (nameOrRef === DRAFT_ALIAS) return DRAFTING_MODEL;
+  const unknown = unknownText(choices);
+  if (unknown !== null) return unknown;
   const choice =
     pickedChoice(nameOrRef, choices) ?? choices.find((c) => c.ref === nameOrRef) ?? null;
   return choice?.label ?? MODEL_NOT_OFFERED;
@@ -199,13 +216,11 @@ export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoic
 
 /**
  * A stored choice name (an evaluation's or step's model: a choice id, `default`, or an older
- * name like `fast`) by its label. An older plain name stays as it is; a ref is never shown.
+ * name like `fast`) by its label. A name no choice has (a deleted choice, an older alias, a ref)
+ * is never shown: "Model no longer offered".
  */
 export function choiceName(name: string, choices: readonly ModelChoice[]): string {
-  if (name === DRAFT_ALIAS) return DRAFTING_MODEL;
-  const choice = pickedChoice(name, choices);
-  if (choice) return choice.label;
-  return name.includes('/') ? modelDisplayName(name, choices) : name;
+  return modelDisplayName(name, choices);
 }
 
 /** The drafting model (a ref) by its choice's label; "Drafting model" when no choice has it. */
@@ -224,11 +239,16 @@ export function modelLabel(job: JobSummary, choices: readonly ModelChoice[]): st
   // A draft-model run (reference runs): its ref usually matches no choice.
   if (
     job.modelOverride === DRAFT_ALIAS &&
+    unknownText(choices) === null &&
     !names.some((n) => pickedChoice(n, choices) ?? choices.some((c) => c.ref === n))
   ) {
     return DRAFTING_MODEL;
   }
-  return [...new Set(names.map((n) => modelDisplayName(n, choices)))].join(', ');
+  // Choices sharing a ref (main and fast on one model): the one that was asked for names it.
+  const asked = job.modelOverride ? pickedChoice(job.modelOverride, choices) : null;
+  const nameOf = (n: string) =>
+    asked !== null && asked.ref === n ? asked.label : modelDisplayName(n, choices);
+  return [...new Set(names.map(nameOf))].join(', ');
 }
 
 const MENU = { width: 220, height: 160, gap: 4, margin: 8 };

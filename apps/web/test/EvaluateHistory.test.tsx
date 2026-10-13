@@ -94,7 +94,9 @@ describe('HistoryCard', () => {
     expect(rows).toHaveLength(4);
     expect(rows[0]).toHaveTextContent('HOLDOUT');
     expect(rows[0]).toHaveTextContent('88%');
-    expect(rows[1]).toHaveTextContent('Compare · Main Production Model 75 · fast 50');
+    expect(rows[1]).toHaveTextContent(
+      'Compare · Main Production Model 75 · Model no longer offered 50',
+    );
     expect(rows[2]).toHaveTextContent("Recipe's models · fresh");
     expect(rows[3]).toHaveTextContent('v1');
     const restore = within(rows[0]!).getByRole('button', { name: /^Restore v2 holdout run of / });

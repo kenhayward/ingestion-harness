@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { TemplateChange } from '@ih/shared';
 import type { Api, VersionDiff } from '../api/client.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { modelsInChip } from '../workbench/changes.js';
 import { changeAtText, changeTag } from './editor-derive.js';
 
 const TAG_TONE: Record<TemplateChange['source'], string> = {
@@ -29,6 +31,7 @@ export function DraftChangesPanel({
   refreshKey: number;
 }) {
   const heading = useId();
+  const choices = useModelChoices(api);
   const [changes, setChanges] = useState<TemplateChange[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(false);
@@ -114,7 +117,7 @@ export function DraftChangesPanel({
                 <ul className="diff-chips">
                   {c.diff.map((d, i) => (
                     <li key={i}>
-                      <code>{d}</code>
+                      <code>{modelsInChip(d, choices)}</code>
                     </li>
                   ))}
                 </ul>

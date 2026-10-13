@@ -116,7 +116,7 @@ describe('batch header', () => {
       batchSubtitle(batch([testRunView()], { createdBy: null, modelOverride: 'fast' }), choices),
     ).toBe('1 dev sample · Fast model');
     expect(batchSubtitle(batch([testRunView()], { modelOverride: 'gone' }), choices)).toBe(
-      '1 dev sample · started by ken · gone',
+      '1 dev sample · started by ken · Model no longer offered',
     );
   });
 
