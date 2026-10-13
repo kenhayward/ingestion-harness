@@ -48,19 +48,38 @@ describe('token access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login and logout', async () => {
+  it('guards every /api route except login, logout and the API docs', async () => {
     const { app } = await setup();
     const routes = registeredRoutes(app.printRoutes({ commonPrefix: false }))
       .filter((r) => r.path.startsWith('/api/'))
-      .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method))
-      .filter((r) => !['/api/auth/login', '/api/auth/logout'].includes(r.path));
+      .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method));
     expect(routes.length).toBeGreaterThan(20);
+    const open: string[] = [];
     for (const { method, path } of routes) {
       const url = path.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000');
       const res = await app.inject({ method: method as 'GET', url });
-      expect(`${method} ${path} -> ${res.statusCode}`).toBe(`${method} ${path} -> 401`);
+      // Login's own 401 (no token) is not the access hook's.
+      const guarded = res.statusCode === 401 && res.json().error === 'sign in required';
+      if (!guarded) open.push(`${method} ${path}`);
     }
+    expect(open.sort()).toEqual([
+      'GET /api/docs',
+      'GET /api/docs/',
+      'GET /api/docs/js/scalar.js',
+      'GET /api/docs/openapi.json',
+      'GET /api/docs/openapi.yaml',
+      'POST /api/auth/login',
+      'POST /api/auth/logout',
+    ]);
   });
+
+  it.each(['/api/docs/', '/api/docs/openapi.json', '/api/docs/js/scalar.js', '/api/%64ocs/'])(
+    'serves %s without a session',
+    async (url) => {
+      const { app } = await setup();
+      expect((await app.inject(url)).statusCode).toBe(200);
+    },
+  );
 
   it('signs in with the admin token and sets a strict, http-only session cookie', async () => {
     const { app, adminToken } = await setup();

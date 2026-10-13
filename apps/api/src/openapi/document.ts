@@ -8,7 +8,8 @@ const { version } = createRequire(import.meta.url)('../../package.json') as { ve
 export const TAGS = {
   Documents: md`
     Upload a PDF to process it with a document type. The API stores the file in the inbox
-    bucket, records a document and queues a job; the worker does the rest.`,
+    bucket, records a document and queues a job; the worker does the rest.
+  `,
   Jobs: md`
     A job processes one document with one version of a document type. Jobs move through
     \`queued\`, \`running\` and then \`succeeded\`, \`awaiting_review\`, \`needs_review\`
@@ -17,13 +18,16 @@ export const TAGS = {
   'Review & steps': md`
     Jobs of document types with a review policy stop in \`awaiting_review\`. Reviewers read the
     draft outputs, record edits, then approve (the edited outputs are published) or reject
-    (final). Each extraction step's run can be inspected and re-run.`,
+    (final). Each extraction step's run can be inspected and re-run.
+  `,
   Results: md`
     Published outputs, read from the final target bucket: the documents a job delivered, their
-    values and their files.`,
+    values and their files.
+  `,
   Specs: md`
     Document definitions loaded from the repository's \`specs/\` folder (legacy \`spec.yaml\` and
-    \`template.yaml\`). Versions are immutable once published.`,
+    \`template.yaml\`). Versions are immutable once published.
+  `,
   Templates: md`
     Document types kept in the database: drafts are editable, published versions are immutable.
     Templates import and export as YAML. See
@@ -31,10 +35,12 @@ export const TAGS = {
   'References & regression': md`
     References are verified output values for a sample PDF. Regression runs process the
     references' PDFs with a template version and score the outputs against them; metrics
-    summarise a document type's runs.`,
+    summarise a document type's runs.
+  `,
   Models: md`
     Language models the worker discovered from the configured providers. Model refs are
-    \`provider/model-id\` or an alias such as \`default\` or \`fast\`.`,
+    \`provider/model-id\` or an alias such as \`default\` or \`fast\`.
+  `,
   'Projects & data policy': md`
     The Workbench builds a document type from sample PDFs, one project per type (the project id
     is the template id). A project's data policy decides whether its documents may be sent to
@@ -44,39 +50,48 @@ export const TAGS = {
   'Samples & brief': md`
     Samples are the project's PDFs, each in the **dev** set (seen by drafting) or the
     **holdout** set (used only to score). Uploading a sample prepares its text (with OCR where
-    needed). The brief describes what the document type must extract.`,
+    needed). The brief describes what the document type must extract.
+  `,
   'Drafting stages & proposals': md`
     A drafting model proposes the template in stages (survey, outputs, sections, steps), each a
     set of typed changes the user accepts in full or in part. Anchor previews check section
-    anchors against the dev samples.`,
+    anchors against the dev samples.
+  `,
   'Test runs': md`
-    Test runs process samples with the open draft. They are never delivered to the target.`,
+    Test runs process samples with the open draft. They are never delivered to the target.
+  `,
   'Evaluation, iterations & comparisons': md`
     An evaluation runs the draft over a sample set and scores the outputs against the
     references; each evaluation is recorded as an iteration with a snapshot of the definition.
-    Comparisons run several models over the same samples.`,
+    Comparisons run several models over the same samples.
+  `,
   'Feedback & revise': md`
     Feedback notes on dev samples and iterations, and the **revise** stage, which proposes
-    changes from the open feedback and the latest evaluation failures.`,
+    changes from the open feedback and the latest evaluation failures.
+  `,
   'Holdout & publish gate': md`
     Holdout reference runs and the publish gate: a version is published only when its newest
     holdout evaluation covers every ready holdout sample and scores at or above the project's
-    threshold, unless an override reason is given.`,
+    threshold, unless an override reason is given.
+  `,
   Bundles: md`
     Export a project as a zip bundle (samples, prepared text, brief, draft and drafting
-    context) and import one as a new project.`,
+    context) and import one as a new project.
+  `,
   'Auth & sessions': md`
     Sign in with an access token to get a session cookie (\`ih_session\`). Every \`/api\` route
     needs the session except sign-in, sign-out and these docs. See
     [ADR 0006](${REPO}/docs/adr/0006-token-access.md).`,
   'Access tokens': md`
     Admins issue and revoke the access tokens people sign in with. The admin token itself
-    rotates on every API start and is printed in the API log.`,
+    rotates on every API start and is printed in the API log.
+  `,
   'Data-lake S3 keys': md`
     Read-only S3 credentials for data-lake consumers of the publish bucket. Secrets are shown
     once. See [ADR 0008](${REPO}/docs/adr/0008-s3-read-keys.md).`,
   Health: md`
-    Liveness and readiness checks for load balancers and orchestrators. They need no session.`,
+    Liveness and readiness checks for load balancers and orchestrators. They need no session.
+  `,
 } as const;
 
 export type Tag = keyof typeof TAGS;

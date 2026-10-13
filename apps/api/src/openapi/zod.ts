@@ -26,11 +26,9 @@ export const error = (description: string) => res(description, ErrorBody);
 
 /** Markdown in route files: strips the indentation common to every line, then trims. */
 export function md(strings: TemplateStringsArray, ...values: unknown[]): string {
-  const text = strings.reduce((out, s, i) => out + s + (i < values.length ? String(values[i]) : ''));
+  const text = strings.reduce((out, s, i) => out + String(values[i - 1]) + s);
   const lines = text.replace(/^\n/, '').split('\n');
-  const indent = Math.min(
-    ...lines.filter((l) => l.trim()).map((l) => /^ */.exec(l)![0].length),
-  );
+  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => /^ */.exec(l)![0].length));
   return lines
     .map((l) => l.slice(indent))
     .join('\n')

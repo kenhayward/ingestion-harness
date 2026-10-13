@@ -2,7 +2,7 @@ import SwaggerParser from '@apidevtools/swagger-parser';
 import type { OpenAPIV3_1 } from 'openapi-types';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { res } from '../src/openapi/zod.js';
+import { md, res } from '../src/openapi/zod.js';
 import { testApp } from './helpers.js';
 
 type Doc = OpenAPIV3_1.Document & { 'x-tagGroups': { name: string; tags: string[] }[] };
@@ -61,5 +61,17 @@ describe('route schemas', () => {
     const reply = await app.inject({ method: 'POST', url: '/api/echo', payload: { n: 'x' } });
     expect(reply.statusCode).toBe(200);
     expect(reply.json()).toEqual({ body: { n: 'x' }, extra: true });
+  });
+});
+
+describe('md', () => {
+  it('strips the common indentation and interpolates values in order', () => {
+    const a = 'one';
+    const b = 2;
+    expect(md`
+      First ${a}
+        indented ${b}
+
+      last`).toBe(['First one', '  indented 2', '', 'last'].join('\n'));
   });
 });

@@ -11,7 +11,6 @@ declare module 'fastify' {
 }
 
 export const SESSION_COOKIE = 'ih_session';
-const PUBLIC = new Set(['/api/auth/login', '/api/auth/logout']);
 const UUID = z.string().uuid();
 
 const LoginBody = z.object({ token: z.string().min(1).max(200) });
@@ -55,8 +54,8 @@ function setSession(
 }
 
 /**
- * Token access (ADR 0006): every /api route needs a valid session cookie except sign-in and
- * sign-out; token management needs the admin role. `deps.access === null` disables it (unit
+ * Token access (ADR 0006): every /api route needs a valid session cookie except the routes marked
+ * `config.public` (sign-in, sign-out and the API docs); token management needs the admin role. `deps.access === null` disables it (unit
  * tests only - server.ts always provides a repo). Registered on the root instance before the
  * route plugins, so the hook covers every route.
  */
@@ -68,9 +67,10 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', async (req, reply) => {
     // Decide on the *matched route pattern*, never the raw URL: the router decodes and
     // normalises paths (e.g. /%61pi/specs matches /api/specs), so string checks on req.url can
-    // be bypassed. Unmatched requests (no pattern) just 404 and serve nothing.
+    // be bypassed. Unmatched requests (no pattern) just 404 and serve nothing. Public routes are
+    // marked on the route itself, never matched by path.
     const route = req.routeOptions.url;
-    if (route === undefined || !route.startsWith('/api/') || PUBLIC.has(route)) return;
+    if (route === undefined || !route.startsWith('/api/') || req.routeOptions.config.public) return;
     const sessionId = req.cookies[SESSION_COOKIE];
     const session = sessionId ? await access.session(sessionId) : null;
     if (!session) return reply.code(401).send({ error: 'sign in required' });
@@ -81,7 +81,7 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     if (req.auth?.role !== 'admin') return reply.code(403).send({ error: 'admins only' });
   };
 
-  app.post('/api/auth/login', async (req, reply) => {
+  app.post('/api/auth/login', { config: { public: true } }, async (req, reply) => {
     if (!limiter.allowed(req.ip)) {
       return reply.code(429).send({ error: 'too many attempts, try again later' });
     }
@@ -98,7 +98,7 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     return { role, label, expiresAt };
   });
 
-  app.post('/api/auth/logout', async (req, reply) => {
+  app.post('/api/auth/logout', { config: { public: true } }, async (req, reply) => {
     const sessionId = req.cookies[SESSION_COOKIE];
     if (sessionId) await access.logout(sessionId);
     void reply.clearCookie(SESSION_COOKIE, { path: '/' });
