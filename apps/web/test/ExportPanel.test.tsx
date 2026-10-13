@@ -11,6 +11,9 @@ const exp = (overrides: Partial<ExportView> = {}): ExportView => ({
   error: null,
   createdAt: 't',
   updatedAt: 't',
+  briefVersion: null,
+  devSamples: null,
+  bytes: null,
   ...overrides,
 });
 

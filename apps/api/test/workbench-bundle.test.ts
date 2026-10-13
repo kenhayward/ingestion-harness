@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BUNDLE_EXPORTED_EVENT,
   EMPTY_BRIEF,
   draftingKey,
   exportKey,
@@ -122,6 +123,34 @@ describe('export', () => {
       ],
     });
     expect(await repo.getJobParams(view.jobId)).toEqual(stored.params);
+  });
+
+  it('tells the brief version, the dev samples and, once exported, the zip size', async () => {
+    const { app, repo, add, start, list, finish } = await project();
+    await add(1);
+    await add(2);
+    await add(3, 'holdout');
+    await app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: brief,
+    });
+
+    const view = (await start()).json() as ExportView;
+    expect(view).toMatchObject({ status: 'queued', briefVersion: 1, devSamples: 2, bytes: null });
+    expect((await list())[0]).toEqual(view);
+
+    // The size is only trusted once the export succeeded.
+    repo.addEvent(view.jobId, 'info', BUNDLE_EXPORTED_EVENT, { samples: [], bytes: 3_100_000 });
+    expect((await list())[0]!.bytes).toBeNull();
+    finish(view.jobId);
+    expect((await list())[0]).toMatchObject({ status: 'succeeded', bytes: 3_100_000 });
+  });
+
+  it('reads an export recorded without a brief as no brief', async () => {
+    const { add, start } = await project();
+    await add(1);
+    expect((await start()).json()).toMatchObject({ briefVersion: null, devSamples: 1 });
   });
 
   it('carries the accepted survey', async () => {

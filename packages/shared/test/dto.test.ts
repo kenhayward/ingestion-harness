@@ -156,6 +156,9 @@ const exportView = {
   error: null,
   createdAt: '2026-10-13T09:00:00.000Z',
   updatedAt: '2026-10-13T09:00:01.000Z',
+  briefVersion: 3,
+  devSamples: 6,
+  bytes: 3_100_000,
 };
 
 const at = '2026-10-13T09:00:00.000Z';

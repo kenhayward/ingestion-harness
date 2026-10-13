@@ -23926,6 +23926,36 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "briefVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "devSamples": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "bytes": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -23933,7 +23963,10 @@
                     "status",
                     "error",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "briefVersion",
+                    "devSamples",
+                    "bytes"
                   ],
                   "additionalProperties": true,
                   "description": "The queued export."
@@ -24069,7 +24102,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "The project's export jobs, newest first (at most one: a new export replaces the old).\nDownload a `succeeded` one with `GET …/exports/{jobId}/bundle`.",
+        "description": "The project's export jobs, newest first (at most one: a new export replaces the old).\nDownload a `succeeded` one with `GET …/exports/{jobId}/bundle`. Each carries the\nbrief version and the number of dev samples it was built from, and, once\n`succeeded`, the zip's size in `bytes`.",
         "parameters": [
           {
             "schema": {
@@ -24119,6 +24152,36 @@
                       },
                       "updatedAt": {
                         "type": "string"
+                      },
+                      "briefVersion": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "devSamples": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "bytes": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -24126,7 +24189,10 @@
                       "status",
                       "error",
                       "createdAt",
-                      "updatedAt"
+                      "updatedAt",
+                      "briefVersion",
+                      "devSamples",
+                      "bytes"
                     ],
                     "additionalProperties": true
                   },
