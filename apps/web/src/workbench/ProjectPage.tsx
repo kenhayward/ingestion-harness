@@ -15,6 +15,7 @@ import { StagePanel } from './StagePanel.js';
 import { SurveyTab } from './SurveyTab.js';
 
 const TAB_LABEL: Record<ProjectTab, string> = {
+  overview: 'Overview',
   samples: 'Samples',
   brief: 'Brief',
   survey: 'Survey',

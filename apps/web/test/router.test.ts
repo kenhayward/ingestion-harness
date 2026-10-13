@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { outputPath } from '../src/api/client.js';
-import { parseHash } from '../src/router.js';
+import { PROJECT_TABS, parseHash } from '../src/router.js';
 
 describe('parseHash', () => {
   it.each([
@@ -9,7 +9,9 @@ describe('parseHash', () => {
     ['#/templates', { name: 'templates' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
     ['#/workbench', { name: 'workbench' }],
-    ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'samples' }],
+    ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'overview' }],
+    ['#/workbench/letter/overview', { name: 'project', projectId: 'letter', tab: 'overview' }],
+    ['#/workbench/letter/samples', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['#/workbench/letter/brief', { name: 'project', projectId: 'letter', tab: 'brief' }],
     ['#/workbench/letter/survey', { name: 'project', projectId: 'letter', tab: 'survey' }],
     ['#/workbench/letter/outputs', { name: 'project', projectId: 'letter', tab: 'outputs' }],
@@ -18,10 +20,16 @@ describe('parseHash', () => {
     ['#/workbench/letter/references', { name: 'project', projectId: 'letter', tab: 'references' }],
     ['#/workbench/letter/evaluate', { name: 'project', projectId: 'letter', tab: 'evaluate' }],
     ['#/workbench/letter/revise', { name: 'project', projectId: 'letter', tab: 'revise' }],
-    ['#/workbench/letter/bogus', { name: 'project', projectId: 'letter', tab: 'samples' }],
+    ['#/workbench/letter/bogus', { name: 'project', projectId: 'letter', tab: 'overview' }],
     ['', { name: 'jobs' }],
   ])('%s', (hash, route) => {
     expect(parseHash(hash)).toEqual(route);
+  });
+});
+
+describe('PROJECT_TABS', () => {
+  it('starts with the Overview tab', () => {
+    expect(PROJECT_TABS[0]).toBe('overview');
   });
 });
 

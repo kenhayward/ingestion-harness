@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export const PROJECT_TABS = [
+  'overview',
   'samples',
   'brief',
   'survey',
@@ -41,7 +42,7 @@ export function parseHash(hash: string): Route {
   if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
   const project = /^#\/workbench\/([^/]+)(?:\/([a-z]+))?$/.exec(hash);
   if (project) {
-    const tab = PROJECT_TABS.find((t) => t === project[2]) ?? 'samples';
+    const tab = PROJECT_TABS.find((t) => t === project[2]) ?? 'overview';
     return { name: 'project', projectId: decodeURIComponent(project[1]!), tab };
   }
   if (hash === '#/workbench') return { name: 'workbench' };
@@ -53,7 +54,7 @@ export function parseHash(hash: string): Route {
 
 /**
  * Minimal hash routing: #/ (jobs), #/review/<jobId>, #/results, #/results/<jobId>,
- * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>].
+ * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>] (Overview by default).
  */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));

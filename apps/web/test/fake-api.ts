@@ -4,6 +4,7 @@ import type {
   GateView,
   IterationView,
   JobSummary,
+  ProjectOverview,
   ProjectView,
   ProposalView,
   Publication,
@@ -11,6 +12,7 @@ import type {
   SampleView,
   SegmentationView,
 } from '@ih/shared';
+import { OVERVIEW_TABS } from '@ih/shared';
 import {
   outputPath,
   type Api,
@@ -308,6 +310,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('setPublishThreshold not stubbed');
     }),
     getPublishGate: vi.fn(async () => gateView()),
+    getProjectOverview: vi.fn(async () => projectOverview()),
     publish: vi.fn(async () => {
       throw new Error('publish not stubbed');
     }),
@@ -346,6 +349,20 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getSegmentation: vi.fn(async () => {
       throw new Error('getSegmentation not stubbed');
     }),
+    ...overrides,
+  };
+}
+
+export function projectOverview(overrides: Partial<ProjectOverview> = {}): ProjectOverview {
+  return {
+    project: projectView(),
+    stages: OVERVIEW_TABS.map((stage) => ({
+      stage,
+      state: stage === 'template' ? ('none' as const) : ('pending' as const),
+      status: stage === 'template' ? 'Draft v1' : 'Not started',
+    })),
+    next: null,
+    gate: gateView(),
     ...overrides,
   };
 }
