@@ -45,6 +45,7 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 | `POSTGRES_PORT` (5433) | Postgres | dev overlay only, `127.0.0.1` |
 | `SEAWEEDFS_MASTER_PORT` (9334) | SeaweedFS master UI (unauthenticated) | `127.0.0.1` (set `SEAWEEDFS_MASTER_BIND`) |
 | 8888 | SeaweedFS filer UI | dev overlay only, `127.0.0.1` |
+| `CONVERTER_PORT` (3010) | Word converter (Gotenberg) | dev overlay only, `127.0.0.1` |
 
 ## Remote access (NGINX Proxy Manager)
 
@@ -134,6 +135,11 @@ errors, and the Zscaler root CA will need adding to the images.
 
 - **SeaweedFS** is pinned to an exact 4.x tag in `docker-compose.yml`; Dependabot proposes
   newer 4.x releases (CI's compose smoke test gates them). A 5.x upgrade is a deliberate change.
+- **Word converter** (`converter`, ADR 0009): Gotenberg's LibreOffice-only image, pinned to an
+  exact 8.x tag, on the internal `converter` network that only the worker shares (no route
+  out, no published ports). The worker reaches it at `CONVERTER_URL` (default
+  `http://converter:3000`; set it empty to disable Word documents, which then need review).
+  Converted PDFs are cached in the runs bucket under `converted/`.
 - **Final target (`TARGET_S3_*`):** the worker writes published outputs there and the API reads
   them back for the Results page. Empty values fall back to the internal SeaweedFS (`S3_*`). For
   an external target, give the credentials write access for the worker and at least read access
