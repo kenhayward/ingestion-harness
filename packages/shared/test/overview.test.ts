@@ -657,7 +657,7 @@ describe('overviewNext', () => {
       inputs({ samples: { total: 0, preparing: 0, failed: 0 } }),
       {
         stage: 'samples',
-        title: 'Next: add sample PDFs',
+        title: 'Next: add sample documents',
         reason: 'Upload 3–8 dev samples and a few holdout samples.',
       },
     ],

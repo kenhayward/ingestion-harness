@@ -60,8 +60,8 @@ export function ExportPanel({
     <section className="card" aria-label="Drafting bundle">
       <h3>Drafting bundle</h3>
       <p className="muted">
-        The drafting context, stage instructions, brief, draft and dev sample PDFs — never holdout
-        samples — for drafting elsewhere or importing into another deployment.
+        The drafting context, stage instructions, brief, draft and dev samples as uploaded — never
+        holdout samples — for drafting elsewhere or importing into another deployment.
       </p>
       {dataPolicy === 'local' && (
         <p className="muted">Exporting a local-only project needs the admin token.</p>

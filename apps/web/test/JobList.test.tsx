@@ -93,6 +93,27 @@ describe('JobList main action', () => {
     );
   });
 
+  it('offers the original of a Word document as a download', async () => {
+    renderList([
+      job({
+        id: 'w',
+        filename: 'r.docx',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        status: 'failed',
+      }),
+    ]);
+    await openMenu('r.docx');
+    const link = screen.getByRole('link', { name: 'Download original (.docx)' });
+    expect(link).toHaveAttribute('href', '/api/jobs/w/document');
+    expect(link).not.toHaveAttribute('target');
+    expect(screen.queryByRole('link', { name: 'Open PDF' })).not.toBeInTheDocument();
+    expect(menuItems('r.docx')).toEqual([
+      'Retry with another model…',
+      'Download original (.docx)',
+      'Delete',
+    ]);
+  });
+
   it('closes the menu on Escape', async () => {
     renderList([job({ filename: 'a.pdf', status: 'failed' })]);
     const more = screen.getByRole('button', { name: 'More actions for a.pdf' });

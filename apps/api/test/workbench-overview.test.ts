@@ -113,7 +113,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     });
     expect(o.next).toEqual({
       stage: 'samples',
-      title: 'Next: add sample PDFs',
+      title: 'Next: add sample documents',
       reason: 'Upload 3–8 dev samples and a few holdout samples.',
     });
     expect(o.gate.passes).toBe(false);

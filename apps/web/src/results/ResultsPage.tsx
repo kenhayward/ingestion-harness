@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { isWordDocument } from '../documents.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
 import { shortWhen } from './format.js';
@@ -188,16 +189,28 @@ export function ResultsPage({
                           >
                             <Icon name="open" />
                           </a>
-                          <a
-                            className="button icon bordered"
-                            href={api.documentUrl(r.jobId)}
-                            target="_blank"
-                            rel="noopener"
-                            aria-label={`View PDF of ${r.filename}`}
-                            title="View PDF"
-                          >
-                            <Icon name="file" />
-                          </a>
+                          {isWordDocument(r.contentType) ? (
+                            <a
+                              className="button icon bordered"
+                              href={api.documentUrl(r.jobId)}
+                              download
+                              aria-label={`Download original of ${r.filename}`}
+                              title="Download original (.docx)"
+                            >
+                              <Icon name="file" />
+                            </a>
+                          ) : (
+                            <a
+                              className="button icon bordered"
+                              href={api.documentUrl(r.jobId)}
+                              target="_blank"
+                              rel="noopener"
+                              aria-label={`View PDF of ${r.filename}`}
+                              title="View PDF"
+                            >
+                              <Icon name="file" />
+                            </a>
+                          )}
                           <a
                             className="button dl"
                             href={api.archiveUrl(r.jobId)}

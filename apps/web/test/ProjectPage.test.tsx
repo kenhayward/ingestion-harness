@@ -130,7 +130,7 @@ describe('ProjectPage', () => {
         projectOverview({
           next: {
             stage: 'samples',
-            title: 'Next: add sample PDFs',
+            title: 'Next: add sample documents',
             reason: 'Upload 3–8 dev samples and a few holdout samples.',
           },
         }),
@@ -146,7 +146,7 @@ describe('ProjectPage', () => {
         role="admin"
       />,
     );
-    expect(await screen.findByText('Next: add sample PDFs')).toBeInTheDocument();
+    expect(await screen.findByText('Next: add sample documents')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   });
 

@@ -40,8 +40,8 @@ export function WorkbenchPage({
     <section className="workbench">
       <h2>Workbench</h2>
       <p className="muted">
-        Build a document type from sample PDFs: prepare their text, describe what you need, and test
-        the draft on the samples.
+        Build a document type from sample documents: prepare their text, describe what you need, and
+        test the draft on the samples.
       </p>
       {error && <p role="alert">{error}</p>}
       {items === null ? (
