@@ -5,7 +5,7 @@ import {
   type OverviewTab,
   type ProjectOverview,
 } from '@ih/shared';
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import { relativeTime } from '../jobs/derive.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { PhasePanel } from '../ui/PhasePanel.js';
@@ -92,17 +92,20 @@ function Box({
   const tone = TONE_COLOR[s.tone];
   const name = title(item.stage, overview);
   const next = overview.next?.stage === item.stage;
+  const metricsId = useId();
+  // Template (no stage state) has a soft panel-like border; accepted boxes a plain one.
+  const border: CSSProperties =
+    item.state === 'none'
+      ? { border: '1px solid var(--ih-band-bd)' }
+      : { borderColor: item.state === 'accepted' ? 'var(--ih-border)' : tone };
   return (
     <a
       className={next ? 'map-box is-next' : 'map-box'}
       data-state={item.state}
       href={`#/workbench/${projectId}/${target(item.stage)}`}
       aria-label={`${name}: ${item.status}. Open the ${OVERVIEW_TAB_LABEL[target(item.stage)]} tab`}
-      style={{
-        ...style,
-        background: s.fill,
-        borderColor: item.state === 'accepted' ? 'var(--ih-border)' : tone,
-      }}
+      aria-describedby={item.metrics.length > 0 ? metricsId : undefined}
+      style={{ ...style, background: s.fill, ...border }}
     >
       <span className="map-box-head">
         <span
@@ -118,10 +121,10 @@ function Box({
         {number && <span className="map-box-number">{number}</span>}
         {item.status}
       </span>
-      <span className="map-box-metrics">
+      <span className="map-box-metrics" id={metricsId}>
         {item.metrics.map((metric) => (
           <span key={metric.label} className="map-box-metric">
-            <span>{metric.label}</span>
+            <span>{metric.label} </span>
             <span>{metric.at ? relativeTime(metric.at, now) : metric.value}</span>
           </span>
         ))}
@@ -151,6 +154,10 @@ export function OverviewMap({
   overview: ProjectOverview;
   now: number;
 }) {
+  // Marker ids are document-wide: each map instance needs its own.
+  const uid = useId();
+  const arrow = `map-arrow${uid}`;
+  const arrowSide = `map-arrow-side${uid}`;
   return (
     <section className="map-scroll" aria-label="Process map">
       <div className="map-canvas">
@@ -173,7 +180,7 @@ export function OverviewMap({
         >
           <defs>
             <marker
-              id="map-arrow"
+              id={arrow}
               viewBox="0 0 10 10"
               refX="8"
               refY="5"
@@ -184,7 +191,7 @@ export function OverviewMap({
               <path d="M0 0L10 5L0 10z" style={{ fill: 'var(--ih-flow)' }} />
             </marker>
             <marker
-              id="map-arrow-side"
+              id={arrowSide}
               viewBox="0 0 10 10"
               refX="8"
               refY="5"
@@ -201,7 +208,7 @@ export function OverviewMap({
               d={d}
               fill="none"
               strokeWidth={3}
-              markerEnd="url(#map-arrow)"
+              markerEnd={`url(#${arrow})`}
               style={{ stroke: 'var(--ih-flow)' }}
             />
           ))}
@@ -212,7 +219,7 @@ export function OverviewMap({
               fill="none"
               strokeWidth={2.5}
               strokeDasharray="7 5"
-              markerEnd="url(#map-arrow-side)"
+              markerEnd={`url(#${arrowSide})`}
               style={{ stroke: 'var(--ih-side)' }}
             />
           ))}

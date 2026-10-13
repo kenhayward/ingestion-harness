@@ -64,6 +64,10 @@ describe('OverviewTab', () => {
     const icon = container.querySelector('.next-banner .next-banner-tile svg.stage-icon');
     expect(icon).toHaveAttribute('data-state', 'stale');
     expect(icon).toHaveAttribute('aria-hidden', 'true');
+    // The icon tile takes the stage tone's fill (Stale: the alert background).
+    expect(container.querySelector('.next-banner-tile')!.getAttribute('style')).toContain(
+      'background: var(--ih-alert-bg)',
+    );
   });
 
   it('gives the Template box its title and status but no status icon', () => {

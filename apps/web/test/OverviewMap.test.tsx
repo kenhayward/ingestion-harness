@@ -67,6 +67,38 @@ describe('OverviewMap', () => {
     expect(publish.getAttribute('aria-label')).toMatch(/Open the Evaluate tab$/);
   });
 
+  it("describes each box link with its figures, which the link's name leaves out", () => {
+    render(<OverviewMap projectId="letter" overview={overview} now={now} />);
+    const sections = screen.getByRole('link', { name: /^Sections: / });
+    expect(sections).toHaveAccessibleDescription(/Anchors found 6 \/ 6 dev/);
+    expect(screen.getByRole('link', { name: /^Brief: / })).toHaveAccessibleDescription(
+      /Updated 2 days ago/,
+    );
+  });
+
+  it('gives each map its own arrow marker ids', () => {
+    const { container } = render(
+      <>
+        <OverviewMap projectId="letter" overview={overview} now={now} />
+        <OverviewMap projectId="letter" overview={overview} now={now} />
+      </>,
+    );
+    const ids = [...container.querySelectorAll('marker')].map((m) => m.id);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
+    for (const svg of container.querySelectorAll('svg.map-connectors')) {
+      const own = [...svg.querySelectorAll('marker')].map((m) => `url(#${m.id})`);
+      for (const path of svg.querySelectorAll('path[marker-end]'))
+        expect(own).toContain(path.getAttribute('marker-end'));
+    }
+  });
+
+  it('gives the Template box a soft border', () => {
+    render(<OverviewMap projectId="letter" overview={overview} now={now} />);
+    const template = screen.getByRole('link', { name: /^Template: / });
+    expect(template.getAttribute('style')).toContain('border: 1px solid var(--ih-band-bd)');
+  });
+
   it('shows times as relative time', () => {
     render(<OverviewMap projectId="letter" overview={overview} now={now} />);
     expect(screen.getByRole('link', { name: /^Brief: / })).toHaveTextContent('2 days ago');

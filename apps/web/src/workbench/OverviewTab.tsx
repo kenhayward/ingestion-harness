@@ -23,7 +23,7 @@ export function OverviewTab({
     <div className="overview">
       {next && target && (
         <div role="note" className="next-banner" data-tone={tone ?? undefined}>
-          <span className="next-banner-tile">
+          <span className="next-banner-tile" style={{ background: stageStyle(nextState).fill }}>
             <StageStatusIcon state={nextState} decorative />
           </span>
           <div className="next-banner-text">

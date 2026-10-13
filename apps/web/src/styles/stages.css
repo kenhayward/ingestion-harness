@@ -280,7 +280,7 @@
   height: 32px;
   flex: none;
   border-radius: var(--ih-radius-md);
-  background: var(--ih-page-well);
+  /* Background: the stage tone's fill, set inline. */
 }
 .next-banner-text {
   flex: 1;
@@ -382,6 +382,7 @@
   margin-right: 6px;
   font-family: var(--ih-font-mono);
   font-weight: 400;
+  color: var(--ih-muted);
 }
 .map-box-metrics {
   display: grid;
