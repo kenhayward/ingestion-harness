@@ -2016,8 +2016,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listTestRuns',
         summary: "List a project's jobs",
         description: md`
-          The project's jobs except sample preparation: test runs, reference runs and
-          evaluation jobs, newest first. Test runs started together share a \`batchId\`; a
+          The project's jobs except sample preparation and any run of a holdout sample (holdout
+          stays sealed here): test runs, dev reference runs and evaluation jobs, newest first. Test runs started together share a \`batchId\`; a
           running job carries its latest \`progress\` in this attempt (step, attempt, chunk;
           null before the first model call). Open one with \`GET /api/jobs/{id}/review\`.
         `,
@@ -2029,8 +2029,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!(await workbench.getProject(req.params.id))) {
         return reply.code(404).send({ error: 'project not found' });
       }
+      // Holdout stays sealed on this tab: no run of a holdout sample is listed.
+      const holdout = new Set(
+        (await app.deps.workbench.listSamples(req.params.id))
+          .filter((s) => s.role === 'holdout')
+          .map((s) => s.sha256),
+      );
+      const shaByJob = holdout.size ? await jobShas(app, req.params.id) : new Map<string, string>();
       const jobs = (await app.deps.repo.listProjectJobs(req.params.id)).filter(
-        (j) => j.task !== 'prepare',
+        (j) => j.task !== 'prepare' && !holdout.has(shaByJob.get(j.id) ?? ''),
       );
       const running = jobs.filter((j) => j.status === 'running').map((j) => j.id);
       const events = running.length

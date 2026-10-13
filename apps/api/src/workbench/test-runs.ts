@@ -16,7 +16,8 @@ export function stepProgress(
   job: JobSummary,
   events: readonly JobEventRecord[],
 ): StepProgress | null {
-  if (job.status !== 'running') return null;
+  // Only an extraction reports steps: a step re-run or publish reuses the row's startedAt.
+  if (job.status !== 'running' || job.task !== 'process') return null;
   const latest = events.find((e) => e.jobId === job.id && e.message === STEP_PROGRESS_EVENT);
   if (!latest || Date.parse(latest.at) < Date.parse(job.startedAt ?? job.updatedAt)) return null;
   const parsed = StepProgressSchema.safeParse(latest.data);

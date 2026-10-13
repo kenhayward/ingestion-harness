@@ -202,6 +202,31 @@ describe('run rows', () => {
     expect(runDuration(testRunView({ status: 'succeeded', startedAt: null }), now)).toBe('—');
   });
 
+  it('says what a running re-run or publish is doing, not the extraction step', () => {
+    const progress = { step: 'totals', index: 3, of: 3, attempt: 1, chunk: null };
+    expect(runDetail(testRunView({ status: 'running', task: 'rerun', progress })).text).toBe(
+      'Re-running a step',
+    );
+    expect(runDetail(testRunView({ status: 'running', task: 'publish', progress })).text).toBe(
+      'Finishing the review',
+    );
+  });
+
+  it("does not count a running re-run or publish from the extraction's start", () => {
+    const now = Date.parse(at(500));
+    for (const task of ['rerun', 'publish'] as const) {
+      expect(runDuration(testRunView({ status: 'running', task, startedAt: at(0) }), now)).toBe(
+        '—',
+      );
+      expect(
+        runDuration(
+          testRunView({ status: 'running', task, startedAt: at(0), finishedAt: at(31) }),
+          now,
+        ),
+      ).toBe('0:31');
+    }
+  });
+
   it.each([
     ['awaiting_review', 'review-now'],
     ['succeeded', 'review'],

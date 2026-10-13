@@ -270,6 +270,36 @@ describe('dev test run housekeeping', () => {
   });
 });
 
+describe('test runs list: holdout stays sealed', () => {
+  it('leaves out every job whose sample is a holdout sample', async () => {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    await ctx.add(1);
+    const holdout = await ctx.add(2, 'holdout');
+    await ctx.run();
+    // A holdout reference run and a holdout evaluation job, as the routes create them.
+    for (const params of [{ forceReview: true }, { referenceId: 'r' }]) {
+      await ctx.repo.createWorkbenchJob(
+        {
+          id: crypto.randomUUID(),
+          filename: holdout.filename,
+          sha256: holdout.sha256,
+          sizeBytes: holdout.sizeBytes,
+          specId: 'letter',
+          specVersion: 1,
+          bucket: 'inbox',
+          objectKey: `${holdout.sha256}.pdf`,
+        },
+        { projectId: 'letter', task: 'process', params },
+      );
+    }
+    const listed = (await ctx.app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+      filename: string;
+    }[];
+    expect(listed.map((j) => j.filename)).toEqual(['s1.pdf']);
+  });
+});
+
 describe('test run progress (TR3)', () => {
   async function runningRun() {
     const ctx = await project();
@@ -309,5 +339,15 @@ describe('test run progress (TR3)', () => {
     r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
     r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, status: 'succeeded' });
     expect((await r.listed()).progress).toBeNull();
+  });
+
+  it('shows no step progress for a running step re-run or publish', async () => {
+    const r = await runningRun();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    expect((await r.listed()).progress).toEqual(event);
+    for (const task of ['rerun', 'publish'] as const) {
+      r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, task });
+      expect((await r.listed()).progress).toBeNull();
+    }
   });
 });

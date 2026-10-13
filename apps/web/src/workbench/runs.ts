@@ -146,6 +146,8 @@ export function runDetail(run: TestRun): { text: string; tone: DetailTone } {
         ? { text: `Retrying after attempt ${run.attempts}: ${run.error}`, tone: 'warn' }
         : { text: 'Waiting for a worker', tone: 'muted' };
     case 'running':
+      if (run.task === 'rerun') return { text: 'Re-running a step', tone: 'info' };
+      if (run.task === 'publish') return { text: 'Finishing the review', tone: 'info' };
       return { text: run.progress ? progressText(run.progress) : 'Starting…', tone: 'info' };
     case 'awaiting_review':
       return {
@@ -188,7 +190,10 @@ export function formatDuration(seconds: number): string {
 export function runDuration(run: TestRun, now: number): string {
   if (!run.startedAt || run.status === 'queued') return '—';
   const start = Date.parse(run.startedAt);
-  if (run.status === 'running') return formatDuration((now - start) / 1000);
+  // A step re-run or publish keeps the extraction's start: only a running extraction counts up.
+  if (run.status === 'running' && run.task === 'process') {
+    return formatDuration((now - start) / 1000);
+  }
   return run.finishedAt ? formatDuration((Date.parse(run.finishedAt) - start) / 1000) : '—';
 }
 

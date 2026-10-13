@@ -15903,7 +15903,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "The project's jobs except sample preparation: test runs, reference runs and\nevaluation jobs, newest first. Test runs started together share a `batchId`; a\nrunning job carries its latest `progress` in this attempt (step, attempt, chunk;\nnull before the first model call). Open one with `GET /api/jobs/{id}/review`.",
+        "description": "The project's jobs except sample preparation and any run of a holdout sample (holdout\nstays sealed here): test runs, dev reference runs and evaluation jobs, newest first. Test runs started together share a `batchId`; a\nrunning job carries its latest `progress` in this attempt (step, attempt, chunk;\nnull before the first model call). Open one with `GET /api/jobs/{id}/review`.",
         "parameters": [
           {
             "schema": {
