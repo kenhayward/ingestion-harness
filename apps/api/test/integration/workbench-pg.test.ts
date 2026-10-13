@@ -73,6 +73,24 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     return id;
   };
 
+  it('lists brief versions oldest first and reads one', async () => {
+    const projectId = await newProject();
+    expect(await workbench.listBriefs(projectId)).toEqual([]);
+    await workbench.saveBrief(projectId, { ...EMPTY_BRIEF, purpose: 'a' });
+    await workbench.saveBrief(projectId, { ...EMPTY_BRIEF, purpose: 'b' });
+    expect((await workbench.listBriefs(projectId)).map((b) => [b.version, b.body.purpose])).toEqual(
+      [
+        [1, 'a'],
+        [2, 'b'],
+      ],
+    );
+    expect(await workbench.getBrief(projectId, 2)).toMatchObject({
+      version: 2,
+      body: { purpose: 'b' },
+    });
+    expect(await workbench.getBrief(projectId, 3)).toBeNull();
+  });
+
   it('stores params on workbench jobs and draft jobs, and lists draft jobs', async () => {
     const projectId = await newProject();
     const prepare = await repo.createWorkbenchJob(doc(projectId), {

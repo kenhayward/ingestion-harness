@@ -14723,6 +14723,307 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/briefs": {
+      "get": {
+        "operationId": "listBriefVersions",
+        "summary": "List the brief's versions",
+        "tags": [
+          "Samples & brief"
+        ],
+        "description": "Every saved version of the brief, newest first. `changedSections` names the\nsections that differ from the previous version (for version 1, the sections with\ntext); `usedBy` names the drafting stages whose newest accepted or partially\naccepted proposal was drafted from that version.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The versions, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "changedSections": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "purpose",
+                            "outputs",
+                            "glossary",
+                            "exampleOutput",
+                            "variants",
+                            "rules",
+                            "answers"
+                          ]
+                        }
+                      },
+                      "usedBy": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "survey",
+                            "outputs",
+                            "sections",
+                            "steps",
+                            "references",
+                            "revise"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "createdAt",
+                      "changedSections",
+                      "usedBy"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The versions, newest first."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/briefs/{version}": {
+      "get": {
+        "operationId": "getBriefVersion",
+        "summary": "Get one version of the brief",
+        "tags": [
+          "Samples & brief"
+        ],
+        "description": "The body of one saved version, for comparing versions (the Brief tab diffs two of\nthem section by section).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The brief version: 1, 2, …"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "That version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "body": {
+                      "type": "object",
+                      "properties": {
+                        "purpose": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "outputs": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "exampleOutput": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "glossary": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "variants": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "rules": {
+                          "type": "string",
+                          "default": ""
+                        },
+                        "answers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "question": {
+                                "type": "string"
+                              },
+                              "answer": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "question",
+                              "answer"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "default": []
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "version",
+                    "body",
+                    "createdAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "That version."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found` or `brief version not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found` or `brief version not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/test-runs": {
       "post": {
         "operationId": "startTestRuns",

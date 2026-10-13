@@ -152,6 +152,9 @@ export interface WorkbenchRepo {
   latestBrief(projectId: string): Promise<Brief | null>;
   /** Appends version n+1. */
   saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
+  /** Every version, oldest first. */
+  listBriefs(projectId: string): Promise<Brief[]>;
+  getBrief(projectId: string, version: number): Promise<Brief | null>;
   /** Null when the project is unknown. `by` is the actor who changed it. */
   setDataPolicy(
     id: string,
@@ -391,6 +394,14 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     const brief = { projectId, version, body, createdAt: this.now() };
     this.briefs.push(brief);
     return brief;
+  }
+
+  async listBriefs(projectId: string) {
+    return this.briefs.filter((b) => b.projectId === projectId);
+  }
+
+  async getBrief(projectId: string, version: number) {
+    return this.briefs.find((b) => b.projectId === projectId && b.version === version) ?? null;
   }
 
   async setDataPolicy(id: string, policy: DataPolicy, by: string | null) {
@@ -1174,6 +1185,22 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId, JSON.stringify(body)],
     );
     return toBrief(rows[0]!);
+  }
+
+  async listBriefs(projectId: string) {
+    const { rows } = await this.pool.query<BriefRow>(
+      `SELECT * FROM workbench_briefs WHERE project_id = $1 ORDER BY version`,
+      [projectId],
+    );
+    return rows.map(toBrief);
+  }
+
+  async getBrief(projectId: string, version: number) {
+    const { rows } = await this.pool.query<BriefRow>(
+      `SELECT * FROM workbench_briefs WHERE project_id = $1 AND version = $2`,
+      [projectId, version],
+    );
+    return rows[0] ? toBrief(rows[0]) : null;
   }
 
   async setDataPolicy(id: string, policy: DataPolicy, by: string | null) {
