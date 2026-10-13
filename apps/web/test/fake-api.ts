@@ -10,6 +10,8 @@ import type {
   ProjectView,
   ProposalView,
   Publication,
+  ReferenceDetail,
+  ReferenceInfo,
   ReferenceRow,
   SampleView,
   SegmentationView,
@@ -29,6 +31,35 @@ export function referenceRow(overrides: Partial<ReferenceRow> = {}): ReferenceRo
     sha256: 'sha-a',
     reference: null,
     run: null,
+    ...overrides,
+  };
+}
+
+export function referenceInfo(overrides: Partial<ReferenceInfo> = {}): ReferenceInfo {
+  return {
+    id: crypto.randomUUID(),
+    name: 'a',
+    createdAt: '2026-10-11T16:55:00.000Z',
+    version: 2,
+    carriedFrom: null,
+    outdated: [],
+    sourceJobId: 'src-job',
+    verifiedBy: 'ken',
+    corrections: [],
+    reverified: null,
+    ...overrides,
+  };
+}
+
+export function referenceDetail(overrides: Partial<ReferenceDetail> = {}): ReferenceDetail {
+  return {
+    sampleId: crypto.randomUUID(),
+    filename: 'a.pdf',
+    role: 'dev',
+    reference: referenceInfo(),
+    run: { jobId: 'src-job', modelOverride: 'draft', models: ['local/qwen'] },
+    values: [],
+    corrections: [],
     ...overrides,
   };
 }
@@ -287,6 +318,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     listStages: vi.fn(async () => []),
     listReferenceRows: vi.fn(async () => []),
+    getReferenceDetail: vi.fn(async () => referenceDetail()),
     proposeReferences: vi.fn(async () => {
       throw new Error('proposeReferences not stubbed');
     }),

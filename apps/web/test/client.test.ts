@@ -239,6 +239,14 @@ describe('http api: drafting stages', () => {
 });
 
 describe('http api: evaluation', () => {
+  it('reads one reference detail', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.getReferenceDetail('letter', 's1');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/workbench/projects/letter/references/s1');
+  });
+
   it('proposes references, evaluates, lists, opens and restores iterations', async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
       respond(200, { jobs: [] }),
