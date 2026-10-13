@@ -358,14 +358,18 @@ export function ProjectPage({
               onChanged={changed}
             />
           )}
-          {tab === 'evaluate' && header('evaluate')}
+          {tab === 'evaluate' &&
+            header(
+              'evaluate',
+              'Runs the draft on samples with verified references and scores every value against them. Dev runs guide your changes; holdout runs measure the draft against the publish threshold. Both are optional.',
+            )}
           {tab === 'evaluate' && (
             <EvaluateTab
               api={api}
               projectId={project.id}
               dataPolicy={project.dataPolicy}
-              hasDraft={draft !== null}
               draft={draft}
+              published={published}
               pollMs={pollMs}
               onRestored={changed}
               onStarted={loadOverview}

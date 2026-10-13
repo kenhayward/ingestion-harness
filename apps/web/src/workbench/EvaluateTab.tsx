@@ -1,8 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   EVALUATION_MODELS,
-  EVALUATION_SETS,
-  FEEDBACK_MAX_CHARS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
@@ -12,7 +10,11 @@ import {
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { PublishPanel } from './PublishPanel.js';
+import { Segmented, type SegmentedOption } from '../ui/Segmented.js';
+import { AccuracyCard, HistoryCard } from './EvaluateHistory.js';
+import { LatestRun } from './EvaluateLatest.js';
+import { GateCard, useGate } from './GateCard.js';
+import { devScore, latestOf } from './evaluate.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
@@ -20,19 +22,29 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
     'Dev sample text may be sent to an external model provider; holdout samples are never sent.',
 };
 
-const DASH = '—';
-const DOT = '·';
-const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
-const show = (v: unknown) =>
-  v === null || v === undefined ? DASH : typeof v === 'string' ? v : JSON.stringify(v);
+export const HOLDOUT_MODEL_REASON =
+  "Holdout runs use the template's own models: only they are measured against the threshold";
+export const COMPARE_HOLDOUT_REASON =
+  'Model comparison runs on dev samples only; holdout samples are never compared across models';
 
-/** Evaluate the draft on verified dev samples; scorecard, drill-down and history (ADR 0007). */
+const SETS: readonly SegmentedOption<EvaluationSet>[] = [
+  { value: 'holdout', label: 'Holdout' },
+  { value: 'dev', label: 'Dev' },
+];
+const DEFAULT_THRESHOLD = 0.9;
+const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
+
+/**
+ * Evaluate and publish (handoff §8 after #77): the informational gate card, the run bar, the
+ * latest run of the selected set, accuracy by output and the history. Polls only while a run or
+ * a model comparison is active.
+ */
 export function EvaluateTab({
   api,
   projectId,
   dataPolicy,
-  hasDraft,
   draft,
+  published,
   pollMs,
   onRestored,
   onStarted,
@@ -40,76 +52,49 @@ export function EvaluateTab({
   api: Api;
   projectId: string;
   dataPolicy: DataPolicy;
-  hasDraft: boolean;
-  /** The open draft version; without one the Publish panel only shows the publication log. */
+  /** The open draft version; null when every version is published. */
   draft: number | null;
+  published: number | null;
   pollMs: number;
   onRestored: () => void;
   /** Called after an evaluation or a model comparison has been started. */
   onStarted?: () => void;
 }) {
+  const [set, setSet] = useState<EvaluationSet>('dev');
+  const [model, setModel] = useState<EvaluationModel | ''>('');
+  const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
-  const [model, setModel] = useState<EvaluationModel | ''>('');
-  const [open, setOpen] = useState<string | null>(null);
-  const [uncached, setUncached] = useState(false);
-  const [set, setSet] = useState<EvaluationSet>('dev');
   const [comparison, setComparison] = useState<ComparisonView | null>(null);
-  const [commenting, setCommenting] = useState<{
-    targetId: string;
-    sampleId: string | null;
-  } | null>(null);
-  const [commentBody, setCommentBody] = useState('');
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
 
   const load = useCallback(async () => {
+    const n = ++seq.current;
     try {
       const list = await api.listIterations(projectId);
+      const latest = latestOf(list, set);
+      const view = latest ? await api.getIteration(projectId, latest.id) : null;
+      if (n !== seq.current) return; // a set switch or a newer poll superseded this one
       setHistory(list);
-      setCurrent(list[0] ? await api.getIteration(projectId, list[0].id) : null);
+      setCurrent(view);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      if (n === seq.current) setError((err as Error).message);
     }
-  }, [api, projectId]);
+  }, [api, projectId, set]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const currentId = current?.id;
-  const running = current?.status === 'running';
+  const active = history?.some((h) => h.status === 'running') ?? false;
   useEffect(() => {
-    if (!running || !currentId) return;
-    let stopped = false;
-    const timer = setInterval(() => {
-      api.getIteration(projectId, currentId).then(
-        (next) => {
-          if (stopped) return;
-          setCurrent(next);
-          if (next.status !== 'running') {
-            api.listIterations(projectId).then(
-              (list) => {
-                if (!stopped) setHistory(list);
-              },
-              (err: Error) => {
-                if (!stopped) setError(`could not refresh the history: ${err.message}`);
-              },
-            );
-          }
-        },
-        (err: Error) => {
-          if (!stopped) setError(err.message);
-        },
-      );
-    }, pollMs);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [running, currentId, pollMs, api, projectId, load]);
+    if (!active) return;
+    const timer = setInterval(() => void load(), pollMs);
+    return () => clearInterval(timer);
+  }, [active, load, pollMs]);
 
   const comparisonId = comparison?.groupId;
   const comparing = comparison?.iterations.some((i) => i.status === 'running') ?? false;
@@ -122,16 +107,7 @@ export function EvaluateTab({
           if (stopped) return;
           setComparison(next);
           setError(null);
-          if (!next.iterations.some((i) => i.status === 'running')) {
-            api.listIterations(projectId).then(
-              (list) => {
-                if (!stopped) setHistory(list);
-              },
-              (err: Error) => {
-                if (!stopped) setError(`could not refresh the history: ${err.message}`);
-              },
-            );
-          }
+          if (!next.iterations.some((i) => i.status === 'running')) void load();
         },
         (err: Error) => {
           if (!stopped) setError(err.message);
@@ -142,7 +118,11 @@ export function EvaluateTab({
       stopped = true;
       clearInterval(timer);
     };
-  }, [comparing, comparisonId, pollMs, api, projectId]);
+  }, [comparing, comparisonId, pollMs, api, projectId, load]);
+
+  const gateKey = (history ?? []).map((h) => `${h.id}:${h.status}`).join(',');
+  const gate = useGate(api, projectId, draft, gateKey);
+  const threshold = gate.gate?.threshold ?? gate.threshold?.value ?? DEFAULT_THRESHOLD;
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -157,11 +137,27 @@ export function EvaluateTab({
     }
   };
 
+  const holdout = set === 'holdout';
+  const running = current?.status === 'running';
+  const evaluateBlocked =
+    draft === null
+      ? 'Start a draft version first'
+      : running
+        ? 'An evaluation of this set is still running'
+        : comparing
+          ? 'A model comparison is still running'
+          : busy
+            ? 'Starting…'
+            : null;
+  const compareBlocked = draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked;
+
   const evaluate = () =>
     act(async () => {
-      const started = await api.startEvaluation(projectId, model || null, { uncached, set });
+      const started = await api.startEvaluation(projectId, holdout ? null : model || null, {
+        uncached,
+        set,
+      });
       setCurrent(started);
-      setOpen(null);
       setHistory((h) => [started, ...(h ?? [])]);
       onStarted?.();
     });
@@ -171,37 +167,39 @@ export function EvaluateTab({
       onStarted?.();
     });
   const restore = (id: string) =>
-    act(async () => {
+    void act(async () => {
       if (!window.confirm('Replace the open draft with the template from this iteration?')) return;
       await api.restoreIteration(projectId, id);
       onRestored();
     });
 
-  const saveComment = () =>
-    act(async () => {
-      if (!commenting || !current) return;
-      await api.addFeedback(projectId, {
-        target: 'field',
-        targetId: commenting.targetId,
-        body: commentBody,
-        ...(commenting.sampleId ? { sampleId: commenting.sampleId } : {}),
-        iterationId: current.id,
-      });
-      setCommenting(null);
-      setCommentBody('');
-      setSaved(true);
-    });
-
-  const accuracy = current ? [...current.scorecard.fields, ...current.scorecard.columns] : [];
-  const opened = current?.samples.find((s) => s.jobId === open) ?? null;
-
   return (
-    <div className="evaluate-tab">
+    <div className="eval-tab">
       <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
-      <div className="actions">
+      <GateCard
+        api={api}
+        projectId={projectId}
+        draft={draft}
+        published={published}
+        gate={gate.gate}
+        publications={gate.publications}
+        threshold={gate.threshold}
+        devScore={history ? devScore(history, draft) : null}
+        onChanged={() => void gate.reload()}
+        onPublished={onRestored}
+      />
+      {gate.error && <p role="alert">{gate.error}</p>}
+      <section className="card eval-runbar" aria-label="Run">
+        <h3>Run</h3>
+        <Segmented label="Sample set" options={SETS} value={set} onChange={setSet} />
         <label>
           Model{' '}
-          <select value={model} onChange={(e) => setModel(e.target.value as EvaluationModel | '')}>
+          <select
+            value={holdout ? '' : model}
+            disabled={holdout}
+            title={holdout ? HOLDOUT_MODEL_REASON : undefined}
+            onChange={(e) => setModel(e.target.value as EvaluationModel | '')}
+          >
             <option value="">Template&apos;s models</option>
             {EVALUATION_MODELS.map((m) => (
               <option key={m} value={m}>
@@ -210,244 +208,90 @@ export function EvaluateTab({
             ))}
           </select>
         </label>
-        <label>
-          Set{' '}
-          <select value={set} onChange={(e) => setSet(e.target.value as EvaluationSet)}>
-            {EVALUATION_SETS.map((v) => (
-              <option key={v} value={v}>
-                {v === 'dev' ? 'Dev' : 'Holdout'}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
+        <label title="Skip the step cache: every step calls its model">
           <input
             type="checkbox"
             checked={uncached}
             onChange={(e) => setUncached(e.target.checked)}
           />{' '}
-          Fresh model calls (skip the step cache)
+          Fresh model calls
         </label>
-        <button
-          type="button"
-          className="primary"
-          disabled={!hasDraft || busy || running || comparing}
-          onClick={() => void evaluate()}
-        >
-          Evaluate the draft
-        </button>
-        <button
-          type="button"
-          disabled={!hasDraft || busy || running || comparing || set === 'holdout'}
-          onClick={() => void compare()}
-        >
-          Compare models
-        </button>
-      </div>
+        <span className="muted eval-runbar-note">
+          {holdout ? "Holdout: template's models only" : 'Dev: any model, or compare'}
+        </span>
+        <div className="eval-runbar-actions">
+          <button
+            type="button"
+            disabled={compareBlocked !== null}
+            title={compareBlocked ?? undefined}
+            onClick={() => void compare()}
+          >
+            Compare models
+          </button>
+          <button
+            type="button"
+            className="primary"
+            disabled={evaluateBlocked !== null}
+            title={evaluateBlocked ?? undefined}
+            onClick={() => void evaluate()}
+          >
+            {draft === null ? `Evaluate on ${set}` : `Evaluate v${draft} on ${set}`}
+          </button>
+        </div>
+      </section>
       {error && <p role="alert">{error}</p>}
       {comparison && (
-        <table aria-label="Model comparison">
-          <thead>
-            <tr>
-              <th>Measure</th>
-              {comparison.iterations.map((i) => (
-                <th key={i.id}>
-                  {i.model ?? 'template'}
-                  {i.status === 'running' && ' (running)'}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {comparisonRows(comparison.iterations).map((row) => (
-              <tr key={row.id}>
-                <td>{row.id}</td>
-                {comparison.iterations.map((i) => (
-                  <td key={i.id}>{pct(row.byModel[i.model ?? 'template'] ?? null)}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {current && (
-        <section aria-label="Latest evaluation">
-          <h3>Score {pct(current.score)}</h3>
-          <p className="muted">
-            v{current.templateVersion} {DOT} {current.model ?? "template's models"} {DOT}{' '}
-            {current.completed} of {current.total} compared {DOT} {current.status}
-          </p>
-          {current.cache.total > 0 && (
-            <p className="muted">
-              Reused {current.cache.reused} of {current.cache.total} steps from the cache
-            </p>
-          )}
-          <table aria-label="Samples">
-            <thead>
-              <tr>
-                <th>Sample</th>
-                <th>Score</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {current.samples.map((s, i) => (
-                <tr key={`${i}-${s.jobId ?? s.filename}`}>
-                  <td>{s.filename}</td>
-                  <td>{s.comparison ? pct(s.comparison.score) : '–'}</td>
-                  <td>
-                    {s.status ? s.status.replace('_', ' ') : 'deleted'}
-                    {s.error && <small className="muted"> {s.error}</small>}
-                  </td>
-                  <td>
-                    {s.jobId && <a href={`#/review/${s.jobId}`}>Review</a>}{' '}
-                    {s.comparison && s.jobId && (
-                      <button
-                        type="button"
-                        onClick={() => setOpen(open === s.jobId ? null : s.jobId)}
-                      >
-                        Details
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {saved && <p role="status">Comment saved; see the Revise tab</p>}
-          {opened?.comparison && (
-            <table aria-label={`Fields in ${opened.filename}`}>
+        <section className="card eval-compare" aria-label="Models compared">
+          <h3>Model comparison</h3>
+          <div className="table-scroll">
+            <table aria-label="Model comparison">
               <thead>
                 <tr>
-                  <th>Field</th>
-                  <th>Expected</th>
-                  <th>Actual</th>
-                  <th>Match</th>
-                  <th />
+                  <th scope="col">Measure</th>
+                  {comparison.iterations.map((i) => (
+                    <th scope="col" key={i.id}>
+                      {i.model ?? 'template'}
+                      {i.status === 'running' && ' (running)'}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {opened.comparison.fields.map((f) => (
-                  <Fragment key={f.id}>
-                    <tr>
-                      <td>{f.id}</td>
-                      <td>{show(f.expected)}</td>
-                      <td>{show(f.actual)}</td>
-                      <td>{f.match ? '✓' : '✗'}</td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCommenting({ targetId: f.id, sampleId: opened.sampleId });
-                            setCommentBody('');
-                            setSaved(false);
-                          }}
-                        >
-                          Comment
-                        </button>
-                      </td>
-                    </tr>
-                    {commenting?.targetId === f.id && commenting.sampleId === opened.sampleId && (
-                      <tr>
-                        <td colSpan={5}>
-                          <label>
-                            Comment on {f.id}
-                            <textarea
-                              value={commentBody}
-                              maxLength={FEEDBACK_MAX_CHARS}
-                              onChange={(e) => setCommentBody(e.target.value)}
-                            />
-                          </label>{' '}
-                          <button
-                            type="button"
-                            className="primary"
-                            disabled={busy || !commentBody.trim()}
-                            onClick={() => void saveComment()}
-                          >
-                            Save comment
-                          </button>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-                {opened.comparison.tables.map((t) => (
-                  <tr key={`table-${t.id}`}>
-                    <td>{t.id}</td>
-                    <td>{t.expected} rows</td>
-                    <td>{t.actual} rows</td>
-                    <td>
-                      {t.matched} matched {DOT} {t.changed.length} changed {DOT} {t.missing.length}{' '}
-                      missing {DOT} {t.extra.length} extra
-                    </td>
+                {comparisonRows(comparison.iterations).map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.id}</td>
+                    {comparison.iterations.map((i) => (
+                      <td key={i.id}>{pct(row.byModel[i.model ?? 'template'] ?? null)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-          <table aria-label="Field accuracy">
-            <thead>
-              <tr>
-                <th>Field or column</th>
-                <th>Correct</th>
-                <th>Accuracy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accuracy.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.id}</td>
-                  <td>
-                    {a.matched} / {a.total}
-                  </td>
-                  <td>{pct(a.accuracy)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </div>
         </section>
       )}
-      {history && history.length > 0 && (
-        <table aria-label="History">
-          <thead>
-            <tr>
-              <th>Version</th>
-              <th>Model</th>
-              <th>Score</th>
-              <th>When</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((h) => (
-              <tr key={h.id}>
-                <td>v{h.templateVersion}</td>
-                <td>
-                  {h.model ?? "template's"}
-                  {h.uncached && ` ${DOT} fresh`}
-                  {h.groupId && ` ${DOT} compare`}
-                  {h.set === 'holdout' && ` ${DOT} holdout`}
-                </td>
-                <td>{h.status === 'complete' ? pct(h.score) : 'running'}</td>
-                <td>{new Date(h.createdAt).toLocaleString()}</td>
-                <td>
-                  <button type="button" disabled={busy} onClick={() => void restore(h.id)}>
-                    Restore
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <PublishPanel
-        api={api}
-        projectId={projectId}
-        draft={draft}
-        refreshKey={current ? `${current.id}:${current.status}` : undefined}
-        onPublished={onRestored}
-      />
+      <div className="eval-layout">
+        <div className="eval-main">
+          <LatestRun
+            api={api}
+            projectId={projectId}
+            iteration={current}
+            set={set}
+            threshold={threshold}
+          />
+        </div>
+        <div className="eval-side">
+          {current && <AccuracyCard iteration={current} threshold={threshold} />}
+          <HistoryCard
+            history={history ?? []}
+            version={draft ?? published}
+            threshold={threshold}
+            busy={busy}
+            onRestore={restore}
+            publications={gate.publications}
+          />
+        </div>
+      </div>
     </div>
   );
 }
