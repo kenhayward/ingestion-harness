@@ -62,7 +62,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
       routePrefix: DOCS_PREFIX,
       logLevel: 'silent',
       configuration: {
-        pageTitle: 'Ingestion Harness API',
+        pageTitle: 'Content Transformation Studio API',
         theme: 'none',
         customCss: CSS,
         // Self-contained: no fonts from Scalar's CDN, no telemetry, none of the hosted extras.

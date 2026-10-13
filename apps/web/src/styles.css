@@ -334,19 +334,8 @@ html {
   text-decoration: none;
 }
 .brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--ih-accent);
-  color: var(--ih-accent-text);
-}
-.brand-mark.large {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  display: block;
+  flex: none;
 }
 .search {
   flex: 1 1 260px;

@@ -19,6 +19,13 @@ async function openapi(): Promise<Doc> {
 }
 
 describe('OpenAPI document', () => {
+  it('carries the product name', async () => {
+    const doc = await openapi();
+    expect(doc.info.title).toBe('Content Transformation Studio API');
+    expect(doc.info.description).toMatch(/^Content Transformation Studio \(CT Studio\) extracts/);
+    expect(JSON.stringify(doc.info)).not.toContain('Ingestion Harness');
+  });
+
   it('is a valid OpenAPI 3.1 document without deployment details', async () => {
     const doc = await openapi();
     expect(doc.openapi).toBe('3.1.0');

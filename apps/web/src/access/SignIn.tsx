@@ -1,6 +1,9 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { Api, Me } from '../api/client.js';
 import { API_DOCS } from '../shell/AppShell.js';
+import { pageTitle } from '../shell/derive.js';
+import { useDocumentTitle } from '../shell/useDocumentTitle.js';
+import { BrandMark } from '../ui/BrandMark.js';
 import { Icon } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 
@@ -12,7 +15,14 @@ function message(err: unknown): string {
 }
 
 /** Full-screen layout outside the app shell: sign in, loading, server unreachable. */
-export function AuthLayout({ children }: { children: ReactNode }) {
+export function AuthLayout({
+  title = null,
+  children,
+}: {
+  title?: string | null;
+  children: ReactNode;
+}) {
+  useDocumentTitle(pageTitle(title));
   return (
     <div className="auth">
       <div className="auth-top">
@@ -21,10 +31,8 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <main className="auth-main">
         <div className="auth-column">
           <div className="auth-brand">
-            <span className="brand-mark large">
-              <Icon name="brand" size={26} />
-            </span>
-            <h1>Ingestion Harness</h1>
+            <BrandMark size={52} />
+            <h1>CT Studio</h1>
           </div>
           {children}
         </div>
@@ -64,7 +72,7 @@ export function SignIn({
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout title="Sign in">
       <form className="card auth-card" onSubmit={submit} aria-label="Sign in">
         {ended && (
           <div role="status" className="callout tone-info">

@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { fakeApi, job } from './fake-api.js';
 
@@ -8,6 +8,18 @@ import { fakeApi, job } from './fake-api.js';
 const list = async () => within(await screen.findByRole('region', { name: 'Job list' }));
 
 describe('App', () => {
+  afterEach(() => {
+    window.location.hash = '';
+  });
+
+  it('titles the browser tab after the current page', async () => {
+    window.location.hash = '#/workbench';
+    render(<App api={fakeApi()} pollMs={0} />);
+    await waitFor(() => expect(document.title).toBe('Workbench · CT Studio'));
+    window.location.hash = '#/results';
+    await waitFor(() => expect(document.title).toBe('Results · CT Studio'));
+  });
+
   it('shows an empty state when there are no jobs', async () => {
     render(<App api={fakeApi()} pollMs={0} />);
     expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();

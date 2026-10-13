@@ -1,0 +1,33 @@
+/* Workbench redesign — new tokens only. Merge into apps/web/src/styles/tokens.css. */
+:root, :root[data-theme="light"] {
+  --ih-skip-bg: #EDE8FB;
+  --ih-skip-fg: #5B3BB0;
+  --ih-lock-bg: #FBE6F0;
+  --ih-lock-fg: #9B1D58;
+  --ih-flow: #0A5BB0;
+  --ih-side: #0E7C72;
+  --ih-band: rgba(255,255,255,0.72);
+  --ih-band-bd: #C9D2DE;
+}
+:root[data-theme="dark"] {
+  --ih-skip-bg: #261D44;
+  --ih-skip-fg: #C7B8FF;
+  --ih-lock-bg: #3D1729;
+  --ih-lock-fg: #F7A8CC;
+  --ih-flow: #6FB0F5;
+  --ih-side: #3DD6C2;
+  --ih-band: rgba(255,255,255,0.035);
+  --ih-band-bd: #2A374A;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --ih-skip-bg: #261D44;
+    --ih-skip-fg: #C7B8FF;
+    --ih-lock-bg: #3D1729;
+    --ih-lock-fg: #F7A8CC;
+    --ih-flow: #6FB0F5;
+    --ih-side: #3DD6C2;
+    --ih-band: rgba(255,255,255,0.035);
+    --ih-band-bd: #2A374A;
+  }
+}
