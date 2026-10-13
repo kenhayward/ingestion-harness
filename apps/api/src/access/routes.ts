@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { error, md, noContent, res } from '../openapi/zod.js';
 import { LoginLimiter } from './limiter.js';
-import type { SessionInfo } from './repo.js';
+import { ADMIN_TOKENS_MUST_EXPIRE, type SessionInfo } from './repo.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -32,6 +32,10 @@ const CreateBody = z.object({
     z.literal(365),
     z.null(),
   ]),
+  role: z
+    .enum(['admin', 'user'])
+    .default('user')
+    .describe('`admin` for an admin token, which must expire. Default `user`.'),
 });
 const TokenParams = z.object({ id: z.string().uuid().describe('The token id.') });
 
@@ -53,6 +57,10 @@ export const AccessTokenSchema = z.object({
   expiresAt: Expiry,
   revokedAt: Expiry,
   lastUsedAt: Expiry,
+  issuedBy: z
+    .string()
+    .nullable()
+    .describe('The label of the session that issued the token; null for the admin token.'),
   status: z.enum(['active', 'expired', 'revoked', 'current-admin']),
 });
 
@@ -218,8 +226,9 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         summary: 'List access tokens',
         description: md`
           **Admin token required.** Every access token, newest first, with its status:
-          \`active\`, \`expired\`, \`revoked\`, or \`current-admin\` for the admin token of the
-          running API. Plaintext tokens are never stored, so they are not listed.
+          \`active\`, \`expired\`, \`revoked\`, or \`current-admin\` for the admin token the
+          running API printed in its log (issued admin tokens have the usual statuses). Plaintext
+          tokens are never stored, so they are not listed.
         `,
         response: {
           200: res('The tokens.', z.array(AccessTokenSchema)),
@@ -238,16 +247,23 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         tags: ['Access tokens'],
         'x-admin': true,
         operationId: 'createToken',
-        summary: 'Issue a user access token',
+        summary: 'Issue an access token',
         description: md`
-          **Admin token required.** Issues a new user token. The plaintext \`token\` is in this
+          **Admin token required.** Issues a new token. The plaintext \`token\` is in this
           response only: give it to the person who will sign in with it. \`expiresInDays\` is
           1, 7, 30, 90 or 365, or \`null\` for a token that never expires.
+
+          With \`role: "admin"\` the token has full admin access, including issuing tokens, for
+          long-lived admin access without the admin token from the API log. Unlike that token,
+          it survives restarts, so it must expire, and it can be revoked or deleted by any admin.
+          Every token records who issued it (\`issuedBy\`), and issuing an admin token is logged.
         `,
         body: CreateBody,
         response: {
           200: res('The new token and its record.', CreatedToken),
-          400: error('`label (1-100 chars) and expiresInDays are required`.'),
+          400: error(
+            '`label (1-100 chars) and expiresInDays are required`, or `admin tokens must expire`.',
+          ),
           403: ADMINS_ONLY,
         },
       },
@@ -259,7 +275,16 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
           .code(400)
           .send({ error: 'label (1-100 chars) and expiresInDays are required' });
       }
-      return access.createToken(body.data.label, body.data.expiresInDays);
+      const { label, expiresInDays, role } = body.data;
+      if (role === 'admin' && expiresInDays === null)
+        return reply.code(400).send({ error: ADMIN_TOKENS_MUST_EXPIRE });
+      const issuedBy = req.auth?.label ?? null;
+      const created = await access.createToken(label, expiresInDays, { role, issuedBy });
+      if (role === 'admin') {
+        const { id: tokenId, expiresAt } = created.record;
+        app.log.warn({ tokenId, label, expiresAt, issuedBy }, 'admin token issued');
+      }
+      return created;
     },
   );
 
@@ -295,9 +320,10 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         operationId: 'revokeToken',
         summary: 'Revoke an access token',
         description: md`
-          **Admin token required.** Revokes a user token and ends every session opened with it.
-          The token stays in the list as \`revoked\`, so its history is kept; delete it to remove
-          it. The admin token cannot be revoked (it rotates on every API start).
+          **Admin token required.** Revokes a token (a user token or an issued admin token) and
+          ends every session opened with it. The token stays in the list as \`revoked\`, so its
+          history is kept; delete it to remove it. The admin token from the API log cannot be
+          revoked (it rotates on every API start).
         `,
         params: TokenParams,
         response: changeResponses('Revoked; its sessions are ended.'),
@@ -315,9 +341,9 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         operationId: 'deleteToken',
         summary: 'Delete an access token',
         description: md`
-          **Admin token required.** Deletes a user token and its sessions. Unlike revoking, the
-          token disappears from the list. The admin token cannot be deleted (it rotates on every
-          API start).
+          **Admin token required.** Deletes a token (a user token or an issued admin token) and
+          its sessions. Unlike revoking, the token disappears from the list. The admin token from
+          the API log cannot be deleted (it rotates on every API start).
         `,
         params: TokenParams,
         response: changeResponses('Deleted, with its sessions.'),

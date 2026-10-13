@@ -2503,6 +2503,12 @@ button.add {
   flex-direction: column;
   gap: 4px;
 }
+.card-form .field-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-warn-fg);
+}
 .note-card {
   flex: 1 1 260px;
   display: flex;
@@ -2561,6 +2567,10 @@ button.add {
 .token-label {
   display: block;
   font-weight: 500;
+}
+.issued-by {
+  display: block;
+  font-size: var(--ih-text-sm);
 }
 .confirm-text {
   display: block;

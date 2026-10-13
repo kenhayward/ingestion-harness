@@ -255,7 +255,7 @@
         "tags": [
           "Access tokens"
         ],
-        "description": "**Admin token required.** Every access token, newest first, with its status:\n`active`, `expired`, `revoked`, or `current-admin` for the admin token of the\nrunning API. Plaintext tokens are never stored, so they are not listed.",
+        "description": "**Admin token required.** Every access token, newest first, with its status:\n`active`, `expired`, `revoked`, or `current-admin` for the admin token the\nrunning API printed in its log (issued admin tokens have the usual statuses). Plaintext\ntokens are never stored, so they are not listed.",
         "x-admin": true,
         "responses": {
           "200": {
@@ -318,6 +318,13 @@
                           }
                         ]
                       },
+                      "issuedBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "The label of the session that issued the token; null for the admin token."
+                      },
                       "status": {
                         "type": "string",
                         "enum": [
@@ -336,6 +343,7 @@
                       "expiresAt",
                       "revokedAt",
                       "lastUsedAt",
+                      "issuedBy",
                       "status"
                     ],
                     "additionalProperties": true
@@ -403,11 +411,11 @@
       },
       "post": {
         "operationId": "createToken",
-        "summary": "Issue a user access token",
+        "summary": "Issue an access token",
         "tags": [
           "Access tokens"
         ],
-        "description": "**Admin token required.** Issues a new user token. The plaintext `token` is in this\nresponse only: give it to the person who will sign in with it. `expiresInDays` is\n1, 7, 30, 90 or 365, or `null` for a token that never expires.",
+        "description": "**Admin token required.** Issues a new token. The plaintext `token` is in this\nresponse only: give it to the person who will sign in with it. `expiresInDays` is\n1, 7, 30, 90 or 365, or `null` for a token that never expires.\n\nWith `role: \"admin\"` the token has full admin access, including issuing tokens, for\nlong-lived admin access without the admin token from the API log. Unlike that token,\nit survives restarts, so it must expire, and it can be revoked or deleted by any admin.\nEvery token records who issued it (`issuedBy`), and issuing an admin token is logged.",
         "requestBody": {
           "required": true,
           "content": {
@@ -457,6 +465,15 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "user"
+                    ],
+                    "default": "user",
+                    "description": "`admin` for an admin token, which must expire. Default `user`."
                   }
                 },
                 "required": [
@@ -535,6 +552,13 @@
                             }
                           ]
                         },
+                        "issuedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The label of the session that issued the token; null for the admin token."
+                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -553,6 +577,7 @@
                         "expiresAt",
                         "revokedAt",
                         "lastUsedAt",
+                        "issuedBy",
                         "status"
                       ],
                       "additionalProperties": true
@@ -569,7 +594,7 @@
             }
           },
           "400": {
-            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "description": "`label (1-100 chars) and expiresInDays are required`, or `admin tokens must expire`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -595,7 +620,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                  "description": "`label (1-100 chars) and expiresInDays are required`, or `admin tokens must expire`."
                 }
               }
             }
@@ -664,7 +689,7 @@
         "tags": [
           "Access tokens"
         ],
-        "description": "**Admin token required.** Revokes a user token and ends every session opened with it.\nThe token stays in the list as `revoked`, so its history is kept; delete it to remove\nit. The admin token cannot be revoked (it rotates on every API start).",
+        "description": "**Admin token required.** Revokes a token (a user token or an issued admin token) and\nends every session opened with it. The token stays in the list as `revoked`, so its\nhistory is kept; delete it to remove it. The admin token from the API log cannot be\nrevoked (it rotates on every API start).",
         "parameters": [
           {
             "schema": {
@@ -810,7 +835,7 @@
         "tags": [
           "Access tokens"
         ],
-        "description": "**Admin token required.** Deletes a user token and its sessions. Unlike revoking, the\ntoken disappears from the list. The admin token cannot be deleted (it rotates on every\nAPI start).",
+        "description": "**Admin token required.** Deletes a token (a user token or an issued admin token) and\nits sessions. Unlike revoking, the token disappears from the list. The admin token from\nthe API log cannot be deleted (it rotates on every API start).",
         "parameters": [
           {
             "schema": {

@@ -14,6 +14,7 @@ const token = (o: Partial<AccessToken> = {}): AccessToken => ({
   expiresAt: at(30 * D),
   revokedAt: null,
   lastUsedAt: null,
+  issuedBy: null,
   status: 'active',
   ...o,
 });

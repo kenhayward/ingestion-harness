@@ -36,6 +36,21 @@ describe('http api: ended sessions', () => {
   });
 });
 
+describe('http api: access tokens', () => {
+  it('sends the role of a new token', async () => {
+    const fetch = vi.fn(async () => respond(200, { token: 'ih_x', record: {} }));
+    vi.stubGlobal('fetch', fetch);
+    await createHttpApi('/api').createToken('Ops laptop', 90, 'admin');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/auth/tokens');
+    expect(JSON.parse(String(init.body))).toEqual({
+      label: 'Ops laptop',
+      expiresInDays: 90,
+      role: 'admin',
+    });
+  });
+});
+
 describe('http api: URLs', () => {
   it('links the uploaded PDF of a job', () => {
     expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');

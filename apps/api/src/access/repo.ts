@@ -4,6 +4,16 @@ import { newSessionId, newToken, sha256 } from './tokens.js';
 export type AccessRole = 'admin' | 'user';
 export type TokenStatus = 'active' | 'expired' | 'revoked' | 'current-admin';
 
+/** Thrown by `createToken` for an admin token without an expiry. */
+export const ADMIN_TOKENS_MUST_EXPIRE = 'admin tokens must expire';
+
+export interface NewTokenOptions {
+  /** Default 'user'. Issued admin tokens must expire and survive restarts. */
+  role?: AccessRole;
+  /** The label of the session that issued the token. */
+  issuedBy?: string | null;
+}
+
 /** A token as listed to admins: never its hash or plaintext. */
 export interface AccessToken {
   id: string;
@@ -13,6 +23,8 @@ export interface AccessToken {
   expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  /** The label of the session that issued it; null for the admin token and older tokens. */
+  issuedBy: string | null;
   status: TokenStatus;
 }
 
@@ -29,19 +41,27 @@ export const SESSION_IDLE_MS = 7 * 86_400_000;
 /** last_seen_at / last_used_at are written at most this often (not on every request). */
 export const TOUCH_INTERVAL_MS = 5 * 60_000;
 
+/** 'admin': the token is the current admin token (from the log), which only a restart replaces. */
 export type TokenChange = 'ok' | 'not_found' | 'admin';
 
 /** Access tokens and the browser sessions they open. `PgAccessRepo` / `MemoryAccessRepo`. */
 export interface AccessRepo {
-  /** Replace the admin token (and end its sessions). Returns the new plaintext token. */
+  /**
+   * Replace the admin token from the log (and end its sessions). Issued admin tokens are kept.
+   * Returns the new plaintext token.
+   */
   rotateAdminToken(): Promise<string>;
-  /** A new user token; `expiresInDays` null = never. The plaintext is returned only here. */
+  /**
+   * A new token; `expiresInDays` null = never, which an admin token refuses
+   * (`ADMIN_TOKENS_MUST_EXPIRE`). The plaintext is returned only here.
+   */
   createToken(
     label: string,
     expiresInDays: number | null,
+    options?: NewTokenOptions,
   ): Promise<{ token: string; record: AccessToken }>;
   listTokens(): Promise<AccessToken[]>;
-  /** Revoke a user token and end its sessions. 'admin': the admin token can't be revoked. */
+  /** Revoke a token and end its sessions. 'admin': the admin token from the log can't be. */
   revokeToken(id: string): Promise<TokenChange>;
   deleteToken(id: string): Promise<TokenChange>;
   /** Open a session for an active token; null if the token is unknown, expired or revoked. */
@@ -56,6 +76,9 @@ interface TokenRow {
   label: string;
   role: AccessRole;
   hash: string;
+  /** The admin token from the log (rotated on every start). */
+  bootstrap: boolean;
+  issuedBy: string | null;
   createdAt: number;
   expiresAt: number | null;
   revokedAt: number | null;
@@ -72,18 +95,21 @@ export class MemoryAccessRepo implements AccessRepo {
   constructor(private readonly now: () => number = () => Date.now()) {}
 
   async rotateAdminToken(): Promise<string> {
-    for (const row of [...this.tokens.values()].filter((t) => t.role === 'admin')) {
+    for (const row of [...this.tokens.values()].filter((t) => t.bootstrap)) {
       this.removeToken(row.id);
     }
     const token = newToken();
-    this.insert('admin', 'admin', token, null);
+    const row = this.insert('admin', 'admin', token, null, null);
+    row.bootstrap = true;
     return token;
   }
 
-  async createToken(label: string, expiresInDays: number | null) {
+  async createToken(label: string, expiresInDays: number | null, options: NewTokenOptions = {}) {
+    const role = options.role ?? 'user';
+    if (role === 'admin' && expiresInDays === null) throw new Error(ADMIN_TOKENS_MUST_EXPIRE);
     const token = newToken();
     const expires = expiresInDays === null ? null : this.now() + expiresInDays * 86_400_000;
-    const row = this.insert(label, 'user', token, expires);
+    const row = this.insert(label, role, token, expires, options.issuedBy ?? null);
     return { token, record: this.view(row) };
   }
 
@@ -96,7 +122,7 @@ export class MemoryAccessRepo implements AccessRepo {
   async revokeToken(id: string): Promise<TokenChange> {
     const row = this.tokens.get(id);
     if (!row) return 'not_found';
-    if (row.role === 'admin') return 'admin';
+    if (row.bootstrap) return 'admin';
     row.revokedAt ??= this.now();
     this.endSessions(id);
     return 'ok';
@@ -105,7 +131,7 @@ export class MemoryAccessRepo implements AccessRepo {
   async deleteToken(id: string): Promise<TokenChange> {
     const row = this.tokens.get(id);
     if (!row) return 'not_found';
-    if (row.role === 'admin') return 'admin';
+    if (row.bootstrap) return 'admin';
     this.removeToken(id);
     return 'ok';
   }
@@ -134,12 +160,20 @@ export class MemoryAccessRepo implements AccessRepo {
     this.sessions.delete(sha256(sessionId));
   }
 
-  private insert(label: string, role: AccessRole, token: string, expiresAt: number | null) {
+  private insert(
+    label: string,
+    role: AccessRole,
+    token: string,
+    expiresAt: number | null,
+    issuedBy: string | null,
+  ) {
     const row: TokenRow = {
       id: randomUUID(),
       label,
       role,
       hash: sha256(token),
+      bootstrap: false,
+      issuedBy,
       createdAt: this.now(),
       expiresAt,
       revokedAt: null,
@@ -167,14 +201,13 @@ export class MemoryAccessRepo implements AccessRepo {
   }
 
   private view(row: TokenRow): AccessToken {
-    const status: TokenStatus =
-      row.role === 'admin'
-        ? 'current-admin'
-        : row.revokedAt !== null
-          ? 'revoked'
-          : row.expiresAt !== null && row.expiresAt <= this.now()
-            ? 'expired'
-            : 'active';
+    const status: TokenStatus = row.bootstrap
+      ? 'current-admin'
+      : row.revokedAt !== null
+        ? 'revoked'
+        : row.expiresAt !== null && row.expiresAt <= this.now()
+          ? 'expired'
+          : 'active';
     return {
       id: row.id,
       label: row.label,
@@ -183,6 +216,7 @@ export class MemoryAccessRepo implements AccessRepo {
       expiresAt: iso(row.expiresAt),
       revokedAt: iso(row.revokedAt),
       lastUsedAt: iso(row.lastUsedAt),
+      issuedBy: row.issuedBy,
       status,
     };
   }

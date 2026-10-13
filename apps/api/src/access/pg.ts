@@ -1,8 +1,16 @@
 import type pg from 'pg';
-import type { AccessRepo, AccessRole, AccessToken, SessionInfo, TokenChange } from './repo.js';
+import {
+  ADMIN_TOKENS_MUST_EXPIRE,
+  type AccessRepo,
+  type AccessRole,
+  type AccessToken,
+  type NewTokenOptions,
+  type SessionInfo,
+  type TokenChange,
+} from './repo.js';
 import { newSessionId, newToken, sha256 } from './tokens.js';
 
-const STATUS = `CASE WHEN t.role = 'admin' THEN 'current-admin'
+const STATUS = `CASE WHEN t.bootstrap THEN 'current-admin'
                      WHEN t.revoked_at IS NOT NULL THEN 'revoked'
                      WHEN t.expires_at IS NOT NULL AND t.expires_at <= now() THEN 'expired'
                      ELSE 'active' END`;
@@ -16,6 +24,7 @@ interface TokenRow {
   expires_at: Date | null;
   revoked_at: Date | null;
   last_used_at: Date | null;
+  issued_by: string | null;
   status: AccessToken['status'];
 }
 
@@ -30,6 +39,7 @@ function toToken(r: TokenRow): AccessToken {
     expiresAt: iso(r.expires_at),
     revokedAt: iso(r.revoked_at),
     lastUsedAt: iso(r.last_used_at),
+    issuedBy: r.issued_by,
     status: r.status,
   };
 }
@@ -44,7 +54,7 @@ function toInfo(r: { id: string; role: AccessRole; label: string; expires_at: Da
   return info;
 }
 
-/** Access tokens and sessions in Postgres (migration 0007). Semantics match MemoryAccessRepo. */
+/** Access tokens and sessions in Postgres (migrations 0007, 0021). Semantics match MemoryAccessRepo. */
 export class PgAccessRepo implements AccessRepo {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -53,9 +63,10 @@ export class PgAccessRepo implements AccessRepo {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`DELETE FROM access_tokens WHERE role = 'admin'`); // sessions cascade
+      await client.query(`DELETE FROM access_tokens WHERE bootstrap`); // sessions cascade
       await client.query(
-        `INSERT INTO access_tokens (label, role, token_hash) VALUES ('admin', 'admin', $1)`,
+        `INSERT INTO access_tokens (label, role, token_hash, bootstrap)
+         VALUES ('admin', 'admin', $1, true)`,
         [sha256(token)],
       );
       await client.query('COMMIT');
@@ -68,16 +79,19 @@ export class PgAccessRepo implements AccessRepo {
     return token;
   }
 
-  async createToken(label: string, expiresInDays: number | null) {
+  async createToken(label: string, expiresInDays: number | null, options: NewTokenOptions = {}) {
+    const role = options.role ?? 'user';
+    if (role === 'admin' && expiresInDays === null) throw new Error(ADMIN_TOKENS_MUST_EXPIRE);
     const token = newToken();
     const { rows } = await this.pool.query<TokenRow>(
       `WITH t AS (
-         INSERT INTO access_tokens (label, role, token_hash, expires_at)
-         VALUES ($1, 'user', $2,
-                 CASE WHEN $3::int IS NULL THEN NULL ELSE now() + make_interval(days => $3::int) END)
+         INSERT INTO access_tokens (label, role, token_hash, expires_at, issued_by)
+         VALUES ($1, $4, $2,
+                 CASE WHEN $3::int IS NULL THEN NULL ELSE now() + make_interval(days => $3::int) END,
+                 $5)
          RETURNING *)
        SELECT t.*, ${STATUS} AS status FROM t`,
-      [label, sha256(token), expiresInDays],
+      [label, sha256(token), expiresInDays, role, options.issuedBy ?? null],
     );
     return { token, record: toToken(rows[0]!) };
   }
@@ -162,13 +176,13 @@ export class PgAccessRepo implements AccessRepo {
   }
 
   private async change(id: string, apply: () => Promise<void>): Promise<TokenChange> {
-    const { rows } = await this.pool.query<{ role: AccessRole }>(
-      `SELECT role FROM access_tokens WHERE id::text = $1`,
+    const { rows } = await this.pool.query<{ bootstrap: boolean }>(
+      `SELECT bootstrap FROM access_tokens WHERE id::text = $1`,
       [id],
     );
     const row = rows[0];
     if (!row) return 'not_found';
-    if (row.role === 'admin') return 'admin';
+    if (row.bootstrap) return 'admin';
     await apply();
     return 'ok';
   }

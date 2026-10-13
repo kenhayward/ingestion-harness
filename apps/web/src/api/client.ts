@@ -227,10 +227,14 @@ export interface Api {
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
   listTokens(): Promise<AccessToken[]>;
-  /** A new user token: the plaintext `token` is only ever returned here. */
+  /**
+   * A new token: the plaintext `token` is only ever returned here. Admin tokens must expire
+   * (the API refuses `null`).
+   */
   createToken(
     label: string,
     expiresInDays: number | null,
+    role: AccessToken['role'],
   ): Promise<{ token: string; record: AccessToken }>;
   revokeToken(id: string): Promise<void>;
   deleteToken(id: string): Promise<void>;
@@ -388,6 +392,8 @@ export interface AccessToken {
   expiresAt: string | null;
   revokedAt: string | null;
   lastUsedAt: string | null;
+  /** The label of the session that issued it; null for the admin token from the log. */
+  issuedBy: string | null;
   status: 'active' | 'expired' | 'revoked' | 'current-admin';
 }
 
@@ -502,10 +508,11 @@ export function createHttpApi(base = '/api'): Api {
       await apiFetch(`${base}/auth/logout`, { method: 'POST' });
     },
     listTokens: () => apiFetch(`${base}/auth/tokens`).then(json<AccessToken[]>),
-    createToken: (label, expiresInDays) =>
+    createToken: (label, expiresInDays, role) =>
       post<{ token: string; record: AccessToken }>(`${base}/auth/tokens`, {
         label,
         expiresInDays,
+        role,
       }),
     revokeToken: async (id) => {
       await noContent(apiFetch(`${base}/auth/tokens/${id}/revoke`, { method: 'POST' }));
