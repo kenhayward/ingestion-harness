@@ -121,6 +121,7 @@ export function TemplateEditor({
   const accept = (v: TemplateRecordView) => {
     setView(v);
     setDef(v.record.definition);
+    setReplaced((r) => r + 1);
     setSaved(JSON.stringify(v.record.definition));
   };
 
@@ -134,6 +135,8 @@ export function TemplateEditor({
 
   /** The open step on the Template tab's Pipeline (clamped to the list when rendered). */
   const [selectedStep, setSelectedStep] = useState(0);
+  /** Bumped when the draft is replaced wholesale, so open step forms drop their local text. */
+  const [replaced, setReplaced] = useState(0);
   const [metrics, setMetrics] = useState<ReadonlyMap<string, StepMetric>>(new Map());
   // `embedded` is a new object on every render: depend on whether it is set.
   const isEmbedded = embedded !== undefined;
@@ -199,6 +202,7 @@ export function TemplateEditor({
     });
   const discard = () => {
     setDef(savedDef);
+    setReplaced((r) => r + 1);
     if (tab === 'yaml') setYamlText(toYaml(savedDef, { lineWidth: 100 }));
     setMessage(null);
   };
@@ -234,6 +238,7 @@ export function TemplateEditor({
       const parsed = parseYaml(yamlText);
       if (!parsed || typeof parsed !== 'object') throw new Error('YAML must be a mapping');
       setDef({ ...(parsed as Definition), id: templateId, version });
+      setReplaced((r) => r + 1);
       setMessage('YAML applied (not saved yet).');
     } catch (err) {
       setError(`YAML: ${(err as Error).message}`);
@@ -566,6 +571,7 @@ export function TemplateEditor({
               }
               paths={paths}
               metrics={metrics}
+              resetKey={replaced}
             />
           )}
           {tab === 'pipeline' && !embedded && (

@@ -1105,6 +1105,40 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
     expect(within(step).getByText('18')).toBeInTheDocument();
   });
 
+  it("removing a middle step shows the next step's context; editing it changes that step only", async () => {
+    const def = invoice();
+    def.pipeline[1] = { ...def.pipeline[1], context: { a: 'supplier_name' } } as never;
+    def.pipeline[2] = { ...def.pipeline[2], context: { b: 'subtotal' } } as never;
+    const { api } = setup(view(def), {}, { onChanged: vi.fn() });
+    await userEvent.click(await screen.findByRole('button', { name: /^2 line_items/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove step 2' }));
+    const step = screen.getByRole('region', { name: 'Step 2' });
+    await userEvent.click(within(step).getByText('More settings'));
+    const ctx = within(step).getByLabelText('Context') as HTMLTextAreaElement;
+    expect(ctx.value).toBe('b = subtotal');
+    await userEvent.type(ctx, '\nc = total');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+    const saved = savedPipeline(api);
+    expect(saved).toHaveLength(2);
+    expect(saved[1]!.context).toEqual({ b: 'subtotal', c: 'total' });
+    expect(saved[0]!.context).toBeUndefined();
+  });
+
+  it('Discard shows the saved context in the open step', async () => {
+    const def = invoice();
+    def.pipeline[0] = { ...def.pipeline[0], context: { a: 'subtotal' } } as never;
+    setup(view(def), {}, { onChanged: vi.fn() });
+    const step = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(step).getByText('More settings'));
+    await userEvent.type(within(step).getByLabelText('Context'), '\nc = total');
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    const after = screen.getByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(after).getByText('More settings'));
+    expect((within(after).getByLabelText('Context') as HTMLTextAreaElement).value).toBe(
+      'a = subtotal',
+    );
+  });
+
   it('says why the first step cannot move up', async () => {
     open();
     const up = await screen.findByRole('button', { name: 'Move step 1 up' });

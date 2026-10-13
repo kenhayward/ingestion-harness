@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { outputCoverage, type ModelChoice, type OutputCoverage } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 import { ModelPicker } from '../ui/ModelPicker.js';
@@ -29,6 +30,7 @@ export function PipelineEditor({
   typeModelLabel,
   paths,
   metrics,
+  resetKey = 0,
 }: {
   pipeline: Definition[];
   /** Index of the open step; -1 when there are none. */
@@ -45,7 +47,11 @@ export function PipelineEditor({
   paths: string[];
   /** Figures from the type's runs, by step id. */
   metrics: ReadonlyMap<string, StepMetric>;
+  /** Changes when the draft is replaced from outside (Discard, Reload, YAML): forms start over. */
+  resetKey?: number;
 }) {
+  /** Bumped when a step is removed: the next step slides into the open index. */
+  const [removals, setRemovals] = useState(0);
   const add = (step: Definition) => {
     onChange([...pipeline, step]);
     onSelect(pipeline.length);
@@ -92,7 +98,7 @@ export function PipelineEditor({
       {current ? (
         <StepDetail
           // A fresh form per step: the Context editor keeps its own text.
-          key={selected}
+          key={`${selected}:${resetKey}:${removals}`}
           index={selected}
           count={pipeline.length}
           step={current}
@@ -113,6 +119,7 @@ export function PipelineEditor({
           }}
           onRemove={() => {
             onChange(removeAt(pipeline, selected));
+            setRemovals((r) => r + 1);
             onSelect(Math.min(selected, pipeline.length - 2));
           }}
         />
