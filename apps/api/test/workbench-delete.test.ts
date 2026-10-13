@@ -69,6 +69,7 @@ describe('DELETE /api/workbench/projects/:id', () => {
       },
     });
     await workbench.addSkip('letter', 'survey');
+    await workbench.addConfirm('letter', 'outputs', '2026-10-13T09:00:00.000Z');
 
     // A draft job with its drafting object.
     const proposal = (
@@ -159,11 +160,13 @@ describe('DELETE /api/workbench/projects/:id', () => {
     expect([...repo.documents.values()].filter((d) => d.specId === 'letter')).toEqual([]);
     expect(repo.sampleDocuments.size).toBe(0);
     expect(workbench.projects.has('letter')).toBe(false);
+    expect(await workbench.listConfirms('letter')).toEqual([]);
     for (const rows of [
       [...workbench.samples.values()],
       workbench.briefs,
       workbench.proposals,
       workbench.skips,
+      workbench.confirms,
       workbench.iterations,
       workbench.publications,
       workbench.feedback,

@@ -56,4 +56,21 @@ describe('stage persistence', () => {
     ]);
     expect(await workbench.listSkips('other')).toEqual([]);
   });
+
+  it('records confirmations newest first', async () => {
+    const { workbench } = await setup();
+    const a = await workbench.addConfirm('letter', 'sections', '2026-10-13T09:00:00.000Z');
+    const b = await workbench.addConfirm('letter', 'outputs', '2026-10-13T09:30:00.000Z');
+    expect(a).toMatchObject({
+      projectId: 'letter',
+      stage: 'sections',
+      upTo: '2026-10-13T09:00:00.000Z',
+    });
+    expect(b.confirmedAt > a.confirmedAt).toBe(true);
+    expect((await workbench.listConfirms('letter')).map((c) => c.stage)).toEqual([
+      'outputs',
+      'sections',
+    ]);
+    expect(await workbench.listConfirms('other')).toEqual([]);
+  });
 });

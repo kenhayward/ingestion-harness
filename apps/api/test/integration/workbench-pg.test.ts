@@ -362,6 +362,24 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await workbench.listSkips('no-such-project')).toEqual([]);
   });
 
+  it('records confirmations newest first', async () => {
+    const projectId = await newProject();
+    const first = await workbench.addConfirm(projectId, 'sections', '2026-10-13T09:00:00.000Z');
+    const second = await workbench.addConfirm(projectId, 'steps', '2026-10-13T09:30:00.000Z');
+    expect(first).toMatchObject({ projectId, stage: 'sections', upTo: '2026-10-13T09:00:00.000Z' });
+    expect(second.confirmedAt >= first.confirmedAt).toBe(true);
+    expect((await workbench.listConfirms(projectId)).map((c) => c.stage)).toEqual([
+      'steps',
+      'sections',
+    ]);
+    await expect(
+      pool.query(
+        `INSERT INTO workbench_stage_confirms (project_id, stage, up_to) VALUES ($1, 'survey', now())`,
+        [projectId],
+      ),
+    ).rejects.toThrow(/check constraint/);
+  });
+
   it('revoking to local downgrades existing project jobs; allowing never upgrades', async () => {
     const projectId = await newProject();
     const other = await newProject();
@@ -887,6 +905,7 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       });
       await workbench.saveBrief(projectId, EMPTY_BRIEF);
       await workbench.addSkip(projectId, 'survey');
+      await workbench.addConfirm(projectId, 'outputs', new Date().toISOString());
       const source = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
       const reference = await repo.createReference({
         templateId: projectId,
@@ -964,6 +983,7 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
            (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
            (SELECT count(*)::int FROM workbench_briefs WHERE project_id = $1) AS briefs,
            (SELECT count(*)::int FROM workbench_stage_skips WHERE project_id = $1) AS skips,
+           (SELECT count(*)::int FROM workbench_stage_confirms WHERE project_id = $1) AS confirms,
            (SELECT count(*)::int FROM workbench_proposals WHERE project_id = $1) AS proposals,
            (SELECT count(*)::int FROM workbench_iterations WHERE project_id = $1) AS iterations,
            (SELECT count(*)::int FROM workbench_feedback WHERE project_id = $1) AS feedback,
@@ -1162,6 +1182,9 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       add('stage skip', () => workbench.addSkip(projectId, 'survey'));
       add('stage skip deleted', () =>
         pool.query('DELETE FROM workbench_stage_skips WHERE project_id = $1', [projectId]),
+      );
+      add('stage confirm', () =>
+        workbench.addConfirm(projectId, 'sections', new Date().toISOString()),
       );
       add('proposal created', () =>
         workbench.createProposal({
