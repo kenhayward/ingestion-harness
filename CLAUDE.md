@@ -41,7 +41,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Typecheck / lint / format | `npm run typecheck` / `npm run lint` / `npm run format` |
 | Worker tests (all / one) | `npm run worker:test` / `cd worker && uv run pytest tests/test_extract.py -k retries` |
 | Worker lint + types | `npm run worker:lint` (ruff check, ruff format --check, mypy --strict) |
-| Local infra (Postgres + SeaweedFS) | `deploy/scripts/dev-infra.ps1 up` (or `.sh`) |
+| Local infra (Postgres + SeaweedFS + Word converter) | `deploy/scripts/dev-infra.ps1 up` (or `.sh`) |
 | Run services on host | `npm run dev:api`, `npm run dev:web`, `cd worker && uv run ingest-worker` |
 | Full stack in Docker | `deploy/scripts/deploy.sh` (needs `deploy/.env`, copy from `.env.example`) |
 
@@ -144,6 +144,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   backoff until `max_attempts`, then `failed`.
   `JobCancelled` (operator cancel, ADR 0005) → no status write; worker status writes are guarded
   `AND status='running'` so a cancel always wins.
+- **Word documents ([ADR 0009](docs/adr/0009-word-documents.md), [design](docs/design/word-documents.md)):** a `.docx` source is converted to PDF by the `converter` service (Gotenberg `8.37.0-libreoffice`, compose network `converter` with `internal: true`, only the worker joins it, `CONVERTER_URL`) before the pipeline, which then runs unchanged. `pipeline.load_source` reads the inbox object, judges `.docx` by its content types (`convert.is_docx`; never a file name: LibreOffice turns any bytes into a text PDF; anything else is read as a PDF as before), and caches the PDF at `converted/{sha256}/{fingerprint}.pdf` in the runs bucket (`storage.converted_key`; fingerprint `gotenberg-{version}-c{CONVERT_VERSION}`; an invalid entry is re-converted). A document's identity is the uploaded file: `Source.sha256` (the `.docx`'s hash, = `documents.sha256`) keys prepared text and the OCR cache, never the PDF's hash (LibreOffice embeds a creation date). `ConversionRejected` (a 4xx, a 500 `LibreOffice failed to convert…`, a non-PDF 200) → `needs_review`; `ConverterUnavailable` (transport, timeout, other 5xx) is retried; no converter configured → `needs_review`. Tests use `FakeConverter` (`tests/fakes.py`); `tests/test_convert_integration.py` (marked `integration`) needs `CONVERTER_URL` (dev-infra publishes the converter on `localhost:3010`).
 - **The step cache is workbench-only:** production, regression and re-run jobs never read or write it (`template_pipeline.workbench_step_cache` returns `None` for them).
 - **Never call real LLM APIs from tests or CI.** No API keys in the repo; secrets live in
   `deploy/.env` locally (git-ignored) and `/etc/ingestion-harness/<env>.env` on deploy hosts.

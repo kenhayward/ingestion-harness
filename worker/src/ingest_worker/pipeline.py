@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
@@ -12,6 +13,7 @@ from typing import Any, Literal
 from jsonschema import Draft202012Validator
 
 from .checks import run_check
+from .convert import ConversionRejected, DocumentConverter, is_docx
 from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import LLMProvider, RefusalError
 from .llm.registry import ModelRegistry, ModelResolutionError
@@ -32,7 +34,7 @@ from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
 from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
 from .step_cache import CachedStep, StepCache, step_cache_key
-from .storage import ObjectStore, ocr_cache_key, ocr_run_key, run_key
+from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 PAGE_IMAGE_LONGEST_DIM = 1288
@@ -91,6 +93,21 @@ class PipelineDeps:
     target: Target | None = None
     #: YAML of a worked-example template shown to drafting models (None: no example).
     example_template: str | None = None
+    #: Converts Word (.docx) sources to PDF (None: Word documents go to needs_review).
+    converter: DocumentConverter | None = None
+
+
+@dataclass(frozen=True)
+class Source:
+    """A job's inbox object and the PDF the pipeline runs on."""
+
+    #: The file as uploaded (a PDF, or a .docx).
+    data: bytes
+    #: sha256 of `data`: what the API records, and what prepared text and caches are keyed by.
+    sha256: str
+    kind: Literal["pdf", "docx"]
+    #: `data` itself for a PDF; the converted PDF for a .docx.
+    pdf: bytes
 
 
 @dataclass
@@ -145,10 +162,46 @@ def resolve_models(
     return resolved
 
 
+def load_source(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Source:
+    """Read the job's inbox object; convert a .docx to PDF, at most once per file and
+    converter version (cached in the runs bucket, so re-runs see the same pages). Anything
+    that is not a .docx is read as a PDF, as before. A converter outage propagates (retried);
+    a document the converter rejects is a DocumentError."""
+    data = deps.store.get(job.bucket, job.object_key)
+    sha256 = hashlib.sha256(data).hexdigest()
+    if not is_docx(data):
+        return Source(data, sha256, "pdf", data)
+    if deps.converter is None:
+        raise DocumentError("Word documents need the converter: set CONVERTER_URL")
+    fingerprint = deps.converter.fingerprint()
+    key = converted_key(sha256, fingerprint)
+    started = time.monotonic()
+    pdf = deps.store.get_optional(deps.buckets.runs, key)
+    cached = pdf is not None and pdf.startswith(b"%PDF-")
+    if pdf is None or not cached:
+        try:
+            pdf = deps.converter.to_pdf(data)
+        except ConversionRejected as exc:
+            raise DocumentError(f"could not convert the Word document: {exc}") from exc
+        deps.store.put(deps.buckets.runs, key, pdf, "application/pdf")
+    queue.event(
+        job.id,
+        "info",
+        "converted",
+        {
+            "converter": fingerprint,
+            "cached": cached,
+            "seconds": round(time.monotonic() - started, 2),
+        },
+    )
+    return Source(data, sha256, "docx", pdf)
+
+
 def prepare_document(
     job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
 ) -> Prepared:
-    pdf = deps.store.get(job.bucket, job.object_key)
+    source = load_source(job, deps, queue)
+    pdf = source.pdf
     pages = deps.extract_text(pdf)
     total_pages = len(pages)
     if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):
@@ -157,7 +210,7 @@ def prepare_document(
             f"{document.pages.min}-{document.pages.max}"
         )
 
-    pages = ocr_pages(job, deps, queue, pdf, pages, document.ocr)
+    pages = ocr_pages(job, deps, queue, pdf, pages, document.ocr, sha256=source.sha256)
     first = 0
     if document.copies:
         first, pages = select_copy(pages, document.copies)
@@ -274,8 +327,11 @@ def ocr_pages(
     pdf: bytes,
     pages: list[str],
     mode: OcrMode,
+    *,
+    sha256: str,
 ) -> list[str]:
-    """Replace low-text pages with OCR output. Transient model errors propagate (retried)."""
+    """Replace low-text pages with OCR output. Transient model errors propagate (retried).
+    `sha256` is the source's (`Source.sha256`): the shared OCR cache is keyed by it."""
     if deps.ocr is None:
         return pages
     targets = pages_needing_ocr(pages, mode, deps.ocr.min_chars)
@@ -290,7 +346,7 @@ def ocr_pages(
     settings = deps.ocr
     pages = list(pages)
     model_ref = f"{provider.name}/{model_id}"
-    shared_key = _ocr_cache_keyer(pdf, model_ref, settings) if settings.cache else None
+    shared_key = _ocr_cache_keyer(sha256, model_ref, settings) if settings.cache else None
 
     # Reuse transcriptions saved by an earlier attempt of this job (retries, crashed workers),
     # then those of earlier jobs of the same PDF: OCR servers are not deterministic even at
@@ -344,9 +400,9 @@ def ocr_pages(
     return pages
 
 
-def _ocr_cache_keyer(pdf: bytes, model_ref: str, settings: OcrSettings) -> Callable[[int], str]:
-    """Cache keys for this PDF's content and the settings that change the transcription."""
-    digest = hashlib.sha256(pdf).hexdigest()
+def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Callable[[int], str]:
+    """Cache keys for a source's content (its sha256; for a .docx, of the .docx, whose
+    converted PDF is cached and so stable) and the settings that change the transcription."""
     knobs = {
         "model": model_ref,
         "longest_dim": settings.longest_dim,

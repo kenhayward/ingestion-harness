@@ -71,6 +71,29 @@ services:
       timeout: 3s
       retries: 30
 
+  converter:
+    # Word (.docx) to PDF for the worker (docs/design/word-documents.md, ADR 0009): Gotenberg's
+    # LibreOffice-only image, pinned to an exact release. It parses untrusted documents, so it
+    # sits on an internal network with no route out, publishes no ports, and LibreOffice may
+    # not fetch linked content (deny flags) nor Gotenberg download URLs or call webhooks.
+    image: gotenberg/gotenberg:8.37.0-libreoffice
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --api-timeout=60s
+      - --api-disable-download-from
+      - --webhook-disable
+      - --libreoffice-deny-private-ips
+      - --libreoffice-deny-public-ips
+      - --prometheus-disable-collect
+    networks: [converter]
+    mem_limit: 2g
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   init-buckets:
     image: ${IMAGE_PREFIX:-ingestion-harness}/worker:${IMAGE_TAG:-dev}
     command: ['python', '-m', 'ingest_worker.admin', 'init-buckets']
@@ -134,11 +157,15 @@ services:
       DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
+      # Word (.docx) conversion; empty disables it (Word documents then need review).
+      CONVERTER_URL: ${CONVERTER_URL-http://converter:3000}
+    networks: [default, converter]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
+      converter: { condition: service_healthy }
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     stop_grace_period: 2m # let an in-flight extraction finish
@@ -158,6 +185,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+networks:
+  # Only the worker and the converter: no route out of it (ADR 0009).
+  converter:
+    internal: true
 
 volumes:
   postgres-data:

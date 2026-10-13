@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from ingest_worker.convert import DOCX_MIME, ConversionRejected, ConverterUnavailable
 from ingest_worker.llm.base import CompletionResult, LLMError, VisionRequest
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
@@ -27,7 +29,8 @@ from ingest_worker.specs import (
 )
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeProvider, FakeQueue
+from .fakes import FakeConverter, FakeProvider, FakeQueue
+from .test_convert import DOCX
 
 PAGES = [
     "INVOICE INV-001\nAcme Supplies Ltd\nDate: 2026-03-01\n"
@@ -548,3 +551,42 @@ def test_a_cancel_stops_ocr_between_pages(setup) -> None:  # type: ignore[no-unt
     assert provider.calls == []
     assert ("job-1", "warn", "cancelled") in queue.events
     assert not (queue.completed or queue.failed or queue.reviewed)
+
+
+def test_a_word_document_is_ocrd_from_its_pdf_and_cached_by_its_sha(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    store.put("inbox", "example-invoice/v1/doc-1.pdf", DOCX, DOCX_MIME)
+    deps.converter = FakeConverter()
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)
+    rendered: list[bytes] = []
+    deps.render_page = lambda pdf, index, dim, rotation: rendered.append(pdf) or b"\x89PNG"
+    deps.extract_text = lambda _pdf: ["", ""]
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert set(rendered) == {b"%PDF-converted"}
+    sha = hashlib.sha256(DOCX).hexdigest()
+    cached = [k for b, k in store.objects if b == "runs" and k.startswith("ocr-cache/")]
+    assert cached and all(k.startswith(f"ocr-cache/{sha}/") for k in cached)
+
+
+@pytest.mark.parametrize(
+    ("error", "outcome"),
+    [
+        (ConversionRejected("500: LibreOffice failed to convert"), "reviewed"),
+        (ConverterUnavailable("converter unreachable"), "failed"),
+    ],
+)
+def test_conversion_errors_are_routed(setup, error: Exception, outcome: str) -> None:  # type: ignore[no-untyped-def]
+    provider, store, deps = setup
+    store.put("inbox", "example-invoice/v1/doc-1.pdf", DOCX, DOCX_MIME)
+    deps.converter = FakeConverter(error=error)
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    assert len(getattr(queue, outcome)) == 1
+    assert provider.calls == []  # before any model call

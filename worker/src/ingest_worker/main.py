@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from .bundle import run_export
 from .config import Settings
+from .convert import GotenbergConverter
 from .drafting import run_draft
 from .llm.registry import build_registry, load_llm_config
 from .ocr import OcrSettings
@@ -176,6 +177,7 @@ def main() -> None:
             bucket=settings.target_bucket,
             prefix=settings.target_prefix,
         ),
+        converter=(GotenbergConverter(settings.converter_url) if settings.converter_url else None),
         example_template=(
             settings.example_template.read_text(encoding="utf-8")
             if settings.example_template.is_file()
@@ -183,11 +185,12 @@ def main() -> None:
         ),
     )
     log.info(
-        "worker %s started: %d specs, providers=%s, ocr=%s",
+        "worker %s started: %d specs, providers=%s, ocr=%s, converter=%s",
         settings.worker_id,
         len(specs),
         models.provider_names,
         ocr.model if ocr else "disabled",
+        settings.converter_url or "disabled",
     )
 
     stop = threading.Event()

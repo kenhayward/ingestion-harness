@@ -34,6 +34,8 @@ class Settings:
     target_prefix: str
     #: Worked-example template.yaml shown to drafting models.
     example_template: Path
+    #: Gotenberg converting Word (.docx) sources to PDF; None: Word documents need review.
+    converter_url: str | None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -72,4 +74,5 @@ class Settings:
                     specs_dir / "process-validation-protocol" / "v3" / "template.yaml",
                 )
             ),
+            converter_url=env.get("CONVERTER_URL") or None,
         )
