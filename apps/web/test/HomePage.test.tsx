@@ -33,8 +33,19 @@ describe('HomePage', () => {
     const panel = await screen.findByRole('complementary', { name: 'Job details' });
     expect(panel).toHaveClass('wide');
     expect(within(panel).getByRole('heading', { name: 'mine-new.pdf' })).toBeInTheDocument();
-    expect(within(panel).getByText('Latest job')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'All jobs' })).toHaveAttribute('href', '#/jobs');
+    expect(
+      within(panel).getByRole('heading', { level: 3, name: 'Latest job' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'All jobs' })).toBeNull();
+  });
+
+  it('puts Upload documents before the latest job', async () => {
+    home([job({ filename: 'a.pdf', createdBy: 'ken' })]);
+    const upload = screen.getByRole('heading', { level: 2, name: 'Upload documents' });
+    const latest = await screen.findByRole('heading', { level: 3, name: 'Latest job' });
+    expect(upload.compareDocumentPosition(latest) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const section = upload.closest('section')!;
+    expect(within(section).getByLabelText('PDF or Word files')).toBeInTheDocument();
   });
 
   it('falls back to the newest job when you have queued none', async () => {

@@ -1151,12 +1151,17 @@ button.danger-fill {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px;
-  padding: 12px;
-  margin-bottom: 20px;
-  border: 1.5px dashed var(--ih-border-strong);
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);
   background: var(--ih-surface);
+}
+.section-heading {
+  margin: 0 0 10px;
+  font-size: var(--ih-text-lg);
+  font-weight: 600;
+  color: var(--ih-text);
 }
 .drop-zone {
   flex: 2 1 260px;
@@ -1165,7 +1170,7 @@ button.danger-fill {
   gap: 12px;
   min-height: 52px;
   padding: 4px 8px;
-  border: 1.5px solid transparent;
+  border: 1.5px dashed var(--ih-border-strong);
   border-radius: var(--ih-radius-md);
   color: var(--ih-text);
   font-size: var(--ih-text-base);
@@ -1203,6 +1208,11 @@ button.danger-fill {
 }
 .upload-strip .field {
   flex: 1 1 200px;
+}
+@media (max-width: 639px) {
+  .upload-strip > button.primary {
+    flex: 1 1 100%;
+  }
 }
 .upload-list {
   flex: 1 1 100%;
@@ -1604,51 +1614,155 @@ button.danger-fill {
   }
 }
 
-/* Home: the latest job as one wide card. Summary, progress and facts sit side by side; outputs
-   and actions run across the bottom. Narrow screens stack it like the side panel. */
+/* Small-caps label for the blocks of a card (the look of the nav's "Admin" heading). */
+h3.card-label {
+  margin: 0;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+
+/* Home: the latest job as one wide card: header, progress across the card, then status and
+   actions beside the details. */
 .job-panel.wide {
   max-width: none;
+  gap: 0;
+  padding: 0;
 }
-@media (min-width: 900px) {
-  .job-panel.wide {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-    gap: 12px 32px;
+.job-panel.wide .job-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 24px 0;
+}
+.job-panel.wide .job-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.job-panel.wide h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.job-panel.wide .job-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 18px 24px 0;
+  padding: 18px 16px 14px;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface2);
+}
+.job-panel.wide .progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+.job-panel.wide .progress li {
+  position: relative;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+.job-panel.wide .progress li + li::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: calc(-50% + 14px);
+  right: calc(50% + 14px);
+  height: 2px;
+  background: var(--ih-border);
+}
+.job-panel.wide .progress li.step-done + li::before {
+  background: var(--ih-ok-fg);
+}
+.job-panel.wide .step-icon {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+.job-panel.wide .step-state {
+  margin-left: 0;
+}
+.job-panel.wide .step-current .step-label,
+.job-panel.wide .step-wait .step-label,
+.job-panel.wide .step-fail .step-label {
+  font-weight: 600;
+}
+.job-panel.wide .step-current .step-state {
+  color: var(--ih-info-fg);
+}
+.job-panel.wide .step-wait .step-state {
+  color: var(--ih-warn-fg);
+}
+.job-panel.wide .step-fail .step-state {
+  color: var(--ih-danger-fg);
+}
+.job-panel.wide .job-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px 32px;
+  padding: 20px 24px 22px;
+}
+.job-panel.wide .job-status,
+.job-panel.wide .job-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.job-panel.wide .job-details {
+  padding-left: 24px;
+  border-left: 1px solid var(--ih-border-soft);
+}
+.job-panel.wide .panel-actions > :first-child {
+  flex-basis: auto;
+}
+.job-panel.wide .panel-actions > a.button,
+.job-panel.wide .panel-actions > button {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+@media (max-width: 639px) {
+  .job-panel.wide .progress {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
-  .job-panel.wide > * {
-    grid-column: 1;
+  .job-panel.wide .progress li {
+    flex-direction: row;
+    gap: 10px;
+    text-align: left;
   }
-  .job-panel.wide > .progress {
-    grid-column: 2;
-    grid-row: 1 / span 6;
+  .job-panel.wide .progress li + li::before {
+    display: none;
   }
-  .job-panel.wide > .meta {
-    grid-column: 3;
-    grid-row: 1 / span 6;
+  .job-panel.wide .step-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
   }
-  .job-panel.wide > .outputs,
-  .job-panel.wide > .panel-actions {
-    grid-column: 1 / -1;
+  .job-panel.wide .step-state {
+    margin-left: auto;
   }
-  .job-panel.wide .panel-actions > :first-child {
-    flex-basis: auto;
+  .job-panel.wide .job-columns {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .job-panel.wide .panel-actions > a.button,
-  .job-panel.wide .panel-actions > button {
-    flex: 0 0 auto;
-    min-width: 140px;
+  .job-panel.wide .job-details {
+    padding-left: 0;
+    border-left: 0;
   }
 }
 .home-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-.home-latest-head {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: -8px;
 }
 
 /* Review (UI handoff §2): header, reasons, source + data panes, sticky decision bar */

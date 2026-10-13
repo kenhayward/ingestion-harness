@@ -126,6 +126,62 @@ describe('JobDetailPanel', () => {
     expect(within(panel()).queryByText('line_items.csv')).not.toBeInTheDocument();
   });
 
+  describe('wide (Home)', () => {
+    const headings = () =>
+      within(panel())
+        .getAllByRole('heading', { level: 3 })
+        .map((h) => h.textContent);
+
+    it('has Latest job, Progress, Status and actions and Details, each a labelled section', async () => {
+      const j = job({ id: 'w', filename: 'inv.pdf', status: 'awaiting_review' });
+      render(<JobDetailPanel api={fakeApi()} job={j} {...defaults} wide />);
+      expect(headings()).toEqual(['Latest job', 'Progress', 'Status and actions', 'Details']);
+      for (const name of ['Progress', 'Status and actions', 'Details']) {
+        expect(within(panel()).getByRole('region', { name })).toBeInTheDocument();
+      }
+      expect(within(panel()).getByRole('heading', { level: 2, name: 'inv.pdf' })).toBeVisible();
+      await act(async () => {});
+    });
+
+    it('renders the five progress steps with their state text', async () => {
+      const j = job({ id: 'w', status: 'awaiting_review' });
+      render(<JobDetailPanel api={fakeApi()} job={j} {...defaults} wide />);
+      const steps = within(within(panel()).getByRole('list', { name: 'Progress' })).getAllByRole(
+        'listitem',
+      );
+      expect(steps).toHaveLength(5);
+      for (const step of steps) {
+        expect(step.querySelector('.step-label')?.textContent).toBeTruthy();
+        expect(step.querySelector('.step-state')?.textContent).toBeTruthy();
+      }
+      await act(async () => {});
+    });
+
+    it('lists Published outputs only when something was published', async () => {
+      const j = job({ id: 'w', filename: 'inv.pdf', status: 'succeeded' });
+      const none = fakeApi({ getJob: vi.fn(async () => ({ ...j, outputs: [output({})] })) });
+      const { unmount } = render(<JobDetailPanel api={none} job={j} {...defaults} wide />);
+      await act(async () => {});
+      expect(headings()).not.toContain('Published outputs');
+      unmount();
+      const some = fakeApi({
+        getJob: vi.fn(async () => ({ ...j, outputs: [output({ stage: 'published' })] })),
+      });
+      render(<JobDetailPanel api={some} job={j} {...defaults} wide />);
+      expect(
+        await within(panel()).findByRole('heading', { name: 'Published outputs' }),
+      ).toBeVisible();
+    });
+  });
+
+  it('keeps the side panel as it was: Job details label, no Details section', async () => {
+    const j = job({ id: 'n', status: 'succeeded' });
+    render(<JobDetailPanel api={fakeApi()} job={j} {...defaults} />);
+    expect(within(panel()).getByText('Job details')).toBeInTheDocument();
+    expect(within(panel()).queryByRole('heading', { name: 'Details' })).toBeNull();
+    await act(async () => {});
+  });
+
   it('says "1 file" for a single published output', async () => {
     const j = job({ id: 'a', filename: 'inv.pdf', status: 'succeeded' });
     const api = fakeApi({

@@ -74,16 +74,18 @@ export function HomePage({
           </span>
         )}
       </div>
-      <UploadStrip
-        api={api}
-        onUploaded={() => void refresh()}
-        pickPending={pickPending}
-        onPicked={onPicked}
-      />
+      <section aria-labelledby="home-upload-heading">
+        <h2 id="home-upload-heading" className="section-heading">
+          Upload documents
+        </h2>
+        <UploadStrip
+          api={api}
+          onUploaded={() => void refresh()}
+          pickPending={pickPending}
+          onPicked={onPicked}
+        />
+      </section>
       {error && <p role="alert">Failed to load jobs: {error}</p>}
-      <div className="home-latest-head">
-        <a href="#/jobs">All jobs</a>
-      </div>
       {latest ? (
         <JobDetailPanel
           key={latest.id}
@@ -95,7 +97,6 @@ export function HomePage({
           typeModels={typeModels}
           now={Date.now()}
           wide
-          eyebrow="Latest job"
         />
       ) : (
         <p className="muted">No jobs yet: upload a document to start.</p>
