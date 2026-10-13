@@ -31,6 +31,7 @@ const PATHS = {
       <path d="M10 8l-4 4 4 4M6 12h10" />
     </>
   ),
+  home: <path d="M4 11l8-7 8 7M6 9.5V20h4.5v-5h3v5H18V9.5" />,
   jobs: <path d="M4 6h16M4 12h16M4 18h10" />,
   results: (
     <>

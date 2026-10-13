@@ -83,7 +83,7 @@ describe('RunBatchCard', () => {
     ).toBeInTheDocument();
     const done = row('acme.pdf');
     expect(within(done).getByText('Succeeded')).toBeInTheDocument();
-    expect(within(done).getByText('0:31')).toBeInTheDocument();
+    expect(within(done).getByText('00:31')).toBeInTheDocument();
     expect(within(done).getByRole('link', { name: 'Review' })).toHaveAttribute(
       'href',
       '#/review/11111111-0000-4000-8000-000000000001',
@@ -95,7 +95,7 @@ describe('RunBatchCard', () => {
       '#/review/11111111-0000-4000-8000-000000000002',
     );
     const running = row('hooli.pdf');
-    expect(within(running).getByText('1:12')).toBeInTheDocument();
+    expect(within(running).getByText('01:12')).toBeInTheDocument();
     expect(within(running).queryByRole('link')).toBeNull();
     expect(
       within(row('stark.pdf')).getByText('invalid JSON (after 3 attempts)'),

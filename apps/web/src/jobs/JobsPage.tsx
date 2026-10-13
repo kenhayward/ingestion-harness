@@ -7,7 +7,6 @@ import { FilterChips } from '../ui/FilterChips.js';
 import { JobCleanup } from './JobCleanup.js';
 import { JobDetailPanel } from './JobDetailPanel.js';
 import { JobList } from './JobList.js';
-import { UploadStrip } from './UploadStrip.js';
 import { chipCounts, inChip, type Chip } from './derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 
@@ -32,7 +31,7 @@ function saveMine(mine: boolean) {
 }
 
 /**
- * Jobs (UI handoff §1): upload strip, status chips, the My jobs toggle, job list + detail panel,
+ * Jobs (UI handoff §1; uploading is on Home): status chips, the My jobs toggle, job list + detail panel,
  * clean-up. My jobs asks the server for the signed-in token's jobs (so the list limit applies
  * to them, not to everyone's) and polls them itself; the status chips apply on top.
  */
@@ -43,8 +42,6 @@ export function JobsPage({
   refresh: refreshAll,
   query,
   pollMs,
-  pickPending,
-  onPicked,
 }: {
   api: Api;
   jobs: JobSummary[];
@@ -55,8 +52,6 @@ export function JobsPage({
   query: string;
   /** Poll interval, for the live indicator; <= 0 = not polling. */
   pollMs: number;
-  pickPending: boolean;
-  onPicked: () => void;
 }) {
   const [chip, setChip] = useState<Chip>('all');
   const [mine, setMine] = useState(loadMine);
@@ -115,7 +110,7 @@ export function JobsPage({
         <div>
           <h1>Jobs</h1>
           <p className="muted">
-            Upload a PDF or Word document, watch it run, review what was extracted.
+            Every job: filter by status, act on the ones that need you, clean up finished ones.
           </p>
         </div>
         {pollMs > 0 && (
@@ -125,7 +120,6 @@ export function JobsPage({
           </span>
         )}
       </div>
-      <UploadStrip api={api} onUploaded={refresh} pickPending={pickPending} onPicked={onPicked} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <div className="jobs-layout">
         <section className="jobs-main" aria-label="Job list">

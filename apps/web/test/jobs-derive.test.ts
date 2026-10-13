@@ -236,14 +236,14 @@ describe('jobDuration', () => {
   const now = Date.parse('2026-10-12T12:00:00Z');
   const at = (s: number) => new Date(now - 3600_000 + s * 1000).toISOString();
   it.each<[string, Partial<JobSummary>, string | null]>([
-    ['finished', { status: 'succeeded', startedAt: at(0), finishedAt: at(94) }, '1:34'],
+    ['finished', { status: 'succeeded', startedAt: at(0), finishedAt: at(94) }, '01:34'],
     [
       'awaiting review',
       { status: 'awaiting_review', startedAt: at(0), finishedAt: at(1384) },
       '23:04',
     ],
     ['over an hour', { status: 'failed', startedAt: at(0), finishedAt: at(3725) }, '1:02:05'],
-    ['running counts up to now', { status: 'running', startedAt: at(3540) }, '1:00'],
+    ['running counts up to now', { status: 'running', startedAt: at(3540) }, '01:00'],
     ['queued', { status: 'queued', startedAt: null }, null],
     [
       'queued for a retry keeps no time',
@@ -255,7 +255,7 @@ describe('jobDuration', () => {
     [
       'a step re-run keeps the extraction time',
       { status: 'running', task: 'rerun', startedAt: at(0), finishedAt: at(20) },
-      '0:20',
+      '00:20',
     ],
   ])('%s', (_name, o, text) => {
     expect(jobDuration({ ...job(), ...o }, now)).toBe(text);

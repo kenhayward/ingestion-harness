@@ -47,6 +47,7 @@ describe('app shell', () => {
   );
 
   it('badges Jobs with the number of jobs needing attention', async () => {
+    window.location.hash = '#/jobs';
     const api = fakeApi({
       listJobs: vi.fn(async () =>
         (['awaiting_review', 'failed', 'running', 'succeeded'] as const).map((status) =>
@@ -64,6 +65,7 @@ describe('app shell', () => {
   });
 
   it('shows no badge when nothing needs attention', async () => {
+    window.location.hash = '#/jobs';
     render(
       <App
         api={fakeApi({ listJobs: vi.fn(async () => [job({ status: 'succeeded' })]) })}
@@ -185,6 +187,7 @@ const result = (filename: string): ResultSummary => ({
 
 describe('search', () => {
   it('filters jobs and says when nothing matches', async () => {
+    window.location.hash = '#/jobs';
     const api = fakeApi({
       listJobs: vi.fn(async () => [
         job({ filename: 'inv-0042-acme.pdf' }),
@@ -368,5 +371,53 @@ describe('the admin name menu', () => {
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Models' })).toHaveAttribute('href', '#/models');
+  });
+});
+
+describe('Home and the collapsible nav', () => {
+  afterEach(() => localStorage.removeItem('ih.navCollapsed'));
+
+  it('lists Home first, at #/, with Jobs at #/jobs', async () => {
+    render(<App api={fakeApi()} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const links = within(nav).getAllByRole('link');
+    expect(links[0]).toHaveAccessibleName('Home');
+    expect(links[0]).toHaveAttribute('href', '#/');
+    expect(links[0]).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: /^Jobs/ })).toHaveAttribute('href', '#/jobs');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Home' })).toBeInTheDocument();
+  });
+
+  it('collapses and expands on any page, and remembers it', async () => {
+    window.location.hash = '#/results';
+    const view = render(<App api={fakeApi()} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(nav).not.toHaveClass('compact');
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse menu' }));
+    expect(nav).toHaveClass('compact');
+    expect(within(nav).getByRole('link', { name: 'Results' })).toHaveAttribute('title', 'Results');
+    expect(localStorage.getItem('ih.navCollapsed')).toBe('1');
+    view.unmount();
+
+    render(<App api={fakeApi()} pollMs={0} />);
+    const again = await screen.findByRole('navigation', { name: 'Main' });
+    expect(again).toHaveClass('compact');
+    const expand = screen.getByRole('button', { name: 'Expand menu' });
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(expand);
+    expect(again).not.toHaveClass('compact');
+    expect(localStorage.getItem('ih.navCollapsed')).toBeNull();
+  });
+
+  it('starts collapsed on a project page, and can be expanded there', async () => {
+    window.location.hash = '#/workbench/letter';
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()) });
+    render(<App api={api} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(nav).toHaveClass('compact');
+    await userEvent.click(screen.getByRole('button', { name: 'Expand menu' }));
+    expect(nav).not.toHaveClass('compact');
+    // Only for this visit: the remembered choice is for the other pages.
+    expect(localStorage.getItem('ih.navCollapsed')).toBeNull();
   });
 });

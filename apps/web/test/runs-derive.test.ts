@@ -183,19 +183,20 @@ describe('run rows', () => {
   });
 
   it.each([
-    [0, '0:00'],
-    [31.4, '0:31'],
-    [125, '2:05'],
+    [0, '00:00'],
+    [31.4, '00:31'],
+    [125, '02:05'],
+    [1384, '23:04'],
     [3725, '1:02:05'],
-    [-3, '0:00'],
+    [-3, '00:00'],
   ])('formats %s s as %s', (s, text) => expect(formatDuration(s)).toBe(text));
 
   it('times finished runs from start to finish and running ones up to now', () => {
     const now = Date.parse(at(50));
     expect(
       runDuration(testRunView({ status: 'succeeded', startedAt: at(0), finishedAt: at(31) }), now),
-    ).toBe('0:31');
-    expect(runDuration(testRunView({ status: 'running', startedAt: at(6) }), now)).toBe('0:44');
+    ).toBe('00:31');
+    expect(runDuration(testRunView({ status: 'running', startedAt: at(6) }), now)).toBe('00:44');
     expect(
       runDuration(testRunView({ status: 'queued', startedAt: at(0), finishedAt: at(9) }), now),
     ).toBe('—');
@@ -223,7 +224,7 @@ describe('run rows', () => {
           testRunView({ status: 'running', task, startedAt: at(0), finishedAt: at(31) }),
           now,
         ),
-      ).toBe('0:31');
+      ).toBe('00:31');
     }
   });
 

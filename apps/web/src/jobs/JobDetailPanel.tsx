@@ -46,6 +46,8 @@ export function JobDetailPanel({
   specTitles,
   typeModels,
   now,
+  wide = false,
+  eyebrow = 'Job details',
 }: {
   api: Api;
   job: JobSummary;
@@ -55,6 +57,10 @@ export function JobDetailPanel({
   /** Each document type's model, by id (unknown types: no name in the dialog). */
   typeModels?: ReadonlyMap<string, { model?: string }>;
   now: number;
+  /** Home: one wide card (summary, progress and facts side by side) instead of a side panel. */
+  wide?: boolean;
+  /** The small heading above the file name. */
+  eyebrow?: string;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
@@ -83,8 +89,8 @@ export function JobDetailPanel({
   const published = (outputs ?? []).filter((o) => o.stage === 'published');
 
   return (
-    <aside className="job-panel" aria-label="Job details">
-      <p className="eyebrow">Job details</p>
+    <aside className={wide ? 'job-panel wide' : 'job-panel'} aria-label="Job details">
+      <p className="eyebrow">{eyebrow}</p>
       <h2>{job.filename}</h2>
       <StatusPill status={job.status} />
       {note && (

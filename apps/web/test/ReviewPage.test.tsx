@@ -31,7 +31,7 @@ describe('ReviewPage header and source', () => {
     });
     setup({}, [self, other]);
     expect(await screen.findByRole('heading', { level: 1, name: 'scan.pdf' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Jobs/ })).toHaveAttribute('href', '#/');
+    expect(screen.getByRole('link', { name: /Jobs/ })).toHaveAttribute('href', '#/jobs');
     expect(screen.getByText('1 of 2 awaiting review')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Next document/ })).toHaveAttribute(
       'href',
