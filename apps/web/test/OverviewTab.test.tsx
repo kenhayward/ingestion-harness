@@ -47,6 +47,13 @@ describe('OverviewTab', () => {
     );
   });
 
+  it('keeps three columns in the Template row, which has no status icon', () => {
+    render(<OverviewTab projectId="letter" overview={projectOverview()} />);
+    const row = screen.getByRole('link', { name: /^Template:/ });
+    expect(row.children).toHaveLength(3);
+    expect(row.children[1]).toHaveTextContent('Template');
+  });
+
   it('lists every stage with its status and has no banner when nothing is next', () => {
     render(<OverviewTab projectId="letter" overview={projectOverview()} />);
     expect(screen.queryByRole('note')).toBeNull();

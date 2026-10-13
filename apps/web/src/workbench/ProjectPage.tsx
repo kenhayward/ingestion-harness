@@ -356,6 +356,7 @@ export function ProjectPage({
                     void act(async () => {
                       await api.newDraft(project.id, published!);
                       load();
+                      loadOverview();
                     })
                   }
                 >

@@ -202,6 +202,22 @@ describe('ProjectPage', () => {
     expect(getProject).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes the overview after starting the next version', async () => {
+    const getProjectOverview = vi.fn(async () => projectOverview());
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: null, published: 1 })),
+      getProjectOverview,
+      newDraft: vi.fn(async () => ({}) as never),
+    });
+    page(api, 'template');
+    const start = await screen.findByRole('button', { name: 'Start v2' });
+    await waitFor(() => expect(getProjectOverview).toHaveBeenCalled());
+    const calls = getProjectOverview.mock.calls.length;
+    await userEvent.click(start);
+    expect(api.newDraft).toHaveBeenCalledWith('letter', 1);
+    await waitFor(() => expect(getProjectOverview.mock.calls.length).toBeGreaterThan(calls));
+  });
+
   it('deletes an unpublished project once its id is typed, then opens the Workbench list', async () => {
     const onNavigate = vi.fn();
     const api = fakeApi({

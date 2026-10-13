@@ -35,7 +35,11 @@ export function OverviewTab({
               href={`#/workbench/${projectId}/${s.stage === 'publish' ? 'evaluate' : s.stage}`}
               aria-label={`${OVERVIEW_TAB_LABEL[s.stage]}: ${s.status}`}
             >
-              <StageStatusIcon state={s.state} decorative />
+              {s.state === 'none' ? (
+                <span className="stage-icon-slot" aria-hidden="true" />
+              ) : (
+                <StageStatusIcon state={s.state} decorative />
+              )}
               <span>{OVERVIEW_TAB_LABEL[s.stage]}</span>
               <span className="muted">{s.status}</span>
             </a>
