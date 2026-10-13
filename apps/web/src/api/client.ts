@@ -9,7 +9,6 @@ import type {
   EndpointCreateInput,
   EndpointPatchBody,
   EditRequest,
-  EvaluationModel,
   EvaluationSet,
   FeedbackItem,
   FeedbackTarget,
@@ -25,7 +24,7 @@ import type {
   LlmChoicesView,
   LlmChoiceView,
   LlmEndpointView,
-  ModelInfo,
+  ModelChoice,
   PreparedText,
   ProjectListPage,
   ProjectListQuery,
@@ -280,7 +279,8 @@ export interface Api {
   deleteModelChoice(id: string): Promise<void>;
   setLlmSettings(body: SettingsBody): Promise<LlmChoicesView>;
   listSpecs(): Promise<SpecSummary[]>;
-  listModels(): Promise<ModelInfo[]>;
+  /** The model choices every picker offers, the default first (ADR 0010, phase 4c). */
+  listPickerChoices(): Promise<ModelChoice[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
   listJobs(opts?: { mine?: boolean }): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
@@ -378,7 +378,8 @@ export interface Api {
   /** `uncached` makes every step call its model (the step cache is not read). */
   startEvaluation(
     projectId: string,
-    model: EvaluationModel | null,
+    /** A model choice's id; null: the template's own models. */
+    model: string | null,
     options?: { uncached?: boolean; set?: EvaluationSet },
   ): Promise<IterationView>;
   /** Queue template runs on unverified holdout samples. */
@@ -394,7 +395,11 @@ export interface Api {
   ): Promise<{ publication: Publication; project: ProjectView }>;
   listPublications(projectId: string): Promise<Publication[]>;
   /** Evaluate the draft on every comparison model at once. */
-  startComparison(projectId: string, options?: { uncached?: boolean }): Promise<ComparisonView>;
+  /** `models`: the choices to compare, in order (absent: every one the project may use). */
+  startComparison(
+    projectId: string,
+    options?: { uncached?: boolean; models?: string[] },
+  ): Promise<ComparisonView>;
   getComparison(projectId: string, groupId: string): Promise<ComparisonView>;
   listIterations(projectId: string): Promise<IterationSummary[]>;
   getIteration(projectId: string, iterationId: string): Promise<IterationView>;
@@ -609,7 +614,10 @@ export function createHttpApi(base = '/api'): Api {
       return () => unauthorizedListeners.delete(listener);
     },
     listSpecs: () => apiFetch(`${base}/specs`).then(json<SpecSummary[]>),
-    listModels: () => apiFetch(`${base}/models`).then(json<ModelInfo[]>),
+    listPickerChoices: () =>
+      apiFetch(`${base}/models/choices`)
+        .then(json<{ choices: ModelChoice[] }>)
+        .then((r) => r.choices),
     listJobs: (opts) =>
       apiFetch(`${base}/jobs${opts?.mine ? '?mine=1' : ''}`).then(json<JobSummary[]>),
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
@@ -734,10 +742,10 @@ export function createHttpApi(base = '/api'): Api {
     listPublications: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/publications`).then(json<Publication[]>),
     startComparison: (id, options) =>
-      post<ComparisonView>(
-        `${base}/workbench/projects/${id}/evaluations/compare`,
-        options?.uncached ? { uncached: true } : {},
-      ),
+      post<ComparisonView>(`${base}/workbench/projects/${id}/evaluations/compare`, {
+        ...(options?.models ? { models: options.models } : {}),
+        ...(options?.uncached ? { uncached: true } : {}),
+      }),
     getComparison: (id, groupId) =>
       apiFetch(`${base}/workbench/projects/${id}/comparisons/${groupId}`).then(
         json<ComparisonView>,

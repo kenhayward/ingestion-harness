@@ -1,10 +1,10 @@
-import type { JobStatus, JobSummary, ModelInfo } from '@ih/shared';
+import type { JobStatus, JobSummary } from '@ih/shared';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { JobList } from '../src/jobs/JobList.js';
-import { fakeApi, job } from './fake-api.js';
+import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
 type Props = ComponentProps<typeof JobList>;
 
@@ -33,17 +33,6 @@ const menuItems = (name: string) =>
   [...screen.getByRole('group', { name: `Actions for ${name}` }).querySelectorAll('button, a')].map(
     (e) => e.textContent,
   );
-
-const model = (ref: string): ModelInfo => ({
-  ref,
-  provider: ref.split('/')[0]!,
-  providerKind: 'anthropic',
-  modelId: ref.split('/')[1]!,
-  displayName: null,
-  enabled: true,
-  discoveredAt: '',
-  curated: true,
-});
 
 describe('JobList main action', () => {
   it('shows one main action per status', () => {
@@ -255,17 +244,28 @@ describe('JobList confirmations', () => {
     expect(api.retryJob).toHaveBeenCalledWith(j.id, null);
   });
 
-  it('retries with another model picked inline', async () => {
+  it('names the selected model choice by its label', async () => {
+    const api = fakeApi();
+    const j = job({ filename: 'a.pdf', status: 'failed' });
+    renderList([j], { api, models: MODEL_CHOICES, retryModel: 'test' });
+    await userEvent.click(
+      within(row('a.pdf')).getByRole('button', { name: 'Retry with New for testing only' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'test');
+  });
+
+  it('retries with another model choice picked inline', async () => {
     const api = fakeApi();
     const j = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
-    renderList([j], { api, models: [model('anthropic/other')], retryModel: '' });
+    renderList([j], { api, models: MODEL_CHOICES, retryModel: '' });
     await openMenu('a.pdf');
     await userEvent.click(screen.getByRole('button', { name: 'Retry with another model…' }));
     const pick = screen.getByLabelText('Model for a.pdf');
     expect(pick).toHaveFocus();
-    await userEvent.selectOptions(pick, 'anthropic/other');
+    await userEvent.selectOptions(pick, 'New for testing only');
+    expect(screen.getByText('ryzen/openai/gpt-oss-20b')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Confirm retry a.pdf' }));
-    expect(api.retryJob).toHaveBeenCalledWith('a', 'anthropic/other');
+    expect(api.retryJob).toHaveBeenCalledWith('a', 'test');
   });
 
   it('moves focus into the confirmation and back to the menu button', async () => {

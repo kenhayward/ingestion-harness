@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { outputKey, preparedTriageKey, type SampleView } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
-import { letter, multipart, testApp } from './helpers.js';
+import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const pdf = (n: number) =>
   Buffer.from(`%PDF-1.7
@@ -12,6 +12,7 @@ const pdf = (n: number) =>
 
 async function project() {
   const ctx = await testApp();
+  seedModelChoices(ctx); // main (the default), fast (local), cloud (external)
   await ctx.app.inject({
     method: 'POST',
     url: '/api/workbench/projects',

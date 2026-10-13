@@ -1,17 +1,16 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
-  EVALUATION_MODELS,
   EVALUATION_SETS,
   FEEDBACK_MAX_CHARS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
-  type EvaluationModel,
   type EvaluationSet,
   type IterationSummary,
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { PublishPanel } from './PublishPanel.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
@@ -50,7 +49,15 @@ export function EvaluateTab({
 }) {
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
-  const [model, setModel] = useState<EvaluationModel | ''>('');
+  const choices = useModelChoices(api);
+  const [model, setModel] = useState('');
+  /** The choices ticked for a comparison; null: every one this project may use. */
+  const [ticked, setTicked] = useState<string[] | null>(null);
+  const usable = choices.filter((c) => dataPolicy === 'external' || c.location === 'local');
+  const compared = ticked ?? usable.map((c) => c.id);
+  /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
+  const nameOf = (m: string | null) =>
+    m === null ? 'template' : (choices.find((c) => c.id === m)?.label ?? m);
   const [open, setOpen] = useState<string | null>(null);
   const [uncached, setUncached] = useState(false);
   const [set, setSet] = useState<EvaluationSet>('dev');
@@ -167,7 +174,7 @@ export function EvaluateTab({
     });
   const compare = () =>
     act(async () => {
-      setComparison(await api.startComparison(projectId, { uncached }));
+      setComparison(await api.startComparison(projectId, { uncached, models: compared }));
       onStarted?.();
     });
   const restore = (id: string) =>
@@ -199,17 +206,17 @@ export function EvaluateTab({
     <div className="evaluate-tab">
       <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
       <div className="actions">
-        <label>
+        <div className="field">
           Model{' '}
-          <select value={model} onChange={(e) => setModel(e.target.value as EvaluationModel | '')}>
-            <option value="">Template&apos;s models</option>
-            {EVALUATION_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+          <ModelPicker
+            label="Model"
+            choices={choices}
+            value={model}
+            emptyLabel="Template's models"
+            dataPolicy={dataPolicy}
+            onChange={setModel}
+          />
+        </div>
         <label>
           Set{' '}
           <select value={set} onChange={(e) => setSet(e.target.value as EvaluationSet)}>
@@ -238,12 +245,42 @@ export function EvaluateTab({
         </button>
         <button
           type="button"
-          disabled={!hasDraft || busy || running || comparing || set === 'holdout'}
+          disabled={
+            !hasDraft || busy || running || comparing || set === 'holdout' || compared.length < 2
+          }
           onClick={() => void compare()}
         >
           Compare models
         </button>
       </div>
+      {choices.length > 0 && (
+        <fieldset className="compare-choices" aria-label="Models to compare">
+          <legend className="muted">Compare (dev set, at least two)</legend>
+          {choices.map((c) => {
+            const allowed = usable.includes(c);
+            return (
+              <label key={c.id} title={c.ref}>
+                <input
+                  type="checkbox"
+                  disabled={!allowed}
+                  checked={allowed && compared.includes(c.id)}
+                  onChange={(e) =>
+                    setTicked(
+                      e.target.checked
+                        ? usable
+                            .map((u) => u.id)
+                            .filter((id) => id === c.id || compared.includes(id))
+                        : compared.filter((id) => id !== c.id),
+                    )
+                  }
+                />{' '}
+                {c.label}
+                {c.location === 'external' ? ' · external' : ''}
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
       {error && <p role="alert">{error}</p>}
       {comparison && (
         <table aria-label="Model comparison">
@@ -252,7 +289,7 @@ export function EvaluateTab({
               <th>Measure</th>
               {comparison.iterations.map((i) => (
                 <th key={i.id}>
-                  {i.model ?? 'template'}
+                  {nameOf(i.model)}
                   {i.status === 'running' && ' (running)'}
                 </th>
               ))}
@@ -274,7 +311,8 @@ export function EvaluateTab({
         <section aria-label="Latest evaluation">
           <h3>Score {pct(current.score)}</h3>
           <p className="muted">
-            v{current.templateVersion} {DOT} {current.model ?? "template's models"} {DOT}{' '}
+            v{current.templateVersion} {DOT}{' '}
+            {current.model === null ? "template's models" : nameOf(current.model)} {DOT}{' '}
             {current.completed} of {current.total} compared {DOT} {current.status}
           </p>
           {current.cache.total > 0 && (
@@ -424,7 +462,7 @@ export function EvaluateTab({
               <tr key={h.id}>
                 <td>v{h.templateVersion}</td>
                 <td>
-                  {h.model ?? "template's"}
+                  {h.model === null ? "template's" : nameOf(h.model)}
                   {h.uncached && ` ${DOT} fresh`}
                   {h.groupId && ` ${DOT} compare`}
                   {h.set === 'holdout' && ` ${DOT} holdout`}

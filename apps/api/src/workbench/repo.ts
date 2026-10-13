@@ -6,7 +6,6 @@ import type {
   BriefBody,
   DataPolicy,
   DraftStage,
-  EvaluationModel,
   EvaluationSet,
   FeedbackItem,
   JobSummary,
@@ -84,7 +83,7 @@ export interface IterationRecord {
   definition: Record<string, unknown>;
   briefVersion: number | null;
   set: EvaluationSet;
-  model: EvaluationModel | null;
+  model: string | null;
   jobIds: string[];
   /**
    * sha256 of each sample the iteration evaluated (migration 0017), kept when its jobs are
@@ -857,7 +856,7 @@ interface IterationRow {
   definition: Record<string, unknown>;
   brief_version: number | null;
   eval_set: EvaluationSet;
-  model: EvaluationModel | null;
+  model: string | null;
   job_ids: string[];
   sample_shas: string[] | null;
   group_id: string | null;

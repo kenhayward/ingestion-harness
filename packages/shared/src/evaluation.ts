@@ -44,8 +44,8 @@ export const ComparisonSchema = z.object({
 });
 export type Comparison = z.infer<typeof ComparisonSchema>;
 
-export const EVALUATION_MODELS = ['default', 'fast', 'draft'] as const;
-export type EvaluationModel = (typeof EVALUATION_MODELS)[number];
+/** Most model choices one comparison runs (ADR 0010, phase 4c). */
+export const MAX_COMPARED_MODELS = 6;
 
 const FINISHED: readonly JobStatus[] = [
   'succeeded',
@@ -131,8 +131,12 @@ export const IterationSummarySchema = z.object({
   templateVersion: z.number().int(),
   briefVersion: z.number().int().nullable(),
   set: z.enum(EVALUATION_SETS),
-  /** Alias every step was overridden with; null = the template's own models. */
-  model: z.enum(EVALUATION_MODELS).nullable(),
+  /**
+   * The model choice every step was overridden with (its id; `default` is the default choice,
+   * and iterations from before model choices may say `fast` or `draft`); null = the template's
+   * own models.
+   */
+  model: z.string().nullable(),
   /** Shared by the iterations of one model comparison. */
   groupId: z.string().uuid().nullable(),
   /** Every step called its model (the step cache was not read). */

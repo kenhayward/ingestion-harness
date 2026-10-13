@@ -210,11 +210,12 @@ describe('EvaluateTab', () => {
     expect(screen.queryByText('Comment saved; see the Revise tab')).toBeNull();
   });
 
-  it('compares models side by side', async () => {
+  it('compares model choices side by side, headed by their labels', async () => {
     const group = 'g1';
     const views = [
-      iterationView({ model: 'default', groupId: group, score: 0.75 }),
-      iterationView({ model: 'fast', groupId: group, score: 0.5 }),
+      iterationView({ model: 'main', groupId: group, score: 0.75 }),
+      iterationView({ model: 'test', groupId: group, score: 0.5 }),
+      // From before model choices: shown by its name.
       iterationView({ model: 'draft', groupId: group, score: 1 }),
     ];
     const { api } = tab({
@@ -222,13 +223,49 @@ describe('EvaluateTab', () => {
       startComparison: vi.fn(async () => ({ groupId: group, iterations: views })),
       getComparison: vi.fn(async () => ({ groupId: group, iterations: views })),
     });
+    await screen.findByRole('checkbox', { name: 'New for testing only' });
     await userEvent.click(await screen.findByRole('button', { name: 'Compare models' }));
-    expect(api.startComparison).toHaveBeenCalledWith('letter', { uncached: false });
+    // Every choice a local-only project may use (the external one is out).
+    expect(api.startComparison).toHaveBeenCalledWith('letter', {
+      uncached: false,
+      models: ['main', 'test'],
+    });
     const table = await screen.findByRole('table', { name: 'Model comparison' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Measure', 'Main Production Model', 'New for testing only', 'draft']);
     const score = within(table).getByText('score').closest('tr')!;
     expect(score).toHaveTextContent('75%');
     expect(score).toHaveTextContent('50%');
     expect(score).toHaveTextContent('100%');
+  });
+
+  it('compares the model choices ticked, at least two, never an external one here', async () => {
+    const { api } = tab({
+      listIterations: vi.fn(async () => []),
+      startComparison: vi.fn(async () => ({ groupId: 'g1', iterations: [] })),
+    });
+    const compared = await screen.findByRole('group', { name: 'Models to compare' });
+    const main = await within(compared).findByRole('checkbox', {
+      name: 'Main Production Model',
+    });
+    expect(within(compared).getByRole('checkbox', { name: /Cloud model/ })).toBeDisabled();
+    await userEvent.click(main);
+    expect(screen.getByRole('button', { name: 'Compare models' })).toBeDisabled();
+    await userEvent.click(main);
+    await userEvent.click(screen.getByRole('button', { name: 'Compare models' }));
+    expect(api.startComparison).toHaveBeenCalledWith('letter', {
+      uncached: false,
+      models: ['main', 'test'],
+    });
+  });
+
+  it('offers no external model choice to a local-only project', async () => {
+    tab({ listIterations: vi.fn(async () => []) });
+    const option = await screen.findByRole('option', { name: /Cloud model/ });
+    expect((option as HTMLOptionElement).disabled).toBe(true);
   });
 
   it('disables "Evaluate the draft" while a comparison is running', async () => {
@@ -320,9 +357,10 @@ describe('EvaluateTab', () => {
       startEvaluation: vi.fn(async () => running),
       getIteration: vi.fn().mockResolvedValueOnce(running).mockResolvedValue(done),
     });
-    await userEvent.selectOptions(await screen.findByLabelText('Model'), 'fast');
+    await screen.findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'New for testing only');
     await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
-    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'fast', {
+    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'test', {
       uncached: false,
       set: 'dev',
     });

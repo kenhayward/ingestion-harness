@@ -326,6 +326,7 @@ describe('http api: comparison', () => {
     const api = createHttpApi('/api');
     await api.startEvaluation('letter', null, { uncached: true });
     await api.startComparison('letter', { uncached: true });
+    await api.startComparison('letter', { models: ['main', 'test'] });
     await api.getComparison('letter', 'g1');
     const calls = fetchMock.mock.calls.map(([url, init]) => [
       init?.method ?? 'GET',
@@ -335,8 +336,28 @@ describe('http api: comparison', () => {
     expect(calls).toEqual([
       ['POST', '/api/workbench/projects/letter/evaluations', { uncached: true }],
       ['POST', '/api/workbench/projects/letter/evaluations/compare', { uncached: true }],
+      ['POST', '/api/workbench/projects/letter/evaluations/compare', { models: ['main', 'test'] }],
       ['GET', '/api/workbench/projects/letter/comparisons/g1', undefined],
     ]);
+  });
+});
+
+describe('http api: model choices', () => {
+  it('lists the choices every picker offers', async () => {
+    const choices = [
+      {
+        id: 'main',
+        label: 'Main',
+        description: '',
+        ref: 'local/q',
+        location: 'local',
+        isDefault: true,
+      },
+    ];
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, { choices }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await createHttpApi('/api').listPickerChoices()).toEqual(choices);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/models/choices');
   });
 });
 

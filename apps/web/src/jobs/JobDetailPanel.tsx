@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { JobOutput, JobSummary, ModelInfo, StepRun } from '@ih/shared';
+import type { JobOutput, JobSummary, ModelChoice, StepRun } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
@@ -51,7 +51,7 @@ export function JobDetailPanel({
   job: JobSummary;
   onChanged: () => void;
   retryModel: string;
-  models: readonly ModelInfo[];
+  models: readonly ModelChoice[];
   specTitles: ReadonlyMap<string, string>;
   now: number;
 }) {

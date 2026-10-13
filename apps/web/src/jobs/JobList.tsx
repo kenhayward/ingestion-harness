@@ -1,4 +1,4 @@
-import type { JobSummary, ModelInfo } from '@ih/shared';
+import type { JobSummary, ModelChoice } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { JobActions } from './JobActions.js';
@@ -23,7 +23,7 @@ export function JobList({
   onChanged: () => void;
   /** Model selected in the upload strip ('' = spec default); Retry runs with it. */
   retryModel: string;
-  models: readonly ModelInfo[];
+  models: readonly ModelChoice[];
   /** Document type titles by id (falls back to the id). */
   specTitles: ReadonlyMap<string, string>;
   now: number;

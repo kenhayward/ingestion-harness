@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from 'react';
-import type { ModelInfo, SpecSummary } from '@ih/shared';
+import { pickedChoice, type ModelChoice, type SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
+import { ModelPicker } from '../ui/ModelPicker.js';
 
-/** The Model selection is remembered per browser ('' / absent = spec default). */
+/** The model choice is remembered per browser ('' / absent = the document type's models). */
 const MODEL_KEY = 'ih.uploadModel';
 
 function loadModel(): string {
@@ -58,7 +59,7 @@ export function UploadStrip({
 }) {
   const inputId = useId();
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<ModelChoice[]>([]);
   const [spec, setSpec] = useState('');
   const [model, setModel] = useState('');
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -95,13 +96,13 @@ export function UploadStrip({
       },
       (err: Error) => setLoadError(`Failed to load specs: ${err.message}`),
     );
-    api.listModels().then(
+    api.listPickerChoices().then(
       (list) => {
         setModels(list);
-        // Restore the remembered model only if it can still be used; otherwise forget it.
+        // Restore the remembered choice only if it can still be picked; otherwise forget it.
         const saved = loadModel();
         if (!saved) return;
-        if (list.some((m) => m.ref === saved && m.enabled)) {
+        if (pickedChoice(saved, list)) {
           setModel(saved);
           onModelChange?.(saved);
         } else {
@@ -210,24 +211,20 @@ export function UploadStrip({
           ))}
         </select>
       </label>
-      <label className="field">
+      <div className="field">
         Model
-        <select
+        <ModelPicker
+          label="Model"
+          choices={models}
           value={model}
-          onChange={(e) => {
-            setModel(e.target.value);
-            saveModel(e.target.value);
-            onModelChange?.(e.target.value);
+          emptyLabel="Document type's models"
+          onChange={(next) => {
+            setModel(next);
+            saveModel(next);
+            onModelChange?.(next);
           }}
-        >
-          <option value="">Spec default</option>
-          {models.map((m) => (
-            <option key={m.ref} value={m.ref}>
-              {m.displayName ?? m.modelId} — {m.provider}
-            </option>
-          ))}
-        </select>
-      </label>
+        />
+      </div>
       <button type="submit" className="primary" disabled={!count || !spec || busy}>
         {filesLabel(count)}
       </button>

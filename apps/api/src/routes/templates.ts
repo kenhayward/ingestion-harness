@@ -92,7 +92,7 @@ const NOT_VALID = res(
 /** The record with its issues, the models its steps name included (ADR 0010). */
 const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
   record,
-  issues: await templateIssues(app.deps, record.definition),
+  issues: await templateIssues(app.deps, record.definition, { draft: record.status === 'draft' }),
 });
 
 const count = (value: unknown) => (Array.isArray(value) ? value.length : 0);
@@ -337,7 +337,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (existing.status !== 'draft') {
         return reply.code(409).send({ error: `${id} v${version} is already published` });
       }
-      const issues = await templateIssues(app.deps, existing.definition);
+      const issues = await templateIssues(app.deps, existing.definition, { draft: true });
       if (issues.length) return reply.code(400).send({ error: 'template is not valid', issues });
       return await withIssues((await repo().publish(id, version))!);
     },
@@ -482,7 +482,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           .code(409)
           .send({ error: `publish ${ident.data.id} from the Workbench (holdout gate)` });
       }
-      const issues = await templateIssues(app.deps, definition);
+      // Imported as a draft, it is checked as one; published, it keeps any legacy model refs.
+      const issues = await templateIssues(app.deps, definition, { draft: !body.data.publish });
       if (body.data.publish && issues.length) {
         return reply.code(400).send({ error: 'template is not valid', issues });
       }
