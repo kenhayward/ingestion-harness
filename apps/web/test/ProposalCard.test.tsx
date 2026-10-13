@@ -100,6 +100,17 @@ describe('ProposalCard', () => {
     expect(within(region).getByText('Applied').closest('li')).toHaveTextContent('approved_on');
   });
 
+  it('announces the applied count as a status', () => {
+    card(changeProposalView({ status: 'accepted', acceptedChanges: [0, 1] }));
+    expect(screen.getByRole('status')).toHaveTextContent('2 of 2 changes applied to draft v4');
+  });
+
+  it('leaves a failed proposal to the panel alert', () => {
+    card(changeProposalView({ status: 'failed', error: 'model down' }));
+    expect(screen.queryByRole('heading', { name: /failed/ })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('says a rejected proposal was rejected, without a next action', () => {
     card(changeProposalView({ status: 'rejected' }));
     expect(

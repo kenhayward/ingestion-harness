@@ -113,13 +113,14 @@ export function ProposalCard({
         style={{ borderColor: border }}
       >
         <div className={accepted ? 'proposal-meta proposal-applied' : 'proposal-meta'}>
-          <h3>
-            {accepted
-              ? `${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`
-              : proposal.status === 'rejected'
-                ? 'Proposal rejected'
-                : `Proposal ${proposal.status}`}
-          </h3>
+          {accepted && (
+            <div role="status">
+              <h3>
+                {`${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`}
+              </h3>
+            </div>
+          )}
+          {proposal.status === 'rejected' && <h3>Proposal rejected</h3>}
           {accepted && next && (
             <>
               <p>{next.text}</p>
