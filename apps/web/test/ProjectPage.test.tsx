@@ -545,7 +545,7 @@ describe('ProjectPage', () => {
               id: 'letter',
               version: 1,
               name: 'Letter',
-              document: { ocr: 'auto', sections: [{ id: 'all', anchor: '\A' }] },
+              document: { ocr: 'auto', sections: [{ id: 'all', anchor: '^HEADER' }] },
               outputs: { fields: [] },
               pipeline: [],
             }),
