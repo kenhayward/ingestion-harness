@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import {
   changeBodyOf,
   type ChangeStage,
@@ -102,6 +102,7 @@ export function StagePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const idBase = useId();
 
   const refresh = useCallback(async () => {
     try {
@@ -187,15 +188,22 @@ export function StagePanel({
   };
 
   if (proposal === undefined) {
-    return error ? (
+    return (
       <div>
-        <p role="alert">{error}</p>
-        <button type="button" onClick={() => void refresh()}>
-          Retry
-        </button>
+        {title !== undefined && (
+          <TabHeader title={title} item={item ?? null} note={POLICY_NOTE[dataPolicy]} />
+        )}
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button type="button" onClick={() => void refresh()}>
+              Retry
+            </button>
+          </>
+        ) : (
+          <p>Loading…</p>
+        )}
       </div>
-    ) : (
-      <p>Loading…</p>
     );
   }
   const applied = proposal?.acceptedChanges ?? null;
@@ -258,6 +266,7 @@ export function StagePanel({
               return (
                 <li key={`${i}-${c.op}`}>
                   <input
+                    id={`${idBase}-${i}`}
                     type="checkbox"
                     aria-label={`Apply: ${describeChange(c)}`}
                     disabled={proposal.status !== 'ready'}
@@ -266,14 +275,14 @@ export function StagePanel({
                     }
                     onChange={() => toggle(i)}
                   />
-                  <div className="proposal-change">
-                    <p>
+                  <label className="proposal-change" htmlFor={`${idBase}-${i}`}>
+                    <span className="proposal-line">
                       <span className={`kind-tag tone-${parts.tone}`}>{parts.kind}</span>
                       {parts.id && <code>{parts.id}</code>} {parts.text}
-                    </p>
-                    <p className="muted">{c.reason}</p>
-                    {line && <p className="muted">{line}</p>}
-                  </div>
+                    </span>
+                    <span className="proposal-line muted">{c.reason}</span>
+                    {line && <span className="proposal-line muted">{line}</span>}
+                  </label>
                   <details>
                     <summary>Details</summary>
                     <pre>{JSON.stringify(c, null, 2)}</pre>
@@ -294,7 +303,7 @@ export function StagePanel({
               </button>
               <button
                 type="button"
-                className="danger-text"
+                className="danger"
                 disabled={busy}
                 onClick={() => void reject()}
               >

@@ -125,6 +125,25 @@ describe('StagePanel', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull());
   });
 
+  it('keeps the tab header when the proposals cannot be loaded', async () => {
+    panel(
+      { listProposals: vi.fn().mockRejectedValue(new Error('network down')) },
+      { stage: 'steps', title: 'Extraction steps' },
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    expect(screen.getByRole('heading', { level: 2, name: 'Extraction steps' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('toggles a change when its text is clicked', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    const box = (await screen.findAllByRole('checkbox'))[0]!;
+    expect(box).toBeChecked();
+    const text = box.closest('li')!.querySelector('label')!;
+    await userEvent.click(text);
+    expect(box).not.toBeChecked();
+  });
+
   it('offers a retry when the proposals cannot be loaded', async () => {
     const p = changeProposalView();
     const listProposals = vi
@@ -201,7 +220,7 @@ describe('StagePanel', () => {
   });
 
   it('puts the title, the status and the actions in the tab header', async () => {
-    const { container } = panel(
+    panel(
       { listProposals: vi.fn(async () => [changeProposalView({ stage: 'steps' })]) },
       {
         stage: 'steps',
@@ -210,7 +229,9 @@ describe('StagePanel', () => {
       },
     );
     await screen.findByRole('button', { name: 'Propose again' });
-    const header = container.querySelector<HTMLElement>('.tab-header')!;
+    const header = screen
+      .getByRole('heading', { level: 2, name: 'Extraction steps' })
+      .closest('header')!;
     expect(header).not.toBeNull();
     expect(
       within(header).getByRole('heading', { level: 2, name: 'Extraction steps' }),

@@ -53,7 +53,7 @@ describe('ProjectPage tab headers', () => {
       getProject: vi.fn(async () => projectView({ draft: 1 })),
       getProjectOverview: vi.fn(async () => overviewWith(Object.fromEntries(stages))),
     });
-    const { container } = render(
+    render(
       <ProjectPage
         api={api}
         projectId="letter"
@@ -67,7 +67,7 @@ describe('ProjectPage tab headers', () => {
     expect(screen.getAllByRole('heading', { level: 2, name: title })).toHaveLength(1);
     if (tab !== 'template') {
       await waitFor(() => {
-        const header = container.querySelector<HTMLElement>('.tab-header')!;
+        const header = screen.getByRole('heading', { level: 2, name: title }).closest('header')!;
         expect(within(header).getByText('Accepted')).toBeInTheDocument();
       });
     }
