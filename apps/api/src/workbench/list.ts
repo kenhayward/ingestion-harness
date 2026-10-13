@@ -49,7 +49,17 @@ export async function refreshListCache(app: FastifyInstance): Promise<ProjectLis
       const f = stale[next++]!;
       const project = await workbench.getProject(f.id);
       if (!project) continue;
-      const { item, degraded } = await projectListItem(app, project, f.lastActivityAt);
+      let computed: Awaited<ReturnType<typeof projectListItem>>;
+      try {
+        computed = await projectListItem(app, project, f.lastActivityAt);
+      } catch (err) {
+        // Deleted while its row was computed (its rows vanish under the overview's reads).
+        if (!(await workbench.getProject(f.id))) continue;
+        throw err;
+      }
+      // Deleted during a computation that still succeeded: not listed (the upsert would no-op).
+      if (!(await workbench.getProject(f.id))) continue;
+      const { item, degraded } = computed;
       if (!degraded) await workbench.putListCache(f.id, key(f.fingerprint), item);
       rows.set(f.id, item);
     }

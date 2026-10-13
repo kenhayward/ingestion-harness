@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ProjectListItemSchema,
+  stableJson,
   type ProjectListPage,
   type ProjectSummary,
   type SampleView,
 } from '@ih/shared';
-import { LIST_CACHE_VERSION } from '../src/workbench/list.js';
+import { LIST_CACHE_VERSION, refreshListCache } from '../src/workbench/list.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -261,5 +263,96 @@ describe('GET /api/workbench/projects (paged list)', () => {
     expect(page.total).toBe(3);
     expect(ids(page)).not.toContain('ghost');
     expect((await workbench.listCache()).has('ghost')).toBe(false);
+  });
+
+  it('skips a project deleted while its row is computed', async () => {
+    const { list, workbench } = await setup();
+    const real = workbench.listProposals.bind(workbench);
+    vi.spyOn(workbench, 'listProposals').mockImplementation(async (id) => {
+      if (id === 'gamma' && (await workbench.getProject('gamma')))
+        await workbench.deleteProject('gamma');
+      return real(id);
+    });
+    const page = await list();
+    expect(ids(page).sort()).toEqual(['alpha', 'beta']);
+    expect(page.total).toBe(2);
+    expect((await workbench.listCache()).has('gamma')).toBe(false);
+  });
+
+  it('skips a project whose draft row vanishes mid-computation instead of failing', async () => {
+    // versionsOf has seen gamma's draft; the row is gone by the time it is read.
+    const { list, workbench, templates } = await setup();
+    const get = templates.get.bind(templates);
+    vi.spyOn(templates, 'get').mockImplementation(async (id, version) => {
+      if (id === 'gamma' && (await workbench.getProject('gamma'))) {
+        await workbench.deleteProject('gamma');
+        return null;
+      }
+      return get(id, version);
+    });
+    const page = await list();
+    expect(ids(page).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  it('still fails when computing a row of a project that exists fails', async () => {
+    // Called directly: the route would answer an undocumented 500.
+    const { app, templates } = await setup();
+    const get = templates.get.bind(templates);
+    vi.spyOn(templates, 'get').mockImplementation(async (id, version) =>
+      id === 'gamma' ? null : get(id, version),
+    );
+    await expect(refreshListCache(app)).rejects.toThrow();
+  });
+
+  it("shows the gate's holdout score for an open draft", async () => {
+    const { list, workbench, templates } = await setup();
+    const iteration = await workbench.createIteration({
+      projectId: 'gamma',
+      templateVersion: 1,
+      definition: (await templates.get('gamma', 1))!.definition,
+      briefVersion: null,
+      set: 'holdout',
+      model: null,
+      jobIds: [],
+    });
+    // The gate's cache for an iteration without jobs (gateFingerprint of no jobs).
+    const fingerprint = createHash('sha256').update(stableJson([])).digest('hex');
+    await workbench.setGateCache(iteration.id, { fingerprint, score: 0.8, completed: 0, total: 0 });
+    const gamma = (await list()).items.find((i) => i.id === 'gamma')!;
+    expect(gamma).toMatchObject({ draft: 1, holdoutScore: 0.8 });
+    expect(gamma.flags.ready).toBe(false); // 0.8 is below the 0.9 threshold
+  });
+
+  it("shows a published type's newest own-model holdout score of the live version", async () => {
+    const { list, workbench, templates } = await setup();
+    const definition = (await templates.get('beta', 1))!.definition;
+    const iteration = async (
+      score: number | null,
+      over: { model?: string | null; set?: 'dev' | 'holdout'; version?: number } = {},
+    ) => {
+      const i = await workbench.createIteration({
+        projectId: 'beta',
+        templateVersion: over.version ?? 1,
+        definition,
+        briefVersion: null,
+        set: over.set ?? 'holdout',
+        model: (over.model ?? null) as null,
+        jobIds: [],
+      });
+      if (score !== null)
+        await workbench.setIterationScores(i.id, { score, completed: 1, total: 1 });
+      return i;
+    };
+    await iteration(0.5); // older
+    await iteration(0.7); // the one
+    await iteration(0.4, { model: 'fast' });
+    await iteration(0.3, { set: 'dev' });
+    await iteration(0.2, { version: 2 });
+    await iteration(null); // still running: no cached score
+    expect((await list()).items.find((i) => i.id === 'beta')).toMatchObject({
+      draft: null,
+      published: 1,
+      holdoutScore: 0.7,
+    });
   });
 });
