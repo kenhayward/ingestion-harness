@@ -6,6 +6,7 @@ import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import {
+  ADMIN_EXPIRY_OPTIONS,
   EXPIRY_OPTIONS,
   expiresSoon,
   expiryDays,
@@ -24,6 +25,12 @@ const STATUS: Record<AccessToken['status'], { label: string; tone: string }> = {
   'current-admin': { label: 'Current admin', tone: 'info' },
 };
 
+type Role = AccessToken['role'];
+const ROLE_OPTIONS: readonly { value: Role; label: string }[] = [
+  { value: 'user', label: 'User' },
+  { value: 'admin', label: 'Admin' },
+];
+
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     day: 'numeric',
@@ -32,7 +39,8 @@ const shortDate = (iso: string) =>
   });
 
 /**
- * Admin page (ADR 0006, UI handoff §6): issue user tokens (shown once), revoke and delete them;
+ * Admin page (ADR 0006, UI handoff §6): issue user tokens and expiring admin tokens (shown
+ * once), revoke and delete them;
  * below, read-only S3 keys for the data lake (ADR 0008).
  */
 export function AccessPage({
@@ -48,8 +56,9 @@ export function AccessPage({
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [label, setLabel] = useState('');
   const [expiry, setExpiry] = useState<Expiry>('30');
+  const [role, setRole] = useState<Role>('user');
   const [chip, setChip] = useState<'all' | TokenGroup>('all');
-  const [created, setCreated] = useState<{ label: string; token: string } | null>(null);
+  const [created, setCreated] = useState<{ label: string; token: string; role: Role } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = me.role === 'admin';
 
@@ -80,10 +89,16 @@ export function AccessPage({
   const create = (e: FormEvent) => {
     e.preventDefault();
     void act(async () => {
-      const res = await api.createToken(label.trim(), expiryDays(expiry));
-      setCreated({ label: label.trim(), token: res.token });
+      const res = await api.createToken(label.trim(), expiryDays(expiry), role);
+      setCreated({ label: label.trim(), token: res.token, role });
       setLabel('');
     });
+  };
+
+  const chooseRole = (next: Role) => {
+    setRole(next);
+    // Admin tokens must expire.
+    if (next === 'admin' && expiry === 'never') setExpiry('30');
   };
 
   const counts = tokenCounts(tokens);
@@ -115,17 +130,27 @@ export function AccessPage({
             />
           </label>
           <div className="field">
+            <span className="field-label">Role</span>
+            <Segmented label="Role" options={ROLE_OPTIONS} value={role} onChange={chooseRole} />
+          </div>
+          <div className="field">
             <span className="field-label">Expires after</span>
             <Segmented
               label="Expires after"
-              options={EXPIRY_OPTIONS}
+              options={role === 'admin' ? ADMIN_EXPIRY_OPTIONS : EXPIRY_OPTIONS}
               value={expiry}
               onChange={setExpiry}
             />
           </div>
+          {role === 'admin' && (
+            <p role="note" className="field-note">
+              Admin tokens have full access, including issuing tokens. They survive restarts, so
+              they must expire; revoke one as soon as it is no longer needed.
+            </p>
+          )}
           <button type="submit" className="primary" disabled={!label.trim()}>
             <Icon name="plus" />
-            Create token
+            {role === 'admin' ? 'Create admin token' : 'Create token'}
           </button>
         </form>
         <aside className="note-card tone-info">
@@ -134,7 +159,8 @@ export function AccessPage({
             <strong>The admin token rotates</strong>
             <p>
               A new admin token is printed in the API log every time the API starts, and the old one
-              stops working. Issue user tokens here for day-to-day use.
+              stops working. Issue user tokens here for day-to-day use, or an expiring admin token
+              for long-lived admin access.
             </p>
           </div>
         </aside>
@@ -222,6 +248,7 @@ function TokenRow({
     <tr className={className}>
       <td>
         <span className="token-label">{t.label}</span>
+        {t.issuedBy && <small className="muted issued-by">Issued by {t.issuedBy}</small>}
         {confirm && (
           <small className="confirm-text">
             {confirm === 'revoke' ? 'Revoke? Its sessions end now.' : 'Delete this token record?'}
@@ -241,7 +268,7 @@ function TokenRow({
         <span className={`pill tone-${status.tone}`}>{status.label}</span>
       </td>
       <td className="actions-cell">
-        {t.role !== 'user' ? (
+        {t.status === 'current-admin' ? (
           <span className="muted">Rotates on restart</span>
         ) : confirm ? (
           <div className="row-actions">
@@ -284,13 +311,25 @@ function TokenRow({
   );
 }
 
-function NewToken({ label, token, onDone }: { label: string; token: string; onDone: () => void }) {
+function NewToken({
+  label,
+  token,
+  role,
+  onDone,
+}: {
+  label: string;
+  token: string;
+  role: Role;
+  onDone: () => void;
+}) {
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   return (
     <div className="token-panel" role="region" aria-label="New token">
       <div>
-        <strong>Token created for “{label}”</strong>
+        <strong>
+          {role === 'admin' ? 'Admin token' : 'Token'} created for “{label}”
+        </strong>
         <p>Copy it now — this is the only time it will be shown.</p>
       </div>
       <div className="token-copy">
