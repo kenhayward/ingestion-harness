@@ -176,6 +176,9 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
         deps.store.delete(deps.buckets.runs, key)
         raise JobCancelled(job.id)
     queue.event(
-        job.id, "info", "bundle exported", {"samples": [s.sample_id for s in params.samples]}
+        job.id,
+        "info",
+        "bundle exported",
+        {"samples": [s.sample_id for s in params.samples], "bytes": len(data)},
     )
     return manifest
