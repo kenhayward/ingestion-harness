@@ -1,6 +1,7 @@
-import type { StageState, StageView } from './drafting.js';
-import type { GateView } from './evaluation.js';
-import type { Brief, ProposalStatus } from './workbench.js';
+import { z } from 'zod';
+import { STAGE_ORDER, type StageState, type StageView } from './drafting.js';
+import { GateViewSchema, type GateView } from './evaluation.js';
+import { ProjectViewSchema, type Brief, type ProposalStatus } from './workbench.js';
 
 /**
  * The ten steps of a document type as the Workbench list and Overview map show them
@@ -215,8 +216,8 @@ export function urgency(
     return { stage: 'samples', kind: 'samples' };
   }
   if (!inputs.briefSaved) return { stage: 'brief', kind: 'brief' };
-  const todo = firstToDo(entries.filter((e) => e.state === 'pending'));
-  return todo ? { stage: todo.stage, kind: 'pending' } : null;
+  const todo = firstToDo(entries);
+  return todo && todo.state === 'pending' ? { stage: todo.stage, kind: 'pending' } : null;
 }
 
 /** The Test runs tab: any unfinished → running; any awaiting review → needs you. */
@@ -228,4 +229,224 @@ export function runsState(runs: {
   if (runs.unfinished > 0) return 'running';
   if (runs.awaitingReview > 0) return 'warn';
   return runs.total > 0 ? 'accepted' : 'pending';
+}
+
+/** The project page's tabs that show a status: the ten stages, then the by-hand tabs. */
+export const OVERVIEW_TABS = [...OVERVIEW_STAGES, 'template', 'runs'] as const;
+export type OverviewTab = (typeof OVERVIEW_TABS)[number];
+
+export const OVERVIEW_TAB_LABEL: Record<OverviewTab, string> = {
+  ...OVERVIEW_LABEL,
+  template: 'Template',
+  runs: 'Test runs',
+};
+
+export const OverviewStateSchema = z.enum([
+  'pending',
+  'running',
+  'proposed',
+  'accepted',
+  'skipped',
+  'stale',
+  'ready',
+  'locked',
+  'warn',
+]);
+
+export const OverviewItemSchema = z.object({
+  stage: z.enum(OVERVIEW_TABS),
+  /** `none`: Template, which has no status. */
+  state: z.union([OverviewStateSchema, z.literal('none')]),
+  /** Plain words after the stage name: "Stale — Outputs changed after it was accepted". */
+  status: z.string(),
+});
+export type OverviewItem = z.infer<typeof OverviewItemSchema>;
+
+export const OverviewNextSchema = z.object({
+  stage: z.enum(OVERVIEW_STAGES),
+  title: z.string(),
+  reason: z.string(),
+});
+export type OverviewNext = z.infer<typeof OverviewNextSchema>;
+
+/** GET /api/workbench/projects/:id/overview (handoff W2): the rail, header and Overview tab. */
+export const ProjectOverviewSchema = z.object({
+  project: ProjectViewSchema,
+  stages: z.array(OverviewItemSchema),
+  next: OverviewNextSchema.nullable(),
+  gate: GateViewSchema,
+});
+export type ProjectOverview = z.infer<typeof ProjectOverviewSchema>;
+
+export interface StatusContext {
+  inputs: OverviewInputs;
+  /** The latest brief's version; null when none is saved. */
+  briefVersion: number | null;
+  /** The project's jobs except sample preparation (Test runs tab). */
+  runs: { total: number; unfinished: number; awaitingReview: number };
+  /** Feedback items no revise proposal has answered yet. */
+  openFeedback: number;
+}
+
+const percent = (x: number) => `${Math.round(x * 100)}%`;
+/** "holdout score …" → "Holdout score ….": gate reasons are sentence fragments. */
+const sentence = (s: string) =>
+  `${s.charAt(0).toUpperCase()}${s.slice(1)}${s.endsWith('.') ? '' : '.'}`;
+const lowerFirst = (s: string) => `${s.charAt(0).toLowerCase()}${s.slice(1)}`;
+
+const DRAFTED: Partial<Record<OverviewState, string>> = {
+  accepted: 'Accepted',
+  skipped: 'Skipped',
+  proposed: 'Needs your decision',
+  running: 'Running',
+  pending: 'Not started',
+};
+
+/** The latest-completed earlier stage that completed after `stage`: why `stage` is stale. */
+function staleCause(stages: OverviewInputs['stages'], stage: OverviewStage): string {
+  const order: readonly string[] = [...STAGE_ORDER, 'references'];
+  const own = stages.find((s) => s.stage === stage)?.completedAt ?? null;
+  const cause = stages
+    .filter((s) => order.indexOf(s.stage) < order.indexOf(stage))
+    .filter((s) => s.completedAt !== null && own !== null && s.completedAt > own)
+    .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0];
+  const who = cause ? OVERVIEW_LABEL[cause.stage as OverviewStage] : 'an earlier stage';
+  return `Stale — ${who} changed after it was accepted`;
+}
+
+function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusContext): string {
+  const { inputs } = ctx;
+  if (inputs.draft === null) return stage === 'publish' ? `v${inputs.published} published` : 'Done';
+  switch (stage) {
+    case 'samples': {
+      const { total, preparing, failed } = inputs.samples;
+      if (total === 0) return 'No samples yet';
+      if (failed > 0) return `${failed} failed`;
+      return preparing > 0 ? `Preparing ${preparing} of ${total}` : 'Ready';
+    }
+    case 'brief':
+      return state === 'accepted' ? `Saved v${ctx.briefVersion ?? 1}` : 'Not written yet';
+    case 'evaluate': {
+      const { gate } = inputs;
+      if (state === 'accepted') return `Holdout ${percent(gate.score ?? 0)} passes`;
+      if (state === 'running') return 'Running';
+      if (state === 'warn') {
+        return gate.score !== null && gate.score < gate.threshold
+          ? `Holdout ${percent(gate.score)}, below ${percent(gate.threshold)}`
+          : 'Re-run holdout';
+      }
+      return 'Not run on holdout yet';
+    }
+    case 'revise':
+      if (state === 'running') return 'Running';
+      if (state === 'proposed') return 'Needs your decision';
+      if (state === 'accepted') return 'Applied';
+      return ctx.openFeedback > 0 ? `${ctx.openFeedback} open` : 'No feedback';
+    case 'publish':
+      return state === 'ready' ? `Ready to publish v${inputs.draft}` : 'Locked by the gate';
+    default:
+      if (state === 'stale') return staleCause(inputs.stages, stage);
+      if (stage === 'references' && state === 'accepted') return 'Verified';
+      return DRAFTED[state] ?? 'Not started';
+  }
+}
+
+/** Every tab's state and status text, in `OVERVIEW_TABS` order (the rail and the map). */
+export function overviewItems(ctx: StatusContext): OverviewItem[] {
+  const entries = overviewStates(ctx.inputs);
+  const { draft, published } = ctx.inputs;
+  const runs = runsState(ctx.runs);
+  const runsText =
+    runs === 'running'
+      ? `${ctx.runs.unfinished} running`
+      : runs === 'warn'
+        ? `${ctx.runs.awaitingReview} awaiting review`
+        : runs === 'accepted'
+          ? `${ctx.runs.total} finished`
+          : 'No runs yet';
+  return [
+    ...entries.map((e) => ({
+      stage: e.stage,
+      state: e.state,
+      status: statusText(e.stage, e.state, ctx),
+    })),
+    {
+      stage: 'template' as const,
+      state: 'none' as const,
+      status: draft !== null ? `Draft v${draft}` : `v${published} published`,
+    },
+    { stage: 'runs' as const, state: runs, status: runsText },
+  ];
+}
+
+/**
+ * The Overview's Next banner: the most urgent stage (`urgency`), else what to do next
+ * (`nextAction`); null with no open draft.
+ */
+export function overviewNext(
+  inputs: OverviewInputs,
+  entries: readonly OverviewEntry[] = overviewStates(inputs),
+): OverviewNext | null {
+  if (inputs.draft === null) return null;
+  const u = urgency(inputs, entries);
+  if (u) {
+    const label = OVERVIEW_LABEL[u.stage];
+    const { gate, samples } = inputs;
+    switch (u.kind) {
+      case 'stale':
+        return {
+          stage: u.stage,
+          title: `Next: refresh ${label}`,
+          reason: `An earlier stage changed after ${label} was accepted.`,
+        };
+      case 'proposed':
+        return {
+          stage: u.stage,
+          title: `Next: decide on ${label}`,
+          reason: 'A proposal is waiting for your decision.',
+        };
+      case 'gate':
+        return {
+          stage: u.stage,
+          title:
+            gate.score !== null && gate.score < gate.threshold
+              ? 'Next: raise the holdout score'
+              : 'Next: re-run the holdout evaluation',
+          reason: sentence(gate.reason),
+        };
+      case 'samples':
+        return samples.total === 0
+          ? {
+              stage: u.stage,
+              title: 'Next: add sample PDFs',
+              reason: 'Upload 3–8 dev samples and a few holdout samples.',
+            }
+          : {
+              stage: u.stage,
+              title: 'Next: fix the failed samples',
+              reason: `${samples.failed} ${samples.failed === 1 ? 'sample' : 'samples'} could not be prepared.`,
+            };
+      case 'brief':
+        return {
+          stage: u.stage,
+          title: 'Next: write the brief',
+          reason: 'Describe the document and what to extract from it.',
+        };
+      case 'pending':
+        return {
+          stage: u.stage,
+          title: `Next: start ${label}`,
+          reason: 'The stages before it are done.',
+        };
+    }
+  }
+  const action = nextAction(inputs, entries);
+  if (!action || action.stage === null) return null;
+  const reason =
+    action.kind === 'publish'
+      ? sentence(inputs.gate.reason)
+      : action.kind === 'running'
+        ? `${OVERVIEW_LABEL[action.stage]} is running; this page updates when it finishes.`
+        : '';
+  return { stage: action.stage, title: `Next: ${lowerFirst(action.label)}`, reason };
 }

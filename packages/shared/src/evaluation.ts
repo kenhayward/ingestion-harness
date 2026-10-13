@@ -302,13 +302,14 @@ export interface GateCandidate {
   holdoutSamples: number;
 }
 
-export interface GateView {
-  threshold: number;
-  iterationId: string | null;
-  score: number | null;
-  passes: boolean;
-  reason: string;
-}
+export const GateViewSchema = z.object({
+  threshold: z.number(),
+  iterationId: z.string().nullable(),
+  score: z.number().nullable(),
+  passes: z.boolean(),
+  reason: z.string(),
+});
+export type GateView = z.infer<typeof GateViewSchema>;
 
 const percent = (x: number, digits = 0) =>
   digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;
