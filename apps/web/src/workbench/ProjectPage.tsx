@@ -385,6 +385,7 @@ export function ProjectPage({
               draft={draft}
               pollMs={pollMs}
               onApplied={changed}
+              onChanged={loadOverview}
             />
           )}
           {tab === 'runs' && header('runs')}

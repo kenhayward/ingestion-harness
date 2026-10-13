@@ -33,6 +33,7 @@ export function ReviseFeedback({
   api,
   projectId,
   items,
+  notSent,
   samples,
   iterations,
   definition,
@@ -42,6 +43,8 @@ export function ReviseFeedback({
   projectId: string;
   /** Open feedback and what the latest revision answered (`shownFeedback`). */
   items: FeedbackItem[];
+  /** Open feedback the next revision does not send (its sample is no longer a ready dev sample). */
+  notSent: FeedbackItem[];
   samples: SampleView[];
   iterations: IterationSummary[];
   /** The open draft (ids for the add form); null without one. */
@@ -49,6 +52,7 @@ export function ReviseFeedback({
   onChanged: () => void;
 }) {
   const headingId = useId();
+  const heldId = useId();
   const [target, setTarget] = useState<FeedbackTarget>('field');
   const [chosen, setChosen] = useState('');
   const [body, setBody] = useState('');
@@ -59,11 +63,14 @@ export function ReviseFeedback({
   const targetId = options.includes(chosen) ? chosen : (options[0] ?? '');
   const open = items.filter((f) => f.resolvedBy === null).length;
   const sampleName = (id: string) => samples.find((s) => s.id === id)?.filename ?? null;
-  const addReason = !targetId
-    ? `The draft has no ${target}s yet`
-    : !body.trim()
-      ? 'Write the feedback first'
-      : null;
+  const addReason =
+    definition === null
+      ? 'Start the next version on the Template tab first'
+      : !targetId
+        ? `The draft has no ${target}s yet`
+        : !body.trim()
+          ? 'Write the feedback first'
+          : null;
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -139,6 +146,37 @@ export function ReviseFeedback({
             );
           })}
         </ol>
+      )}
+      {notSent.length > 0 && (
+        <section className="feedback-held" aria-labelledby={heldId}>
+          <h4 id={heldId}>Not sent</h4>
+          <p className="muted">
+            Its sample is no longer a ready dev sample, so the model does not see it.
+          </p>
+          <ul>
+            {notSent.map((f) => (
+              <li key={f.id} className="feedback-item">
+                <div className="feedback-text">
+                  <p className="feedback-head">
+                    <span className={`kind-tag tone-${TARGET_TONE[f.target]}`}>
+                      {TARGET_TAG[f.target]}
+                    </span>{' '}
+                    <code>{f.targetId}</code>
+                  </p>
+                  <p className="feedback-body">{f.body}</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Delete feedback not sent: ${f.targetId}`}
+                  disabled={busy}
+                  onClick={() => void remove(f.id)}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       <form
         className="feedback-add"

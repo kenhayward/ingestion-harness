@@ -113,7 +113,8 @@ export function failuresHeader(p: RevisePreview): string | null {
 export function notSentText({ holdoutSamples, holdoutRun }: RevisePreview['notSent']): string {
   if (holdoutRun) {
     const score = holdoutRun.score === null ? '' : ` (${pct(holdoutRun.score)})`;
-    return `Not sent: the holdout run${score} and its ${count(holdoutSamples, 'sample')}.`;
+    const samples = holdoutSamples ? ` and its ${count(holdoutSamples, 'sample')}` : '';
+    return `Not sent: the holdout run${score}${samples}.`;
   }
   return holdoutSamples
     ? `Not sent: the ${count(holdoutSamples, 'holdout sample')}.`
@@ -137,6 +138,20 @@ export function shownFeedback(
   return items.filter(
     (f) => f.resolvedBy === null || (latest !== null && f.resolvedBy === latest.id),
   );
+}
+
+/**
+ * Splits the shown feedback by what the next revision sends: the preview names the open items it
+ * sends (the API drops open feedback whose sample is no longer a ready dev sample); answered items
+ * stay in the numbered list.
+ */
+export function sentFeedback(
+  shown: readonly FeedbackItem[],
+  preview: RevisePreview,
+): { sent: FeedbackItem[]; notSent: FeedbackItem[] } {
+  const ids = new Set(preview.feedback.map((f) => f.id));
+  const isNotSent = (f: FeedbackItem) => f.resolvedBy === null && !ids.has(f.id);
+  return { sent: shown.filter((f) => !isNotSent(f)), notSent: shown.filter(isNotSent) };
 }
 
 /** The list numbers of the feedback a change answers (the "Answers ①" badge). */

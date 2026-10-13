@@ -11,6 +11,7 @@ import {
   openProposalStage,
   previewSummary,
   revisionLine,
+  sentFeedback,
   shownFeedback,
 } from '../src/workbench/revise.js';
 import {
@@ -225,5 +226,31 @@ describe('earlierRevisions / revisionLine', () => {
       `${day(older.createdAt)} · local/qwen · 1 of 2 applied · answered 1 feedback item`,
       `${day(rejected.createdAt)} · local/qwen · rejected (2 changes)`,
     ]);
+  });
+});
+
+describe('notSentText without ready holdout samples', () => {
+  it('does not claim a count of samples after a run whose samples are gone', () => {
+    const run = { iterationId: crypto.randomUUID(), status: 'complete' as const, score: 0.88 };
+    expect(notSentText({ holdoutSamples: 0, holdoutRun: run })).toBe(
+      'Not sent: the holdout run (88%).',
+    );
+    expect(notSentText({ holdoutSamples: 1, holdoutRun: { ...run, score: null } })).toBe(
+      'Not sent: the holdout run and its 1 sample.',
+    );
+  });
+});
+
+describe('sentFeedback', () => {
+  const sentItem = feedbackItem({ body: 'sent' });
+  const held = feedbackItem({ body: 'held back' });
+  const answered = feedbackItem({ body: 'answered', resolvedBy: crypto.randomUUID() });
+  const preview = revisePreview({
+    feedback: [{ ...revisePreview().feedback[0]!, id: sentItem.id }],
+  });
+  it('splits open feedback into what the preview sends and what it holds back', () => {
+    const { sent, notSent } = sentFeedback([sentItem, held, answered], preview);
+    expect(sent.map((f) => f.body)).toEqual(['sent', 'answered']);
+    expect(notSent.map((f) => f.body)).toEqual(['held back']);
   });
 });

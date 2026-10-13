@@ -590,6 +590,20 @@ describe('revise preview (RV1)', () => {
     expect(params.failuresFrom).toEqual({ templateVersion: 1, model: null });
   });
 
+  it('sends the same capped sample list the start route does', async () => {
+    const ctx = await project();
+    for (let n = 1; n <= MAX_CONTEXT_SAMPLES + 1; n++) await ctx.add(n);
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const shown = await preview(ctx);
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(shown.samples).toHaveLength(MAX_CONTEXT_SAMPLES);
+    expect(shown.samples).toEqual(
+      (params.samples as { filename: string }[])
+        .slice(0, MAX_CONTEXT_SAMPLES)
+        .map((s) => s.filename),
+    );
+  });
+
   it('has no draft once the version is published', async () => {
     const ctx = await project();
     await ctx.templates.publish('letter', 1);

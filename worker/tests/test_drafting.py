@@ -721,7 +721,8 @@ def test_revise_labels_feedback_and_stores_the_ids_a_change_answers(
     assert queue.completed
     prompt = str(provider.calls[0][1].prompt)
     assert "- F1 [field sender]: one" in prompt and "- F2 [step head]: two" in prompt
-    assert "'answers'" in str(provider.calls[0][1].json_schema)
+    change_props = provider.calls[0][1].json_schema["properties"]["changes"]["items"]["properties"]
+    assert change_props["answers"]["type"] == "array"
     body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
     assert body["changes"][0]["answers"] == ["fb-2", "fb-1"]
 
@@ -732,5 +733,19 @@ def test_revise_change_without_answers_is_stored_without_them(fixture_specs_dir:
     feedback = [{"id": "fb-1", "target": "field", "targetId": "sender", "body": "one"}]
     queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT, feedback=feedback)])
     run_once(queue, deps, "w1")
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert "answers" not in body["changes"][0]
+
+
+def test_revise_job_whose_feedback_has_no_ids_still_runs(fixture_specs_dir: Path) -> None:
+    # Jobs queued before RV2 carry feedback without an id: answers resolve to nothing, no crash.
+    provider, store, deps = make(fixture_specs_dir)
+    response = revise_response()
+    response["changes"][0]["answers"] = ["F1"]
+    provider.responses = [response]
+    feedback = [{"target": "field", "targetId": "sender", "sample": None, "body": "one"}]
+    queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT, feedback=feedback)])
+    run_once(queue, deps, "w1")
+    assert queue.completed
     body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
     assert "answers" not in body["changes"][0]

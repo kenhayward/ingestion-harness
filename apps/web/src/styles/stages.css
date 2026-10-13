@@ -1982,6 +1982,14 @@ label.inline.list-select {
   background: var(--ih-info-bg);
   color: var(--ih-info-fg);
 }
+.kind-tag.tone-warn {
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.kind-tag.tone-skip {
+  background: var(--ih-skip-bg);
+  color: var(--ih-skip-fg);
+}
 .survey-questions,
 .survey-found,
 .survey-candidates,
@@ -2720,8 +2728,16 @@ label.inline.list-select {
   flex: 1 1 240px;
   min-height: 52px;
 }
-
-/* Revise (handoff §9) */
+.feedback-held {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--ih-border);
+}
+.feedback-held ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .revise-tab {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2798,9 +2814,10 @@ label.inline.list-select {
 }
 .answers-badge {
   font-size: var(--ih-text-sm);
-  white-space: nowrap;
+  white-space: normal;
 }
 .answer-num {
+  white-space: nowrap;
   display: inline-grid;
   place-items: center;
   min-width: 18px;

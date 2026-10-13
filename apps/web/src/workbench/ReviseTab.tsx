@@ -22,6 +22,7 @@ import {
   openProposalStage,
   previewSummary,
   revisionLine,
+  sentFeedback,
   shownFeedback,
   STAGE_NAME,
 } from './revise.js';
@@ -69,6 +70,7 @@ export function ReviseTab({
   draft,
   pollMs,
   onApplied,
+  onChanged,
   now = Date.now(),
 }: {
   api: Api;
@@ -77,6 +79,8 @@ export function ReviseTab({
   draft: number | null;
   pollMs: number;
   onApplied: () => void;
+  /** Something the overview shows changed (feedback, a revision asked, rejected or ready). */
+  onChanged: () => void;
   now?: number;
 }) {
   const seeId = useId();
@@ -86,9 +90,12 @@ export function ReviseTab({
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const seq = useRef(0);
+  const inFlight = useRef(false);
+  const lastStatus = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const id = ++seq.current;
+    inFlight.current = true;
     try {
       const [preview, feedback, proposals, samples, iterations] = await Promise.all([
         api.getRevisePreview(projectId),
@@ -102,6 +109,8 @@ export function ReviseTab({
       setError(null);
     } catch (err) {
       if (id === seq.current) setError((err as Error).message);
+    } finally {
+      if (id === seq.current) inFlight.current = false;
     }
   }, [api, projectId]);
 
@@ -117,9 +126,18 @@ export function ReviseTab({
   const running = latest?.status === 'running';
   useEffect(() => {
     if (!running) return;
-    const timer = setInterval(() => void load(), pollMs);
+    const timer = setInterval(() => {
+      if (!inFlight.current) void load();
+    }, pollMs);
     return () => clearInterval(timer);
   }, [running, pollMs, load]);
+
+  // The page learns when a running revision finishes (its rail and header show the stage).
+  const status = latest?.status ?? null;
+  useEffect(() => {
+    if (lastStatus.current === 'running' && status !== 'running') onChanged();
+    lastStatus.current = status;
+  }, [status, onChanged]);
 
   // A new proposal starts with every change selected (reset during render, as StagePanel does).
   const body = latest ? changeBodyOf(latest) : null;
@@ -146,6 +164,7 @@ export function ReviseTab({
   const ask = () =>
     act(async () => {
       await api.startStage(projectId, 'revise');
+      onChanged();
       await load();
     });
   const apply = () =>
@@ -164,6 +183,7 @@ export function ReviseTab({
     act(async () => {
       if (!latest) return;
       await api.decideProposal(projectId, latest.id, 'rejected');
+      onChanged();
       await load();
     });
   const toggle = (i: number) => {
@@ -173,10 +193,24 @@ export function ReviseTab({
     setSelected(next);
   };
 
-  if (!data) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
+  if (!data) {
+    return error ? (
+      <div>
+        <p role="alert">{error}</p>
+        <button type="button" onClick={() => void load()}>
+          Retry
+        </button>
+      </div>
+    ) : (
+      <p>Loading…</p>
+    );
+  }
 
   const { preview } = data;
-  const shown = shownFeedback(data.feedback, latest);
+  const { sent: shown, notSent: heldBack } = sentFeedback(
+    shownFeedback(data.feedback, latest),
+    preview,
+  );
   const other = openProposalStage(data.proposals);
   const header = failuresHeader(preview);
   const earlier = earlierRevisions(data.proposals, data.feedback);
@@ -186,7 +220,9 @@ export function ReviseTab({
       ? 'A revision is being drafted'
       : !preview.feedback.length
         ? 'Add feedback first: a revision answers your feedback'
-        : null;
+        : preview.model === null
+          ? 'Set the drafting model on the Models page first'
+          : null;
   const badge = (c: DraftChange) => {
     const numbers = answerNumbers(c, shown);
     return numbers.length ? <AnswersBadge numbers={numbers} /> : null;
@@ -224,10 +260,14 @@ export function ReviseTab({
             api={api}
             projectId={projectId}
             items={shown}
+            notSent={heldBack}
             samples={data.samples}
             iterations={data.iterations}
             definition={preview.draft?.definition ?? null}
-            onChanged={() => void load()}
+            onChanged={() => {
+              void load();
+              onChanged();
+            }}
           />
           <section className="revise-failures" aria-labelledby={failId}>
             <h3 id={failId}>

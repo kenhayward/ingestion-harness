@@ -23,6 +23,7 @@ function list(
       api={api}
       projectId="letter"
       items={[]}
+      notSent={[]}
       samples={[]}
       iterations={[]}
       definition={definition}
@@ -65,6 +66,20 @@ describe('ReviseFeedback', () => {
     expect(second).toHaveTextContent('TABLE');
     expect(second).toHaveTextContent('Added here');
     expect(within(second!).getByRole('button', { name: 'Delete feedback 2' })).toBeEnabled();
+  });
+
+  it('lists feedback that is not sent apart, unnumbered, and still deletable', async () => {
+    const sent = feedbackItem({ body: 'goes' });
+    const held = feedbackItem({ body: 'stays home', targetId: 'total' });
+    const { api } = list({ items: [sent], notSent: [held] });
+    expect(screen.getByRole('heading', { name: 'Your feedback 1 open' })).toBeInTheDocument();
+    const note = screen.getByRole('region', { name: 'Not sent' });
+    expect(note).toHaveTextContent('sample is no longer a ready dev sample');
+    expect(note).toHaveTextContent('stays home');
+    await userEvent.click(
+      within(note).getByRole('button', { name: 'Delete feedback not sent: total' }),
+    );
+    expect(api.deleteFeedback).toHaveBeenCalledWith('letter', held.id);
   });
 
   it('marks answered feedback and offers no Delete for it', () => {

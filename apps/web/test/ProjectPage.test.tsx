@@ -8,7 +8,9 @@ import { OVERVIEW_TABS, type DraftChange, type OverviewItem } from '@ih/shared';
 import {
   changeProposalView,
   fakeApi,
+  feedbackItem,
   projectOverview,
+  reviseProposal,
   projectView,
   templateView,
 } from './fake-api.js';
@@ -97,6 +99,37 @@ describe('ProjectPage tab headers', () => {
       await screen.findAllByRole('button', { name: 'Ask the model for a revision' }),
     ).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
+  });
+
+  it('reloads the overview after feedback is added and after Ask on the Revise tab', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1 })),
+      addFeedback: vi.fn(async () => feedbackItem()),
+      startStage: vi.fn(async () => reviseProposal({ status: 'running', body: null })),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="revise"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    await screen.findByRole('textbox', { name: 'Feedback' });
+    await waitFor(() => expect(api.getProjectOverview).toHaveBeenCalled());
+    const before = vi.mocked(api.getProjectOverview).mock.calls.length;
+    await userEvent.type(screen.getByRole('textbox', { name: 'Feedback' }), 'Use the letterhead');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(vi.mocked(api.getProjectOverview).mock.calls.length).toBeGreaterThan(before),
+    );
+    const afterAdd = vi.mocked(api.getProjectOverview).mock.calls.length;
+    await userEvent.click(screen.getByRole('button', { name: 'Ask the model for a revision' }));
+    await waitFor(() =>
+      expect(vi.mocked(api.getProjectOverview).mock.calls.length).toBeGreaterThan(afterAdd),
+    );
   });
 
   it('still shows the Samples title when the overview cannot load', async () => {
