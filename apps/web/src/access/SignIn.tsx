@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import type { Api, Me } from '../api/client.js';
+import { API_DOCS } from '../shell/AppShell.js';
 import { Icon } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 
@@ -119,6 +120,10 @@ export function SignIn({
         Ask an administrator for an access token.
         <br />
         Administrators: the admin token is printed in the API log on each restart.
+        <br />
+        <a href={API_DOCS} target="_blank" rel="noopener">
+          API docs<span className="visually-hidden"> (opens in a new tab)</span>
+        </a>
       </p>
     </AuthLayout>
   );

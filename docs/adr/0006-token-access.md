@@ -51,3 +51,12 @@ protected from strangers and scanners.
 - Unit tests build the app with `access: null`. Enforcement is tested separately, including a
   sweep that calls every `/api` route.
 - nginx forwards the original `X-Forwarded-Proto`, so `Secure` cookies work behind TLS.
+
+## Addendum (2026-10-13): public API docs
+
+The API docs ([design](../design/api-docs.md)) are public: the Scalar browser and the OpenAPI
+document under `/api/docs`. Public routes are now marked on the route (`config.public`) rather
+than listed by path; the access hook still decides on the matched route. Sign-in, sign-out and
+the routes the docs plugin registers are the only public `/api` routes, and the sweep in
+`access.test.ts` checks that exact set. The document describes an API whose code is already
+public and carries no deployment details (`servers: [{ url: '/' }]`).

@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config apps/api/vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage",
+    "openapi": "vitest run --project api test/openapi.test.ts -u",
     "dev:api": "npm run dev -w @ih/api",
     "dev:web": "npm run dev -w @ih/web",
     "migrate": "npm run migrate -w @ih/api",

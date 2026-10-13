@@ -470,6 +470,11 @@ html {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+/* Pinned to the bottom of the nav. */
+.side-nav a.nav-foot {
+  margin-top: auto;
+  color: var(--ih-muted);
+}
 .nav-heading {
   margin: 16px 12px 4px;
   font-size: var(--ih-text-xs);
