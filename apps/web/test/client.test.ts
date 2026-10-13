@@ -464,3 +464,15 @@ describe('http api: workbench list and pins', () => {
     ]);
   });
 });
+
+describe('http api: jobs', () => {
+  it('asks for every job, or only mine', async () => {
+    const fetch = vi.fn(async () => respond(200, []));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listJobs();
+    await api.listJobs({ mine: true });
+    const urls = fetch.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(urls).toEqual(['/api/jobs', '/api/jobs?mine=1']);
+  });
+});

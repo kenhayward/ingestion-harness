@@ -84,11 +84,20 @@ describe('listItemFrom', () => {
     );
   });
 
-  it('flags ready when the gate passes and attention when a holdout run failed it', () => {
-    expect(
-      item('a', { inputs: inputs({ gate: gate({ iterationId: 'i', score: 0.95, passes: true }) }) })
-        .flags.ready,
-    ).toBe(true);
+  it('flags ready once the required stages are done, with or without references and evaluation', () => {
+    expect(item('a').flags.ready).toBe(true);
+    const noReferences = done.map((s) =>
+      s.stage === 'references' ? { ...s, state: 'pending' as const } : s,
+    );
+    expect(item('a', { inputs: inputs({ stages: noReferences }) }).flags.ready).toBe(true);
+    const stepsOpen = done.map((s) =>
+      s.stage === 'steps' ? { ...s, state: 'pending' as const } : s,
+    );
+    expect(item('a', { inputs: inputs({ stages: stepsOpen }) }).flags.ready).toBe(false);
+    expect(item('a', { inputs: inputs({ draft: null }) }).flags.ready).toBe(false);
+  });
+
+  it('flags attention when a holdout run failed the gate', () => {
     expect(
       item('a', { inputs: inputs({ gate: gate({ iterationId: 'i', score: 0.5 }) }) }).flags
         .attention,
@@ -179,7 +188,7 @@ describe('queryProjects', () => {
       all: 3,
       attention: 0,
       running: 0,
-      ready: 0,
+      ready: 2,
       progress: 2,
       published: 1,
     });

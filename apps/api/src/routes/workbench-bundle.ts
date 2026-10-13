@@ -274,6 +274,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           filename: sample.filename,
           body,
           role: 'dev',
+          createdBy: req.auth?.label ?? null,
         });
         // Unexpected after validation.
         if ('error' in added) return failed({ filename: sample.filename, error: added.error });

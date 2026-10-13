@@ -295,8 +295,10 @@ Rules:
 - The drafter never sees holdout material (see Context assembly).
 - Holdout failures **are** visible to the user (ADR 0007). A sample's `added_for_version` and its
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
-- The publish gate uses the holdout score: at or above `publish_threshold` publishes directly;
-  below it, publishing needs an override reason, recorded on the publication.
+- The publish gate uses the holdout score against `publish_threshold`, and is informational:
+  References and Evaluate are optional, any valid draft publishes (from the Publish panel or the
+  Template tab), and no override is needed or recorded. The publication records the gate's
+  iteration and score (null without a holdout run).
 - The threshold records who last set it and when (`threshold_set_by`, the token label, and
   `threshold_set_at`; migration 0020).
 - Publishing re-checks that the draft is still the one the gate was decided for, publishes the
@@ -428,7 +430,7 @@ One call, W2 `GET /api/workbench/projects/:id/overview` (`routes/workbench-overv
 the project, every tab's state and status text, the Next banner and the publish gate; the page polls
 it while anything runs and refetches it on window focus. On project routes the app nav collapses to
 icons, `ProjectRail` (status icons, legend, a `<select>` below 760 px) and `ProjectHeader` (policy
-pill, Publish vN locked until the gate passes) frame every tab, and Overview, the default tab, shows
+pill, Publish vN linking to the Template tab, never locked) frame every tab, and Overview, the default tab, shows
 the Next banner and the process map (`OverviewMap`, a fixed 1020×640 canvas of phase panels and
 connectors; `OverviewStack` below 760 px, with the caption). Each overview item carries two `metrics`
 per tab (`boxMetrics` in `packages/shared/src/overview.ts` over the `MetricFacts` that `gatherFacts`

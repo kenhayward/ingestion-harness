@@ -37,7 +37,7 @@ import {
 // Any query on `jobs` that does not go through JOB_SELECT must exclude `document_id IS NULL` rows.
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.created_by, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
          array(SELECT model FROM step_runs
                 WHERE job_id = j.id AND model IS NOT NULL
@@ -78,6 +78,7 @@ interface JobRow {
   test: boolean;
   reference_id: string | null;
   project_id: string | null;
+  created_by: string | null;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -103,6 +104,7 @@ function toSummary(r: JobRow): JobSummary {
     test: r.test,
     referenceId: r.reference_id,
     projectId: r.project_id,
+    createdBy: r.created_by,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,
@@ -190,6 +192,7 @@ export class PgRepo implements IngestionRepo {
     test = false,
     referenceId: string | null = null,
     params: Record<string, unknown> | null = null,
+    createdBy: string | null = null,
   ): Promise<JobSummary> {
     return this.insertDocumentAndJob(doc, {
       modelOverride,
@@ -199,12 +202,13 @@ export class PgRepo implements IngestionRepo {
       task: 'process',
       priority: 0,
       params,
+      createdBy,
     });
   }
 
   async createWorkbenchJob(
     doc: NewDocument,
-    { projectId, task, params, referenceId, modelOverride }: WorkbenchJobOptions,
+    { projectId, task, params, referenceId, modelOverride, createdBy }: WorkbenchJobOptions,
   ) {
     return this.insertDocumentAndJob(doc, {
       modelOverride: modelOverride ?? null,
@@ -214,6 +218,7 @@ export class PgRepo implements IngestionRepo {
       task,
       priority: WORKBENCH_PRIORITY,
       params: params ?? null,
+      createdBy: createdBy ?? null,
     });
   }
 
@@ -346,6 +351,7 @@ export class PgRepo implements IngestionRepo {
       task: 'process' | 'prepare';
       priority: number;
       params: Record<string, unknown> | null;
+      createdBy: string | null;
     },
   ): Promise<JobSummary> {
     const client = await this.pool.connect();
@@ -366,8 +372,8 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority, params)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority, params, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [
           doc.id,
           job.modelOverride,
@@ -377,6 +383,7 @@ export class PgRepo implements IngestionRepo {
           job.task,
           job.priority,
           job.params === null ? null : JSON.stringify(job.params),
+          job.createdBy,
         ],
       );
       await client.query('COMMIT');
@@ -389,10 +396,12 @@ export class PgRepo implements IngestionRepo {
     }
   }
 
-  async listJobs({ limit, status }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
     const { rows } = await this.pool.query<JobRow>(
-      `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare' ORDER BY j.created_at DESC LIMIT $2`,
-      [status ?? null, limit],
+      `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare'
+         AND ($3::text IS NULL OR j.created_by = $3)
+       ORDER BY j.created_at DESC LIMIT $2`,
+      [status ?? null, limit, createdBy ?? null],
     );
     return rows.map(toSummary);
   }
@@ -840,6 +849,7 @@ export class PgRepo implements IngestionRepo {
     reference: Reference,
     version: number,
     params: Record<string, unknown> | null = null,
+    createdBy: string | null = null,
   ): Promise<JobSummary> {
     const { rows } = await this.pool.query<{
       filename: string;
@@ -865,6 +875,7 @@ export class PgRepo implements IngestionRepo {
       true,
       reference.id,
       params,
+      createdBy,
     );
   }
 

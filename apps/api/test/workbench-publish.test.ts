@@ -127,23 +127,33 @@ describe('publish gate', () => {
     expect((await ctx.templates.get('letter', 1))!.status).toBe('published');
   });
 
-  it('needs an override below the threshold and records it', async () => {
+  it('publishes below the threshold: the gate is informational, no override needed', async () => {
     const ctx = await project();
-    await holdoutRun(ctx, 'Wrong');
-    const refused = await publish(ctx);
-    expect(refused.statusCode).toBe(409);
-    expect(refused.json().error).toBe(
-      'holdout score 0% is below the threshold 90%; give an override reason to publish anyway',
-    );
-    const res = await publish(ctx, {
-      overrideReason: 'Scan quality on the holdout sample is unusable',
-    });
+    const iteration = await holdoutRun(ctx, 'Wrong');
+    const res = await publish(ctx);
     expect(res.statusCode).toBe(201);
-    expect(res.json().publication.overrideReason).toBe(
-      'Scan quality on the holdout sample is unusable',
-    );
+    expect(res.json().publication).toMatchObject({
+      version: 1,
+      iterationId: iteration.id,
+      score: 0,
+      threshold: 0.9,
+      overrideReason: null,
+    });
+    expect((await ctx.templates.get('letter', 1))!.status).toBe('published');
+  });
+
+  it('publishes before any reference or evaluation exists, and records no override', async () => {
+    const ctx = await project();
+    const res = await publish(ctx, { overrideReason: 'ignored: there is no gate to override' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().publication).toMatchObject({
+      version: 1,
+      iterationId: null,
+      score: null,
+      overrideReason: null,
+    });
     const [logged] = (await ctx.app.inject('/api/workbench/projects/letter/publications')).json();
-    expect(logged.overrideReason).toBe('Scan quality on the holdout sample is unusable');
+    expect(logged).toMatchObject({ version: 1, overrideReason: null });
   });
 
   it('does not count a holdout run of an earlier draft', async () => {
@@ -155,7 +165,7 @@ describe('publish gate', () => {
       passes: false,
       reason: 'no complete holdout evaluation of the current draft',
     });
-    expect((await publish(ctx)).statusCode).toBe(409);
+    expect((await publish(ctx)).statusCode).toBe(201);
   });
 
   it('changes the threshold within [0, 1]', async () => {
@@ -336,7 +346,10 @@ describe('publish gate honesty', () => {
       passes: false,
       reason: 'holdout evaluation compared 1 of 2 samples',
     });
-    expect((await publish(ctx)).statusCode).toBe(409);
+    expect((await publish(ctx)).json().publication).toMatchObject({
+      score: 1,
+      overrideReason: null,
+    });
   });
 
   it('fails when an evaluated holdout job was deleted, and keeps its holdout history', async () => {

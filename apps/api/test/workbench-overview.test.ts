@@ -103,8 +103,8 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     expect(o.stages[1]).toMatchObject({ stage: 'brief', state: 'warn', status: 'Not written yet' });
     expect(o.stages.find((s) => s.stage === 'publish')).toMatchObject({
       stage: 'publish',
-      state: 'locked',
-      status: 'Locked by the gate',
+      state: 'ready',
+      status: 'Ready to publish v1',
     });
     expect(o.stages.find((s) => s.stage === 'template')).toMatchObject({
       stage: 'template',

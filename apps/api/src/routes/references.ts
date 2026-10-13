@@ -262,7 +262,14 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
       const params = record.status === 'draft' ? draftOutputsSnapshot(record.definition) : null;
       const jobs = [];
       for (const reference of references) {
-        jobs.push(await app.deps.repo.createRegressionJob(reference, version, params));
+        jobs.push(
+          await app.deps.repo.createRegressionJob(
+            reference,
+            version,
+            params,
+            req.auth?.label ?? null,
+          ),
+        );
       }
       return reply.code(201).send({ jobs });
     },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import zipfile
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from ingest_worker.convert import (
     is_docx,
 )
 from ingest_worker.llm.registry import ModelRegistry
+from ingest_worker.ocr import OcrSettings, pages_needing_ocr
 from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps, Source, load_source
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
@@ -90,9 +92,21 @@ def test_is_docx(data: bytes, expected: bool) -> None:
     assert is_docx(data) is expected
 
 
+SMOKE_DOCX = Path(__file__).parents[2] / "deploy" / "scripts" / "fixtures" / "smoke.docx"
+
+
 def test_the_smoke_test_fixture_is_a_docx() -> None:
-    fixture = Path(__file__).parents[2] / "deploy" / "scripts" / "fixtures" / "smoke.docx"
-    assert is_docx(fixture.read_bytes())
+    assert is_docx(SMOKE_DOCX.read_bytes())
+
+
+def test_the_smoke_test_fixture_needs_no_ocr() -> None:
+    """The compose smoke test prepares this sample with no model reachable: every page must
+    carry enough text that OCR (a vision-model call) is never needed."""
+    with zipfile.ZipFile(SMOKE_DOCX) as docx:
+        body = docx.read("word/document.xml").decode("utf-8")
+    pages = [re.sub(r"<[^>]+>", " ", page) for page in body.split('<w:br w:type="page"/>')]
+    assert len(pages) == 2
+    assert pages_needing_ocr(pages, "auto", OcrSettings(model="m").min_chars) == []
 
 
 def gotenberg(handler: httpx.MockTransport) -> GotenbergConverter:

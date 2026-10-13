@@ -28,7 +28,10 @@ export const OVERVIEW_STAGES = [
 ] as const;
 export type OverviewStage = (typeof OVERVIEW_STAGES)[number];
 
-/** `ready`: the publish gate passes; `locked`: it does not; `warn`: needs you, without a proposal. */
+/**
+ * `ready`: the open draft can be published (the gate is informational and never locks it);
+ * `locked`: kept for older clients, no longer derived; `warn`: needs you, without a proposal.
+ */
 export type OverviewState = StageState | 'ready' | 'locked' | 'warn';
 
 export const OVERVIEW_LABEL: Record<OverviewStage, string> = {
@@ -105,9 +108,14 @@ const PHASE: Record<OverviewStage, Exclude<OverviewPhase, 'published'>> = {
 
 const isDone = (state: OverviewState) => state === 'accepted' || state === 'skipped';
 
-/** Revise is optional and Publish is the goal: neither is a step still to do. */
+/** Stages a draft can be published without: verification is optional. */
+export const OPTIONAL_STAGES: readonly OverviewStage[] = ['references', 'evaluate', 'revise'];
+
+/** Optional stages and Publish (the goal) are never a step still to do. */
 const firstToDo = (entries: readonly OverviewEntry[]) =>
-  entries.find((e) => e.stage !== 'revise' && e.stage !== 'publish' && !isDone(e.state));
+  entries.find(
+    (e) => !OPTIONAL_STAGES.includes(e.stage) && e.stage !== 'publish' && !isDone(e.state),
+  );
 
 /** A brief counts as saved once any field or survey answer has text. */
 export function briefSaved(brief: Brief | null): boolean {
@@ -150,7 +158,7 @@ export function overviewStates(inputs: OverviewInputs): OverviewEntry[] {
     references: drafted('references'),
     evaluate: evaluateState(inputs.evaluation, inputs.gate),
     revise: reviseState(inputs.revise),
-    publish: inputs.gate.passes ? 'ready' : 'locked',
+    publish: 'ready',
   };
   return OVERVIEW_STAGES.map((stage) => ({ stage, state: state[stage] }));
 }
@@ -198,11 +206,10 @@ export function nextAction(
       : 'Re-run holdout';
     return { kind: 'below_threshold', stage: 'evaluate', label };
   }
-  if (gate.passes) return { kind: 'publish', stage: 'publish', label: `Publish v${inputs.draft}` };
   const todo = firstToDo(entries);
   return todo
     ? { kind: 'continue', stage: todo.stage, label: `Start ${OVERVIEW_LABEL[todo.stage]}` }
-    : null;
+    : { kind: 'publish', stage: 'publish', label: `Publish v${inputs.draft}` };
 }
 
 /**
@@ -469,7 +476,7 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
         }
         return 'Re-run holdout';
       }
-      return 'Not run on holdout yet';
+      return 'Optional, not run on holdout yet';
     }
     case 'revise':
       if (state === 'running') return 'Running';
@@ -477,12 +484,13 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       if (state === 'accepted') return 'Applied';
       return ctx.openFeedback > 0 ? `${ctx.openFeedback} open` : 'No feedback';
     case 'publish':
-      return state === 'ready' ? `Ready to publish v${inputs.draft}` : 'Locked by the gate';
+      return `Ready to publish v${inputs.draft}`;
     default:
       if (state === 'stale') {
         return `Stale — ${staleCauseLabel(inputs.stages, stage) ?? 'an earlier stage'} changed after it was accepted`;
       }
       if (stage === 'references' && state === 'accepted') return 'Verified';
+      if (stage === 'references' && state === 'pending') return 'Optional, not started';
       return DRAFTED[state] ?? 'Not started';
   }
 }
@@ -597,7 +605,12 @@ export function overviewNext(
           : `The ${label} stage is running; this page updates when it finishes.`,
     };
   }
-  const reason = action.kind === 'publish' ? sentence(inputs.gate.reason) : '';
+  const reason =
+    action.kind !== 'publish'
+      ? ''
+      : inputs.gate.passes
+        ? sentence(inputs.gate.reason)
+        : 'References and evaluation are optional.';
   return { stage: action.stage, title: `Next: ${lowerFirst(action.label)}`, reason };
 }
 
@@ -704,7 +717,7 @@ export function listItemFrom(input: {
     flags: {
       attention: has('stale', 'proposed', 'warn'),
       running: has('running') || input.runsUnfinished > 0 || input.inputs.evaluation.running,
-      ready: input.inputs.draft !== null && input.inputs.gate.passes,
+      ready: input.inputs.draft !== null && firstToDo(entries) === undefined,
     },
   };
 }

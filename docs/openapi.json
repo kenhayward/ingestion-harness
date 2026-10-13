@@ -2199,6 +2199,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -2253,6 +2259,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -2458,7 +2465,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "The newest jobs first, optionally of one status. Lists the jobs of uploaded documents\n(production, test and regression runs); the Workbench's preparation, preview, drafting\nand export jobs are not listed.",
+        "description": "The newest jobs first, optionally of one status, and with `mine=1` only those queued\nby the signed-in token (`createdBy`, the token's label: a token issued again under\nthe same name sees the same jobs). Lists the jobs of uploaded documents (production,\ntest and regression runs); the Workbench's preparation, preview, drafting and export\njobs are not listed.",
         "parameters": [
           {
             "schema": {
@@ -2490,6 +2497,19 @@
             "name": "status",
             "required": false,
             "description": "Only jobs in this status."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            },
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "description": "`1`: only jobs queued by the signed-in token (matched by its label); none without access control."
           }
         ],
         "responses": {
@@ -2583,6 +2603,12 @@
                           "null"
                         ]
                       },
+                      "createdBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "reviewReasons": {
                         "anyOf": [
                           {
@@ -2637,6 +2663,7 @@
                       "test",
                       "referenceId",
                       "projectId",
+                      "createdBy",
                       "reviewReasons",
                       "reviewer",
                       "reviewNote",
@@ -2817,6 +2844,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -2921,6 +2954,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -3237,6 +3271,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -3291,6 +3331,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -3534,6 +3575,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -3588,6 +3635,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -4501,6 +4549,12 @@
                             "null"
                           ]
                         },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reviewReasons": {
                           "anyOf": [
                             {
@@ -4605,6 +4659,7 @@
                         "test",
                         "referenceId",
                         "projectId",
+                        "createdBy",
                         "reviewReasons",
                         "reviewer",
                         "reviewNote",
@@ -5606,6 +5661,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -5660,6 +5721,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -5926,6 +5988,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -5980,6 +6048,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -6435,6 +6504,12 @@
                         "null"
                       ]
                     },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "reviewReasons": {
                       "anyOf": [
                         {
@@ -6489,6 +6564,7 @@
                     "test",
                     "referenceId",
                     "projectId",
+                    "createdBy",
                     "reviewReasons",
                     "reviewer",
                     "reviewNote",
@@ -9007,6 +9083,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -9061,6 +9143,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -10163,6 +10246,12 @@
                             "null"
                           ]
                         },
+                        "createdBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reviewReasons": {
                           "anyOf": [
                             {
@@ -10217,6 +10306,7 @@
                         "test",
                         "referenceId",
                         "projectId",
+                        "createdBy",
                         "reviewReasons",
                         "reviewer",
                         "reviewNote",
@@ -11925,7 +12015,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "Sets the holdout score (0 to 1, default 0.9) a draft needs to publish without an\noverride reason. The change is recorded with the signed-in token's label.",
+        "description": "Sets the holdout score (0 to 1, default 0.9) at which the publish gate passes. The gate\nis informational: publishing never needs it. The change is recorded with the signed-in token's label.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12343,7 +12433,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Whether the open draft may be published without an override. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.",
+        "description": "Whether the open draft meets the holdout bar. Informational only: references and\nevaluation are optional, and publishing never needs the gate. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.",
         "parameters": [
           {
             "schema": {
@@ -12467,7 +12557,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Publishes the open draft when the publish gate passes. Below the gate it needs an\n`overrideReason` (10 to 1000 characters), which is recorded with the publication.\nIf the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
+        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -12749,7 +12839,7 @@
             }
           },
           "400": {
-            "description": "Zod issues (an override reason under 10 characters), or `the draft is not valid` (with `issues`).",
+            "description": "Zod issues (an ignored override reason under 10 characters), or `the draft is not valid` (with `issues`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -12762,7 +12852,7 @@
                     }
                   },
                   "additionalProperties": true,
-                  "description": "Zod issues (an override reason under 10 characters), or `the draft is not valid` (with `issues`)."
+                  "description": "Zod issues (an ignored override reason under 10 characters), or `the draft is not valid` (with `issues`)."
                 }
               }
             }
@@ -12822,7 +12912,7 @@
             }
           },
           "409": {
-            "description": "Below the gate without an override (`{reason}; give an override reason to publish anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while publishing; check the gate again`.",
+            "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12875,7 +12965,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Below the gate without an override (`{reason}; give an override reason to publish anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while publishing; check the gate again`."
+                  "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`."
                 }
               }
             }
@@ -12890,7 +12980,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Every version published from the Workbench, newest first: the iteration and score the\ngate used, the threshold, the override reason when the gate did not pass, and who\npublished it.",
+        "description": "Every version published from the Workbench, newest first: the iteration and score the\ngate used (null when no holdout evaluation decided it), the threshold, the override\nreason of publications made while overrides were still needed, and who published it.",
         "parameters": [
           {
             "schema": {
@@ -15137,6 +15227,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -15191,6 +15287,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -15448,6 +15545,12 @@
                           "null"
                         ]
                       },
+                      "createdBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
                       "reviewReasons": {
                         "anyOf": [
                           {
@@ -15502,6 +15605,7 @@
                       "test",
                       "referenceId",
                       "projectId",
+                      "createdBy",
                       "reviewReasons",
                       "reviewer",
                       "reviewNote",
@@ -17107,6 +17211,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -17161,6 +17271,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
@@ -18609,6 +18720,12 @@
                               "null"
                             ]
                           },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "reviewReasons": {
                             "anyOf": [
                               {
@@ -18663,6 +18780,7 @@
                           "test",
                           "referenceId",
                           "projectId",
+                          "createdBy",
                           "reviewReasons",
                           "reviewer",
                           "reviewNote",
