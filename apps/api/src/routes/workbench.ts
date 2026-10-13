@@ -69,6 +69,7 @@ import {
   type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
+import { removeJobFiles } from '../jobs/delete.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
@@ -851,6 +852,51 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       'publish threshold changed',
     );
     return projectView(app, project);
+  });
+
+  /**
+   * Delete a project whose type was never published: its rows in one transaction, then the open
+   * template draft, then its internal files (best-effort). Published types keep their project.
+   */
+  app.delete<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
+    const id = req.params.id;
+    if (!(await workbench.getProject(id))) {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+    const versions = (await templates.list()).filter((r) => r.id === id);
+    if (versions.some((v) => v.status === 'published')) {
+      return reply.code(409).send({
+        error: `${id} has a published version; published document types keep their project`,
+      });
+    }
+    const removed = await workbench.deleteProject(id);
+    if (!removed) return reply.code(404).send({ error: 'project not found' });
+    for (const v of versions.filter((r) => r.status === 'draft')) {
+      try {
+        await templates.deleteDraft(id, v.version);
+      } catch (err) {
+        // The draft stays on Document types, where it can be deleted.
+        req.log.error({ err, projectId: id, version: v.version }, 'template draft not deleted');
+      }
+    }
+    const { store, buckets } = app.deps;
+    await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
+    const files = await Promise.allSettled([
+      ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
+      ...['drafting', 'segmentation', 'exports'].map((prefix) =>
+        store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
+      ),
+    ]);
+    for (const result of files) {
+      if (result.status === 'rejected') {
+        req.log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
+      }
+    }
+    req.log.info(
+      { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
+      'workbench project deleted',
+    );
+    return reply.code(204).send();
   });
 
   app.get<{ Params: ProjectParams }>(

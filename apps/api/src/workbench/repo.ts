@@ -16,6 +16,7 @@ import type {
   WorkbenchProject,
 } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
+import type { NewDocument, RemovedJob, StoredObject } from '../repositories/types.js';
 
 /** A workbench sample joined with its document row. */
 export interface SampleRecord {
@@ -102,6 +103,14 @@ export type NewIteration = Omit<
 
 export class WorkbenchConflictError extends Error {}
 
+/** What a deleted project leaves to clean up in the internal store. */
+export interface RemovedProject {
+  /** Every deleted job with its draft outputs (`inboxObject` is always null: see `documents`). */
+  jobs: RemovedJob[];
+  /** Inbox PDFs of the deleted documents that no remaining document row shares. */
+  documents: StoredObject[];
+}
+
 /** Persistence for workbench projects, samples and briefs (ADR 0007; migration 0008). */
 export interface WorkbenchRepo {
   listProjects(): Promise<WorkbenchProject[]>;
@@ -161,6 +170,13 @@ export interface WorkbenchRepo {
   /** The iterations of one model comparison, oldest first. */
   listGroup(projectId: string, groupId: string): Promise<IterationRecord[]>;
   setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>): Promise<void>;
+  /**
+   * Deletes the project in one transaction: its jobs (with their history), feedback,
+   * iterations, publications, proposals, stage skips, briefs, samples, the template's
+   * references and every document of the type that nothing else uses. Templates and files are
+   * the caller's. Null when the project is unknown.
+   */
+  deleteProject(id: string): Promise<RemovedProject | null>;
 }
 
 /** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
@@ -419,6 +435,89 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
     const at = this.iterations.findIndex((i) => i.id === id);
     if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, scores };
+  }
+
+  async deleteProject(id: string): Promise<RemovedProject | null> {
+    if (!this.projects.has(id)) return null;
+    const repo = this.jobs;
+    const removed: RemovedJob[] = [];
+    const draftsOf = (jobId: string) =>
+      (repo.outputs.get(jobId) ?? [])
+        .filter((o) => o.stage === 'draft')
+        .map((o) => ({ bucket: o.bucket, key: o.key }));
+    for (const job of [...repo.jobs.values()].filter((j) => j.projectId === id)) {
+      removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
+      repo.jobs.delete(job.id);
+    }
+    for (const map of [repo.draftJobs, repo.exportJobs, repo.segmentJobs]) {
+      for (const job of [...map.values()].filter((j) => j.projectId === id)) {
+        removed.push({ jobId: job.id, draftObjects: [], inboxObject: null });
+        map.delete(job.id);
+      }
+    }
+    for (const { jobId } of removed) {
+      for (const map of [
+        repo.outputs,
+        repo.edits,
+        repo.stepRuns,
+        repo.events,
+        repo.publishedAt,
+        repo.jobParams,
+        repo.priorities,
+        repo.reruns,
+      ]) {
+        map.delete(jobId);
+      }
+    }
+    const ofProject = (r: { projectId: string }) => r.projectId === id;
+    for (const rows of [
+      this.feedback,
+      this.publications,
+      this.iterations,
+      this.proposals,
+      this.skips,
+      this.briefs,
+    ] as { projectId: string }[][]) {
+      for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
+    }
+    for (const [sampleId, sample] of this.samples) {
+      if (sample.projectId === id) this.samples.delete(sampleId);
+    }
+    repo.sampleDocuments.clear();
+    for (const sample of this.samples.values()) repo.sampleDocuments.add(sample.documentId);
+    for (const [refId, ref] of repo.references) {
+      if (ref.templateId !== id) continue;
+      repo.references.delete(refId);
+      // ON DELETE SET NULL (migrations 0005 and 0018).
+      for (const job of repo.jobs.values()) {
+        if (job.referenceId === refId) repo.jobs.set(job.id, { ...job, referenceId: null });
+      }
+      for (const other of repo.references.values()) {
+        if (other.copiedFrom === refId)
+          repo.references.set(other.id, { ...other, copiedFrom: null });
+      }
+    }
+    const deleted: NewDocument[] = [];
+    for (const doc of [...repo.documents.values()]) {
+      if (doc.specId !== id) continue;
+      const used =
+        [...repo.jobs.values()].some((j) => j.documentId === doc.id) ||
+        [...repo.references.values()].some((r) => r.documentId === doc.id) ||
+        repo.sampleDocuments.has(doc.id);
+      if (used) continue;
+      repo.documents.delete(doc.id);
+      deleted.push(doc);
+    }
+    const documents: StoredObject[] = [];
+    for (const doc of deleted) {
+      const shared = [...repo.documents.values()].some(
+        (d) => d.bucket === doc.bucket && d.objectKey === doc.objectKey,
+      );
+      const listed = documents.some((o) => o.bucket === doc.bucket && o.key === doc.objectKey);
+      if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
+    }
+    this.projects.delete(id);
+    return { jobs: removed, documents };
   }
 
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
@@ -929,6 +1028,83 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       id,
       JSON.stringify(scores),
     ]);
+  }
+
+  async deleteProject(id: string): Promise<RemovedProject | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query(
+        'SELECT 1 FROM workbench_projects WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!found.rowCount) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      const outputs = await client.query<{
+        id: string;
+        bucket: string | null;
+        object_key: string | null;
+      }>(
+        `SELECT j.id, o.bucket, o.object_key
+           FROM jobs j LEFT JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'draft'
+          WHERE j.project_id = $1
+          ORDER BY j.created_at, j.id`,
+        [id],
+      );
+      const jobs = new Map<string, RemovedJob>();
+      for (const r of outputs.rows) {
+        const job = jobs.get(r.id) ?? { jobId: r.id, draftObjects: [], inboxObject: null };
+        if (r.bucket !== null && r.object_key !== null) {
+          job.draftObjects.push({ bucket: r.bucket, key: r.object_key });
+        }
+        jobs.set(r.id, job);
+      }
+      // Children first (FKs from migrations 0008-0016). Feedback points at proposals and
+      // iterations, publications at iterations, proposals at jobs.
+      for (const table of [
+        'workbench_feedback',
+        'workbench_publications',
+        'workbench_iterations',
+        'workbench_proposals',
+        'workbench_stage_skips',
+        'workbench_briefs',
+        'workbench_samples',
+      ]) {
+        await client.query(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
+      }
+      // job_events, job_outputs, review_edits and step_runs cascade (0001, 0002, 0004); other
+      // jobs' reference_id and references' source_job_id are set null (0005).
+      await client.query('DELETE FROM jobs WHERE project_id = $1', [id]);
+      // Other jobs' reference_id and copies' copied_from are set null (0005, 0018).
+      await client.query('DELETE FROM template_references WHERE template_id = $1', [id]);
+      const docs = await client.query<{ bucket: string; object_key: string }>(
+        `DELETE FROM documents d WHERE d.spec_id = $1
+            AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM workbench_samples WHERE document_id = d.id)
+          RETURNING d.bucket, d.object_key`,
+        [id],
+      );
+      const documents: StoredObject[] = [];
+      for (const d of docs.rows) {
+        if (documents.some((o) => o.bucket === d.bucket && o.key === d.object_key)) continue;
+        const shared = await client.query(
+          'SELECT 1 FROM documents WHERE bucket = $1 AND object_key = $2 LIMIT 1',
+          [d.bucket, d.object_key],
+        );
+        if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
+      }
+      await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      return { jobs: [...jobs.values()], documents };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   private async sample(id: string) {

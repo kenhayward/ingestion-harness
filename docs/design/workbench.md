@@ -204,12 +204,29 @@ template and brief versions, samples, stages, `completedStages`), `README.md`, `
 - **One export per project:** a new export replaces the previous export job and its zip.
 - **Import** creates a `local` project with template draft v1, the brief and the dev samples, which
   are re-prepared (each queues a `prepare` job). It validates the whole bundle before writing
-  anything and refuses an id that already exists (import under another id).
+  anything and refuses an id that already exists (import under another id). A failure after the
+  project exists names it; delete the project and import again.
+- **Import streams through temporary files.** The upload is saved to a temp dir under the size
+  limit, then inflated as a stream: the metadata entries (`manifest.json`, `brief.json`,
+  `template.yaml`, `survey.json`) stay in memory, each sample PDF goes to its own temp file
+  (hashed as it is written), and other entries are inflated only to count toward the limits. The
+  temp dir is always removed.
 - **Survey and stages:** `completedStages` lists the proposal stages accepted or skipped at
   export. Import accepts `survey.json` as a survey proposal (a finished `draft` job no worker
   claims, model `imported`) and records the other completed stages as skipped, in stage order so
   none is stale; a completed survey without `survey.json` is recorded as skipped. Bundles without
   `completedStages` import with every stage pending.
+
+### Deleting a project
+
+`DELETE /projects/:id` deletes a project whose document type was never published (a published
+type keeps its project: 409). One transaction removes the project's jobs (with their events,
+outputs, step runs and proposals), feedback, iterations, publications, stage skips, briefs and
+samples, the type's references, and every document of the type that no other job, reference or
+sample uses. Then the open template draft is deleted, and the files are removed best-effort, as for
+a deleted job (ADR 0005): each job's drafts and `runs/{jobId}/`, the inbox PDFs no remaining
+document shares, and `drafting/<id>/`, `segmentation/<id>/` and `exports/<id>/` in the runs bucket.
+The prepared text and OCR caches (keyed by sha256) are kept. The id can then be used again.
 
 ### Models and data policy
 
@@ -319,6 +336,7 @@ All routes are under `/api/workbench`, covered by the session hook and the `acce
 ```text
 GET/POST          /projects                       list / create
 GET/PATCH         /projects/:id                   detail / name, threshold
+DELETE            /projects/:id                   unpublished types only (409 once published)
 PUT               /projects/:id/data-policy       admin only
 POST              /projects/:id/samples           upload (multipart), enqueues prepare
 PATCH/DELETE      /projects/:id/samples/:sid      role / remove
@@ -439,4 +457,5 @@ fast, users will go back to editing YAML by hand.
   draft alone while an evaluation is running.
 - Decided in phase 2, on design grounds (real timings are still to be measured): the worker
   wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
-- **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).
+- **Open:** retention of the projects of published types and their samples (follow ADR 0005's
+  deletion rules). A project whose type was never published can be deleted outright.

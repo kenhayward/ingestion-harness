@@ -79,6 +79,16 @@ describe('http api: workbench', () => {
     );
   });
 
+  it('deletes a workbench project', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await createHttpApi('/api').deleteProject('letter');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/workbench/projects/letter',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
   it('links the bundle download of an export', () => {
     expect(createHttpApi('/api').exportBundleUrl('letter', 'j1')).toBe(
       '/api/workbench/projects/letter/exports/j1/bundle',

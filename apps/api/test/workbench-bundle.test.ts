@@ -709,7 +709,7 @@ describe('import', () => {
       const res = await importBundle(app, bundle());
       expect(res.statusCode).toBe(500);
       expect(res.json().error).toBe(
-        'import failed after creating project memo; delete is not available, so import again under another id',
+        'import failed after creating project memo; delete the project and import again',
       );
     },
   );

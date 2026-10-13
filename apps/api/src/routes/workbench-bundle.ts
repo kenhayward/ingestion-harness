@@ -220,11 +220,11 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       if (err instanceof WorkbenchConflictError) return answer(409, taken);
       throw err;
     }
-    // The project exists from here on; it cannot be deleted, so a failure names it.
+    // The project exists from here on: a failure names it so the user can delete it.
     const failed = (detail: Record<string, unknown>) => {
       req.log.error({ projectId, ...detail }, 'bundle import failed');
       return answer(500, {
-        error: `import failed after creating project ${projectId}; delete is not available, so import again under another id`,
+        error: `import failed after creating project ${projectId}; delete the project and import again`,
       });
     };
     try {

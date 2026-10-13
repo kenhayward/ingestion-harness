@@ -307,6 +307,8 @@ export interface Api {
   createProject(id: string, name?: string): Promise<ProjectView>;
   /** Rejects with an ApiError (404 when there is no project yet). */
   getProject(id: string): Promise<ProjectView>;
+  /** Deletes a project whose type was never published (409 otherwise). */
+  deleteProject(id: string): Promise<void>;
   setDataPolicy(projectId: string, dataPolicy: DataPolicy): Promise<ProjectView>;
   /** Queue the project's drafting bundle (replaces its previous export). */
   startExport(projectId: string): Promise<ExportView>;
@@ -557,6 +559,8 @@ export function createHttpApi(base = '/api'): Api {
     createProject: (id, name) =>
       post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
     getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),
+    deleteProject: (id) =>
+      noContent(apiFetch(`${base}/workbench/projects/${id}`, { method: 'DELETE' })),
     startExport: (id) => post<ExportView>(`${base}/workbench/projects/${id}/export`, {}),
     listExports: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/exports`).then(json<ExportView[]>),

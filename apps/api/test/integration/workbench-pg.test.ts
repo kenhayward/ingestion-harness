@@ -628,4 +628,127 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       ['tail', false],
     ]);
   });
+
+  it('deletes a project with every row it owns in one call, and leaves another project alone', async () => {
+    /** A project with samples, jobs of every kind, a reference, iterations and the rest. */
+    const populate = async () => {
+      const projectId = await newProject();
+      const sampleDoc = doc(projectId);
+      const prepare = await repo.createWorkbenchJob(sampleDoc, { projectId, task: 'prepare' });
+      await workbench.addSample({
+        projectId,
+        documentId: prepare.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      await workbench.saveBrief(projectId, EMPTY_BRIEF);
+      await workbench.addSkip(projectId, 'survey');
+      const source = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+      const reference = await repo.createReference({
+        templateId: projectId,
+        name: 'first',
+        documentId: source.documentId,
+        sourceJobId: source.id,
+        expected: { fields: {}, tables: {} },
+      });
+      const run = await repo.createWorkbenchJob(doc(projectId), {
+        projectId,
+        task: 'process',
+        referenceId: reference.id,
+      });
+      await pool.query(
+        `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
+         VALUES ($1, 'document', 'json', 'outputs', $2, 'draft')`,
+        [run.id, `${projectId}/draft.json`],
+      );
+      await pool.query(
+        `INSERT INTO step_runs (job_id, step_id, trigger, status, started_at)
+         VALUES ($1, 'head', 'process', 'succeeded', now())`,
+        [run.id],
+      );
+      await pool.query(`INSERT INTO job_events (job_id, level, message) VALUES ($1, 'info', 'x')`, [
+        run.id,
+      ]);
+      const iteration = await workbench.createIteration({
+        projectId,
+        templateVersion: 1,
+        definition: {},
+        briefVersion: 1,
+        set: 'dev',
+        model: null,
+        jobIds: [run.id],
+      });
+      const draft = await repo.createDraftJob(projectId, { stage: 'outputs' });
+      const proposal = await workbench.createProposal({
+        id: draft.id,
+        projectId,
+        stage: 'outputs',
+        briefVersion: 1,
+      });
+      const feedback = await workbench.createFeedback({
+        projectId,
+        target: 'field',
+        targetId: 'sender',
+        sampleId: null,
+        iterationId: iteration.id,
+        body: 'Use the letterhead',
+      });
+      await workbench.resolveFeedback(projectId, [feedback.id], proposal.id);
+      await workbench.recordPublication({
+        projectId,
+        version: 1,
+        iterationId: iteration.id,
+        score: 1,
+        threshold: 0.9,
+        overrideReason: null,
+        publishedBy: null,
+      });
+      await repo.createSegmentJob(projectId, segmentParams);
+      await repo.createExportJob(projectId, { stage: 'export' });
+      return { projectId, sampleDoc, run };
+    };
+    const counts = async (projectId: string) => {
+      const { rows } = await pool.query<Record<string, number>>(
+        `SELECT
+           (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
+           (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
+           (SELECT count(*)::int FROM workbench_briefs WHERE project_id = $1) AS briefs,
+           (SELECT count(*)::int FROM workbench_stage_skips WHERE project_id = $1) AS skips,
+           (SELECT count(*)::int FROM workbench_proposals WHERE project_id = $1) AS proposals,
+           (SELECT count(*)::int FROM workbench_iterations WHERE project_id = $1) AS iterations,
+           (SELECT count(*)::int FROM workbench_feedback WHERE project_id = $1) AS feedback,
+           (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
+           (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
+           (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
+           (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents`,
+        [projectId],
+      );
+      return rows[0]!;
+    };
+    const target = await populate();
+    const other = await populate();
+    const before = await counts(other.projectId);
+    expect(Object.values(before).every((n) => n > 0)).toBe(true);
+
+    const removed = await workbench.deleteProject(target.projectId);
+    expect(removed).not.toBeNull();
+    // prepare, source, run, draft, segment and export jobs.
+    expect(removed!.jobs).toHaveLength(6);
+    expect(removed!.jobs.find((j) => j.jobId === target.run.id)!.draftObjects).toEqual([
+      { bucket: 'outputs', key: `${target.projectId}/draft.json` },
+    ]);
+    expect(removed!.documents).toHaveLength(3);
+    expect(removed!.documents).toContainEqual({ bucket: 'inbox', key: target.sampleDoc.objectKey });
+
+    expect(Object.values(await counts(target.projectId)).every((n) => n === 0)).toBe(true);
+    const orphans = await pool.query(
+      `SELECT 1 FROM job_outputs WHERE job_id = $1
+       UNION ALL SELECT 1 FROM step_runs WHERE job_id = $1
+       UNION ALL SELECT 1 FROM job_events WHERE job_id = $1`,
+      [target.run.id],
+    );
+    expect(orphans.rowCount).toBe(0);
+    expect(await counts(other.projectId)).toEqual(before);
+    expect(await workbench.deleteProject(target.projectId)).toBeNull();
+  });
 });

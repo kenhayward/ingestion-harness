@@ -28,6 +28,50 @@ const TAB_LABEL: Record<ProjectTab, string> = {
   runs: 'Test runs',
 };
 
+/** Deletes a never-published project after its id is typed; the caller shows a refusal. */
+function DeleteProject({
+  projectId,
+  onDelete,
+}: {
+  projectId: string;
+  onDelete: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  if (!open) {
+    return (
+      <p>
+        <button type="button" className="danger" onClick={() => setOpen(true)}>
+          Delete project
+        </button>
+      </p>
+    );
+  }
+  return (
+    <form
+      className="card"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (typed === projectId) void onDelete();
+      }}
+    >
+      <p>
+        Deletes the project, its samples, drafts, runs, references and files. This cannot be undone.
+      </p>
+      <label>
+        Type {projectId} to confirm
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+      </label>
+      <button type="submit" className="danger-fill">
+        Delete project
+      </button>
+      <button type="button" onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+    </form>
+  );
+}
+
 /** One workbench project: samples, brief, the draft template and dev test runs. */
 export function ProjectPage({
   api,
@@ -284,6 +328,17 @@ export function ProjectPage({
             </button>
           </div>
         ))}
+      {published === null && (
+        <DeleteProject
+          projectId={project.id}
+          onDelete={() =>
+            act(async () => {
+              await api.deleteProject(project.id);
+              onNavigate('#/workbench');
+            })
+          }
+        />
+      )}
     </section>
   );
 }
