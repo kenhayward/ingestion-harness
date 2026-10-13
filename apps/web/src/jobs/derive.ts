@@ -1,4 +1,10 @@
-import type { JobStatus, JobSummary, StepRun } from '@ih/shared';
+import {
+  pickedChoice,
+  type JobStatus,
+  type JobSummary,
+  type ModelChoice,
+  type StepRun,
+} from '@ih/shared';
 import { statusGroup, type StatusGroup } from '../shell/derive.js';
 
 /** Status tones (UI handoff): colour + label + shape, lightness differs as well as hue. */
@@ -173,10 +179,76 @@ export function jobDuration(
   return job.finishedAt ? formatDuration((Date.parse(job.finishedAt) - start) / 1000) : null;
 }
 
-/** What ran (step runs), else what was requested (override), else the spec default. */
-export function modelLabel(job: JobSummary): string {
-  if (job.modelsUsed.length) return job.modelsUsed.join(', ');
-  return job.modelOverride ?? 'Spec default';
+/** The drafting-model alias (reference runs store it as their model override). */
+const DRAFT_ALIAS = 'draft';
+const DRAFTING_MODEL = 'Drafting model';
+
+/** Shown instead of a model ref when no model choice matches (people never see refs). */
+export const MODEL_NOT_OFFERED = 'Model no longer offered';
+
+/**
+ * Stand-ins for "the choices are not known": still loading, or the load failed. They are empty
+ * arrays (pickers offer nothing), told apart by identity, so a display never reads a missing
+ * label as "Model no longer offered" (and never falls back to a ref).
+ */
+export const CHOICES_LOADING: readonly ModelChoice[] = Object.freeze([]);
+export const CHOICES_FAILED: readonly ModelChoice[] = Object.freeze([]);
+const LOADING_TEXT = '…';
+const FAILED_TEXT = '—';
+
+/** The placeholder to show instead of a name while the choices are unknown, else null. */
+const unknownText = (choices: readonly ModelChoice[]): string | null =>
+  choices === CHOICES_LOADING ? LOADING_TEXT : choices === CHOICES_FAILED ? FAILED_TEXT : null;
+
+/**
+ * The model's name for people: a choice id, `default`, or a choice's ref -> its label. Anything
+ * else (a ref no choice has) is never shown; it reads "Model no longer offered". While the
+ * choices load it is "…", and "—" if they could not be read.
+ */
+export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoice[]): string {
+  if (nameOrRef === DRAFT_ALIAS) return DRAFTING_MODEL;
+  const unknown = unknownText(choices);
+  if (unknown !== null) return unknown;
+  const choice =
+    pickedChoice(nameOrRef, choices) ?? choices.find((c) => c.ref === nameOrRef) ?? null;
+  return choice?.label ?? MODEL_NOT_OFFERED;
+}
+
+/**
+ * A stored choice name (an evaluation's or step's model: a choice id, `default`, or an older
+ * name like `fast`) by its label. A name no choice has (a deleted choice, an older alias, a ref)
+ * is never shown: "Model no longer offered".
+ */
+export function choiceName(name: string, choices: readonly ModelChoice[]): string {
+  return modelDisplayName(name, choices);
+}
+
+/** The drafting model (a ref) by its choice's label; "Drafting model" when no choice has it. */
+export function draftingModelName(ref: string | null, choices: readonly ModelChoice[]): string {
+  return choices.find((c) => c.ref === ref)?.label ?? DRAFTING_MODEL;
+}
+
+/** What ran (step runs), else what was requested (override), else the spec default; by name. */
+export function modelLabel(job: JobSummary, choices: readonly ModelChoice[]): string {
+  const names = job.modelsUsed.length
+    ? job.modelsUsed
+    : job.modelOverride
+      ? [job.modelOverride]
+      : [];
+  if (names.length === 0) return 'Spec default';
+  // A draft-model run (reference runs): its ref usually matches no choice.
+  if (
+    job.modelOverride === DRAFT_ALIAS &&
+    unknownText(choices) === null &&
+    !names.some((n) => pickedChoice(n, choices) ?? choices.some((c) => c.ref === n))
+  ) {
+    return DRAFTING_MODEL;
+  }
+  // Choices sharing a ref (main and fast on one model): the one that was asked for names it.
+  const asked = job.modelOverride ? pickedChoice(job.modelOverride, choices) : null;
+  const nameOf = (n: string) =>
+    asked !== null && asked.ref === n ? asked.label : modelDisplayName(n, choices);
+  return [...new Set(names.map(nameOf))].join(', ');
 }
 
 const MENU = { width: 220, height: 160, gap: 4, margin: 8 };

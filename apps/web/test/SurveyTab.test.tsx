@@ -312,7 +312,7 @@ describe('SurveyTab', () => {
     const found = (await screen.findByRole('heading', { name: 'What the model found' })).closest(
       'section',
     )!;
-    expect(within(found).getByText(/local\/qwen · brief v1/)).toBeInTheDocument();
+    expect(within(found).getByText(/Main Production Model · brief v1/)).toBeInTheDocument();
     expect(within(found).getByText('Acme — two-column header')).toBeInTheDocument();
     const table = screen.getByRole('table', { name: 'Candidate data' });
     const [, first, second] = within(table).getAllByRole('row');

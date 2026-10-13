@@ -73,7 +73,8 @@ describe('SamplesTab', () => {
     ).toEqual(['scan.pdf', 'wip.pdf', 'locked.pdf']);
     expect(row('scan.pdf')).toHaveTextContent('Ready');
     expect(row('scan.pdf')).toHaveTextContent('3 pages · 3 OCR · 1.2 MB · added for v1');
-    expect(row('scan.pdf')).toHaveTextContent('Scanned — all 3 pages read by OCR (local/olmocr)');
+    expect(row('scan.pdf')).toHaveTextContent('Scanned — all 3 pages read by OCR');
+    expect(row('scan.pdf')).not.toHaveTextContent('olmocr');
     expect(within(row('scan.pdf')).getByRole('img', { name: '3 pages' })).toHaveTextContent('3');
     expect(row('wip.pdf')).toHaveTextContent('Preparing — OCR page 2 of 3');
     expect(within(row('wip.pdf')).getByRole('img', { name: 'Pages unknown' })).toHaveTextContent(
@@ -249,7 +250,7 @@ describe('SamplesTab', () => {
     expect(within(preview).getByRole('region', { name: 'Page 2' })).toHaveTextContent(
       'Batch 1 results',
     );
-    expect(preview).toHaveTextContent('Read by OCR (local/olmocr) · cached per PDF hash');
+    expect(preview).toHaveTextContent('Read by OCR · cached per PDF hash');
     expect(screen.getByRole('button', { name: 'Show text of a.pdf' })).toHaveAttribute(
       'aria-pressed',
       'true',

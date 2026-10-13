@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { changeBodyOf, type ProposalView } from '@ih/shared';
 import { ProposalCard } from '../src/workbench/ProposalCard.js';
-import { changeProposalView } from './fake-api.js';
+import { changeProposalView, MODEL_CHOICES } from './fake-api.js';
 
 const NOW = Date.parse('2026-10-13T12:00:00.000Z');
 const NEXT = {
@@ -23,6 +23,7 @@ function card(p: ProposalView, props: Partial<Parameters<typeof ProposalCard>[0]
       draftVersion={4}
       selected={new Set([0, 1])}
       busy={false}
+      models={MODEL_CHOICES}
       now={NOW}
       next={NEXT}
       {...handlers}
@@ -33,6 +34,18 @@ function card(p: ProposalView, props: Partial<Parameters<typeof ProposalCard>[0]
 }
 
 describe('ProposalCard', () => {
+  it('names the drafting model by its choice label, or "Drafting model", never the ref', () => {
+    card(changeProposalView({ model: 'local/qwen' }));
+    expect(screen.getByText('Main Production Model')).toBeInTheDocument();
+    expect(screen.queryByText('local/qwen')).toBeNull();
+  });
+
+  it('says "Drafting model" when no choice has the ref', () => {
+    card(changeProposalView({ model: 'x/unknown' }));
+    expect(screen.getByText('Drafting model')).toBeInTheDocument();
+    expect(screen.queryByText('x/unknown')).toBeNull();
+  });
+
   it('offers to accept a proposal that needs no changes', async () => {
     const p = changeProposalView({
       stage: 'sections',

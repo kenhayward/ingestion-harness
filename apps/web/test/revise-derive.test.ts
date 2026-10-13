@@ -18,6 +18,7 @@ import {
   changeProposalView,
   feedbackItem,
   iterationView,
+  MODEL_CHOICES,
   revisePreview,
   reviseProposal,
 } from './fake-api.js';
@@ -98,9 +99,10 @@ describe('previewSummary / failuresHeader / notSentText', () => {
           failures: [failure],
           failuresTotal: 1,
         }),
+        MODEL_CHOICES,
       ),
     ).toBe(
-      '1 feedback item · 1 failure diff (up to 20 fields and 5 rows per table each) · draft v4 · local/qwen',
+      '1 feedback item · 1 failure diff (up to 20 fields and 5 rows per table each) · draft v4 · Main Production Model',
     );
   });
   it('says when the cap trims failures, and when there is no draft or model', () => {
@@ -113,6 +115,7 @@ describe('previewSummary / failuresHeader / notSentText', () => {
           draft: null,
           model: null,
         }),
+        MODEL_CHOICES,
       ),
     ).toBe(
       '0 feedback items · 8 of 11 failure diffs (the worst 8; up to 20 fields and 5 rows per table each) · no open draft · drafting model not set',
@@ -127,13 +130,16 @@ describe('previewSummary / failuresHeader / notSentText', () => {
       createdAt: at,
       compared: 6,
     };
-    expect(failuresHeader(revisePreview({ failuresFrom: from, failuresTotal: 6 }))).toBe(
-      `v4 · ${day(at)} · 6 of 6 below 100%`,
-    );
     expect(
-      failuresHeader(revisePreview({ failuresFrom: { ...from, model: 'fast' }, failuresTotal: 2 })),
-    ).toBe(`v4 · ${day(at)} · 2 of 6 below 100% · fast`);
-    expect(failuresHeader(revisePreview())).toBeNull();
+      failuresHeader(revisePreview({ failuresFrom: from, failuresTotal: 6 }), MODEL_CHOICES),
+    ).toBe(`v4 · ${day(at)} · 6 of 6 below 100%`);
+    expect(
+      failuresHeader(
+        revisePreview({ failuresFrom: { ...from, model: 'cloud' }, failuresTotal: 2 }),
+        MODEL_CHOICES,
+      ),
+    ).toBe(`v4 · ${day(at)} · 2 of 6 below 100% · Cloud model`);
+    expect(failuresHeader(revisePreview(), MODEL_CHOICES)).toBeNull();
   });
   it.each([
     [
@@ -222,9 +228,9 @@ describe('earlierRevisions / revisionLine', () => {
       [reviseProposal(), older, rejected],
       [feedbackItem({ resolvedBy: older.id })],
     );
-    expect(rows.map(revisionLine)).toEqual([
-      `${day(older.createdAt)} · local/qwen · 1 of 2 applied · answered 1 feedback item`,
-      `${day(rejected.createdAt)} · local/qwen · rejected (2 changes)`,
+    expect(rows.map((r) => revisionLine(r, MODEL_CHOICES))).toEqual([
+      `${day(older.createdAt)} · Main Production Model · 1 of 2 applied · answered 1 feedback item`,
+      `${day(rejected.createdAt)} · Main Production Model · rejected (2 changes)`,
     ]);
   });
 });

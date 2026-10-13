@@ -7,7 +7,7 @@ import { FilterChips } from '../ui/FilterChips.js';
 import { JobCleanup } from './JobCleanup.js';
 import { JobDetailPanel } from './JobDetailPanel.js';
 import { JobList } from './JobList.js';
-import { chipCounts, inChip, type Chip } from './derive.js';
+import { chipCounts, inChip, modelLabel, type Chip } from './derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 
 const jobsText = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
@@ -88,7 +88,15 @@ export function JobsPage({
   const visible = jobs.filter(
     (j) =>
       inChip(j, chip) &&
-      matchesQuery(query, j.filename, j.specId, j.modelOverride, j.status, ...j.modelsUsed),
+      matchesQuery(
+        query,
+        j.filename,
+        j.specId,
+        j.modelOverride,
+        j.status,
+        ...j.modelsUsed,
+        modelLabel(j, models),
+      ),
   );
   // The selection falls back (never stored) when its job is deleted or filtered out.
   const selected =

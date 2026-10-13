@@ -1,6 +1,12 @@
 import { useId, type ReactNode } from 'react';
-import type { ChangeBody, DraftChange, ProposalStatus, ProposalView } from '@ih/shared';
-import { relativeTime } from '../jobs/derive.js';
+import type {
+  ChangeBody,
+  DraftChange,
+  ModelChoice,
+  ProposalStatus,
+  ProposalView,
+} from '@ih/shared';
+import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { stageStyle, TONE_COLOR, type DisplayState } from '../ui/stageStyle.js';
 import { changeDiff, changeLabel, changeParts, changeVerb, type ChangeVerb } from './changes.js';
@@ -51,7 +57,10 @@ export function ProposalCard({
   next,
   badge,
   footerNote,
+  models,
 }: {
+  /** The model choices: the drafting model shows by its name. */
+  models: readonly ModelChoice[];
   projectId: string;
   proposal: ProposalView;
   body: ChangeBody;
@@ -81,8 +90,9 @@ export function ProposalCard({
   const border = TONE_COLOR[stageStyle(PROPOSAL_STATE[proposal.status]).tone];
   const meta = (
     <p>
-      <code>{proposal.model ?? '—'}</code> · brief v{proposal.briefVersion ?? '–'} ·{' '}
-      {proposal.status.replace('_', ' ')} · {relativeTime(proposal.createdAt, now)}
+      <code>{proposal.model === null ? '—' : draftingModelName(proposal.model, models)}</code> ·
+      brief v{proposal.briefVersion ?? '–'} · {proposal.status.replace('_', ' ')} ·{' '}
+      {relativeTime(proposal.createdAt, now)}
     </p>
   );
 
@@ -160,7 +170,7 @@ export function ProposalCard({
         <ul className="proposal-changes">
           {body.changes.map((c, i) => {
             const verb = definition ? changeVerb(c, definition) : null;
-            const diff = definition ? changeDiff(c, definition) : null;
+            const diff = definition ? changeDiff(c, definition, models) : null;
             const line = note?.(c) ?? null;
             const badgeNode = badge?.(c, i);
             return (

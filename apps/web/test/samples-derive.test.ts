@@ -150,17 +150,17 @@ describe('prepareNote', () => {
     [
       'scanned',
       { triage: triage(3, [1, 2, 3]) },
-      { text: 'Scanned — all 3 pages read by OCR (local/olmocr)', tone: 'muted' },
+      { text: 'Scanned — all 3 pages read by OCR', tone: 'muted' },
     ],
     [
       'one scanned page',
       { triage: triage(1, [1]) },
-      { text: 'Scanned — its page read by OCR (local/olmocr)', tone: 'muted' },
+      { text: 'Scanned — its page read by OCR', tone: 'muted' },
     ],
     [
       'some pages',
       { triage: triage(4, [2, 3]) },
-      { text: 'Pages 2, 3 read by OCR (local/olmocr)', tone: 'muted' },
+      { text: 'Pages 2, 3 read by OCR', tone: 'muted' },
     ],
     [
       'one page, no model recorded',
@@ -169,6 +169,12 @@ describe('prepareNote', () => {
     ],
   ])('%s', (_name, o, note) => {
     expect(prepareNote(sampleView(o))).toEqual(note);
+  });
+
+  it('never shows the OCR model ref', () => {
+    const text = prepareNote(sampleView({ triage: triage(3, [1, 2, 3], 'local/olmocr') }))!.text;
+    expect(text).not.toContain('local/olmocr');
+    expect(text).not.toContain('olmocr');
   });
 });
 

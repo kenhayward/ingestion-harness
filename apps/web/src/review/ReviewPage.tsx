@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EditRequest, JobSummary, StepRun } from '@ih/shared';
+import { modelDisplayName } from '../jobs/derive.js';
 import type { Api, ReviewData } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { DecisionBar } from './DecisionBar.js';
@@ -67,6 +68,7 @@ export function ReviewPage({
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   /** The model choices a re-run may use (ADR 0010). */
   const models = useModelChoices(api);
+  const stepModel = (ref: string | null) => (ref ? modelDisplayName(ref, models) : '?');
   const [rerun, setRerun] = useState<{
     step: string;
     instructions: string;
@@ -164,7 +166,7 @@ export function ReviewPage({
 
   return (
     <div className="review">
-      <ReviewHeader data={data} jobs={jobs} jobId={jobId} />
+      <ReviewHeader data={data} jobs={jobs} jobId={jobId} models={models} />
 
       <div className="review-panes">
         <PageViewer
@@ -305,9 +307,9 @@ export function ReviewPage({
                         <td>{step.table ?? step.fields.join(', ')}</td>
                         <td>
                           {last?.cached
-                            ? `${last.model ?? '?'} · cached · ${last.status}`
+                            ? `${stepModel(last.model)} · cached · ${last.status}`
                             : last
-                              ? `${last.model ?? '?'} · ${last.attempts} attempt(s) · ${last.status}` +
+                              ? `${stepModel(last.model)} · ${last.attempts} attempt(s) · ${last.status}` +
                                 (last.outputTokens ? ` · ${last.outputTokens} output tokens` : '') +
                                 (last.trigger === 'rerun' ? ' · re-run' : '')
                               : '—'}

@@ -1,4 +1,5 @@
-import { stableJson, type DraftChange } from '@ih/shared';
+import { stableJson, type DraftChange, type ModelChoice } from '@ih/shared';
+import { modelDisplayName } from '../jobs/derive.js';
 
 export type ChangeKind =
   'FIELD' | 'TABLE' | 'SECTION' | 'COPIES' | 'EXTRACT' | 'CHECK' | 'REMOVE' | 'PREAMBLE';
@@ -95,6 +96,8 @@ const setDiff = (before: string[], after: string[], label = '') => [
   ...after.filter((x) => !before.includes(x)).map((x) => `+ ${label}${x}`),
   ...before.filter((x) => !after.includes(x)).map((x) => `${MINUS} ${label}${x}`),
 ];
+const modelName = (v: unknown, choices: readonly ModelChoice[]) =>
+  typeof v === 'string' ? modelDisplayName(v, choices) : v;
 const withDefault = (v: unknown, fallback: unknown) => (v === undefined ? fallback : v);
 
 /** The item a change replaces in the draft, or null when it adds one. */
@@ -141,7 +144,11 @@ function valueDiff(before: Def, after: Def): string[] {
 }
 
 /** The mono diff chip of a change: what it adds, drops or moves; null when there is nothing to add. */
-export function changeDiff(c: DraftChange, definition: Def): string | null {
+export function changeDiff(
+  c: DraftChange,
+  definition: Def,
+  choices: readonly ModelChoice[],
+): string | null {
   if (c.op === 'removeOutput' || c.op === 'removeSection' || c.op === 'removeStep') {
     return `${MINUS} ${c.id}`;
   }
@@ -195,7 +202,11 @@ export function changeDiff(c: DraftChange, definition: Def): string | null {
         ...arrow('table', before.table, step.table),
         ...setDiff(ids(before.sections), ids(step.sections), 'reads '),
         ...arrow('chunk pages', before.chunkPages, step.chunkPages),
-        ...arrow('model', withDefault(before.model, 'default'), withDefault(step.model, 'default')),
+        ...arrow(
+          'model',
+          modelName(withDefault(before.model, 'default'), choices),
+          modelName(withDefault(step.model, 'default'), choices),
+        ),
         ...arrow('attempts', withDefault(before.maxAttempts, 2), withDefault(step.maxAttempts, 2)),
         ...edited('instructions', before.instructions, step.instructions),
       ];
@@ -208,4 +219,22 @@ export function changeDiff(c: DraftChange, definition: Def): string | null {
     }
   }
   return parts.length ? parts.join(', ') : null;
+}
+
+const REF_LIKE = /^[\w.-]+(\/[\w.:-]+)+$/;
+
+/**
+ * A stored change chip (`describeDefinitionChange`, server side) with model values by name. The
+ * chip carries no path, so a scalar `a → b` is read as a model change when a side is `draft`, a
+ * choice id or an `endpoint/model` ref; the sides then show as choice labels ("Model no longer
+ * offered" for a name no choice has). Any other chip is returned as it is.
+ */
+export function modelsInChip(chip: string, choices: readonly ModelChoice[]): string {
+  const m = /^(\S+) → (\S+)$/.exec(chip);
+  if (!m) return chip;
+  const [, from, to] = m as unknown as [string, string, string];
+  const definite = (v: string) =>
+    v === 'draft' || REF_LIKE.test(v) || choices.some((c) => c.id === v);
+  if (!definite(from) && !definite(to)) return chip;
+  return `${modelDisplayName(from, choices)} → ${modelDisplayName(to, choices)}`;
 }

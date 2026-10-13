@@ -7,10 +7,12 @@ import {
   type FeedbackItem,
   type FeedbackTarget,
   type IterationSummary,
+  type ModelChoice,
   type ProposalView,
   type RevisePreview,
   type SentFailure,
 } from '@ih/shared';
+import { choiceName, draftingModelName } from '../jobs/derive.js';
 
 /** Pure helpers of the Revise tab (handoff §9). */
 
@@ -83,7 +85,7 @@ export function failureChips(f: SentFailure): string[] {
 }
 
 /** The "What the model will see" summary line. */
-export function previewSummary(p: RevisePreview): string {
+export function previewSummary(p: RevisePreview, choices: readonly ModelChoice[]): string {
   const each = `up to ${p.limits.fieldDiffs} fields and ${p.limits.rowDiffs} rows per table each`;
   const failures =
     p.failuresTotal > p.failures.length
@@ -93,19 +95,19 @@ export function previewSummary(p: RevisePreview): string {
     count(p.feedback.length, 'feedback item'),
     failures,
     p.draft ? `draft v${p.draft.version}` : 'no open draft',
-    p.model ?? 'drafting model not set',
+    p.model === null ? 'drafting model not set' : draftingModelName(p.model, choices),
   ].join(` ${DOT} `);
 }
 
 /** "v4 · 12/10/2026 · 6 of 6 below 100%" (plus the model of a comparison member). */
-export function failuresHeader(p: RevisePreview): string | null {
+export function failuresHeader(p: RevisePreview, choices: readonly ModelChoice[]): string | null {
   const from = p.failuresFrom;
   if (!from) return null;
   return [
     `v${from.templateVersion}`,
     day(from.createdAt),
     `${p.failuresTotal} of ${from.compared} below 100%`,
-    ...(from.model ? [from.model] : []),
+    ...(from.model ? [choiceName(from.model, choices)] : []),
   ].join(` ${DOT} `);
 }
 
@@ -207,8 +209,8 @@ const UNDECIDED: Partial<Record<ProposalView['status'], string>> = {
   failed: 'failed',
 };
 
-export function revisionLine(r: EarlierRevision): string {
-  const head = [day(r.createdAt), r.model ?? '—'];
+export function revisionLine(r: EarlierRevision, choices: readonly ModelChoice[]): string {
+  const head = [day(r.createdAt), r.model === null ? '—' : draftingModelName(r.model, choices)];
   if (r.status === 'accepted' || r.status === 'partially_accepted') {
     return [
       ...head,

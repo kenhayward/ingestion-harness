@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DraftChange } from '@ih/shared';
-import { changeDiff, changeParts, changeVerb } from '../src/workbench/changes.js';
+import { changeDiff, changeParts, changeVerb, modelsInChip } from '../src/workbench/changes.js';
+import { MODEL_CHOICES } from './fake-api.js';
 
 describe('changeParts', () => {
   it.each([
@@ -224,12 +225,12 @@ describe('changeVerb and changeDiff', () => {
           id: 'header',
           fields: ['invoice_date'],
           sections: ['header'],
-          model: 'fast',
+          model: 'cloud',
           maxAttempts: 3,
         },
       },
       'CHANGED',
-      'model default → fast, attempts 2 → 3',
+      'model Main Production Model → Cloud model, attempts 2 → 3',
     ],
     [
       {
@@ -247,6 +248,44 @@ describe('changeVerb and changeDiff', () => {
   ])('%#', (change, verb, diff) => {
     const c = change as unknown as DraftChange;
     expect(changeVerb(c, def)).toBe(verb);
-    expect(changeDiff(c, def)).toBe(diff);
+    expect(changeDiff(c, def, MODEL_CHOICES)).toBe(diff);
   });
+});
+
+describe('model names in diffs', () => {
+  const step = (model: string | undefined) =>
+    ({
+      op: 'putStep',
+      reason: 'r',
+      step: { type: 'extract', id: 'header', fields: ['a'], sections: ['header'], model },
+    }) as unknown as DraftChange;
+  const withModel = (model: string) => ({
+    pipeline: [{ type: 'extract', id: 'header', fields: ['a'], sections: ['header'], model }],
+  });
+
+  it.each([
+    ['draft', 'cloud', 'model Drafting model → Cloud model'],
+    ['local/legacy', 'main', 'model Model no longer offered → Main Production Model'],
+    ['fast', 'local/qwen', 'model Model no longer offered → Main Production Model'],
+  ])('a step model change %s → %s shows names', (from, to, text) => {
+    const diff = changeDiff(step(to), withModel(from), MODEL_CHOICES);
+    expect(diff).toBe(text);
+    expect(diff).not.toContain('local/');
+  });
+});
+
+describe('modelsInChip', () => {
+  it.each([
+    ['main → cloud', 'Main Production Model → Cloud model'],
+    ['default → draft', 'Main Production Model → Drafting model'],
+    ['local/qwen → local/other', 'Main Production Model → Model no longer offered'],
+    ['fast → cloud', 'Model no longer offered → Cloud model'],
+    ['+ due_date', '+ due_date'],
+    ['text → number', 'text → number'],
+    [
+      '^(From|Supplier)\b → ^(From|Supplier|Vendor)\b',
+      '^(From|Supplier)\b → ^(From|Supplier|Vendor)\b',
+    ],
+    ['instructions edited', 'instructions edited'],
+  ])('%s', (chip, text) => expect(modelsInChip(chip, MODEL_CHOICES)).toBe(text));
 });

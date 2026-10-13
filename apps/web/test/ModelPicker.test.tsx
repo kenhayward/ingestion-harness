@@ -7,7 +7,7 @@ import { MODEL_CHOICES } from './fake-api.js';
 const CHOICES = MODEL_CHOICES;
 
 describe('ModelPicker', () => {
-  it('offers the choices by label and shows the model the pick runs', async () => {
+  it('offers the choices by label and flags an external pick', async () => {
     const onChange = vi.fn();
     const { rerender } = render(
       <ModelPicker
@@ -37,7 +37,7 @@ describe('ModelPicker', () => {
         emptyLabel="Recipe's models"
       />,
     );
-    expect(screen.getByText('cloud/claude')).toBeInTheDocument();
+    expect(screen.queryByText(/cloud\/claude/)).toBeNull();
     expect(screen.getByText('External')).toBeInTheDocument();
   });
 
@@ -62,9 +62,13 @@ describe('ModelPicker', () => {
     render(<ModelPicker label="Model" choices={CHOICES} value="local/qwen" onChange={() => {}} />);
     const select = screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement;
     expect(select.value).toBe('local/qwen');
-    expect(
-      screen.getByRole('option', { name: 'local/qwen (not a model choice)' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Model no longer offered' })).toBeInTheDocument();
+    expect(screen.queryByText(/local\/qwen/)).toBeNull();
+  });
+
+  it('reads a stored `draft` as the drafting model', () => {
+    render(<ModelPicker label="Model" choices={CHOICES} value="draft" onChange={() => {}} />);
+    expect(screen.getByRole('option', { name: 'Drafting model' })).toBeInTheDocument();
   });
 
   it('reads `default` as the default choice', () => {
@@ -72,7 +76,7 @@ describe('ModelPicker', () => {
     expect((screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement).value).toBe(
       'main',
     );
-    expect(screen.getByText('local/qwen')).toBeInTheDocument();
+    expect(screen.queryByText(/local\/qwen/)).toBeNull();
   });
 });
 
@@ -80,7 +84,7 @@ describe('typeModelLabel (the "no override" option)', () => {
   it.each<[{ model?: string } | undefined, string]>([
     [{ model: 'test' }, "Document type's model (New for testing only)"],
     [{}, "Document type's model (Main Production Model)"], // none set: the default choice
-    [{ model: 'gone' }, "Document type's model (gone)"],
+    [{ model: 'gone' }, "Document type's model (Model no longer offered)"],
     [undefined, "Document type's model"], // the type is not known here
   ])('%o -> %s', (type, label) => {
     expect(typeModelLabel(CHOICES, type)).toBe(label);

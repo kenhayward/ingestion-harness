@@ -8,6 +8,7 @@ import {
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { choiceName } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { Segmented, type SegmentedOption } from '../ui/Segmented.js';
@@ -72,9 +73,8 @@ export function EvaluateTab({
   const [ticked, setTicked] = useState<string[] | null>(null);
   const usable = choices.filter((c) => dataPolicy === 'external' || c.location === 'local');
   const compared = ticked ?? usable.map((c) => c.id);
-  /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
-  const nameOf = (m: string | null) =>
-    m === null ? "recipe's models" : (choices.find((c) => c.id === m)?.label ?? m);
+  /** An iteration's model by its choice's label; a name no choice has reads as not offered. */
+  const nameOf = (m: string | null) => (m === null ? "recipe's models" : choiceName(m, choices));
   const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
@@ -307,7 +307,7 @@ export function EvaluateTab({
             {choices.map((c) => {
               const allowed = usable.includes(c);
               return (
-                <label key={c.id} title={c.ref}>
+                <label key={c.id}>
                   <input
                     type="checkbox"
                     disabled={!allowed}
@@ -369,6 +369,7 @@ export function EvaluateTab({
             iteration={shown}
             set={set}
             threshold={threshold}
+            choices={choices}
           />
         </div>
         <div className="eval-side" tabIndex={0} aria-label="Accuracy and history">
@@ -380,6 +381,7 @@ export function EvaluateTab({
             busy={busy}
             onRestore={restore}
             publications={gate.publications}
+            choices={choices}
           />
         </div>
       </div>

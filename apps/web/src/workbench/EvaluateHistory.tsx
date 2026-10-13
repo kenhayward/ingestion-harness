@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { IterationSummary, IterationView, Publication } from '@ih/shared';
+import type { IterationSummary, IterationView, ModelChoice, Publication } from '@ih/shared';
 import { PublicationsLog } from './GateCard.js';
 import {
   accuracyLabel,
@@ -65,7 +65,9 @@ export function HistoryCard({
   busy,
   onRestore,
   publications,
+  choices,
 }: {
+  choices: readonly ModelChoice[];
   history: IterationSummary[];
   /** The draft (or, without one, the published) version: other versions' bars are dimmed. */
   version: number | null;
@@ -76,7 +78,7 @@ export function HistoryCard({
 }) {
   const titleId = useId();
   const bars = historyBars(history, version);
-  const rows = historyRows(history);
+  const rows = historyRows(history, choices);
   return (
     <section className="card eval-history" aria-labelledby={titleId}>
       <header className="eval-card-head">

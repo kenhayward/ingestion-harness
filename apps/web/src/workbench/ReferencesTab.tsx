@@ -8,8 +8,11 @@ import {
   type ReferenceDetail,
   type ReferenceRow,
   type SampleView,
+  type ModelChoice,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { choiceName, modelDisplayName } from '../jobs/derive.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
 import { Meter } from '../ui/Meter.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { TabHeader } from './TabHeader.js';
@@ -75,6 +78,7 @@ export function ReferencesTab({
   pollMs: number;
   onChanged: () => void;
 }) {
+  const models = useModelChoices(api);
   const hasDraft = draft !== null;
   const version = draft ?? published;
   const { draftDef } = useDefinitions(api, projectId, version, null, version !== null);
@@ -307,6 +311,7 @@ export function ReferencesTab({
           <ReferenceDetailPanel
             key={`${current}:${[...dev, ...holdout].find((r) => r.sampleId === current)?.reference?.id ?? ''}`}
             api={api}
+            models={models}
             projectId={projectId}
             sampleId={current}
             version={version}
@@ -538,16 +543,22 @@ const PROVENANCE_TAG = {
 const display = (v: unknown) =>
   v === null || v === undefined || v === '' ? '—' : typeof v === 'string' ? v : JSON.stringify(v);
 
-function runText(detail: ReferenceDetail, published: number | null) {
+function runText(
+  detail: ReferenceDetail,
+  published: number | null,
+  choices: readonly ModelChoice[],
+) {
   const run = detail.run;
   if (!run) return 'The run that proposed these values is no longer there';
-  const models = run.models.length ? ` (${run.models.join(', ')})` : '';
+  const models = run.models.length
+    ? ` (${[...new Set(run.models.map((m) => modelDisplayName(m, choices)))].join(', ')})`
+    : '';
   const who =
     run.modelOverride === 'draft'
       ? `the draft model${models}`
       : run.modelOverride === null
         ? `the live recipe${published === null ? '' : ` v${published}`}${models}`
-        : `${run.modelOverride}${models}`;
+        : `${choiceName(run.modelOverride, choices)}${models}`;
   const changed =
     detail.corrections === null
       ? null
@@ -565,7 +576,9 @@ function ReferenceDetailPanel({
   published,
   reverifyReason,
   onReverified,
+  models,
 }: {
+  models: readonly ModelChoice[];
   api: Api;
   projectId: string;
   sampleId: string;
@@ -616,7 +629,7 @@ function ReferenceDetailPanel({
           {shortDateTime(r.createdAt)}
           {r.verifiedBy ? ` by ${r.verifiedBy}` : ''}
         </p>
-        <p className="muted">{runText(detail, published)}</p>
+        <p className="muted">{runText(detail, published, models)}</p>
         {detail.corrections === null && (
           <p className="muted">
             Which values were changed in Review is not known: the run was re-run or removed after

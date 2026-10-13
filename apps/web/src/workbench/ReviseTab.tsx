@@ -10,6 +10,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { ReviseFeedback } from './ReviseFeedback.js';
 import {
@@ -83,6 +84,7 @@ export function ReviseTab({
   onChanged: () => void;
   now?: number;
 }) {
+  const models = useModelChoices(api);
   const seeId = useId();
   const failId = useId();
   const [data, setData] = useState<Loaded | null>(null);
@@ -212,7 +214,7 @@ export function ReviseTab({
     preview,
   );
   const other = openProposalStage(data.proposals);
-  const header = failuresHeader(preview);
+  const header = failuresHeader(preview, models);
   const earlier = earlierRevisions(data.proposals, data.feedback);
   const askReason = !preview.draft
     ? 'Start the next version on the Recipe tab first'
@@ -243,7 +245,7 @@ export function ReviseTab({
         <div className="revise-see-head">
           <div className="revise-see-text">
             <h3 id={seeId}>What the model will see</h3>
-            <p className="muted">{previewSummary(preview)}</p>
+            <p className="muted">{previewSummary(preview, models)}</p>
           </div>
           <button
             type="button"
@@ -317,6 +319,7 @@ export function ReviseTab({
       {latest?.status === 'failed' && <p role="alert">{latest.error}</p>}
       {latest && body && (
         <ProposalCard
+          models={models}
           projectId={projectId}
           proposal={latest}
           body={body}
@@ -338,7 +341,7 @@ export function ReviseTab({
           <summary>Earlier revisions · {earlier.length}</summary>
           <ul>
             {earlier.map((r) => (
-              <li key={r.id}>{revisionLine(r)}</li>
+              <li key={r.id}>{revisionLine(r, models)}</li>
             ))}
           </ul>
         </details>

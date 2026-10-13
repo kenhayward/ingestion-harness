@@ -516,7 +516,7 @@ describe('ReferencesTab detail panel', () => {
     ).toHaveAttribute('aria-pressed', 'true');
     expect(panel).toHaveTextContent(/saved .+ by ken/);
     expect(panel).toHaveTextContent(
-      'Run by the draft model (local/qwen) · src-1 · 2 of 4 values changed in Review',
+      'Run by the draft model (Main Production Model) · src-1 · 2 of 4 values changed in Review',
     );
     const table = within(panel).getByRole('table', { name: 'Reference values' });
     const [, sender, total, due, lines] = within(table).getAllByRole('row');

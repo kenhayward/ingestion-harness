@@ -6,7 +6,14 @@ import type {
   StepProgress,
   TestRun,
 } from '@ih/shared';
-import { formatDuration, jobDuration, statusLabel, statusTone, type Tone } from '../jobs/derive.js';
+import {
+  choiceName,
+  formatDuration,
+  jobDuration,
+  statusLabel,
+  statusTone,
+  type Tone,
+} from '../jobs/derive.js';
 import { shortDateTime } from './references.js';
 
 /** Test runs started together (one `POST …/test-runs`, handoff TR2). */
@@ -104,9 +111,7 @@ export function batchTitle(batch: RunBatch, now: number): string {
 /** "6 dev samples · started by ken · template's models". */
 export function batchSubtitle(batch: RunBatch, choices: readonly ModelChoice[]): string {
   const model =
-    batch.modelOverride === null
-      ? "recipe's models"
-      : (choices.find((c) => c.id === batch.modelOverride)?.label ?? batch.modelOverride);
+    batch.modelOverride === null ? "recipe's models" : choiceName(batch.modelOverride, choices);
   return [
     plural(batch.runs.length, 'dev sample'),
     ...(batch.createdBy ? [`started by ${batch.createdBy}`] : []),

@@ -10,6 +10,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
 import { OutputsView } from './OutputsView.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { StaleBanner } from './StaleBanner.js';
@@ -138,6 +139,7 @@ export function StagePanel({
   const [metrics, setMetrics] = useState<StepMetric[] | null>(null);
   const [justAdded, setJustAdded] = useState<ReadonlySet<string>>(new Set());
 
+  const models = useModelChoices(api);
   const showsDefinition = (stage === 'outputs' || stage === 'steps') && typeof draft === 'number';
   const definitions = useDefinitions(
     api,
@@ -314,6 +316,7 @@ export function StagePanel({
   const card =
     body && proposal ? (
       <ProposalCard
+        models={models}
         projectId={projectId}
         proposal={proposal}
         body={body}
@@ -413,6 +416,7 @@ export function StagePanel({
         </>
       ) : stage === 'steps' && draftDef && typeof draft === 'number' ? (
         <StepsView
+          models={models}
           projectId={projectId}
           draftVersion={draft}
           definition={draftDef}

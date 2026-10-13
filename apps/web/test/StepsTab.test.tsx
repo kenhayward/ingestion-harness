@@ -123,7 +123,7 @@ describe('Steps tab', () => {
     expect(await screen.findByText('Prepared text, split into 3 sections')).toBeInTheDocument();
     const totals = screen.getByRole('listitem', { name: 'Step 2: totals' });
     expect(within(totals).getByText('EXTRACT')).toBeInTheDocument();
-    expect(within(totals).getByText('default')).toBeInTheDocument();
+    expect(await within(totals).findByText('Main Production Model')).toBeInTheDocument();
     expect(within(totals).getByText('payment')).toBeInTheDocument();
     expect(within(totals).getByText('2.0')).toBeInTheDocument();
     expect(within(totals).getByText(/^Needs a retry on many runs/)).toBeInTheDocument();

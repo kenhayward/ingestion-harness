@@ -68,6 +68,21 @@ describe('ChecksPanel', () => {
 });
 
 describe('DraftChangesPanel', () => {
+  it('shows model names in change chips, never ids or refs', async () => {
+    const api = fakeApi({
+      listDraftChanges: vi.fn(async () => [
+        change({ summary: 'Changed step header', diff: ['draft → main', 'local/qwen → cloud'] }),
+      ]),
+    });
+    render(
+      <DraftChangesPanel api={api} projectId="invoice" version={4} published={3} refreshKey={0} />,
+    );
+    const panel = screen.getByRole('region', { name: 'Changes since v3' });
+    await waitFor(() => expect(panel).toHaveTextContent('Drafting model → Main Production Model'));
+    expect(panel).toHaveTextContent('Main Production Model → Cloud model');
+    expect(panel).not.toHaveTextContent('local/qwen');
+  });
+
   it('lists the changes since the live version, newest first, with tags and chips', async () => {
     const api = fakeApi({
       listDraftChanges: vi.fn(async () => [

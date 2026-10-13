@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { JobOutput, JobSummary, ModelChoice, StepRun } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
@@ -47,7 +47,6 @@ export function JobDetailPanel({
   typeModels,
   now,
   wide = false,
-  eyebrow = 'Job details',
 }: {
   api: Api;
   job: JobSummary;
@@ -59,8 +58,6 @@ export function JobDetailPanel({
   now: number;
   /** Home: one wide card (summary, progress and facts side by side) instead of a side panel. */
   wide?: boolean;
-  /** The small heading above the file name. */
-  eyebrow?: string;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
@@ -88,67 +85,131 @@ export function JobDetailPanel({
   // Only delivered outputs are offered: drafts (awaiting review, test runs) are not deliverables.
   const published = (outputs ?? []).filter((o) => o.stage === 'published');
 
+  const ids = useId();
+
+  const calloutBlock = note && (
+    <div role="note" className={`callout tone-${note.tone}`}>
+      <span>
+        <strong>{note.title}</strong>
+        {note.lines.map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+      </span>
+    </div>
+  );
+  const progress = (
+    <ol className="progress" aria-label="Progress">
+      {progressSteps(job, runs).map((step) => (
+        <li key={step.label} className={`step-${step.state}`}>
+          <span className="step-icon" aria-hidden="true" />
+          <span className="step-label">{step.label}</span>
+          <span className="step-state">{step.text}</span>
+        </li>
+      ))}
+    </ol>
+  );
+  const meta = (
+    <dl className="meta">
+      <dt>Document type</dt>
+      <dd>
+        {specTitles.get(job.specId) ?? job.specId} v{job.specVersion}
+      </dd>
+      <dt>Model</dt>
+      <dd>{modelLabel(job, models)}</dd>
+      <dt>Attempts</dt>
+      <dd>{job.attempts}</dd>
+      <dt>Created</dt>
+      <dd title={new Date(job.createdAt).toLocaleString()}>{relativeTime(job.createdAt, now)}</dd>
+      {job.createdBy !== null && (
+        <>
+          <dt>Queued by</dt>
+          <dd>{job.createdBy}</dd>
+        </>
+      )}
+    </dl>
+  );
+  const errorLine = error && <p className="error">Couldn't load details: {error}</p>;
+  const actions = (
+    <JobActions
+      api={api}
+      job={job}
+      onChanged={onChanged}
+      models={models}
+      typeModel={typeModels?.get(job.specId)}
+      variant="panel"
+    />
+  );
+  const download = (
+    <>
+      <a href={api.archiveUrl(job.id)} aria-label={`Download ${job.filename} outputs as ZIP`}>
+        <Icon name="download" />
+        Download outputs (ZIP)
+      </a>
+      <p className="muted">{filesText(published)}</p>
+    </>
+  );
+
+  if (wide) {
+    const id = (name: string) => `${ids}-${name}`;
+    return (
+      <aside className="job-panel wide" aria-label="Job details">
+        <header className="job-head">
+          <h3 className="card-label">Latest job</h3>
+          <div className="job-title">
+            <h2>{job.filename}</h2>
+            <StatusPill status={job.status} />
+          </div>
+        </header>
+        <section className="job-progress" aria-labelledby={id('progress')}>
+          <h3 className="card-label" id={id('progress')}>
+            Progress
+          </h3>
+          {progress}
+        </section>
+        <div className="job-columns">
+          <section className="job-status" aria-labelledby={id('status')}>
+            <h3 className="card-label" id={id('status')}>
+              Status and actions
+            </h3>
+            {calloutBlock}
+            {errorLine}
+            {actions}
+            {published.length > 0 && (
+              <section className="outputs" aria-labelledby={id('outputs')}>
+                <h3 className="card-label" id={id('outputs')}>
+                  Published outputs
+                </h3>
+                {download}
+              </section>
+            )}
+          </section>
+          <section className="job-details" aria-labelledby={id('details')}>
+            <h3 className="card-label" id={id('details')}>
+              Details
+            </h3>
+            {meta}
+          </section>
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className={wide ? 'job-panel wide' : 'job-panel'} aria-label="Job details">
-      <p className="eyebrow">{eyebrow}</p>
+    <aside className="job-panel" aria-label="Job details">
+      <p className="eyebrow">Job details</p>
       <h2>{job.filename}</h2>
       <StatusPill status={job.status} />
-      {note && (
-        <div role="note" className={`callout tone-${note.tone}`}>
-          <span>
-            <strong>{note.title}</strong>
-            {note.lines.map((line) => (
-              <span key={line}>{line}</span>
-            ))}
-          </span>
-        </div>
-      )}
-      <ol className="progress" aria-label="Progress">
-        {progressSteps(job, runs).map((step) => (
-          <li key={step.label} className={`step-${step.state}`}>
-            <span className="step-icon" aria-hidden="true" />
-            <span className="step-label">{step.label}</span>
-            <span className="step-state">{step.text}</span>
-          </li>
-        ))}
-      </ol>
-      <dl className="meta">
-        <dt>Document type</dt>
-        <dd>
-          {specTitles.get(job.specId) ?? job.specId} v{job.specVersion}
-        </dd>
-        <dt>Model</dt>
-        <dd className="mono">{modelLabel(job)}</dd>
-        <dt>Attempts</dt>
-        <dd>{job.attempts}</dd>
-        <dt>Created</dt>
-        <dd title={new Date(job.createdAt).toLocaleString()}>{relativeTime(job.createdAt, now)}</dd>
-        {job.createdBy !== null && (
-          <>
-            <dt>Queued by</dt>
-            <dd>{job.createdBy}</dd>
-          </>
-        )}
-      </dl>
-      {error && <p className="error">Couldn't load details: {error}</p>}
+      {calloutBlock}
+      {progress}
+      {meta}
+      {errorLine}
       {published.length > 0 && (
         <section className="outputs" aria-label="Published outputs">
           <h3>Published outputs</h3>
-          <a href={api.archiveUrl(job.id)} aria-label={`Download ${job.filename} outputs as ZIP`}>
-            <Icon name="download" />
-            Download outputs (ZIP)
-          </a>
-          <p className="muted">{filesText(published)}</p>
+          {download}
         </section>
       )}
-      <JobActions
-        api={api}
-        job={job}
-        onChanged={onChanged}
-        models={models}
-        typeModel={typeModels?.get(job.specId)}
-        variant="panel"
-      />
+      {actions}
     </aside>
   );
 }

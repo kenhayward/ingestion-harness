@@ -17,7 +17,7 @@ import {
   parseThreshold,
   tableDiff,
 } from '../src/workbench/evaluate.js';
-import { iterationView, publishGateView } from './fake-api.js';
+import { iterationView, MODEL_CHOICES, publishGateView } from './fake-api.js';
 
 const h = (o: Partial<IterationSummary>): IterationSummary => iterationView(o);
 const acc = (id: string, matched: number, total: number) => ({
@@ -127,15 +127,24 @@ describe('latestOf / devScore', () => {
 describe('historyRows', () => {
   it('collapses a model comparison into one row, models in order, best score', () => {
     const g = crypto.randomUUID();
-    const rows = historyRows([
-      h({ id: 'x3', model: 'draft', groupId: g, score: 0.89 }),
-      h({ id: 'x2', model: 'fast', groupId: g, score: 0.84 }),
-      h({ id: 'x1', model: 'default', groupId: g, score: 0.91 }),
-      h({ id: 't', uncached: true, score: 0.86 }),
-      h({ id: 'r', set: 'holdout', status: 'running', score: null }),
-    ]);
+    const rows = historyRows(
+      [
+        h({ id: 'x3', model: 'draft', groupId: g, score: 0.89 }),
+        h({ id: 'x2', model: 'fast', groupId: g, score: 0.84 }),
+        h({ id: 'x1', model: 'default', groupId: g, score: 0.91 }),
+        h({ id: 't', uncached: true, score: 0.86 }),
+        h({ id: 'r', set: 'holdout', status: 'running', score: null }),
+      ],
+      MODEL_CHOICES,
+    );
     expect(rows.map((r) => [r.label, r.score, r.id, r.running, r.set])).toEqual([
-      ['Compare · default 91 · fast 84 · draft 89', 0.91, 'x3', false, 'dev'],
+      [
+        'Compare · Main Production Model 91 · Model no longer offered 84 · Drafting model 89',
+        0.91,
+        'x3',
+        false,
+        'dev',
+      ],
       ["Recipe's models · fresh", 0.86, 't', false, 'dev'],
       ["Recipe's models", null, 'r', true, 'holdout'],
     ]);

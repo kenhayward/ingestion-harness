@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EvaluationSet, IterationView } from '@ih/shared';
 import type { Api } from '../src/api/client.js';
 import { LatestRun, SEALED_NOTE } from '../src/workbench/EvaluateLatest.js';
-import { fakeApi, feedbackItem, iterationView } from './fake-api.js';
+import { fakeApi, feedbackItem, iterationView, MODEL_CHOICES } from './fake-api.js';
 
 function latest(
   iteration: IterationView | null,
@@ -13,7 +13,14 @@ function latest(
 ) {
   const api = fakeApi(overrides);
   render(
-    <LatestRun api={api} projectId="letter" iteration={iteration} set={set} threshold={0.9} />,
+    <LatestRun
+      api={api}
+      projectId="letter"
+      iteration={iteration}
+      set={set}
+      threshold={0.9}
+      choices={MODEL_CHOICES}
+    />,
   );
   return { api };
 }
@@ -27,6 +34,13 @@ describe('LatestRun', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(/2 of 2 compared · 5 of 8 steps reused from the cache/),
+    ).toBeInTheDocument();
+  });
+
+  it('names the run by the model choice label, never a ref', () => {
+    latest(iterationView({ model: 'cloud' }));
+    expect(
+      screen.getByRole('heading', { name: 'Latest dev run · v2 · Cloud model' }),
     ).toBeInTheDocument();
   });
 

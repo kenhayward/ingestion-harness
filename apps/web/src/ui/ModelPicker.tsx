@@ -1,31 +1,61 @@
 import { useEffect, useState } from 'react';
 import { pickedChoice, type DataPolicy, type ModelChoice } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import {
+  CHOICES_FAILED,
+  CHOICES_LOADING,
+  MODEL_NOT_OFFERED,
+  modelDisplayName,
+} from '../jobs/derive.js';
+
+/** A stored value no choice has: "Drafting model" for `draft`, a placeholder while unknown. */
+const legacyLabel = (value: string, choices: readonly ModelChoice[]): string =>
+  value === 'draft' || choices === CHOICES_LOADING || choices === CHOICES_FAILED
+    ? modelDisplayName(value, choices)
+    : MODEL_NOT_OFFERED;
+
+export type ChoicesState =
+  | { status: 'loading'; choices: readonly ModelChoice[] }
+  | { status: 'error'; choices: readonly ModelChoice[] }
+  | { status: 'ready'; choices: ModelChoice[] };
 
 /**
- * The model choices people pick (ADR 0010, phase 4c), loaded once per `api`; empty while
- * loading or when they cannot be read (a picker then offers only its empty option).
+ * The model choices people pick (ADR 0010, phase 4c), loaded once per `api`, with whether they
+ * are `loading`, `ready` or could not be read (`error`). Until ready, `choices` is empty.
  */
-export function useModelChoices(api: Api): ModelChoice[] {
-  const [choices, setChoices] = useState<ModelChoice[]>([]);
+export function useModelChoicesState(api: Api): ChoicesState {
+  const [state, setState] = useState<ChoicesState>({
+    status: 'loading',
+    choices: CHOICES_LOADING,
+  });
   useEffect(() => {
     let live = true;
+    setState({ status: 'loading', choices: CHOICES_LOADING });
     api.listPickerChoices().then(
-      (list) => live && setChoices(list),
-      () => live && setChoices([]),
+      (list) => live && setState({ status: 'ready', choices: list }),
+      () => live && setState({ status: 'error', choices: CHOICES_FAILED }),
     );
     return () => {
       live = false;
     };
   }, [api]);
-  return choices;
+  return state;
+}
+
+/**
+ * The model choices as a list. While loading, and when they cannot be read, it is the empty
+ * `CHOICES_LOADING` / `CHOICES_FAILED` list: a picker offers only its empty option, and the
+ * name helpers (`modelDisplayName` …) show "…" or "—" rather than "Model no longer offered".
+ */
+export function useModelChoices(api: Api): readonly ModelChoice[] {
+  return useModelChoicesState(api).choices;
 }
 
 /**
  * The one model picker: model choices by label (the default marked, external ones flagged),
- * with the model the pick runs shown below. A local-only project cannot pick an external
+ * with an External tag below an external pick. A local-only project cannot pick an external
  * choice. `value` is a choice id (`default` reads as the default choice) or '' for
- * `emptyLabel`; a stored name that is no choice (a legacy `endpoint/model` ref) stays shown.
+ * `emptyLabel`; a stored name that is no choice (a legacy ref) shows as "Model no longer offered".
  */
 export function ModelPicker({
   label,
@@ -66,7 +96,7 @@ export function ModelPicker({
         onChange={(e) => onChange(e.target.value)}
       >
         {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
-        {legacy && <option value={value}>{value} (not a model choice)</option>}
+        {legacy && <option value={value}>{legacyLabel(value, choices)}</option>}
         {choices.map((c) => (
           <option
             key={c.id}
@@ -80,10 +110,9 @@ export function ModelPicker({
           </option>
         ))}
       </select>
-      {picked && (
+      {picked?.location === 'external' && (
         <small className="model-hint muted">
-          Runs <code>{picked.ref}</code>
-          {picked.location === 'external' && <span className="tag tone-warn">External</span>}
+          <span className="tag tone-warn">External</span>
         </small>
       )}
     </span>
@@ -102,7 +131,7 @@ export function typeModelLabel(
   const base = "Document type's model";
   if (!type) return base;
   const name = type.model
-    ? (pickedChoice(type.model, choices)?.label ?? type.model)
+    ? modelDisplayName(type.model, choices)
     : choices.find((c) => c.isDefault)?.label;
   return name ? `${base} (${name})` : base;
 }

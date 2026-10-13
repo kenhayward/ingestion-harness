@@ -77,7 +77,7 @@ describe('ReviseTab', () => {
     });
     const card = await screen.findByRole('region', { name: 'What the model will see' });
     expect(card).toHaveTextContent(
-      '1 feedback item · 2 failure diffs (up to 20 fields and 5 rows per table each) · draft v4 · local/qwen',
+      '1 feedback item · 2 failure diffs (up to 20 fields and 5 rows per table each) · draft v4 · Main Production Model',
     );
     const failures = within(card).getByRole('region', {
       name: /Failures from the latest dev run/,
