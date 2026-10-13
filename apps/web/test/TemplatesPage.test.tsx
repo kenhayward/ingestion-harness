@@ -93,7 +93,11 @@ describe('TemplatesPage cards', () => {
       ),
       file,
     );
-    expect(api.testRun).toHaveBeenCalledWith(file, 'pvp', 4);
+    const dialog = screen.getByRole('dialog', { name: 'Test run Process Validation Protocol v4' });
+    expect(dialog).toHaveTextContent('Runs sample.pdf through v4');
+    expect(api.testRun).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run test' }));
+    expect(api.testRun).toHaveBeenCalledWith(file, 'pvp', 4, null);
     expect(
       await within(card('Process Validation Protocol')).findByRole('status'),
     ).toHaveTextContent('Test run queued — see Jobs');
@@ -111,7 +115,10 @@ describe('TemplatesPage cards', () => {
       ),
       word,
     );
-    expect(api.testRun).toHaveBeenCalledWith(word, 'pvp', 4);
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Run test' }),
+    );
+    expect(api.testRun).toHaveBeenCalledWith(word, 'pvp', 4, null);
   });
 
   it('sends nothing when no file or a non-PDF is chosen', async () => {

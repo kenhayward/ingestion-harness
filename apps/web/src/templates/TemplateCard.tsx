@@ -3,6 +3,8 @@ import type { Api, TemplateListItem } from '../api/client.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 import { qualityLine, shapeLine } from './quality.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 /**
  * One document type (UI handoff §4): versions, shape, quality, and the quick actions (edit or
@@ -37,19 +39,17 @@ export function TemplateCard({
     }
   };
 
-  const testRun = async (file: File | undefined) => {
+  /** The sample picked for a test run, asking for the model in the re-process dialog. */
+  const [testFile, setTestFile] = useState<File | null>(null);
+  const choices = useModelChoices(api);
+  const pickTestFile = (file: File | undefined) => {
     if (!file || shown === null) return; // picker cancelled
     if (!isSourceFile(file)) {
       setStatus('Choose a PDF or Word document');
       return;
     }
-    setStatus('Queuing test run…');
-    try {
-      await api.testRun(file, item.id, shown);
-      setStatus('Test run queued — see Jobs');
-    } catch (err) {
-      setStatus(`Test run failed: ${(err as Error).message}`);
-    }
+    setStatus(null);
+    setTestFile(file);
   };
 
   return (
@@ -105,7 +105,7 @@ export function TemplateCard({
               accept={SOURCE_ACCEPT}
               aria-label={`Test run ${item.name} with a PDF or Word document`}
               onChange={(e) => {
-                void testRun(e.target.files?.[0]);
+                pickTestFile(e.target.files?.[0]);
                 e.target.value = '';
               }}
             />
@@ -124,6 +124,24 @@ export function TemplateCard({
         <p role="status" className="muted">
           {status}
         </p>
+      )}
+      {testFile && shown !== null && (
+        <ReprocessDialog
+          title={`Test run ${item.name} v${shown}`}
+          confirmLabel="Run test"
+          choices={choices}
+          emptyLabel="Template's models"
+          summary={
+            <p>
+              Runs {testFile.name} through v{shown}: reviewable, never published.
+            </p>
+          }
+          onConfirm={async (model) => {
+            await api.testRun(testFile, item.id, shown, model);
+            setStatus('Test run queued — see Jobs');
+          }}
+          onClose={() => setTestFile(null)}
+        />
       )}
     </article>
   );

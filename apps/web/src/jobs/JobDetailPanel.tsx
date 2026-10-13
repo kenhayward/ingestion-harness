@@ -42,7 +42,6 @@ export function JobDetailPanel({
   api,
   job,
   onChanged,
-  retryModel,
   models,
   specTitles,
   now,
@@ -50,7 +49,6 @@ export function JobDetailPanel({
   api: Api;
   job: JobSummary;
   onChanged: () => void;
-  retryModel: string;
   models: readonly ModelChoice[];
   specTitles: ReadonlyMap<string, string>;
   now: number;
@@ -134,14 +132,7 @@ export function JobDetailPanel({
           <p className="muted">{filesText(published)}</p>
         </section>
       )}
-      <JobActions
-        api={api}
-        job={job}
-        onChanged={onChanged}
-        retryModel={retryModel}
-        models={models}
-        variant="panel"
-      />
+      <JobActions api={api} job={job} onChanged={onChanged} models={models} variant="panel" />
     </aside>
   );
 }

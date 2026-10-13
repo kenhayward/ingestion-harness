@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { JobSummary } from '@ih/shared';
+import type { DataPolicy, JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 const REVIEWABLE = new Set(['awaiting_review', 'succeeded']);
 
@@ -8,17 +10,20 @@ const REVIEWABLE = new Set(['awaiting_review', 'succeeded']);
 export function RunsTab({
   api,
   projectId,
+  dataPolicy,
   draft,
   pollMs,
 }: {
   api: Api;
   projectId: string;
+  dataPolicy: DataPolicy;
   draft: number | null;
   pollMs: number;
 }) {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const choices = useModelChoices(api);
 
   const refresh = useCallback(async () => {
     try {
@@ -39,19 +44,6 @@ export function RunsTab({
     return () => clearInterval(timer);
   }, [active, pollMs, refresh]);
 
-  const run = async () => {
-    setError(null);
-    setStarting(true);
-    try {
-      await api.runDevTests(projectId);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setStarting(false);
-    }
-    await refresh();
-  };
-
   return (
     <div className="runs">
       <p className="muted">
@@ -61,11 +53,31 @@ export function RunsTab({
       <button
         type="button"
         className="primary"
-        disabled={draft === null || starting}
-        onClick={() => void run()}
+        disabled={draft === null}
+        onClick={() => setAsking(true)}
       >
-        Run on dev samples
+        Run on dev samples…
       </button>
+      {asking && draft !== null && (
+        <ReprocessDialog
+          title={`Run v${draft} on the dev samples`}
+          confirmLabel="Run"
+          choices={choices}
+          emptyLabel="Template's models"
+          dataPolicy={dataPolicy}
+          summary={
+            <p>
+              Test-runs the draft on every prepared dev sample (never holdout). Unchanged steps
+              reuse their cached output; nothing is delivered.
+            </p>
+          }
+          onConfirm={async (model) => {
+            await api.runDevTests(projectId, model);
+            await refresh();
+          }}
+          onClose={() => setAsking(false)}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
       {jobs !== null && jobs.length > 0 && (
         <table aria-label="Test runs">

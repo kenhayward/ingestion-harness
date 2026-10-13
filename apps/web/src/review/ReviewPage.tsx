@@ -9,7 +9,8 @@ import { display, effectiveView } from './effective.js';
 import { PageViewer } from './PageViewer.js';
 import { flaggedTargets, targetKey } from './queue.js';
 import { ReviewHeader } from './ReviewHeader.js';
-import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -68,7 +69,6 @@ export function ReviewPage({
   const models = useModelChoices(api);
   const [rerun, setRerun] = useState<{
     step: string;
-    model: string;
     instructions: string;
     pages: string;
   } | null>(null);
@@ -320,7 +320,6 @@ export function ReviewPage({
                               onClick={() =>
                                 setRerun({
                                   step: step.id,
-                                  model: '',
                                   instructions: '',
                                   pages: String(page),
                                 })
@@ -336,38 +335,31 @@ export function ReviewPage({
                 </tbody>
               </table>
               {rerun && (
-                <form
-                  className="rerun"
-                  aria-label={`Re-run ${rerun.step}`}
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void decide(() =>
-                      api.rerunStep(jobId, rerun.step, {
-                        ...(rerun.model.trim() ? { model: rerun.model.trim() } : {}),
-                        ...(rerun.instructions.trim()
-                          ? { instructions: rerun.instructions.trim() }
-                          : {}),
-                        ...(pageList(rerun.pages).length
-                          ? { pageImages: pageList(rerun.pages) }
-                          : {}),
-                      }),
-                    );
+                <ReprocessDialog
+                  title={`Re-run ${rerun.step}`}
+                  confirmLabel="Queue re-run"
+                  choices={models}
+                  emptyLabel="Step default"
+                  summary={
+                    <p>
+                      Only <code>{rerun.step}</code> calls the model again (OCR is reused); its
+                      values are replaced and the checks re-run.
+                    </p>
+                  }
+                  onConfirm={async (model) => {
+                    await api.rerunStep(jobId, rerun.step, {
+                      ...(model ? { model } : {}),
+                      ...(rerun.instructions.trim()
+                        ? { instructions: rerun.instructions.trim() }
+                        : {}),
+                      ...(pageList(rerun.pages).length
+                        ? { pageImages: pageList(rerun.pages) }
+                        : {}),
+                    });
+                    onDone();
                   }}
+                  onClose={() => setRerun(null)}
                 >
-                  <p>
-                    Re-run <code>{rerun.step}</code>: only this step calls the model again (OCR is
-                    reused), its values are replaced and the checks re-run.
-                  </p>
-                  <div className="field">
-                    Model for re-run
-                    <ModelPicker
-                      label="Model for re-run"
-                      choices={models}
-                      value={rerun.model}
-                      emptyLabel="Step default"
-                      onChange={(model) => setRerun({ ...rerun, model })}
-                    />
-                  </div>
                   <label>
                     Guidance for re-run
                     <textarea
@@ -383,13 +375,7 @@ export function ReviewPage({
                       onChange={(e) => setRerun({ ...rerun, pages: e.target.value })}
                     />
                   </label>
-                  <button type="submit" disabled={busy}>
-                    Queue re-run
-                  </button>
-                  <button type="button" className="link" onClick={() => setRerun(null)}>
-                    Cancel
-                  </button>
-                </form>
+                </ReprocessDialog>
               )}
             </div>
           )}

@@ -270,3 +270,29 @@ describe('template steps name model choices', () => {
     expect((await ctx.app.inject('/api/templates/letter/versions/1')).json().issues).toEqual([]);
   });
 });
+
+describe('Workbench dev test runs pick a model choice (phase 4d)', () => {
+  it('runs the draft with the choice picked, or the template models without one', async () => {
+    const { post, repo } = await project();
+    const res = await post('/test-runs', { model: 'fast' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().jobs.map((j: { modelOverride: string | null }) => j.modelOverride)).toEqual([
+      'fast',
+    ]);
+    const plain = await post('/test-runs', {});
+    expect(plain.json().jobs[0].modelOverride).toBeNull();
+    expect(repo.jobs.size).toBeGreaterThan(0);
+  });
+
+  it('refuses a name that is no choice, or an external one for a local-only project', async () => {
+    const { post } = await project();
+    expect((await post('/test-runs', { model: 'nope' })).json().error).toBe(
+      'unknown model choice nope',
+    );
+    const external = await post('/test-runs', { model: 'cloud' });
+    expect(external.statusCode).toBe(400);
+    expect(external.json().error).toBe(
+      'Cloud model runs on an external endpoint: this project is local-only',
+    );
+  });
+});

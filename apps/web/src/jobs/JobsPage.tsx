@@ -58,8 +58,6 @@ export function JobsPage({
   pickPending: boolean;
   onPicked: () => void;
 }) {
-  /** The upload strip's Model selection; Retry and Re-process use it too. */
-  const [retryModel, setRetryModel] = useState('');
   const [chip, setChip] = useState<Chip>('all');
   const [mine, setMine] = useState(loadMine);
   const mineJobs = useJobs(api, pollMs, { mine: true, enabled: mine });
@@ -121,13 +119,7 @@ export function JobsPage({
           </span>
         )}
       </div>
-      <UploadStrip
-        api={api}
-        onUploaded={refresh}
-        onModelChange={setRetryModel}
-        pickPending={pickPending}
-        onPicked={onPicked}
-      />
+      <UploadStrip api={api} onUploaded={refresh} pickPending={pickPending} onPicked={onPicked} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <div className="jobs-layout">
         <section className="jobs-main" aria-label="Job list">
@@ -169,7 +161,6 @@ export function JobsPage({
               selectedId={selected?.id ?? null}
               onSelect={setSelectedId}
               onChanged={refresh}
-              retryModel={retryModel}
               models={models}
               specTitles={specTitles}
               now={now}
@@ -196,7 +187,6 @@ export function JobsPage({
             api={api}
             job={selected}
             onChanged={refresh}
-            retryModel={retryModel}
             models={models}
             specTitles={specTitles}
             now={now}

@@ -334,7 +334,8 @@ export interface Api {
   importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
   exportUrl(id: string, version: number): string;
   /** Upload a sample against a (draft) version as a test run (never published). */
-  testRun(file: File, id: string, version: number): Promise<JobSummary>;
+  /** `model`: a model choice's id for every step; null or absent: the template's models. */
+  testRun(file: File, id: string, version: number, model?: string | null): Promise<JobSummary>;
   // --- workbench (ADR 0007) ---
   /** One page of the project list; only the params that are set are sent. */
   listProjectPage(
@@ -426,7 +427,8 @@ export interface Api {
   listBriefVersions(projectId: string): Promise<BriefVersionView[]>;
   getBriefVersion(projectId: string, version: number): Promise<Brief>;
   /** Test-run the open draft on every prepared dev sample. */
-  runDevTests(projectId: string): Promise<{ jobs: JobSummary[] }>;
+  /** `model`: a model choice's id for every step; null or absent: the template's models. */
+  runDevTests(projectId: string, model?: string | null): Promise<{ jobs: JobSummary[] }>;
   listTestRuns(projectId: string): Promise<JobSummary[]>;
   /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
   startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
@@ -789,8 +791,11 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/workbench/projects/${id}/briefs`).then(json<BriefVersionView[]>),
     getBriefVersion: (id, version) =>
       apiFetch(`${base}/workbench/projects/${id}/briefs/${version}`).then(json<Brief>),
-    runDevTests: (id) =>
-      post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {}),
+    runDevTests: (id, model) =>
+      post<{ jobs: JobSummary[] }>(
+        `${base}/workbench/projects/${id}/test-runs`,
+        model ? { model } : {},
+      ),
     listTestRuns: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<JobSummary[]>),
     startSegmentation: (id, document) =>
@@ -881,11 +886,12 @@ export function createHttpApi(base = '/api'): Api {
     importTemplate: (yaml, publish) =>
       post<TemplateRecordView>(`${base}/templates/import`, { yaml, publish }),
     exportUrl: (id, version) => `${base}/templates/${id}/versions/${version}/export`,
-    testRun: (file, id, version) => {
+    testRun: (file, id, version, model) => {
       const form = new FormData();
       form.append('specId', id);
       form.append('specVersion', String(version));
       form.append('test', 'true');
+      if (model) form.append('model', model); // fields precede the file
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },

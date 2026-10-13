@@ -15251,7 +15251,25 @@
         "tags": [
           "Test runs"
         ],
-        "description": "Queues a test job of the open draft for every ready dev sample (holdout samples are\nnever used). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.",
+        "description": "Queues a test job of the open draft for every ready dev sample (holdout samples are\nnever used). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -15439,41 +15457,20 @@
             }
           },
           "400": {
-            "description": "The open draft is not valid: `the draft is not valid`, with `issues`.",
+            "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`).",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": {},
                     "issues": {
                       "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "type": "string"
-                          },
-                          "message": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "path",
-                          "message"
-                        ],
-                        "additionalProperties": true
-                      }
+                      "items": {}
                     }
                   },
-                  "required": [
-                    "error",
-                    "issues"
-                  ],
                   "additionalProperties": true,
-                  "description": "The open draft is not valid: `the draft is not valid`, with `issues`."
+                  "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`)."
                 }
               }
             }

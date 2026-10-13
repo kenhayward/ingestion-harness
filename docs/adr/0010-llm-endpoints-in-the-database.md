@@ -1,6 +1,6 @@
 # 0010: LLM endpoints and curated models live in the database; .env seeds them
 
-**Status:** accepted · 2026-10-13 · phases 1-3 and 4a-4c implemented
+**Status:** accepted · 2026-10-13 · phases 1-4 implemented
 
 ## Context
 Content Transformation Studio (CT Studio) had one local LLM endpoint (`LOCAL_LLM_BASE_URL`) next
@@ -84,7 +84,13 @@ rather than by editing files and restarting workers.
    `fast` and `draft` iterations need no migration and still show by name). A draft step
    naming an `endpoint/model` ref is a template issue (it blocks publishing); published
    versions and `spec.yaml` keep running theirs.
-   **Next (4d):** one re-process dialog for every re-run, with the picker.
+   **4d:** one re-process dialog for every re-run (`ReprocessDialog`, on `Dialog`): it says
+   what will run, offers the picker (or shows the model a run must use) and runs only on
+   confirm; a refusal stays in the dialog. Jobs (Retry, Re-process; the upload strip's model no
+   longer drives Retry, which starts from the job's own model), the Review step re-run (with its
+   guidance and pages), the Workbench (Run on dev samples, which now takes a choice; Evaluate;
+   Compare, its set of choices in the dialog; both reference runs, their model fixed) and
+   Document types (test runs; regression, fixed to the template's own models).
 
 ## Consequences
 - **The database is now the source of truth for models.** The config file and `.env` describe

@@ -1,65 +1,63 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import {
-  DELETABLE_STATUSES,
-  pickedChoice,
-  type JobStatus,
-  type JobSummary,
-  type ModelChoice,
-} from '@ih/shared';
+import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelChoice } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { isWordDocument } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
-import { ModelPicker } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { menuPosition, primaryAction } from './derive.js';
 
-type Action = 'cancel' | 'delete' | 're-process' | 'retry-model';
+type Action = 'cancel' | 'delete' | 'retry' | 're-process';
+/** Confirmed inline; Retry and Re-process open the re-process dialog. */
+type InlineAction = 'cancel' | 'delete';
 
 /** Inline confirmation text per action (also the Confirm button's description). */
-const PROMPTS: Record<Exclude<Action, 'retry-model'>, (filename: string) => string> = {
+const PROMPTS: Record<InlineAction, (filename: string) => string> = {
   delete: (f) => `Delete ${f}? Published copies in the target are kept.`,
   cancel: () => 'Cancel job?',
+};
+
+/** What a retry or re-process runs, said in its dialog. */
+const RUNS: Record<'retry' | 're-process', (filename: string) => string> = {
+  retry: (f) => `${f} runs again from the start, on the latest version of its document type.`,
   're-process': (f) =>
-    `Re-process ${f}? It is extracted again on the latest template version; earlier review edits are discarded.`,
+    `${f} is extracted again on the latest template version; earlier review edits are discarded.`,
 };
 
 const DELETABLE = new Set<JobStatus>(DELETABLE_STATUSES);
-const RETRYABLE = new Set<JobStatus>(['failed', 'needs_review', 'cancelled']);
 /** Actions that live in the ⋯ menu on a row (focus returns to the ⋯ button). */
-const MENU_ACTIONS = new Set<Action>(['delete', 're-process', 'retry-model']);
+const MENU_ACTIONS = new Set<Action>(['delete', 're-process']);
 
 /**
  * A job's actions. `row`: the main action for its status plus a ⋯ menu; `panel`: everything as
- * buttons. Cancel, Delete, Re-process and Retry-with-another-model confirm inline first; that
- * state is local, so a poll refresh (same job id) keeps it open.
+ * buttons. Cancel and Delete confirm inline first; Retry and Re-process open the re-process
+ * dialog (what runs, and the model choice to run it with). That state is local, so a poll
+ * refresh (same job id) keeps it open.
  */
 export function JobActions({
   api,
   job,
   onChanged,
-  retryModel,
   models,
   variant,
 }: {
   api: Api;
   job: JobSummary;
   onChanged: () => void;
-  /** Model selected in the upload strip ('' = spec default): Retry and Re-process use it. */
-  retryModel: string;
-  /** The model choices "Retry with another model…" offers. */
+  /** The model choices Retry and Re-process offer. */
   models: readonly ModelChoice[];
   variant: 'row' | 'panel';
 }) {
-  const [confirm, setConfirm] = useState<Action | null>(null);
+  const [confirm, setConfirm] = useState<InlineAction | null>(null);
+  const [dialog, setDialog] = useState<'retry' | 're-process' | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   /** Fixed position under the ⋯ button: the list box scrolls, so an absolute menu would be clipped. */
   const [menuAt, setMenuAt] = useState<ReturnType<typeof menuPosition> | null>(null);
-  const [picked, setPicked] = useState('');
   const [error, setError] = useState<string | null>(null);
   const menuId = useId();
   const promptId = useId();
   const wrapper = useRef<HTMLDivElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
   const triggers = useRef<Partial<Record<Action, HTMLButtonElement | null>>>({});
   const [returnFocus, setReturnFocus] = useState<Action | 'menu' | null>(null);
 
@@ -94,9 +92,6 @@ export function JobActions({
   }, [menuOpen]);
 
   const file = job.filename;
-  const model = retryModel
-    ? (pickedChoice(retryModel, models)?.label ?? retryModel)
-    : 'spec default';
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -111,8 +106,8 @@ export function JobActions({
   const ask = (action: Action) => {
     setMenuOpen(false);
     setError(null);
-    if (action === 'retry-model') setPicked(retryModel);
-    setConfirm(action);
+    if (action === 'retry' || action === 're-process') setDialog(action);
+    else setConfirm(action);
   };
   const keep = () => {
     setReturnFocus(confirm);
@@ -124,34 +119,6 @@ export function JobActions({
     </div>
   );
 
-  if (confirm === 'retry-model') {
-    return (
-      <div className="inline-confirm">
-        <ModelPicker
-          selectRef={(el) => {
-            confirmRef.current = el;
-          }}
-          label={`Model for ${file}`}
-          choices={models}
-          value={picked}
-          onChange={setPicked}
-          emptyLabel="Spec default"
-        />
-        <button
-          type="button"
-          className="primary"
-          aria-label={`Confirm retry ${file}`}
-          onClick={() => void run(() => api.retryJob(job.id, picked || null))}
-        >
-          Retry
-        </button>
-        <button type="button" aria-label={`Keep ${file}`} onClick={keep}>
-          Keep
-        </button>
-        {alert}
-      </div>
-    );
-  }
   if (confirm) {
     return (
       <div className="inline-confirm">
@@ -165,13 +132,7 @@ export function JobActions({
           aria-label={`Confirm ${confirm} ${file}`}
           aria-describedby={promptId}
           onClick={() =>
-            void run(() =>
-              confirm === 'delete'
-                ? api.deleteJob(job.id)
-                : confirm === 'cancel'
-                  ? api.cancelJob(job.id)
-                  : api.retryJob(job.id, retryModel || null),
-            )
+            void run(() => (confirm === 'delete' ? api.deleteJob(job.id) : api.cancelJob(job.id)))
           }
         >
           Confirm
@@ -200,10 +161,11 @@ export function JobActions({
     ) : primary === 'retry' ? (
       <button
         type="button"
-        aria-label={`Retry with ${model}`}
-        onClick={() => void run(() => api.retryJob(job.id, retryModel || null))}
+        ref={trigger('retry')}
+        aria-label={`Retry ${file}`}
+        onClick={() => ask('retry')}
       >
-        Retry
+        Retry…
       </button>
     ) : primary === 'cancel' ? (
       <button type="button" ref={trigger('cancel')} onClick={() => ask('cancel')}>
@@ -213,16 +175,11 @@ export function JobActions({
 
   const secondary = (
     <>
-      {RETRYABLE.has(job.status) && (
-        <button type="button" ref={trigger('retry-model')} onClick={() => ask('retry-model')}>
-          Retry with another model…
-        </button>
-      )}
       {job.status === 'succeeded' && (
         <button
           type="button"
           ref={trigger('re-process')}
-          aria-label={`Re-process with ${model}`}
+          aria-label={`Re-process ${file}`}
           onClick={() => ask('re-process')}
         >
           Re-process…
@@ -251,12 +208,32 @@ export function JobActions({
     </>
   );
 
+  const reprocess = dialog && (
+    <ReprocessDialog
+      title={`${dialog === 'retry' ? 'Retry' : 'Re-process'} ${file}`}
+      confirmLabel={dialog === 'retry' ? 'Retry' : 'Re-process'}
+      choices={models}
+      initialModel={job.modelOverride ?? ''}
+      emptyLabel="Document type's models"
+      summary={<p>{RUNS[dialog](file)}</p>}
+      onConfirm={async (model) => {
+        await api.retryJob(job.id, model);
+        onChanged();
+      }}
+      onClose={() => {
+        setReturnFocus(dialog);
+        setDialog(null);
+      }}
+    />
+  );
+
   if (variant === 'panel') {
     return (
       <div className="panel-actions">
         {main}
         {secondary}
         {alert}
+        {reprocess}
       </div>
     );
   }
@@ -301,6 +278,7 @@ export function JobActions({
         </div>
       )}
       {alert}
+      {reprocess}
     </div>
   );
 }

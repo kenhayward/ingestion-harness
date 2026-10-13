@@ -90,8 +90,14 @@ describe('ReferencesTab', () => {
       { proposeReferences: vi.fn(async () => [job()]) },
     );
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Run the draft model on 1 unverified' }),
+      await screen.findByRole('button', { name: 'Run the draft model on 1 unverified…' }),
     );
+    // The re-process dialog says what runs; the model is fixed (the drafting model).
+    const dialog = screen.getByRole('dialog', { name: 'Reference runs on 1 dev sample' });
+    expect(dialog).toHaveTextContent('The drafting model');
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(api.proposeReferences).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
     expect(api.proposeReferences).toHaveBeenCalledWith('letter');
     expect(onChanged).toHaveBeenCalled();
   });
@@ -108,7 +114,7 @@ describe('ReferencesTab', () => {
   ])('disables the dev run button: %s', async (_name, dev, draft, reason) => {
     tab({ dev }, {}, { draft });
     const button = await screen.findByRole('button', {
-      name: /^Run the draft model on \d+ unverified$/,
+      name: /^Run the draft model on \d+ unverified…$/,
     });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', reason);
@@ -292,8 +298,11 @@ describe('ReferencesTab samples list', () => {
     );
     const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
     await userEvent.click(
-      within(holdout).getByRole('button', { name: 'Run the template on 1 unverified' }),
+      within(holdout).getByRole('button', { name: 'Run the template on 1 unverified…' }),
     );
+    const dialog = screen.getByRole('dialog', { name: 'Reference runs on 1 holdout sample' });
+    expect(dialog).toHaveTextContent("The template's own models");
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
     expect(api.startHoldoutReferenceRuns).toHaveBeenCalledWith('letter');
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
@@ -302,7 +311,7 @@ describe('ReferencesTab samples list', () => {
     tab({ holdout: [saved('h.pdf')] });
     const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
     const button = within(holdout).getByRole('button', {
-      name: 'Run the template on 0 unverified',
+      name: 'Run the template on 0 unverified…',
     });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'Every holdout sample has a verified reference');

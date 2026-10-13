@@ -51,13 +51,11 @@ describe('UploadStrip remembers the model', () => {
     expect(localStorage.getItem('ih.uploadModel')).toBeNull();
   });
 
-  it('restores it on the next visit and reports it (for Retry)', async () => {
+  it('restores it on the next visit', async () => {
     localStorage.setItem('ih.uploadModel', opus.ref);
-    const onModelChange = vi.fn();
-    render(<UploadStrip api={api()} onUploaded={() => {}} onModelChange={onModelChange} />);
+    render(<UploadStrip api={api()} onUploaded={() => {}} />);
     await screen.findByRole('option', { name: /New for testing only/ });
     expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
-    expect(onModelChange).toHaveBeenCalledWith(opus.ref);
   });
 
   it('keeps it across uploads', async () => {
@@ -74,11 +72,9 @@ describe('UploadStrip remembers the model', () => {
 
   it("falls back to the document type's models when the saved choice is gone", async () => {
     localStorage.setItem('ih.uploadModel', 'anthropic/retired');
-    const onModelChange = vi.fn();
-    render(<UploadStrip api={fakeApi()} onUploaded={() => {}} onModelChange={onModelChange} />);
+    render(<UploadStrip api={fakeApi()} onUploaded={() => {}} />);
     await waitFor(() => expect(localStorage.getItem('ih.uploadModel')).toBeNull());
     expect(screen.getByLabelText('Model')).toHaveValue('');
-    expect(onModelChange).not.toHaveBeenCalledWith('anthropic/retired');
   });
 
   it('works when storage is unavailable', async () => {

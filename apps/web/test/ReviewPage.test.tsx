@@ -296,7 +296,9 @@ describe('ReviewPage', () => {
     const row = await screen.findByRole('row', { name: /data/ });
     expect(row).toHaveTextContent('local/qwen');
     await userEvent.click(within(row).getByRole('button', { name: 'Re-run data' }));
-    const model = screen.getByRole('combobox', { name: 'Model for re-run' });
+    const dialog = screen.getByRole('dialog', { name: 'Re-run data' });
+    expect(dialog).toHaveTextContent('Only data calls the model again');
+    const model = within(dialog).getByRole('combobox', { name: 'Model' });
     expect(within(model).getByRole('option', { name: 'Step default' })).toBeInTheDocument();
     // The model choices, by label (ADR 0010, phase 4c).
     await within(model).findByRole('option', { name: 'New for testing only' });
