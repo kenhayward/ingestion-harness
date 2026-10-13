@@ -329,6 +329,7 @@ export function ProjectPage({
                 briefVersion={view.brief?.version ?? null}
                 pollMs={pollMs}
                 onApplied={changed}
+                onConfirmed={loadOverview}
                 onSkipped={changed}
               />
               <SectionsTab

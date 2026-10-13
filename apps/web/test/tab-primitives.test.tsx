@@ -133,4 +133,17 @@ describe('StaleBanner', () => {
     expect(note).toHaveAttribute('data-tone', 'info');
     expect(within(note).queryByRole('img')).toBeNull();
   });
+
+  it('names its Keep button and has a skip tone', async () => {
+    const onKeep = vi.fn();
+    render(
+      <StaleBanner tone="skip" onKeep={onKeep} keepLabel="Keep these anchors">
+        Skipped
+      </StaleBanner>,
+    );
+    const note = screen.getByRole('note');
+    expect(note).toHaveAttribute('data-tone', 'skip');
+    await userEvent.click(screen.getByRole('button', { name: 'Keep these anchors' }));
+    expect(onKeep).toHaveBeenCalled();
+  });
 });

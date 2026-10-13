@@ -876,6 +876,10 @@ label.inline.list-select {
   border-color: var(--ih-info-fg);
   background: var(--ih-info-bg);
 }
+.stale-banner[data-tone='skip'] {
+  border-color: var(--ih-skip-fg);
+  background: var(--ih-skip-bg);
+}
 .stale-banner-text {
   flex: 1 1 280px;
   margin: 0;

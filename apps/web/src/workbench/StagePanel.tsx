@@ -18,6 +18,23 @@ import { stepCards, type StepMetric } from './steps.js';
 import { TabHeader } from './TabHeader.js';
 import { useDefinitions } from './useDefinitions.js';
 
+/** Handoff §0.4 / SC1: what Keep is called and what the banner asks, per stage. */
+const KEEP: Record<ChangeStage, { label: string; text: string }> = {
+  outputs: {
+    label: 'Keep these outputs',
+    text: 'Check the outputs below, then keep them as they are or propose again; the draft keeps what you applied until you apply new changes.',
+  },
+  sections: {
+    label: 'Keep these anchors',
+    text: 'The anchors may still work: check where they land below, then keep them or let the model propose new ones.',
+  },
+  steps: {
+    label: 'Keep these steps',
+    text: 'Check the steps below, then keep them as they are or propose again.',
+  },
+  revise: { label: 'Keep', text: '' }, // revise is never stale (not in STAGE_ORDER)
+};
+
 const DESCRIPTION: Record<ChangeStage, string | undefined> = {
   outputs:
     'The fields and tables every document of this type produces. The model proposes them from the brief and survey; you choose which to apply.',
@@ -74,6 +91,7 @@ export function StagePanel({
   hasDraft,
   pollMs,
   onApplied,
+  onConfirmed,
   onSkipped,
   draft,
   published = null,
@@ -90,6 +108,11 @@ export function StagePanel({
   hasDraft: boolean;
   pollMs: number;
   onApplied: () => void;
+  /**
+   * After Keep on a stale stage; defaults to `onApplied`. The draft is unchanged, so the sections
+   * tab passes a lighter reload.
+   */
+  onConfirmed?: () => void;
   onSkipped: () => void;
   /** Outputs/Steps: the open draft and live versions shown beside the proposal; omit to hide. */
   draft?: number | null;
@@ -185,6 +208,13 @@ export function StagePanel({
     };
   }, [api, projectId, stage, draft]);
 
+  const keep = () =>
+    act(async () => {
+      if (stage === 'revise') return;
+      await api.confirmStage(projectId, stage);
+      setMessage(`Kept as it is; ${(title ?? stage).toLowerCase()} is up to date again.`);
+      (onConfirmed ?? onApplied)();
+    });
   const run = () =>
     act(async () => {
       setJustAdded(new Set());
@@ -332,10 +362,9 @@ export function StagePanel({
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
-      {title !== undefined && item?.state === 'stale' && (
-        <StaleBanner>
-          {item.status}. Propose again to draft from the latest information; the draft keeps what
-          you applied until you apply new changes.
+      {title !== undefined && item?.state === 'stale' && stage !== 'revise' && (
+        <StaleBanner onKeep={() => void keep()} keepLabel={KEEP[stage].label} busy={busy}>
+          {item.status}. {KEEP[stage].text}
         </StaleBanner>
       )}
       {title !== undefined &&
