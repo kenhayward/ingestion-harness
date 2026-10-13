@@ -1,4 +1,5 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
+import { MemoryAccessRepo } from '../src/access/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
@@ -8,6 +9,7 @@ import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
 import { MemoryWorkbenchRepo } from '../src/workbench/repo.js';
+import { installConformance } from './openapi-conformance.js';
 
 export const demoSpec = DocumentSpecSchema.parse({
   id: 'demo',
@@ -86,7 +88,31 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     }),
     ...overrides,
   });
+  installConformance(app);
   return { app, repo, store, targetStore, templates, workbench };
+}
+
+/** An app with token access on (so the auth routes exist), signed-in cookies for both roles. */
+export async function accessApp(overrides: Partial<AppDeps> = {}) {
+  const access = new MemoryAccessRepo();
+  const ctx = await testApp({ access, ...overrides });
+  const signIn = async (token: string) => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { token },
+    });
+    return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1]}`;
+  };
+  const adminToken = await access.rotateAdminToken();
+  const userToken = (await access.createToken('user', null)).token;
+  return {
+    ...ctx,
+    access,
+    adminToken,
+    adminCookie: await signIn(adminToken),
+    userCookie: await signIn(userToken),
+  };
 }
 
 /** An object store whose reads fail like an unreachable S3 endpoint. */
