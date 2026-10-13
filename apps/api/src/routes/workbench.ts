@@ -26,6 +26,7 @@ import {
   MAX_SAMPLES,
   JobSummarySchema,
   PreparedTextSchema,
+  TemplateChangeSchema,
   ProjectListPageSchema,
   ProjectListQuerySchema,
   ProjectSummarySchema,
@@ -1807,6 +1808,36 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         ? await workbench.getBrief(params.data.id, params.data.version)
         : null;
       return found ?? reply.code(404).send({ error: 'brief version not found' });
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/draft/changes',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'listDraftChanges',
+        summary: "List the open draft's changes",
+        description: md`
+          The open draft's change log, newest first: every write to its definition with where it
+          came from (\`hand\` saves, applied \`proposal\`s with their \`stage\`, \`restore\`d
+          iterations, the draft's \`started\` entry, \`import\`s), a one-line \`summary\` and up to
+          four \`diff\` chips. Empty without an open draft, and for drafts started before the log
+          existed. The Template tab's _Changes since vN_ panel.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The changes, newest first.', z.array(TemplateChangeSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const { draft } = await versionsOf(templates, req.params.id);
+      return draft === null ? [] : templates.listChanges(req.params.id, draft);
     },
   );
 

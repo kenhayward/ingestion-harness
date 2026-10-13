@@ -17,6 +17,7 @@ import {
   type ProjectView,
   type WorkbenchProject,
 } from '@ih/shared';
+import { handEditedAt } from '../templates/changes.js';
 import type { IterationRecord, ProposalRecord } from '../workbench/repo.js';
 import { md, res } from '../openapi/zod.js';
 import {
@@ -93,7 +94,7 @@ async function gatherFacts(
   };
   const outputsProposal = newest('outputs', true);
   const version = view.draft ?? view.published;
-  const [template, survey, outputsResult, sectionsResult, stepsResult, dev, holdout] =
+  const [template, survey, outputsResult, sectionsResult, stepsResult, dev, holdout, draftChanges] =
     await Promise.all([
       version === null ? null : app.deps.templates.get(id, version),
       acceptedSurvey(app, id).catch(() => {
@@ -105,6 +106,7 @@ async function gatherFacts(
       newestReadable('steps'),
       referenceRows(app, id, 'dev', samples),
       referenceRows(app, id, 'holdout', samples),
+      version === null ? [] : app.deps.templates.listChanges(id, version),
     ]);
 
   const ready = samples.filter((s) => s.view.state === 'ready');
@@ -141,7 +143,7 @@ async function gatherFacts(
     template: {
       steps: count(definition.pipeline),
       sections: count(definition.document?.sections),
-      editedAt: template?.updatedAt ?? template?.createdAt ?? null,
+      editedAt: handEditedAt(draftChanges, template),
     },
     runs: ctx.runs,
     survey: {

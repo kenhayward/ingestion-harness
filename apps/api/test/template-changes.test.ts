@@ -5,8 +5,10 @@ import {
   preparedTriageKey,
   type ProposalView,
   type SampleView,
+  type TemplateChange,
   type TemplateChangeInput,
 } from '@ih/shared';
+import { handEditedAt } from '../src/templates/changes.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -298,4 +300,53 @@ describe('Workbench writes to the draft (TP1)', () => {
       diff: ['Letter → Old letter'],
     });
   });
+});
+
+describe('GET /api/workbench/projects/:id/draft/changes', () => {
+  it("lists the open draft's changes newest first", async () => {
+    const { app } = await testApp();
+    await app.inject(json('POST', '/api/workbench/projects', { id: 'letter', name: 'Letter' }));
+    await app.inject(json('PUT', '/api/templates/letter/versions/1', { definition: letter(1) }));
+    const res = await app.inject('/api/workbench/projects/letter/draft/changes');
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as TemplateChange[]).map((c) => [c.source, c.version])).toEqual([
+      ['hand', 1],
+      ['started', 1],
+    ]);
+  });
+
+  it('is empty without an open draft and 404s an unknown project', async () => {
+    const { app, templates } = await testApp();
+    await app.inject(json('POST', '/api/workbench/projects', { id: 'letter', name: 'Letter' }));
+    await templates.publish('letter', 1);
+    expect((await app.inject('/api/workbench/projects/letter/draft/changes')).json()).toEqual([]);
+    const missing = await app.inject('/api/workbench/projects/nope/draft/changes');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: 'project not found' });
+  });
+});
+
+describe('handEditedAt', () => {
+  const entry = (source: TemplateChange['source'], at: string): TemplateChange => ({
+    id: at,
+    version: 1,
+    at,
+    source,
+    stage: source === 'proposal' ? 'outputs' : null,
+    proposalId: null,
+    summary: 's',
+    diff: [],
+    by: null,
+  });
+  const record = { createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z' };
+  it.each<[string, TemplateChange[], string | null]>([
+    ['no log (before migration 0029): the last write', [], record.updatedAt],
+    [
+      'the newest hand change',
+      [entry('proposal', 'c'), entry('hand', 'b'), entry('hand', 'a')],
+      'b',
+    ],
+    ['no hand change yet', [entry('proposal', 'b'), entry('started', 'a')], null],
+  ])('%s', (_name, changes, expected) => expect(handEditedAt(changes, record)).toBe(expected));
+  it('is null without a version', () => expect(handEditedAt([], null)).toBeNull());
 });
