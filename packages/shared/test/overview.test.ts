@@ -286,9 +286,9 @@ describe('nextAction', () => {
       { kind: 'below_threshold', stage: 'evaluate', label: 'Re-run holdout' },
     ],
     [
-      'dev-only evaluation does not fail the gate',
-      inputs(),
-      { kind: 'continue', stage: 'evaluate', label: 'Start Evaluate' },
+      'running beats a failing gate',
+      inputs({ evaluation: { running: true }, gate: gate({ iterationId: 'it1', score: 0.5 }) }),
+      { kind: 'running', stage: 'evaluate', label: 'Evaluate running' },
     ],
     [
       'nothing evaluated yet',
