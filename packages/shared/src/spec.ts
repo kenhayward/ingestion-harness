@@ -219,9 +219,10 @@ export const DocumentSpecSchema = z
 
 export type DocumentSpec = z.infer<typeof DocumentSpecSchema>;
 
-export interface SpecSummary {
-  id: string;
-  version: number;
-  title: string;
-  description?: string;
-}
+export const SpecSummarySchema = z.object({
+  id: z.string(),
+  version: z.number().int(),
+  title: z.string(),
+  description: z.string().optional(),
+});
+export type SpecSummary = z.infer<typeof SpecSummarySchema>;

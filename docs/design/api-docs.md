@@ -1,6 +1,6 @@
 # API docs: an OpenAPI reference for the API
 
-**Status:** PRs 1–2 implemented · 2026-10-13 · approved in conversation
+**Status:** PRs 1–3 implemented · 2026-10-13 · approved in conversation
 
 The API has about 95 routes in 13 route plugins (`apps/api/src/app.ts`), more than half of them in
 the Workbench. The only description of them today is the code and `CLAUDE.md`. This design adds
@@ -231,7 +231,7 @@ Each PR is red-tests-first and leaves `npm run check` green.
    document at `/api/docs`, public route flag + sweep change + ADR 0006 addendum, docs sweep with a
    full allow-list, conformance helper, snapshot, app links. Documents Health and Auth.
 2. **Pipeline** (done): Documents, Jobs, Review & steps, Results, Models.
-3. **Configuration**: Specs, Templates, References & regression.
+3. **Configuration** (done): Specs, Templates, References & regression.
 4. **Workbench** (two or three PRs): projects, samples, brief and data policy; drafting stages,
    proposals, feedback and revise; test runs, evaluation, holdout, publish and bundles.
 5. **Finish**: delete the allow-list, move the route rules from `CLAUDE.md` into a link to the

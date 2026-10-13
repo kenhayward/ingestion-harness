@@ -1,16 +1,21 @@
+import { z } from 'zod';
+
 /**
  * Structural diff of two template definitions. Lists of objects with an `id` (sections, fields,
  * tables, columns, steps) are matched by id rather than position, so moving or inserting an
  * item reads as one change instead of a cascade.
  */
 
-export interface Change {
-  kind: 'added' | 'removed' | 'changed';
+export const ChangeSchema = z.object({
+  kind: z.enum(['added', 'removed', 'changed']),
   /** e.g. "outputs.fields[a].type", "pipeline[s1].instructions", "pipeline order". */
-  path: string;
-  before?: unknown;
-  after?: unknown;
-}
+  path: z
+    .string()
+    .describe('e.g. `outputs.fields[a].type`, `pipeline[s1].instructions`, `pipeline order`.'),
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+});
+export type Change = z.infer<typeof ChangeSchema>;
 
 type Obj = Record<string, unknown>;
 
