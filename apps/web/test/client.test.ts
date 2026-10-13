@@ -568,10 +568,14 @@ describe('http api: runs with a model choice (phase 4d)', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     const api = createHttpApi('/api');
-    await api.runDevTests('letter', 'test');
-    await api.runDevTests('letter', null);
+    await api.runDevTests('letter', { model: 'test' });
+    await api.runDevTests('letter', { model: null });
+    await api.runDevTests('letter', { sampleIds: ['s1', 's2'] });
+    await api.runDevTests('letter');
     expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
       { model: 'test' },
+      {},
+      { sampleIds: ['s1', 's2'] },
       {},
     ]);
     fetchMock.mockClear();
@@ -579,5 +583,15 @@ describe('http api: runs with a model choice (phase 4d)', () => {
     const form = fetchMock.mock.calls[0]![1]!.body as FormData;
     expect([...form.keys()]).toEqual(['specId', 'specVersion', 'test', 'model', 'file']);
     expect(form.get('model')).toBe('test');
+  });
+
+  it('reads the queue summary', async () => {
+    const fetchMock = vi.fn(async (_url: string) =>
+      respond(200, { ahead: 3, running: 1, etaSeconds: 120 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    expect(await api.getQueueSummary()).toEqual({ ahead: 3, running: 1, etaSeconds: 120 });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/queue/summary');
   });
 });

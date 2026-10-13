@@ -72,7 +72,7 @@ export function RunsTab({
             </p>
           }
           onConfirm={async (model) => {
-            await api.runDevTests(projectId, model);
+            await api.runDevTests(projectId, { model });
             await refresh();
           }}
           onClose={() => setAsking(false)}

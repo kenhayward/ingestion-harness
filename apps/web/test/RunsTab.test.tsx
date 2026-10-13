@@ -26,7 +26,7 @@ describe('RunsTab', () => {
     ).toBe(true);
     await userEvent.selectOptions(model, 'New for testing only');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
-    expect(api.runDevTests).toHaveBeenCalledWith('letter', 'test');
+    expect(api.runDevTests).toHaveBeenCalledWith('letter', { model: 'test' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const table = await screen.findByRole('table', { name: 'Test runs' });
     const row = within(table).getByRole('cell', { name: 's1.pdf' }).closest('tr')!;
@@ -69,7 +69,7 @@ describe('RunsTab', () => {
     finish();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(api.runDevTests).toHaveBeenCalledTimes(1);
-    expect(api.runDevTests).toHaveBeenCalledWith('letter', null);
+    expect(api.runDevTests).toHaveBeenCalledWith('letter', { model: null });
   });
 
   it('cannot run without an open draft', async () => {
