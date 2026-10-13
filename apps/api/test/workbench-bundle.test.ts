@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { strToU8, zipSync } from 'fflate';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_BRIEF,
   draftingKey,
@@ -15,6 +15,8 @@ import {
 } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
 import type { AppDeps } from '../src/app.js';
+import { TemplateConflictError } from '../src/templates/repo.js';
+import { WorkbenchConflictError } from '../src/workbench/repo.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -318,17 +320,24 @@ const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const memoYaml = 'id: memo\nversion: 3\nname: Memo\noutputs:\n  fields: []\n  tables: []\n';
 const samplePath = `samples/${sha(pdfBytes(1))}.pdf`;
 
-function bundleFiles(overrides: { manifest?: object; files?: Record<string, Uint8Array> } = {}) {
-  const pdf = pdfBytes(1);
+/** A bundle's entries; `samples` are listed as m1.pdf, m2.pdf, … (default: one PDF). */
+function bundleFiles(
+  overrides: { manifest?: object; files?: Record<string, Uint8Array>; samples?: Buffer[] } = {},
+) {
+  const samples = overrides.samples ?? [pdfBytes(1)];
   const manifest = {
     format: 'ih-workbench-bundle',
     formatVersion: 1,
     project: { id: 'memo', name: 'Memo' },
     templateVersion: 3,
     briefVersion: 2,
-    samples: [
-      { sampleId: 'x', filename: 'm1.pdf', sha256: sha(pdf), file: samplePath, inContext: true },
-    ],
+    samples: samples.map((pdf, i) => ({
+      sampleId: `x${i}`,
+      filename: `m${i + 1}.pdf`,
+      sha256: sha(pdf),
+      file: `samples/${sha(pdf)}.pdf`,
+      inContext: true,
+    })),
     stages: ['survey'],
     ...overrides.manifest,
   };
@@ -336,9 +345,30 @@ function bundleFiles(overrides: { manifest?: object; files?: Record<string, Uint
     'manifest.json': strToU8(JSON.stringify(manifest)),
     'brief.json': strToU8(JSON.stringify({ purpose: 'Memos' })),
     'template.yaml': strToU8(memoYaml),
-    [samplePath]: new Uint8Array(pdf),
+    ...Object.fromEntries(samples.map((pdf) => [`samples/${sha(pdf)}.pdf`, new Uint8Array(pdf)])),
     ...overrides.files,
   } as Record<string, Uint8Array>;
+}
+
+/** 9 MiB of zeros: past the inflated limit for `maxUploadBytes: 1024`, a few KiB zipped. */
+const PADDING = { 'padding.bin': new Uint8Array(9 * 1024 * 1024) };
+
+/** Rewrites the uncompressed size `name` claims in its local and central headers. */
+function lieAboutSize(zip: Buffer, name: string, size: number) {
+  const out = Buffer.from(zip);
+  const needle = Buffer.from(name);
+  let patched = 0;
+  for (let at = out.indexOf(needle); at !== -1; at = out.indexOf(needle, at + 1)) {
+    if (at >= 30 && out.readUInt32LE(at - 30) === 0x04034b50) {
+      out.writeUInt32LE(size, at - 30 + 22);
+      patched += 1;
+    } else if (at >= 46 && out.readUInt32LE(at - 46) === 0x02014b50) {
+      out.writeUInt32LE(size, at - 46 + 24);
+      patched += 1;
+    }
+  }
+  expect(patched).toBe(2);
+  return out;
 }
 
 const bundle = (overrides: Parameters<typeof bundleFiles>[0] = {}) =>
@@ -421,7 +451,11 @@ describe('import', () => {
   );
 
   const otherPdf = new Uint8Array(Buffer.from('%PDF-1.7\n% not the listed bytes\n%%EOF\n'));
-  it.each<[string, () => Buffer, Record<string, string>, RegExp]>([
+  const bigPdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(2000, 0x20)]);
+  const manyEntries = Object.fromEntries(
+    Array.from({ length: 45 }, (_, i) => [`extra/${i}.txt`, strToU8('x')]),
+  );
+  it.each<[string, () => Buffer, Record<string, string>, RegExp, number?]>([
     ['not a zip', () => Buffer.from('nope'), {}, /^not a valid bundle \(zip\)$/],
     ['formatVersion 2', () => bundle({ manifest: { formatVersion: 2 } }), {}, /^manifest\.json: /],
     ['no manifest.json', () => bundleWithout('manifest.json'), {}, /^manifest\.json: /],
@@ -444,8 +478,50 @@ describe('import', () => {
       /^template\.yaml is not a template mapping$/,
     ],
     ['an invalid id field', () => bundle(), { id: 'Bad Id' }, /^id: /],
-  ])('rejects %s with 400 and writes nothing', async (_label, zip, fields, error) => {
-    const { app, repo, store, templates } = await testApp();
+    [
+      'an invalid brief.json',
+      () => bundle({ files: { 'brief.json': strToU8('{"purpose": 3}') } }),
+      {},
+      /^brief\.json: /,
+    ],
+    [
+      'a sample that is not a PDF',
+      () => bundle({ samples: [Buffer.from('not a pdf')] }),
+      {},
+      /^sample m1\.pdf: not a PDF$/,
+    ],
+    [
+      'a sample over the per-file upload limit',
+      () => bundle({ samples: [bigPdf] }),
+      {},
+      /^sample m1\.pdf: larger than the upload limit$/,
+      1024,
+    ],
+    [
+      'the same PDF listed twice',
+      () => bundle({ samples: [pdfBytes(1), pdfBytes(1)] }),
+      {},
+      /^sample m2\.pdf: /,
+    ],
+    ['too many entries', () => bundle({ files: manyEntries }), {}, /^bundle is too large$/],
+    [
+      'more inflated bytes than the limit',
+      () => bundle({ files: PADDING }),
+      {},
+      /^bundle is too large$/,
+      1024,
+    ],
+    [
+      'headers that understate the inflated size',
+      () => lieAboutSize(bundle({ files: PADDING }), 'padding.bin', 10),
+      {},
+      /^bundle is too large$/,
+      1024,
+    ],
+  ])('rejects %s with 400 and writes nothing', async (_label, zip, fields, error, maxUpload) => {
+    const { app, repo, store, templates } = await testApp(
+      maxUpload ? { maxUploadBytes: maxUpload } : {},
+    );
     const res = await importBundle(app, zip(), fields);
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toMatch(error);
@@ -456,15 +532,32 @@ describe('import', () => {
     expect(repo.jobs.size).toBe(0);
   });
 
-  it('rejects a bundle whose uncompressed size is past the limit', async () => {
-    const { app, store, templates } = await testApp({ maxUploadBytes: 1024 });
-    // The upload limit is 1024 * MAX_SAMPLES (12); unzipped, twice that: 24 KiB.
-    const zip = bundle({ files: { 'padding.bin': new Uint8Array(64 * 1024) } });
-    expect(zip.length).toBeLessThan(1024 * 12);
-    const res = await importBundle(app, zip);
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('bundle is too large');
-    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
-    expect(store.objects.size).toBe(0);
+  it('keeps a padded bundle small enough to upload', () => {
+    // The guard is on inflated bytes: the zipped padding is far below the upload limit.
+    expect(bundle({ files: PADDING }).length).toBeLessThan(1024 * 12);
   });
+
+  it('takes a blank id field as absent', async () => {
+    const { app } = await testApp();
+    const res = await importBundle(app, bundle(), { id: '  ', name: '' });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as ProjectView).project).toMatchObject({ id: 'memo', name: 'Memo' });
+  });
+
+  it.each(['template', 'project'])(
+    'answers 409 when the %s is created concurrently',
+    async (kind) => {
+      const { app, templates, workbench } = await testApp();
+      if (kind === 'template') {
+        vi.spyOn(templates, 'create').mockRejectedValueOnce(new TemplateConflictError('taken'));
+      } else {
+        vi.spyOn(workbench, 'createProject').mockRejectedValueOnce(
+          new WorkbenchConflictError('taken'),
+        );
+      }
+      const res = await importBundle(app, bundle());
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('memo already exists here; import under another id');
+    },
+  );
 });

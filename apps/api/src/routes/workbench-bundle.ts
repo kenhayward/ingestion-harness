@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
-import { strFromU8, unzipSync } from 'fflate';
+import { Unzip, UnzipInflate, strFromU8 } from 'fflate';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import {
@@ -12,9 +12,12 @@ import {
   type BriefBody,
   type BundleManifest,
   type ExportView,
+  type WorkbenchProject,
 } from '@ih/shared';
 import type { ProjectJob } from '../repositories/types.js';
 import { pinned } from '../templates/drafts.js';
+import { TemplateConflictError } from '../templates/repo.js';
+import { WorkbenchConflictError } from '../workbench/repo.js';
 import { isPdf, multipartField } from '../uploads.js';
 import {
   Id as ProjectId,
@@ -37,23 +40,47 @@ const JobParams = z.object({ id: Id, jobId: z.string().uuid() });
 const ExportedVersion = z.object({ draft: z.object({ version: z.number().int() }) });
 
 const MAX_BUNDLE_ENTRIES = MAX_SAMPLES + 32;
+/** Room for the small text entries (manifest, brief, template, context) beside the PDFs. */
+const BUNDLE_TEXT_ALLOWANCE = 8 * 1024 * 1024;
+/** Compressed bytes inflated per step: bounds the work done between two size checks. */
+const UNZIP_CHUNK = 16 * 1024;
 
-/** Unzips with limits: the summed uncompressed size and the entry count (zip bombs). */
+/**
+ * Unzips with limits against zip bombs: the entry count, and the bytes actually inflated across
+ * all entries. The sizes the headers claim are never trusted; inflating stops as soon as the
+ * running total passes `maxBytes`.
+ */
 export function unzipBundle(zip: Buffer, maxBytes: number): Record<string, Uint8Array> | string {
+  const tooLarge = new RangeError('bundle is too large');
+  const entries = new Map<string, Uint8Array[]>();
+  const finished = new Set<string>();
   let total = 0;
-  let count = 0;
+  const unzip = new Unzip((file) => {
+    if (entries.size >= MAX_BUNDLE_ENTRIES) throw tooLarge;
+    if (entries.has(file.name)) throw new Error(`duplicate entry ${file.name}`);
+    const chunks: Uint8Array[] = [];
+    entries.set(file.name, chunks);
+    file.ondata = (err, data, final) => {
+      // UnzipInflate catches a throw from here and calls back with it as `err`: rethrow it.
+      if (err) throw err;
+      total += data.length;
+      if (total > maxBytes) throw tooLarge;
+      chunks.push(data);
+      if (final) finished.add(file.name);
+    };
+    file.start();
+  });
+  unzip.register(UnzipInflate);
   try {
-    return unzipSync(new Uint8Array(zip), {
-      filter: (f) => {
-        count += 1;
-        total += f.originalSize;
-        if (count > MAX_BUNDLE_ENTRIES || total > maxBytes) throw new RangeError('too large');
-        return true;
-      },
-    });
+    const bytes = new Uint8Array(zip.buffer, zip.byteOffset, zip.length);
+    for (let at = 0; at < bytes.length; at += UNZIP_CHUNK) {
+      unzip.push(bytes.subarray(at, at + UNZIP_CHUNK), at + UNZIP_CHUNK >= bytes.length);
+    }
   } catch (err) {
-    return err instanceof RangeError ? 'bundle is too large' : 'not a valid bundle (zip)';
+    return err === tooLarge ? 'bundle is too large' : 'not a valid bundle (zip)';
   }
+  if (!entries.size || finished.size !== entries.size) return 'not a valid bundle (zip)';
+  return Object.fromEntries([...entries].map(([name, chunks]) => [name, Buffer.concat(chunks)]));
 }
 
 const firstIssue = (err: z.ZodError) => {
@@ -137,14 +164,15 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
    * Everything is checked before anything is written.
    */
   app.post('/workbench/projects/import', async (req, reply) => {
-    const limit = app.deps.maxUploadBytes * MAX_SAMPLES;
+    // One limit for the zip and for what it inflates to: every PDF at the upload limit, plus text.
+    const limit = app.deps.maxUploadBytes * MAX_SAMPLES + BUNDLE_TEXT_ALLOWANCE;
     const file = await req.file({ limits: { fileSize: limit } });
     if (!file) return reply.code(400).send({ error: 'bundle file part is required' });
-    const idField = multipartField(file, 'id');
-    const nameField = multipartField(file, 'name');
+    const idField = multipartField(file, 'id')?.trim() || undefined; // blank = absent
+    const nameField = multipartField(file, 'name')?.trim() || undefined;
     const zip = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
 
-    const files = unzipBundle(zip, limit * 2);
+    const files = unzipBundle(zip, limit);
     if (typeof files === 'string') return reply.code(400).send({ error: files });
     const manifest = jsonEntry(files, 'manifest.json', BundleManifestSchema);
     if (!manifest.ok) return reply.code(400).send({ error: manifest.error });
@@ -161,21 +189,29 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     const id = ProjectId.safeParse(idField ?? manifest.value.project.id);
     if (!id.success) return reply.code(400).send({ error: `id: ${firstIssue(id.error)}` });
     const projectId = id.data;
-    const name = nameField?.trim() || manifest.value.project.name;
+    const name = nameField ?? manifest.value.project.name;
+    const taken = { error: `${projectId} already exists here; import under another id` };
     if (
       (await workbench.getProject(projectId)) ||
       (await templates.list()).some((r) => r.id === projectId)
     ) {
-      return reply
-        .code(409)
-        .send({ error: `${projectId} already exists here; import under another id` });
+      return reply.code(409).send(taken);
     }
     const samples = sampleFiles(files, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return reply.code(400).send({ error: samples });
 
     // Only now write: the draft, the project, the brief, then the samples.
-    await templates.create(projectId, 1, pinned(definition, projectId, 1), 'draft');
-    const project = await workbench.createProject(projectId, name);
+    let project: WorkbenchProject;
+    try {
+      await templates.create(projectId, 1, pinned(definition, projectId, 1), 'draft');
+      project = await workbench.createProject(projectId, name);
+    } catch (err) {
+      // Another import or project creation took the id after the check above.
+      if (err instanceof TemplateConflictError || err instanceof WorkbenchConflictError) {
+        return reply.code(409).send(taken);
+      }
+      throw err;
+    }
     if (brief) await workbench.saveBrief(projectId, brief);
     for (const sample of samples) {
       const added = await addSampleFile(app, project, { ...sample, role: 'dev' });
