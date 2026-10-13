@@ -551,3 +551,24 @@ describe('http api: LLM endpoints', () => {
     ]);
   });
 });
+
+describe('http api: runs with a model choice (phase 4d)', () => {
+  it('sends the model choice of a dev test run and of a test upload, before the file', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      respond(200, { jobs: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.runDevTests('letter', 'test');
+    await api.runDevTests('letter', null);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { model: 'test' },
+      {},
+    ]);
+    fetchMock.mockClear();
+    await api.testRun(new File(['%PDF'], 'a.pdf'), 'letter', 2, 'test');
+    const form = fetchMock.mock.calls[0]![1]!.body as FormData;
+    expect([...form.keys()]).toEqual(['specId', 'specVersion', 'test', 'model', 'file']);
+    expect(form.get('model')).toBe('test');
+  });
+});

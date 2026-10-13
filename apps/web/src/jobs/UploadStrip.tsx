@@ -45,14 +45,11 @@ const filesLabel = (n: number) =>
 export function UploadStrip({
   api,
   onUploaded,
-  onModelChange,
   pickPending = false,
   onPicked,
 }: {
   api: Api;
   onUploaded: () => void;
-  /** Reports the Model selection ('' = spec default), e.g. so Retry can use it. */
-  onModelChange?: (model: string) => void;
   /** Upload document (top bar) was pressed: open the file picker, then report it with onPicked. */
   pickPending?: boolean;
   onPicked?: () => void;
@@ -102,17 +99,13 @@ export function UploadStrip({
         // Restore the remembered choice only if it can still be picked; otherwise forget it.
         const saved = loadModel();
         if (!saved) return;
-        if (pickedChoice(saved, list)) {
-          setModel(saved);
-          onModelChange?.(saved);
-        } else {
+        if (pickedChoice(saved, list)) setModel(saved);
+        else {
           saveModel('');
         }
       },
       () => setModels([]),
     );
-    // onModelChange is a callback prop: restoring runs once per api, not per render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   /** New files start a fresh selection once the last batch is done (failures stay to retry). */
@@ -221,7 +214,6 @@ export function UploadStrip({
           onChange={(next) => {
             setModel(next);
             saveModel(next);
-            onModelChange?.(next);
           }}
         />
       </div>

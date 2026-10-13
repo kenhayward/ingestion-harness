@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Reference } from '@ih/shared';
 import type { Api, RegressionReport, TemplateMetrics, VersionDiff } from '../api/client.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 const pct = (score: number) => `${Math.round(score * 100)}%`;
 const num = (n: number | null, digits = 0) =>
@@ -65,14 +66,7 @@ export function QualityPanel({
     }
   };
 
-  const run = async () => {
-    try {
-      await api.runRegression(templateId, version);
-      await refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
+  const [asking, setAsking] = useState(false);
 
   return (
     <div className="quality">
@@ -227,9 +221,28 @@ export function QualityPanel({
               </span>
             ))}
           </p>
-          <button type="button" onClick={() => void run()}>
-            Run regression on v{version}
+          <button type="button" onClick={() => setAsking(true)}>
+            Run regression on v{version}…
           </button>{' '}
+          {asking && (
+            <ReprocessDialog
+              title={`Run regression on v${version}`}
+              confirmLabel="Run regression"
+              choices={[]}
+              fixedModel="The template's own models"
+              summary={
+                <p>
+                  Runs v{version} on every reference of this document type and scores each run
+                  against it. Regression measures the template, so it always uses its own models.
+                </p>
+              }
+              onConfirm={async () => {
+                await api.runRegression(templateId, version);
+                await refresh();
+              }}
+              onClose={() => setAsking(false)}
+            />
+          )}
           <button type="button" className="link" onClick={() => void refresh()}>
             Refresh
           </button>

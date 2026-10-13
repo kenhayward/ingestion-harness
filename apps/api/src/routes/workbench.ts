@@ -742,6 +742,7 @@ const EvaluateBody = z
   })
   .strict();
 const ReferencesQuery = z.object({ set: z.enum(EVALUATION_SETS).optional() });
+const TestRunsBody = z.object({ model: z.string().min(1).max(80).optional() }).strict();
 const CompareBody = z
   .object({
     models: z.array(z.string().min(1).max(80)).max(MAX_COMPARED_MODELS).optional(),
@@ -1779,11 +1780,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           never used). Jobs carry the project's data policy and a snapshot of the draft's
           outputs. Test runs reuse a step's stored output when its full input is unchanged
           (the step cache), so only changed steps call a model. They are never delivered.
+          \`model\` overrides every step with a model choice (its id; \`default\` is the
+          default choice); without it the template's own models run. An unknown choice, or an
+          external one for a local-only project, is a 400.
         `,
         params: ProjectIdParams,
+        body: TestRunsBody,
         response: {
           201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
-          400: DRAFT_NOT_VALID,
+          400: res(
+            'Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`).',
+            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+          ),
           404: PROJECT_NOT_FOUND,
           409: error(
             '`no open draft to test; start the next version first`, or `no prepared dev ' +
@@ -1793,9 +1801,16 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
+      const body = TestRunsBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
       const projectId = req.params.id;
       const project = await workbench.getProject(projectId);
       if (!project) return reply.code(404).send({ error: 'project not found' });
+      const model = body.data.model ?? null;
+      if (model) {
+        const problem = choiceProblem(model, await modelChoices(app.deps), project.dataPolicy);
+        if (problem) return reply.code(400).send({ error: problem });
+      }
       const { draft } = await versionsOf(templates, projectId);
       if (draft === null) {
         return reply
@@ -1815,6 +1830,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             projectId,
             task: 'process',
             params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
+            modelOverride: model,
             createdBy: req.auth?.label ?? null,
           }),
         ),

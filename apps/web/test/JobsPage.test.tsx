@@ -64,16 +64,14 @@ describe('JobsPage', () => {
     expect(within(panel()).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
   });
 
-  it('keeps the shown job (and an open picker) when a poll brings a newer job needing attention', async () => {
+  it('keeps the shown job (and an open retry dialog) when a poll brings a newer job needing attention', async () => {
     const a = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
     const { rerender } = page([a]);
-    await userEvent.click(
-      within(panel()).getByRole('button', { name: 'Retry with another model…' }),
-    );
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Retry a.pdf' }));
     const b = job({ id: 'b', filename: 'b.pdf', status: 'failed' });
     rerender(element([b, a]));
     expect(within(panel()).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
-    expect(within(panel()).getByLabelText('Model for a.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Retry a.pdf' })).toBeInTheDocument();
   });
 
   it('falls back when a chip hides the selected job, and says when a view is empty', async () => {
@@ -178,7 +176,10 @@ describe('JobsPage: My jobs', () => {
     await userEvent.click(screen.getByRole('button', { name: 'My jobs' }));
     await screen.findAllByText('mine.pdf');
     expect(listJobs).toHaveBeenCalledTimes(1);
-    await userEvent.click(within(panel()).getByRole('button', { name: 'Retry with spec default' }));
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Retry mine.pdf' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry' }),
+    );
     await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(2));
     expect(refresh).toHaveBeenCalled();
   });

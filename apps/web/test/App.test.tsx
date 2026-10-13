@@ -37,11 +37,14 @@ describe('App', () => {
     const jobs = await list();
     expect(await jobs.findByText('bad.pdf')).toBeInTheDocument();
     expect(jobs.getByText('schema mismatch')).toBeInTheDocument();
-    const retry = jobs.getAllByRole('button', { name: /^Retry with/ });
+    const retry = jobs.getAllByRole('button', { name: /^Retry / });
     expect(retry).toHaveLength(1);
 
     await userEvent.click(retry[0]!);
-    expect(api.retryJob).toHaveBeenCalledWith('f', null); // no model selected: spec default
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith('f', null); // the job had no model: its type's
   });
 
   it('surfaces API errors', async () => {
@@ -95,27 +98,17 @@ describe('review routing', () => {
     window.location.hash = '';
   });
 
-  it('retries with the model choice selected in the upload form', async () => {
+  it("retries with the job's own model choice, not the upload form's", async () => {
     const api = fakeApi({
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
     await screen.findByRole('option', { name: /New for testing only/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), 'New for testing only');
-    await userEvent.click(
-      await (await list()).findByRole('button', { name: 'Retry with New for testing only' }),
-    );
-    expect(api.retryJob).toHaveBeenCalledWith('f', 'test');
-  });
-
-  it('offers Retry with the remembered model after a reload', async () => {
-    localStorage.setItem('ih.uploadModel', 'test');
-    const api = fakeApi({
-      listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
-    });
-    render(<App api={api} pollMs={0} />);
-    expect(
-      await (await list()).findByRole('button', { name: 'Retry with New for testing only' }),
-    ).toBeInTheDocument();
+    await userEvent.click(await (await list()).findByRole('button', { name: 'Retry bad.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retry bad.pdf' });
+    expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(api.retryJob).toHaveBeenCalledWith('f', null);
   });
 });

@@ -14,9 +14,20 @@ describe('RunsTab', () => {
       listTestRuns,
       runDevTests: vi.fn(async () => ({ jobs: [done, queued] })),
     });
-    render(<RunsTab api={api} projectId="letter" draft={2} pollMs={60_000} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples' }));
-    expect(api.runDevTests).toHaveBeenCalledWith('letter');
+    render(<RunsTab api={api} projectId="letter" dataPolicy="local" draft={2} pollMs={60_000} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Run v2 on the dev samples' });
+    expect(dialog).toHaveTextContent('every prepared dev sample');
+    const model = within(dialog).getByRole('combobox', { name: 'Model' });
+    expect(model).toHaveValue('');
+    // A local-only project cannot pick an external model choice.
+    expect(
+      (within(model).getByRole('option', { name: /Cloud model/ }) as HTMLOptionElement).disabled,
+    ).toBe(true);
+    await userEvent.selectOptions(model, 'New for testing only');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
+    expect(api.runDevTests).toHaveBeenCalledWith('letter', 'test');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     const table = await screen.findByRole('table', { name: 'Test runs' });
     const row = within(table).getByRole('cell', { name: 's1.pdf' }).closest('tr')!;
     expect(within(row).getByRole('link', { name: 'Review' })).toHaveAttribute(
@@ -33,12 +44,14 @@ describe('RunsTab', () => {
         throw new ApiError('no prepared dev samples to run', 409);
       }),
     });
-    render(<RunsTab api={api} projectId="letter" draft={1} pollMs={60_000} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples' }));
+    render(<RunsTab api={api} projectId="letter" dataPolicy="local" draft={1} pollMs={60_000} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples…' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('no prepared dev samples to run');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('disables the run button while the request is in flight', async () => {
+  it("disables the dialog's Run button while the request is in flight", async () => {
     let finish!: () => void;
     const api = fakeApi({
       runDevTests: vi.fn(
@@ -48,17 +61,27 @@ describe('RunsTab', () => {
           }),
       ),
     });
-    render(<RunsTab api={api} projectId="letter" draft={1} pollMs={60_000} />);
-    const button = await screen.findByRole('button', { name: 'Run on dev samples' });
+    render(<RunsTab api={api} projectId="letter" dataPolicy="local" draft={1} pollMs={60_000} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Run on dev samples…' }));
+    const button = screen.getByRole('button', { name: 'Run' });
     await userEvent.click(button);
     expect(button).toBeDisabled();
     finish();
-    await waitFor(() => expect(button).toBeEnabled());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(api.runDevTests).toHaveBeenCalledTimes(1);
+    expect(api.runDevTests).toHaveBeenCalledWith('letter', null);
   });
 
   it('cannot run without an open draft', async () => {
-    render(<RunsTab api={fakeApi()} projectId="letter" draft={null} pollMs={60_000} />);
-    expect(await screen.findByRole('button', { name: 'Run on dev samples' })).toBeDisabled();
+    render(
+      <RunsTab
+        api={fakeApi()}
+        projectId="letter"
+        dataPolicy="local"
+        draft={null}
+        pollMs={60_000}
+      />,
+    );
+    expect(await screen.findByRole('button', { name: 'Run on dev samples…' })).toBeDisabled();
   });
 });

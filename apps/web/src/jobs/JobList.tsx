@@ -11,7 +11,6 @@ export function JobList({
   selectedId,
   onSelect,
   onChanged,
-  retryModel,
   models,
   specTitles,
   now,
@@ -21,8 +20,6 @@ export function JobList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onChanged: () => void;
-  /** Model selected in the upload strip ('' = spec default); Retry runs with it. */
-  retryModel: string;
   models: readonly ModelChoice[];
   /** Document type titles by id (falls back to the id). */
   specTitles: ReadonlyMap<string, string>;
@@ -79,7 +76,6 @@ export function JobList({
                     api={api}
                     job={job}
                     onChanged={onChanged}
-                    retryModel={retryModel}
                     models={models}
                     variant="row"
                   />
