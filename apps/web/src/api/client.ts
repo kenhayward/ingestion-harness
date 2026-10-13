@@ -49,6 +49,7 @@ import type {
   QueueSummary,
   TestRun,
   Template,
+  TemplateChange,
   SettingsBody,
 } from '@ih/shared';
 
@@ -326,10 +327,12 @@ export interface Api {
   listTemplates(): Promise<TemplateListItem[]>;
   createTemplate(id: string, name: string): Promise<TemplateRecordView>;
   getTemplate(id: string, version: number): Promise<TemplateRecordView>;
+  /** `baseUpdatedAt`: the version's `updatedAt` the edit started from (409 when it moved). */
   saveTemplate(
     id: string,
     version: number,
     definition: Record<string, unknown>,
+    baseUpdatedAt?: string,
   ): Promise<TemplateRecordView>;
   publishTemplate(id: string, version: number): Promise<TemplateRecordView>;
   newDraft(id: string, from: number): Promise<TemplateRecordView>;
@@ -430,6 +433,8 @@ export interface Api {
   getSampleText(projectId: string, sampleId: string): Promise<PreparedText>;
   saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
   listBriefVersions(projectId: string): Promise<BriefVersionView[]>;
+  /** TP1: the open draft's change log, newest first. */
+  listDraftChanges(projectId: string): Promise<TemplateChange[]>;
   getBriefVersion(projectId: string, version: number): Promise<Brief>;
   /**
    * Test-run the open draft on the ready dev samples (handoff TR1): `sampleIds` picks some (all
@@ -802,6 +807,8 @@ export function createHttpApi(base = '/api'): Api {
         json<PreparedText>,
       ),
     saveBrief: (id, body) => post<Brief>(`${base}/workbench/projects/${id}/brief`, body, 'PUT'),
+    listDraftChanges: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/draft/changes`).then(json<TemplateChange[]>),
     listBriefVersions: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/briefs`).then(json<BriefVersionView[]>),
     getBriefVersion: (id, version) =>
@@ -884,10 +891,10 @@ export function createHttpApi(base = '/api'): Api {
     createTemplate: (id, name) => post<TemplateRecordView>(`${base}/templates`, { id, name }),
     getTemplate: (id, version) =>
       apiFetch(`${base}/templates/${id}/versions/${version}`).then(json<TemplateRecordView>),
-    saveTemplate: (id, version, definition) =>
+    saveTemplate: (id, version, definition, baseUpdatedAt) =>
       post<TemplateRecordView>(
         `${base}/templates/${id}/versions/${version}`,
-        { definition },
+        { definition, ...(baseUpdatedAt ? { baseUpdatedAt } : {}) },
         'PUT',
       ),
     publishTemplate: (id, version) =>

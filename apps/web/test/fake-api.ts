@@ -455,6 +455,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('saveBrief not stubbed');
     }),
     listBriefVersions: vi.fn(async () => []),
+    listDraftChanges: vi.fn(async () => []),
     getBriefVersion: vi.fn(async () => {
       throw new Error('getBriefVersion not stubbed');
     }),
