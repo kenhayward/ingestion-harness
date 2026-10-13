@@ -595,9 +595,7 @@ describe('import', () => {
 
   it('deletes the v1 draft when the project id is taken concurrently', async () => {
     const { app, templates, workbench } = await testApp();
-    vi.spyOn(workbench, 'createProject').mockRejectedValueOnce(
-      new WorkbenchConflictError('taken'),
-    );
+    vi.spyOn(workbench, 'createProject').mockRejectedValueOnce(new WorkbenchConflictError('taken'));
     const res = await importBundle(app, bundle());
     expect(res.statusCode).toBe(409);
     expect(await templates.get('memo', 1)).toBeNull();
