@@ -295,7 +295,7 @@ export function ProjectPage({
           )}
           {(tab === 'outputs' || tab === 'steps') && (
             <StagePanel
-              key={`${tab}-${revision}`}
+              key={tab}
               api={api}
               projectId={project.id}
               stage={tab}
@@ -303,6 +303,9 @@ export function ProjectPage({
               item={itemOf(tab)}
               dataPolicy={project.dataPolicy}
               hasDraft={draft !== null}
+              draft={draft}
+              published={published}
+              briefVersion={view.brief?.version ?? null}
               pollMs={pollMs}
               onApplied={changed}
               onSkipped={changed}
@@ -319,6 +322,7 @@ export function ProjectPage({
                 item={itemOf('sections')}
                 dataPolicy={project.dataPolicy}
                 hasDraft={draft !== null}
+                briefVersion={view.brief?.version ?? null}
                 pollMs={pollMs}
                 onApplied={changed}
                 onSkipped={changed}

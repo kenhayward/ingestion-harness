@@ -4,8 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
 import { ProjectPage } from '../src/workbench/ProjectPage.js';
 import { recentProjects } from '../src/workbench/listDerive.js';
-import { OVERVIEW_TABS, type OverviewItem } from '@ih/shared';
-import { fakeApi, projectOverview, projectView } from './fake-api.js';
+import { OVERVIEW_TABS, type DraftChange, type OverviewItem } from '@ih/shared';
+import {
+  changeProposalView,
+  fakeApi,
+  projectOverview,
+  projectView,
+  templateView,
+} from './fake-api.js';
 
 /** The fixture overview with some items replaced. */
 const overviewWith = (
@@ -108,6 +114,87 @@ describe('ProjectPage tab headers', () => {
 });
 
 describe('ProjectPage', () => {
+  it('loads the draft and live definitions on the Outputs tab', async () => {
+    const getTemplate = vi.fn(async (_id: string, version: number) =>
+      templateView({ id: 'letter', version, outputs: { fields: [], tables: [] } }),
+    );
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })),
+      getTemplate,
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="outputs"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    await waitFor(() => expect(getTemplate).toHaveBeenCalledWith('letter', 2));
+    expect(getTemplate).toHaveBeenCalledWith('letter', 1);
+  });
+
+  it('keeps JUST ADDED on the Steps tab after applying a proposal refreshes the page', async () => {
+    const before = {
+      id: 'letter',
+      version: 2,
+      outputs: { fields: [{ id: 'total' }], tables: [] },
+      pipeline: [{ type: 'extract', id: 'header', fields: ['total'], sections: ['header'] }],
+    };
+    const added = { type: 'check', id: 'totals-match', values: 'total', reference: 'total' };
+    const after = { ...before, pipeline: [...before.pipeline, added] };
+    const proposal = changeProposalView({
+      stage: 'steps',
+      body: {
+        notes: '',
+        changes: [
+          { op: 'putStep', reason: 'Catches drops', step: added },
+        ] as unknown as DraftChange[],
+      },
+    });
+    let current: Record<string, unknown> = before;
+    const getProject = vi.fn(async () => projectView({ draft: 2 }));
+    const api = fakeApi({
+      getProject,
+      getProjectOverview: vi.fn(async () => projectOverview()),
+      getMetrics: vi.fn(async () => ({
+        templateId: 'letter',
+        versions: [],
+        topEdited: [],
+        steps: [],
+      })),
+      listProposals: vi.fn(async () => [proposal]),
+      getTemplate: vi.fn(async () => templateView(current)),
+      decideProposal: vi.fn(async () => {
+        current = after;
+        return { ...proposal, status: 'accepted' as const, acceptedChanges: [0] };
+      }),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="steps"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply 1 selected change' }));
+    const card = await screen.findByRole('listitem', { name: 'Step 2: totals-match' });
+    expect(within(card).getByText('JUST ADDED')).toBeInTheDocument();
+    // The page's changed() refresh reloaded the project; the tab was not remounted.
+    await waitFor(() => expect(getProject.mock.calls.length).toBeGreaterThan(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(
+      within(screen.getByRole('listitem', { name: 'Step 2: totals-match' })).getByText(
+        'JUST ADDED',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('remembers the project first among the recent projects', async () => {
     localStorage.setItem('ih.wbRecent', JSON.stringify(['invoice', 'letter']));
     page(fakeApi({ getProject: vi.fn(async () => projectView()) }));

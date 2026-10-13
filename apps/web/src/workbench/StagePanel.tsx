@@ -1,19 +1,32 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  applyChanges,
   changeBodyOf,
   type ChangeStage,
   type DataPolicy,
   type DraftChange,
   type OverviewItem,
-  type ProposalStatus,
   type ProposalView,
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { relativeTime } from '../jobs/derive.js';
-import { stageStyle, TONE_COLOR, type DisplayState } from '../ui/stageStyle.js';
-import { changeParts } from './changes.js';
+import { OutputsView } from './OutputsView.js';
+import { ProposalCard, type NextStep } from './ProposalCard.js';
+import { StaleBanner } from './StaleBanner.js';
+import { StepsView } from './StepsView.js';
+import { stepCards, type StepMetric } from './steps.js';
 import { TabHeader } from './TabHeader.js';
+import { useDefinitions } from './useDefinitions.js';
+
+const DESCRIPTION: Record<ChangeStage, string | undefined> = {
+  outputs:
+    'The fields and tables every document of this type produces. The model proposes them from the brief and survey; you choose which to apply.',
+  sections:
+    'Where each section of the text starts. The model proposes anchors from the dev samples; you choose which to apply.',
+  steps:
+    'Each step sends some sections of the text to a model and fills some outputs; check steps compare values.',
+  revise: undefined,
+};
 
 const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
@@ -28,43 +41,29 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
     'Dev sample text may be sent to an external model provider; holdout samples are never sent.',
 };
 
-/** A proposal's status as a stage state: the card's border tone. */
-export const PROPOSAL_STATE: Record<ProposalStatus, DisplayState> = {
-  running: 'running',
-  ready: 'proposed',
-  accepted: 'accepted',
-  partially_accepted: 'accepted',
-  rejected: 'pending',
-  failed: 'warn',
+/** What follows an applied proposal (handoff §0.2: "usually a link to the next tab"). */
+const NEXT: Record<ChangeStage, { tab: string; label: string; text: string }> = {
+  outputs: {
+    tab: 'sections',
+    label: 'Go to Sections',
+    text: 'Next, check where each section starts in the dev samples.',
+  },
+  sections: {
+    tab: 'steps',
+    label: 'Go to Steps',
+    text: 'Next, decide which step reads which sections and fills which outputs.',
+  },
+  steps: {
+    tab: 'runs',
+    label: 'Run on dev samples',
+    text: 'Run the steps on the dev samples to refresh the per-step figures, then verify references.',
+  },
+  revise: {
+    tab: 'evaluate',
+    label: 'Evaluate on dev',
+    text: 'Evaluate the revised draft on the dev samples to see whether it helped.',
+  },
 };
-
-/** One line per change, used as its checkbox label. */
-export function describeChange(c: DraftChange): string {
-  switch (c.op) {
-    case 'putField':
-      return `Field ${c.field.id} (${c.field.type}${c.field.type === 'enum' ? `: ${(c.field.enum ?? []).join(', ')}` : ''})`;
-    case 'putTable':
-      return `Table ${c.table.id} (${c.table.columns.map((col) => col.id).join(', ')})`;
-    case 'removeOutput':
-      return `Remove output ${c.id}`;
-    case 'putSection':
-      return `Section ${c.section.id}: /${c.section.anchor}/${c.section.required ? '' : ' (optional)'}`;
-    case 'removeSection':
-      return `Remove section ${c.id}`;
-    case 'setCopies':
-      return c.copies
-        ? `Keep the ${c.copies.select} copy, split at /${c.copies.anchor}/`
-        : 'No copy selection';
-    case 'putStep':
-      return c.step.type === 'extract'
-        ? `Extract step ${c.step.id}: ${c.step.table ? `table ${c.step.table}` : c.step.fields.join(', ')} from ${c.step.sections.join(', ')}`
-        : `Check step ${c.step.id}: ${c.step.values} against ${c.step.reference}`;
-    case 'removeStep':
-      return `Remove step ${c.id}`;
-    case 'setPreamble':
-      return c.preamble ? 'Set the prompt preamble' : 'Remove the prompt preamble';
-  }
-}
 
 /** Drafting stages 2-4 (ADR 0007): propose changes to the draft, apply the chosen ones. */
 export function StagePanel({
@@ -76,6 +75,9 @@ export function StagePanel({
   pollMs,
   onApplied,
   onSkipped,
+  draft,
+  published = null,
+  briefVersion = null,
   canSkip = true,
   title,
   item = null,
@@ -89,6 +91,11 @@ export function StagePanel({
   pollMs: number;
   onApplied: () => void;
   onSkipped: () => void;
+  /** Outputs/Steps: the open draft and live versions shown beside the proposal; omit to hide. */
+  draft?: number | null;
+  published?: number | null;
+  /** The project's current brief version (stale-proposal banner). */
+  briefVersion?: number | null;
   /** False for stages the API refuses to skip (revise). */
   canSkip?: boolean;
   /** With a title the panel opens with the tab header (Propose and Skip as its actions). */
@@ -102,7 +109,18 @@ export function StagePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const idBase = useId();
+  const [metrics, setMetrics] = useState<StepMetric[] | null>(null);
+  const [justAdded, setJustAdded] = useState<ReadonlySet<string>>(new Set());
+
+  const showsDefinition = (stage === 'outputs' || stage === 'steps') && typeof draft === 'number';
+  const definitions = useDefinitions(
+    api,
+    projectId,
+    typeof draft === 'number' ? draft : null,
+    stage === 'outputs' ? published : null,
+    showsDefinition,
+  );
+  const draftDef = showsDefinition ? definitions.draftDef : null;
 
   const refresh = useCallback(async () => {
     try {
@@ -151,13 +169,44 @@ export function StagePanel({
     }
   };
 
-  const run = () => act(async () => setProposal(await api.startStage(projectId, stage)));
+  useEffect(() => {
+    if (stage !== 'steps' || typeof draft !== 'number') return;
+    let live = true;
+    api.getMetrics(projectId).then(
+      (m) => {
+        if (live) setMetrics(m.steps);
+      },
+      () => {
+        if (live) setMetrics(null);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, projectId, stage, draft]);
+
+  const run = () =>
+    act(async () => {
+      setJustAdded(new Set());
+      setProposal(await api.startStage(projectId, stage));
+    });
   const accept = () =>
     act(async () => {
       if (!proposal) return;
+      const before = new Set(stepCards(draftDef ?? {}).map((c) => c.id));
       const chosen = [...selected].sort((a, b) => a - b);
       setProposal(await api.decideProposal(projectId, proposal.id, 'accepted', chosen));
       onApplied();
+      const reloaded = await definitions.reload();
+      if (reloaded && draftDef) {
+        setJustAdded(
+          new Set(
+            stepCards(reloaded)
+              .map((c) => c.id)
+              .filter((id) => !before.has(id)),
+          ),
+        );
+      }
     });
   const reject = () =>
     act(async () => {
@@ -191,7 +240,12 @@ export function StagePanel({
     return (
       <div>
         {title !== undefined && (
-          <TabHeader title={title} item={item ?? null} note={POLICY_NOTE[dataPolicy]} />
+          <TabHeader
+            title={title}
+            item={item ?? null}
+            note={POLICY_NOTE[dataPolicy]}
+            description={DESCRIPTION[stage]}
+          />
         )}
         {error ? (
           <>
@@ -206,7 +260,38 @@ export function StagePanel({
       </div>
     );
   }
-  const applied = proposal?.acceptedChanges ?? null;
+  const nextStep: NextStep = {
+    href: `#/workbench/${projectId}/${NEXT[stage].tab}`,
+    label: NEXT[stage].label,
+    text: NEXT[stage].text,
+  };
+
+  const after =
+    proposal?.status === 'ready' && body && draftDef
+      ? applyChanges(
+          draftDef,
+          body.changes.filter((_, i) => selected.has(i)),
+        )
+      : null;
+
+  const card =
+    body && proposal ? (
+      <ProposalCard
+        projectId={projectId}
+        proposal={proposal}
+        body={body}
+        definition={draftDef}
+        draftVersion={typeof draft === 'number' ? draft : null}
+        selected={selected}
+        onToggle={toggle}
+        onApply={() => void accept()}
+        onReject={() => void reject()}
+        busy={busy}
+        now={now}
+        note={anchorLine}
+        next={nextStep}
+      />
+    ) : null;
 
   const actions = (
     <>
@@ -229,7 +314,13 @@ export function StagePanel({
   return (
     <div className="stage-panel">
       {title !== undefined ? (
-        <TabHeader title={title} item={item} note={POLICY_NOTE[dataPolicy]} actions={actions} />
+        <TabHeader
+          title={title}
+          item={item}
+          note={POLICY_NOTE[dataPolicy]}
+          description={DESCRIPTION[stage]}
+          actions={actions}
+        />
       ) : (
         <>
           <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
@@ -241,80 +332,55 @@ export function StagePanel({
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
-      {body && proposal && (
-        <section
-          aria-label="Proposal"
-          className="proposal-card"
-          style={{ borderColor: TONE_COLOR[stageStyle(PROPOSAL_STATE[proposal.status]).tone] }}
-        >
-          <div className="proposal-meta">
-            <p>
-              <code>{proposal.model ?? '—'}</code> · brief v{proposal.briefVersion ?? '–'} ·{' '}
-              {proposal.status.replace('_', ' ')} · {relativeTime(proposal.createdAt, now)}
-            </p>
-            {body.notes && <p>{body.notes}</p>}
-            {applied && (
-              <p role="status">
-                {applied.length} of {body.changes.length} changes applied to the draft
-              </p>
-            )}
-          </div>
-          <ul className="proposal-changes">
-            {body.changes.map((c, i) => {
-              const parts = changeParts(c);
-              const line = anchorLine(c);
-              return (
-                <li key={`${i}-${c.op}`}>
-                  <input
-                    id={`${idBase}-${i}`}
-                    type="checkbox"
-                    aria-label={`Apply: ${describeChange(c)}`}
-                    disabled={proposal.status !== 'ready'}
-                    checked={
-                      proposal.status === 'ready' ? selected.has(i) : (applied ?? []).includes(i)
-                    }
-                    onChange={() => toggle(i)}
-                  />
-                  <label className="proposal-change" htmlFor={`${idBase}-${i}`}>
-                    <span className="proposal-line">
-                      <span className={`kind-tag tone-${parts.tone}`}>{parts.kind}</span>
-                      {parts.id && <code>{parts.id}</code>} {parts.text}
-                    </span>
-                    <span className="proposal-line muted">{c.reason}</span>
-                    {line && <span className="proposal-line muted">{line}</span>}
-                  </label>
-                  <details>
-                    <summary>Details</summary>
-                    <pre>{JSON.stringify(c, null, 2)}</pre>
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
-          {proposal.status === 'ready' && (
-            <footer className="proposal-footer">
-              <button
-                type="button"
-                className="primary"
-                disabled={busy || selected.size === 0}
-                onClick={() => void accept()}
-              >
-                Apply {selected.size} selected {selected.size === 1 ? 'change' : 'changes'}
-              </button>
-              <button
-                type="button"
-                className="danger"
-                disabled={busy}
-                onClick={() => void reject()}
-              >
-                Reject all
-              </button>
-              <a className="proposal-edit" href={`#/workbench/${projectId}/template`}>
-                Edit by hand on the Template tab
-              </a>
-            </footer>
-          )}
-        </section>
+      {title !== undefined && item?.state === 'stale' && (
+        <StaleBanner>
+          {item.status}. Propose again to draft from the latest information; the draft keeps what
+          you applied until you apply new changes.
+        </StaleBanner>
+      )}
+      {title !== undefined &&
+        proposal?.briefVersion != null &&
+        briefVersion !== null &&
+        briefVersion > proposal.briefVersion && (
+          <StaleBanner tone="info">
+            This proposal used brief v{proposal.briefVersion}; the brief is now v{briefVersion}.
+            Propose again to draft from the latest brief; what you applied stays in the draft until
+            you apply new changes.
+          </StaleBanner>
+        )}
+      {showsDefinition && definitions.error && (
+        <p role="alert">
+          Could not load draft v{draft}: {definitions.error}
+        </p>
+      )}
+      {stage === 'outputs' && draftDef && definitions.liveError && (
+        <p role="alert">
+          Could not load live v{published}: {definitions.liveError}
+        </p>
+      )}
+      {stage === 'outputs' && draftDef && typeof draft === 'number' ? (
+        <>
+          {proposal?.status === 'ready' && card}
+          <OutputsView
+            draftVersion={draft}
+            liveVersion={definitions.liveDef ? published : null}
+            draftDef={draftDef}
+            liveDef={definitions.liveDef}
+          />
+          {proposal?.status !== 'ready' && card}
+        </>
+      ) : stage === 'steps' && draftDef && typeof draft === 'number' ? (
+        <StepsView
+          projectId={projectId}
+          draftVersion={draft}
+          definition={draftDef}
+          after={after}
+          metrics={metrics}
+          justAdded={justAdded}
+          card={card}
+        />
+      ) : (
+        card
       )}
     </div>
   );
