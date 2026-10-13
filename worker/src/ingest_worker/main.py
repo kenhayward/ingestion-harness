@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from .bundle import run_export
 from .config import Settings
 from .drafting import run_draft
 from .llm.registry import build_registry, load_llm_config
@@ -36,7 +37,8 @@ FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save a
 
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
-    """Claim and run one job (process, publish, rerun or prepare). Returns False when the queue is empty."""
+    """Claim and run one job (process, publish, rerun, prepare, segment, draft or export).
+    Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
@@ -74,6 +76,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             drafted = run_draft(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s drafted stage %s with %s", job.id, drafted["stage"], drafted["model"])
+            return True
+        if job.task == "export":
+            manifest = run_export(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
             return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete

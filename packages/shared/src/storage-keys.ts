@@ -46,3 +46,8 @@ export function segmentationKey(projectId: string, jobId: string): string {
 export function draftingKey(projectId: string, jobId: string): string {
   return `drafting/${projectId}/${jobId}.json`;
 }
+
+/** A project's exported drafting bundle (runs bucket, export task). */
+export function exportKey(projectId: string, jobId: string): string {
+  return `exports/${projectId}/${jobId}.zip`;
+}

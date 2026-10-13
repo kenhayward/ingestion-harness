@@ -54,9 +54,10 @@ export const JobSummarySchema = z.object({
    * process: extraction; publish: apply review edits and deliver to the final target;
    * rerun: one step again; prepare: workbench sample text + OCR only; segment: workbench
    * anchor preview over a project's prepared samples (no document; ADR 0007);
-   * draft: workbench drafting stage (no document).
+   * draft: workbench drafting stage (no document); export: workbench drafting bundle (no
+   * document, migration 0019).
    */
-  task: z.enum(['process', 'publish', 'rerun', 'prepare', 'segment', 'draft']),
+  task: z.enum(['process', 'publish', 'rerun', 'prepare', 'segment', 'draft', 'export']),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
   /** Regression run: the reference document this test job re-runs. */

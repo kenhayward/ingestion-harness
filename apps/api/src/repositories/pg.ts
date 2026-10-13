@@ -232,6 +232,41 @@ export class PgRepo implements IngestionRepo {
     return rows.map(toSegmentJob);
   }
 
+  async createExportJob(projectId: string, params: Record<string, unknown>) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // One export per project: serialize concurrent starts so neither misses the other's insert.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('export:' || $1))`, [projectId]);
+      const removed = await client.query<{ id: string }>(
+        `DELETE FROM jobs WHERE project_id = $1 AND task = 'export' RETURNING id`,
+        [projectId],
+      );
+      const { rows } = await client.query<SegmentRow>(
+        `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+         VALUES ($1, 'export', true, $2, 3, $3)
+         RETURNING id, project_id, status, error, created_at, updated_at`,
+        [projectId, WORKBENCH_PRIORITY, JSON.stringify(params)],
+      );
+      await client.query('COMMIT');
+      return { job: toSegmentJob(rows[0]!), removed: removed.rows.map((r) => r.id) };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listExportJobs(projectId: string) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `SELECT id, project_id, status, error, created_at, updated_at FROM jobs
+        WHERE project_id = $1 AND task = 'export' ORDER BY created_at DESC, id DESC`,
+      [projectId],
+    );
+    return rows.map(toSegmentJob);
+  }
+
   async createSegmentJob(projectId: string, params: SegmentJobParams) {
     const client = await this.pool.connect();
     try {

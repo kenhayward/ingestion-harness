@@ -42,6 +42,8 @@ export class MemoryRepo implements IngestionRepo {
   readonly segmentJobs = new Map<string, SegmentJob & { params: SegmentJobParams }>();
   /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
+  /** Export jobs (document-less, one per project): kept apart like draft jobs. */
+  readonly exportJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** jobs.params of workbench jobs. */
   readonly jobParams = new Map<string, Record<string, unknown>>();
   readonly outputs = new Map<string, JobOutput[]>();
@@ -152,6 +154,38 @@ export class MemoryRepo implements IngestionRepo {
       }));
   }
 
+  async createExportJob(projectId: string, params: Record<string, unknown>) {
+    const removed = [...this.exportJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .map((j) => j.id);
+    for (const id of removed) this.exportJobs.delete(id);
+    const now = new Date().toISOString();
+    const job: ProjectJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.exportJobs.set(job.id, { ...job, params });
+    return { job, removed };
+  }
+
+  async listExportJobs(projectId: string) {
+    return [...this.exportJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .reverse()
+      .map(({ id, projectId: p, status, error, createdAt, updatedAt }) => ({
+        id,
+        projectId: p,
+        status,
+        error,
+        createdAt,
+        updatedAt,
+      }));
+  }
+
   async createSegmentJob(projectId: string, params: SegmentJobParams) {
     const removed = [...this.segmentJobs.values()]
       .filter((j) => j.projectId === projectId)
@@ -213,7 +247,7 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async getJobParams(id: string): Promise<Record<string, unknown> | null> {
-    return this.jobParams.get(id) ?? null;
+    return this.jobParams.get(id) ?? this.exportJobs.get(id)?.params ?? null;
   }
 
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {

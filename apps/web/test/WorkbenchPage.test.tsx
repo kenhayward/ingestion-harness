@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectSummary } from '@ih/shared';
@@ -44,6 +44,18 @@ describe('WorkbenchPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create project' }));
     expect(api.createProject).toHaveBeenCalledWith('letter', 'Letter');
     expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter');
+  });
+
+  it('imports a bundle and opens the new project', async () => {
+    const onNavigate = vi.fn();
+    const api = fakeApi({ importBundle: vi.fn(async () => projectView()) });
+    render(<WorkbenchPage api={api} onNavigate={onNavigate} />);
+    await userEvent.upload(
+      screen.getByLabelText('Bundle (.zip)'),
+      new File(['zip'], 'b.zip', { type: 'application/zip' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter'));
   });
 
   it('opens an existing document type without a name', async () => {

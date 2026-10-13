@@ -61,6 +61,7 @@ import {
   type Reference,
   type ReferenceRow,
   type SampleResult,
+  type SampleRole,
   type SampleState,
   type SampleView,
   type SegmentationView,
@@ -82,7 +83,7 @@ import {
   type SampleRecord,
 } from '../workbench/repo.js';
 
-const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
+export const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
 
 type ProjectParams = { id: string };
@@ -99,7 +100,7 @@ const DecisionBody = z
 const SkipParams = StageParams;
 const FeedbackParams = z.object({ id: Id, fid: z.string().uuid() });
 
-const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
+export const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
   app.deps.access === null || req.auth?.role === 'admin';
 
 const StartSegmentation = z.object({ document: z.unknown().optional() }).strict();
@@ -119,7 +120,10 @@ export async function versionsOf(templates: TemplateRepo, id: string) {
   };
 }
 
-async function projectView(app: FastifyInstance, project: WorkbenchProject): Promise<ProjectView> {
+export async function projectView(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+): Promise<ProjectView> {
   const { draft, published } = await versionsOf(app.deps.templates, project.id);
   return { project, draft, published, brief: await app.deps.workbench.latestBrief(project.id) };
 }
@@ -178,7 +182,10 @@ async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageV
 }
 
 /** The body of the latest accepted survey, or null (context for the change stages). */
-async function acceptedSurvey(app: FastifyInstance, projectId: string): Promise<SurveyBody | null> {
+export async function acceptedSurvey(
+  app: FastifyInstance,
+  projectId: string,
+): Promise<SurveyBody | null> {
   const p = (await app.deps.workbench.listProposals(projectId)).find(
     (x) => x.stage === 'survey' && x.decision === 'accepted',
   );
@@ -297,6 +304,58 @@ async function toView(
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
     holdoutRuns,
   };
+}
+
+/** Adds a PDF as a sample (queues its prepare job). Shared by upload and bundle import. */
+export async function addSampleFile(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+  input: { filename: string; body: Buffer; role: SampleRole },
+): Promise<{ view: SampleView } | { code: 409 | 415; error: string }> {
+  const { workbench, templates } = app.deps;
+  const { filename, body, role } = input;
+  const projectId = project.id;
+  if (!isPdf(body)) return { code: 415, error: 'file is not a PDF' };
+
+  const samples = await workbench.listSamples(projectId);
+  if (samples.length >= MAX_SAMPLES) {
+    return { code: 409, error: `a project holds at most ${MAX_SAMPLES} samples` };
+  }
+  const sha256 = createHash('sha256').update(body).digest('hex');
+  if (samples.some((s) => s.sha256 === sha256)) {
+    return { code: 409, error: 'this PDF is already a sample of the project' };
+  }
+
+  const { draft, published } = await versionsOf(templates, projectId);
+  const version = draft ?? published ?? 1;
+  const documentId = randomUUID();
+  const key = inboxKey(projectId, version, documentId);
+  await app.deps.store.put(app.deps.buckets.inbox, key, body, 'application/pdf');
+  const job = await app.deps.repo.createWorkbenchJob(
+    {
+      id: documentId,
+      filename,
+      sha256,
+      sizeBytes: body.length,
+      specId: projectId,
+      specVersion: version,
+      bucket: app.deps.buckets.inbox,
+      objectKey: key,
+    },
+    { projectId, task: 'prepare', params: { dataPolicy: project.dataPolicy } },
+  );
+  try {
+    const record = await workbench.addSample({
+      projectId,
+      documentId,
+      role,
+      addedForVersion: version,
+    });
+    return { view: await toView(app, record, job, 0) };
+  } catch (err) {
+    if (err instanceof WorkbenchConflictError) return { code: 409, error: err.message };
+    throw err;
+  }
 }
 
 /** A new document for a test run of `sample` against template version `version`. */
@@ -883,48 +942,13 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     const role = SampleRoleSchema.safeParse(multipartField(file, 'role') ?? 'dev');
     if (!role.success) return reply.code(400).send({ error: 'role must be dev or holdout' });
     const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
-    if (!isPdf(body)) return reply.code(415).send({ error: 'file is not a PDF' });
-
-    const samples = await workbench.listSamples(projectId);
-    if (samples.length >= MAX_SAMPLES) {
-      return reply.code(409).send({ error: `a project holds at most ${MAX_SAMPLES} samples` });
-    }
-    const sha256 = createHash('sha256').update(body).digest('hex');
-    if (samples.some((s) => s.sha256 === sha256)) {
-      return reply.code(409).send({ error: 'this PDF is already a sample of the project' });
-    }
-
-    const { draft, published } = await versionsOf(templates, projectId);
-    const version = draft ?? published ?? 1;
-    const documentId = randomUUID();
-    const key = inboxKey(projectId, version, documentId);
-    await app.deps.store.put(app.deps.buckets.inbox, key, body, 'application/pdf');
-    const job = await app.deps.repo.createWorkbenchJob(
-      {
-        id: documentId,
-        filename: file.filename,
-        sha256,
-        sizeBytes: body.length,
-        specId: projectId,
-        specVersion: version,
-        bucket: app.deps.buckets.inbox,
-        objectKey: key,
-      },
-      { projectId, task: 'prepare', params: { dataPolicy: project.dataPolicy } },
-    );
-    try {
-      const record = await workbench.addSample({
-        projectId,
-        documentId,
-        role: role.data,
-        addedForVersion: version,
-      });
-      return reply.code(201).send(await toView(app, record, job, 0));
-    } catch (err) {
-      if (err instanceof WorkbenchConflictError)
-        return reply.code(409).send({ error: err.message });
-      throw err;
-    }
+    const added = await addSampleFile(app, project, {
+      filename: file.filename,
+      body,
+      role: role.data,
+    });
+    if ('error' in added) return reply.code(added.code).send({ error: added.error });
+    return reply.code(201).send(added.view);
   });
 
   app.patch<{ Params: { id: string; sid: string } }>(

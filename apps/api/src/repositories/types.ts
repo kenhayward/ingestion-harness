@@ -33,7 +33,7 @@ export interface SegmentJob {
   updatedAt: string;
 }
 
-/** A document-less project job (segment previews, drafting runs). */
+/** A document-less project job (segment previews, drafting runs, bundle exports). */
 export type ProjectJob = SegmentJob;
 
 /** jobs.params of a segment job (worker: workbench.SegmentParams). */
@@ -152,6 +152,17 @@ export interface IngestionRepo {
   createDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
   /** Draft jobs of a project, newest first. */
   listDraftJobs(projectId: string): Promise<ProjectJob[]>;
+  /**
+   * Queue a bundle export (document-less, task 'export'). One per project: earlier export jobs
+   * of the project are deleted first; their ids are returned in `removed` (their zips are the
+   * caller's to delete).
+   */
+  createExportJob(
+    projectId: string,
+    params: Record<string, unknown>,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  /** Export jobs of a project, newest first. */
+  listExportJobs(projectId: string): Promise<ProjectJob[]>;
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;

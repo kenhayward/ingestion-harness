@@ -31,6 +31,12 @@ describe('ProjectPage', () => {
     expect(screen.getByRole('link', { name: 'Samples' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('offers the drafting bundle export on the Brief tab', async () => {
+    page(fakeApi({ getProject: vi.fn(async () => projectView()) }), 'brief');
+    expect(await screen.findByRole('heading', { name: 'Drafting bundle' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export bundle' })).toBeInTheDocument();
+  });
+
   it('offers to open a document type that has no project yet', async () => {
     const api = fakeApi({
       getProject: vi.fn(async () => {

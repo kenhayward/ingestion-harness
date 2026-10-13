@@ -191,6 +191,23 @@ One function builds the drafting context for every stage, for `revise`, and for 
 **Holdout text, holdout page images and holdout failure diffs are never included.** This is
 enforced here, in one place, and covered by tests.
 
+### Bundle
+
+The export bundle is a deterministic zip of the project's drafting material, for drafting elsewhere
+or for importing into another deployment. Layout: `manifest.json` (format, version, project,
+template and brief versions, samples, stages), `README.md`, `context.md`, `brief.json`,
+`template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
+
+- **Dev only.** Holdout samples are refused at export; only dev samples are included, and
+  `context.md` is exactly `build_context`, so it carries the same dev-only guarantee as drafting.
+- **Local-only projects** export and download only with the admin token.
+- **One export per project:** a new export replaces the previous export job and its zip.
+- **Import** creates a `local` project with template draft v1, the brief and the dev samples, which
+  are re-prepared (each queues a `prepare` job). It validates the whole bundle before writing
+  anything and refuses an id that already exists (import under another id).
+- **Not imported:** the accepted survey and the stage states. The imported project's own drafting
+  context therefore differs from the bundle's `context.md` until the survey is redone.
+
 ### Models and data policy
 
 - A new alias `draft` in `config/llm-providers.yaml`. It may point at a frontier model or at a
@@ -318,6 +335,9 @@ GET               /projects/:id/iterations[/:iid] history, scores
 POST              /projects/:id/iterations/:iid/revert
 POST              /projects/:id/publish           { overrideReason? }
 GET               /projects/:id/export            bundle (zip)
+                                                  (as built: POST /projects/:id/export queues an export job,
+                                                  GET /projects/:id/exports lists it,
+                                                  GET /projects/:id/exports/:jobId/bundle downloads the zip)
 POST              /projects/import                bundle → project
 ```
 
@@ -390,7 +410,7 @@ Each phase is usable on its own.
 5. **Holdout and publish**, split in two:
    - **5a (done):** holdout evaluation, the publish gate and holdout history.
    - **5b (done):** references across versions.
-6. **Export/import bundle.**
+6. **Export/import bundle (done).**
 
 The most important phases are 2 and 4. If the segmentation preview and the scored loop aren't
 fast, users will go back to editing YAML by hand.

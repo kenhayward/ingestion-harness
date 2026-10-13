@@ -12,6 +12,7 @@ import type {
   IterationSummary,
   ComparisonView,
   IterationView,
+  ExportView,
   JobDetail,
   JobSummary,
   ModelInfo,
@@ -307,6 +308,12 @@ export interface Api {
   /** Rejects with an ApiError (404 when there is no project yet). */
   getProject(id: string): Promise<ProjectView>;
   setDataPolicy(projectId: string, dataPolicy: DataPolicy): Promise<ProjectView>;
+  /** Queue the project's drafting bundle (replaces its previous export). */
+  startExport(projectId: string): Promise<ExportView>;
+  listExports(projectId: string): Promise<ExportView[]>;
+  exportBundleUrl(projectId: string, jobId: string): string;
+  /** Import a bundle as a new local project; `id`/`name` default to the manifest's. */
+  importBundle(file: File, fields: { id?: string; name?: string }): Promise<ProjectView>;
   startStage(projectId: string, stage: DraftStage): Promise<ProposalView>;
   listProposals(projectId: string): Promise<ProposalView[]>;
   decideProposal(
@@ -550,6 +557,32 @@ export function createHttpApi(base = '/api'): Api {
     createProject: (id, name) =>
       post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
     getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),
+    startExport: (id) => post<ExportView>(`${base}/workbench/projects/${id}/export`, {}),
+    listExports: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/exports`).then(json<ExportView[]>),
+    exportBundleUrl: (id, jobId) => `${base}/workbench/projects/${id}/exports/${jobId}/bundle`,
+    importBundle: (file, fields) => {
+      // Fields must precede the file part — the API reads them from the file's preamble.
+      const form = new FormData();
+      if (fields.id) form.append('id', fields.id);
+      if (fields.name) form.append('name', fields.name);
+      form.append('bundle', file);
+      return apiFetch(`${base}/workbench/projects/import`, { method: 'POST', body: form }).then(
+        async (res) => {
+          // A proxy in front of the API (nginx, NGINX Proxy Manager) refuses with its own page.
+          if (res.status === 413) {
+            const body: unknown = await res
+              .clone()
+              .json()
+              .catch(() => null);
+            if (body === null || typeof body !== 'object') {
+              throw new ApiError('bundle too large for the proxy', 413);
+            }
+          }
+          return json<ProjectView>(res);
+        },
+      );
+    },
     setDataPolicy: (id, dataPolicy) =>
       post<ProjectView>(`${base}/workbench/projects/${id}/data-policy`, { dataPolicy }, 'PUT'),
     startStage: (id, stage) =>

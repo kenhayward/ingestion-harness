@@ -5,6 +5,7 @@ import {
   EMPTY_BRIEF,
   SurveyBodySchema,
   draftingKey,
+  exportKey,
   JobSummarySchema,
   PreparedTextSchema,
   PreparedTriageSchema,
@@ -106,6 +107,14 @@ describe('segmentation contracts', () => {
 describe('drafting contracts', () => {
   it('keys a drafting result by project and job (mirrors worker storage.py)', () => {
     expect(draftingKey('letter', 'j1')).toBe('drafting/letter/j1.json');
+  });
+
+  it('names an export bundle in the runs bucket (mirrors worker storage.py)', () => {
+    expect(exportKey('letter', 'j1')).toBe('exports/letter/j1.zip');
+  });
+
+  it('accepts export jobs', () => {
+    expect(JobSummarySchema.shape.task.parse('export')).toBe('export');
   });
 
   it('accepts only the two data policies', () => {
