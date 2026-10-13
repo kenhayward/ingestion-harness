@@ -464,8 +464,9 @@ describe('ReferencesTab detail panel', () => {
     );
   });
 
-  it('says an output with no provenance is not verified for this version', async () => {
+  it('says an outdated output is not verified, whether or not corrections are known', async () => {
     const a = saved('a.pdf');
+    a.reference = { ...a.reference!, outdated: ['field:due_date'] };
     tab(
       { dev: [a] },
       {
@@ -492,7 +493,7 @@ describe('ReferencesTab detail panel', () => {
                 corrections: [],
               },
             ],
-            corrections: [],
+            corrections: null,
           }),
         ),
       },
@@ -502,6 +503,37 @@ describe('ReferencesTab detail panel', () => {
     expect(sender).not.toHaveTextContent('re-verify');
     expect(due).toHaveTextContent('Not verified for this version — re-verify');
     expect(due).not.toHaveTextContent('MODEL ✓');
+  });
+
+  it('shows no re-verify text for an unknown-provenance output that is not outdated', async () => {
+    const a = saved('a.pdf');
+    tab(
+      { dev: [a] },
+      {
+        getReferenceDetail: vi.fn(async () =>
+          referenceDetail({
+            sampleId: a.sampleId,
+            filename: 'a.pdf',
+            reference: a.reference!,
+            values: [
+              {
+                id: 'sender',
+                kind: 'field',
+                value: 'x',
+                provenance: null,
+                proposed: null,
+                corrections: [],
+              },
+            ],
+            corrections: null,
+          }),
+        ),
+      },
+    );
+    const panel = await screen.findByRole('complementary', { name: 'Reference a.pdf' });
+    const [, sender] = within(within(panel).getByRole('table')).getAllByRole('row');
+    expect(sender).toHaveTextContent('x');
+    expect(sender).not.toHaveTextContent('re-verify');
   });
 
   it('shows a placeholder instead of an empty column when no sample has a reference', async () => {

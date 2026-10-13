@@ -603,14 +603,14 @@ function ReferenceDetailPanel({
                     : display(v.value)}
                 </td>
                 <td>
-                  {v.provenance ? (
-                    <span className={`kind-tag tone-${PROVENANCE_TAG[v.provenance].tone}`}>
-                      {PROVENANCE_TAG[v.provenance].text}
+                  {r.outdated.includes(`${v.kind}:${v.id}`) ? (
+                    <span className="kind-tag tone-warn">
+                      Not verified for this version — re-verify
                     </span>
                   ) : (
-                    detail.corrections !== null && (
-                      <span className="kind-tag tone-warn">
-                        Not verified for this version — re-verify
+                    v.provenance && (
+                      <span className={`kind-tag tone-${PROVENANCE_TAG[v.provenance].tone}`}>
+                        {PROVENANCE_TAG[v.provenance].text}
                       </span>
                     )
                   )}
