@@ -11,6 +11,7 @@ import { SpecRegistry } from './specs/spec-registry.js';
 import { S3ObjectStore } from './storage/s3.js';
 import { PgTemplateRepo } from './templates/repo.js';
 import { seedTemplates } from './templates/seed.js';
+import { warmListCache } from './workbench/list.js';
 import { PgWorkbenchRepo } from './workbench/repo.js';
 
 const config = loadConfig();
@@ -85,3 +86,5 @@ const adminToken = await access.rotateAdminToken();
 process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);
 await app.listen({ host: config.HOST, port: config.PORT });
 if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);
+// Fill the project list cache in the background (a cold cache takes seconds at scale).
+warmListCache(app).catch((err) => app.log.warn({ err }, 'project list cache warm-up failed'));

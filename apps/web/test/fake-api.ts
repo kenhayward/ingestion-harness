@@ -4,6 +4,8 @@ import type {
   GateView,
   IterationView,
   JobSummary,
+  ProjectListItem,
+  ProjectListPage,
   ProjectOverview,
   ProjectView,
   ProposalView,
@@ -12,7 +14,7 @@ import type {
   SampleView,
   SegmentationView,
 } from '@ih/shared';
-import { OVERVIEW_TABS } from '@ih/shared';
+import { OVERVIEW_STAGES, OVERVIEW_TABS } from '@ih/shared';
 import {
   outputPath,
   type Api,
@@ -259,7 +261,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
     testRun: vi.fn(async () => job({ test: true })),
-    listProjects: vi.fn(async () => []),
+    listProjectPage: vi.fn(async () => projectListPage()),
+    listPins: vi.fn(async () => []),
+    pin: vi.fn(async () => undefined),
+    unpin: vi.fn(async () => undefined),
     createProject: vi.fn(async () => {
       throw new Error('createProject not stubbed');
     }),
@@ -414,6 +419,46 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
     draft: 1,
     published: null,
     brief: null,
+    ...overrides,
+  };
+}
+
+export function projectListItem(overrides: Partial<ProjectListItem> = {}): ProjectListItem {
+  const states = [
+    'accepted',
+    'accepted',
+    'accepted',
+    'accepted',
+    'accepted',
+    'proposed',
+    'pending',
+    'pending',
+    'pending',
+    'locked',
+  ] as const;
+  return {
+    ...projectView().project,
+    draft: 2,
+    published: 1,
+    samples: 6,
+    stages: OVERVIEW_STAGES.map((stage, i) => ({ stage, state: states[i]! })),
+    phase: 'draft',
+    done: 5,
+    next: { kind: 'decide', stage: 'steps', label: 'Decide on Steps' },
+    holdoutScore: null,
+    devSamples: 4,
+    holdoutSamples: 2,
+    lastActivityAt: '2026-10-13T08:00:00.000Z',
+    flags: { attention: true, running: false, ready: false },
+    ...overrides,
+  };
+}
+
+export function projectListPage(overrides: Partial<ProjectListPage> = {}): ProjectListPage {
+  return {
+    items: [projectListItem()],
+    total: 1,
+    facets: { all: 1, attention: 0, running: 0, ready: 0, progress: 1, published: 0 },
     ...overrides,
   };
 }

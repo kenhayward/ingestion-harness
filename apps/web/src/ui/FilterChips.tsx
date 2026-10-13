@@ -1,8 +1,8 @@
 export type FilterChip<T extends string> = {
   value: T;
   label: string;
-  /** Omitted: the chip shows no count. */
-  count?: number;
+  /** Omitted: the chip shows no count. A string is shown as given (e.g. "1,000"). */
+  count?: number | string;
   /** warn: the count is always amber (e.g. "Needs attention"). */
   tone?: 'warn';
 };

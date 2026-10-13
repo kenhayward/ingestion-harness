@@ -5,6 +5,7 @@ import type { ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
 import { ExportPanel } from './ExportPanel.js';
+import { forgetProject, rememberProject } from './listDerive.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { OverviewTab } from './OverviewTab.js';
 import { ProjectHeader } from './ProjectHeader.js';
@@ -99,6 +100,9 @@ export function ProjectPage({
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   /** Bumped when a stage changes the draft, to remount editors showing it. */
   const [revision, setRevision] = useState(0);
+
+  // The Workbench list's "Pinned and recent" cards show the projects opened last.
+  useEffect(() => rememberProject(projectId), [projectId]);
 
   const load = useCallback(() => {
     api.getProject(projectId).then(
@@ -410,6 +414,7 @@ export function ProjectPage({
                 loadOverview();
                 throw err;
               }
+              forgetProject(project.id);
               onNavigate('#/workbench');
             })
           }

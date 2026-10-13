@@ -629,6 +629,8 @@ export const ProjectListQuerySchema = z
           .filter(Boolean),
       )
       .refine((a) => a.length <= 20, 'at most 20 ids')
+      // `ids=` or `ids=,` names nothing: no filter, not "match nothing".
+      .transform((a) => (a.length ? a : undefined))
       .optional(),
     page: z.coerce.number().int().min(1).default(1),
     size: z.coerce

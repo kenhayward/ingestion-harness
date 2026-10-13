@@ -18,9 +18,10 @@ import type {
   JobSummary,
   ModelInfo,
   PreparedText,
+  ProjectListPage,
+  ProjectListQuery,
   ProposalView,
   Publication,
-  ProjectSummary,
   ProjectView,
   Reference,
   ReferenceRow,
@@ -307,7 +308,14 @@ export interface Api {
   /** Upload a sample against a (draft) version as a test run (never published). */
   testRun(file: File, id: string, version: number): Promise<JobSummary>;
   // --- workbench (ADR 0007) ---
-  listProjects(): Promise<ProjectSummary[]>;
+  /** One page of the project list; only the params that are set are sent. */
+  listProjectPage(
+    query: Partial<Omit<ProjectListQuery, 'ids'>> & { ids?: string[] },
+  ): Promise<ProjectListPage>;
+  /** Ids of the projects the caller pinned. */
+  listPins(): Promise<string[]>;
+  pin(projectId: string): Promise<void>;
+  unpin(projectId: string): Promise<void>;
   /** New project; omit `name` to open an existing document type. */
   createProject(id: string, name?: string): Promise<ProjectView>;
   /** Rejects with an ApiError (404 when there is no project yet). */
@@ -565,11 +573,29 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
-    // The unpaged list until the Workbench page moves to the paged one (PR 7).
-    listProjects: () => apiFetch(`${base}/workbench/projects?all=1`).then(json<ProjectSummary[]>),
     createProject: (id, name) =>
       post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
     getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),
+    listProjectPage: (query) => {
+      const params = new URLSearchParams();
+      if (query.q) params.set('q', query.q);
+      if (query.filter) params.set('filter', query.filter);
+      if (query.phase) params.set('phase', query.phase);
+      if (query.policy) params.set('policy', query.policy);
+      if (query.sort) params.set('sort', query.sort);
+      if (query.ids?.length) params.set('ids', query.ids.join(','));
+      if (query.page) params.set('page', String(query.page));
+      if (query.size) params.set('size', String(query.size));
+      const qs = params.toString();
+      return apiFetch(`${base}/workbench/projects${qs ? `?${qs}` : ''}`).then(
+        json<ProjectListPage>,
+      );
+    },
+    listPins: () => apiFetch(`${base}/workbench/pins`).then(json<string[]>),
+    pin: (id) =>
+      noContent(apiFetch(`${base}/workbench/pins/${encodeURIComponent(id)}`, { method: 'PUT' })),
+    unpin: (id) =>
+      noContent(apiFetch(`${base}/workbench/pins/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     deleteProject: (id) =>
       noContent(apiFetch(`${base}/workbench/projects/${id}`, { method: 'DELETE' })),
     startExport: (id) => post<ExportView>(`${base}/workbench/projects/${id}/export`, {}),

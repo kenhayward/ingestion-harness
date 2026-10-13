@@ -518,3 +518,289 @@
 .proposal-edit {
   margin-left: auto;
 }
+
+/* Workbench project list */
+.projects-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+}
+.projects-table {
+  min-width: 1060px;
+  border-collapse: collapse;
+  width: 100%;
+}
+.projects-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ih-surface);
+  text-align: left;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.projects-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--ih-border-soft);
+}
+.projects-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.project-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.project-name {
+  font-weight: 600;
+}
+.project-id {
+  display: block;
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+  font-family: var(--ih-font-mono, ui-monospace, monospace);
+}
+.project-phase {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--ih-text-xs);
+}
+.versions,
+.samples {
+  display: flex;
+  flex-direction: column;
+}
+.versions-draft {
+  font-weight: 500;
+}
+.projects .muted {
+  color: var(--ih-muted);
+}
+.ext-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.pin-button {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--ih-radius-sm);
+}
+.score {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.score-value[data-tone='ok'] {
+  color: var(--ih-ok-fg);
+}
+.score-value[data-tone='warn'] {
+  color: var(--ih-warn-fg);
+}
+.score-bar {
+  position: relative;
+  display: block;
+  width: 84px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ih-border-soft);
+}
+.score-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ih-muted);
+}
+.score-fill[data-tone='ok'] {
+  background: var(--ih-ok-fg);
+}
+.score-fill[data-tone='warn'] {
+  background: var(--ih-warn-fg);
+}
+.score-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ih-text);
+}
+.project-cards {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.project-card {
+  /* The name's link stretches over the whole card (see below), so the card opens the project. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.project-card .project-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+/* Above the stretched link, so the star and the next action keep their own clicks. */
+.project-card .pin-button,
+.project-card .next-action {
+  position: relative;
+  z-index: 1;
+}
+.project-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.project-card-head .project-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-card-time {
+  margin-left: auto;
+  font-size: var(--ih-text-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .projects-scroll {
+    display: none;
+  }
+  .project-cards {
+    display: grid;
+    gap: 10px;
+  }
+  /* A 44 x 44 px touch target for the card's star. */
+  .project-card .pin-button {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Workbench list page: header, pinned and recent cards, toolbar, footer */
+.workbench-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.workbench-list .page-header {
+  margin-bottom: 0;
+}
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pinned-recent .eyebrow {
+  margin: 0 0 8px;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pinned-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.list-search {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+/* `label.inline` (styles.css) would otherwise win on specificity. */
+label.inline.list-select {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.list-range {
+  margin-left: auto;
+  font-size: var(--ih-text-sm);
+}
+.projects-footer {
+  gap: 12px 16px;
+}
+.list-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+}
+.list-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-tick {
+  display: inline-block;
+  width: 2px;
+  height: 10px;
+  background: var(--ih-text);
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.pager button {
+  min-width: var(--ih-control-h);
+  padding: 0 10px;
+}
+.pager button[aria-current='page'] {
+  border-color: var(--ih-text);
+  background: var(--ih-text);
+  color: var(--ih-bg);
+}
+.pager-gap {
+  padding: 0 4px;
+  color: var(--ih-muted);
+}
+.new-project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.new-project-form p {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .pinned-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .list-search {
+    flex-basis: 100%;
+  }
+  .list-range,
+  .pager {
+    margin-left: 0;
+  }
+}

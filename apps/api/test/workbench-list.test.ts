@@ -7,7 +7,7 @@ import {
   type ProjectSummary,
   type SampleView,
 } from '@ih/shared';
-import { LIST_CACHE_VERSION, refreshListCache } from '../src/workbench/list.js';
+import { LIST_CACHE_VERSION, refreshListCache, warmListCache } from '../src/workbench/list.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -128,6 +128,36 @@ describe('GET /api/workbench/projects (paged list)', () => {
         'samples',
       ].sort(),
     );
+  });
+
+  it('shares one refresh between concurrent callers on a cold cache', async () => {
+    const { app, workbench } = await setup();
+    const spy = vi.spyOn(workbench, 'listProposals');
+    // The calls one cold refresh makes per project (the overview reads proposals several times).
+    await refreshListCache(app);
+    const single = spy.mock.calls.length;
+    expect(single).toBeGreaterThan(0);
+    workbench.listCacheRows.clear();
+    spy.mockClear();
+    const [a, b] = await Promise.all([refreshListCache(app), refreshListCache(app)]);
+    expect(a).toHaveLength(3);
+    expect(b).toEqual(a);
+    expect(spy).toHaveBeenCalledTimes(single);
+  });
+
+  it('does not let a rejected refresh poison the next call', async () => {
+    const { app, workbench } = await setup();
+    vi.spyOn(workbench, 'projectFingerprints').mockRejectedValueOnce(new Error('db down'));
+    await expect(refreshListCache(app)).rejects.toThrow('db down');
+    expect(await refreshListCache(app)).toHaveLength(3);
+  });
+
+  it('warms the cache so the next list computes nothing', async () => {
+    const { app, workbench, list } = await setup();
+    await warmListCache(app);
+    const spy = vi.spyOn(workbench, 'listProposals');
+    await list();
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('recomputes only the rows whose fingerprint changed', async () => {

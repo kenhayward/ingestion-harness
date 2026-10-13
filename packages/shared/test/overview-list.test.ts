@@ -163,6 +163,11 @@ describe('queryProjects', () => {
       }).success,
     ).toBe(false);
   });
+  it('treats an empty ids as no filter', () => {
+    expect(ProjectListQuerySchema.parse({ ids: '' }).ids).toBeUndefined();
+    expect(ProjectListQuerySchema.parse({ ids: ',' }).ids).toBeUndefined();
+    expect(ids(queryProjects(items, q({ ids: '' })))).toHaveLength(3);
+  });
   it('filters by phase and policy', () => {
     expect(ids(queryProjects(items, q({ phase: 'published' })))).toEqual(['gamma']);
     expect(ids(queryProjects(items, q({ policy: 'external' })))).toEqual(['beta']);
