@@ -257,20 +257,24 @@ describe('StagePanel', () => {
     expect(await screen.findByRole('button', { name: 'Propose again' })).not.toHaveClass('primary');
   });
 
-  it('shows a decided proposal read-only, bordered in its tone', async () => {
+  it('shows a decided proposal as the applied card, bordered in its tone', async () => {
     const p = changeProposalView({ status: 'partially_accepted', acceptedChanges: [0] });
     panel({ listProposals: vi.fn(async () => [p]) });
-    const first = await screen.findByRole('checkbox', {
-      name: 'Apply: Field protocol_number (text)',
-    });
-    const second = screen.getByRole('checkbox', { name: 'Apply: Field approved_on (date)' });
-    expect(first).toBeDisabled();
-    expect(first).toBeChecked();
-    expect(second).toBeDisabled();
-    expect(second).not.toBeChecked();
+    const region = await screen.findByRole('region', { name: 'Proposal' });
+    expect(within(region).getByText(/1 of 2 changes applied/)).toBeInTheDocument();
+    expect(within(region).getByText('Applied').closest('li')).toHaveTextContent('protocol_number');
+    expect(within(region).getByText('Not applied').closest('li')).toHaveTextContent('approved_on');
+    expect(within(region).queryAllByRole('checkbox')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: 'Reject all' })).toBeNull();
-    expect(screen.getByRole('region', { name: 'Proposal' }).style.borderColor).toBe(
-      'var(--ih-ok-fg)',
+    expect(region.style.borderColor).toBe('var(--ih-ok-fg)');
+  });
+
+  it('points to the next tab once applied', async () => {
+    const p = changeProposalView({ status: 'accepted', acceptedChanges: [0, 1] });
+    panel({ listProposals: vi.fn(async () => [p]) });
+    expect(await screen.findByRole('link', { name: 'Go to Sections' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/sections',
     );
   });
 

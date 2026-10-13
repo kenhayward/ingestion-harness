@@ -885,3 +885,37 @@ label.inline.list-select {
   flex-wrap: wrap;
   gap: 8px;
 }
+.proposal-meta h3 {
+  margin: 0 0 6px;
+  font-size: var(--ih-text-md);
+}
+.proposal-ready {
+  background: var(--ih-warn-bg);
+}
+.proposal-applied {
+  background: var(--ih-ok-bg);
+}
+.proposal-applied .button {
+  margin-top: 8px;
+}
+.proposal-history > summary {
+  padding: 10px 18px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.proposal-decided-list li {
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+.applied-yes {
+  color: var(--ih-ok-fg);
+}
+.diff-chip {
+  display: inline-block;
+  width: fit-content;
+  margin: 4px 0;
+  padding: 1px 8px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-sm);
+  background: var(--ih-code-bg);
+  overflow-wrap: anywhere;
+}
