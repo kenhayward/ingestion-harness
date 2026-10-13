@@ -176,7 +176,7 @@ function ReferenceTable({ label, rows }: { label: string; rows: ReferenceRow[] |
                     <small className="muted"> carried from v{r.reference.carriedFrom}</small>
                   )}
                   {r.reference.outdated.length > 0 && (
-                    <small role="alert">
+                    <small role="status">
                       {' '}
                       re-verify: {r.reference.outdated.join(', ')} changed
                     </small>

@@ -98,6 +98,14 @@ describe('ReferencesTab', () => {
     expect(
       screen.getByText(/only those whose outputs changed need verifying again/),
     ).toBeInTheDocument();
+    const verified = screen.getByText('a.pdf').closest('tr')!;
+    const outdated = screen.getByText('b.pdf').closest('tr')!;
+    expect(verified.textContent).toContain('✓');
+    expect(outdated.textContent).not.toContain('✓');
+    // a note, not an error
+    expect(within(outdated).getByRole('status')).toHaveTextContent(
+      're-verify: field:date, table:lines.qty changed',
+    );
   });
 
   it('runs the draft model on unverified samples and polls while they run', async () => {

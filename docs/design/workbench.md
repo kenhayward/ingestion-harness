@@ -272,9 +272,25 @@ How it works (migration 0018):
 - A reference with changes is outdated and counts as unverified in the references stage,
   reference runs (dev and holdout), evaluation and so the holdout gate's coverage, until the user
   re-verifies it. Regression ignores outdated references.
+- The verified outputs are those the run was checked against, not the draft at save time.
+  Reference runs (dev and holdout) snapshot the draft's outputs into `params.outputs`, and
+  "Save as reference" uses that snapshot. Without one, it uses the published version's outputs,
+  or the draft's when the draft has not changed since the run was created; a draft edited after
+  the run is a 409 (`the draft changed after this run; run it again`). A run of a version that no
+  longer exists saves `{}`, which is outdated as soon as the version has outputs again.
+- `GET /api/templates/:id/references?version=N` returns the version's regression set
+  (`versionReferences`): outdated references are left out.
 - Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
-  instead of deleting it, so older iterations keep their comparisons.
+  instead of deleting it, so older iterations keep their comparisons. Deleting a pinned reference
+  supersedes it too. Carrying skips a version that has any row, live or superseded, so deleted
+  copies don't come back; copies keep the source's `created_at`.
+- Two saves of the same PDF at the same version serialize on an advisory transaction lock
+  (template, version, sha256), so only one stays live.
 - Other document types keep unpinned references that apply to every version.
+- Workbench references saved before 5b stay unpinned (every version, never carried), so
+  nothing disappears from an open draft. Migration 0018 fills their `verified_outputs` from their
+  source job's version, so an outputs change still marks them outdated; without a source job
+  they stay trusted.
 
 ## API (sketch)
 
