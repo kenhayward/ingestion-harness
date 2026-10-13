@@ -241,9 +241,21 @@ export function RunsTab({
           initialModel={retrying.modelOverride ?? ''}
           emptyLabel="Template's models"
           dataPolicy={dataPolicy}
-          summary={<p>Runs the draft on {retrying.filename} again, in the same batch.</p>}
+          // Reference and evaluation runs keep their own model: changing it would drop a
+          // reference run from the References tracker or skew an evaluation.
+          fixedModel={
+            retrying.batchId === null ? (retrying.modelOverride ?? "Template's models") : undefined
+          }
+          summary={
+            <p>
+              Runs the draft on {retrying.filename} again
+              {retrying.batchId === null ? ' with the same model.' : ', in the same batch.'}
+            </p>
+          }
           onConfirm={async (model) => {
-            await api.retryJob(retrying.id, model);
+            // Absent model: the server keeps the run's override.
+            if (retrying.batchId === null) await api.retryJob(retrying.id);
+            else await api.retryJob(retrying.id, model);
             onChanged();
             await load();
           }}

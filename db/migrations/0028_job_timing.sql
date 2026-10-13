@@ -25,3 +25,6 @@ CREATE TRIGGER jobs_timing BEFORE UPDATE OF status ON jobs
 
 -- The queue estimate (GET /api/queue/summary) reads recently finished, timed runs.
 CREATE INDEX jobs_finished_idx ON jobs (finished_at DESC) WHERE finished_at IS NOT NULL;
+
+-- queueStats counts running jobs on every poll of an open Test runs tab.
+CREATE INDEX IF NOT EXISTS jobs_running_idx ON jobs (id) WHERE status = 'running';

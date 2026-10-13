@@ -265,8 +265,28 @@ describe('RunsTab', () => {
     tab(api);
     await userEvent.click(await screen.findByRole('button', { name: 'Retry s1.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry s1.pdf' });
+    expect(within(dialog).getByRole('combobox')).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
     expect(api.retryJob).toHaveBeenCalledWith(failed.id, null);
+  });
+
+  it('retries a run outside a batch with its own model: no picker, no model sent', async () => {
+    const ref = testRunView({
+      batchId: null,
+      filename: 'ref.pdf',
+      status: 'failed',
+      modelOverride: 'draft',
+    });
+    const api = fakeApi({ listTestRuns: vi.fn(async () => [ref]) });
+    tab(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Show other runs (1)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry ref.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retry ref.pdf' });
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(within(dialog).getByText('draft')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('batch');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(api.retryJob).toHaveBeenCalledWith(ref.id);
   });
 
   it('polls only while a run is active', async () => {
