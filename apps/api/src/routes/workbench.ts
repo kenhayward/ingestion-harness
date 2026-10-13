@@ -17,10 +17,14 @@ import {
   PreparedTextSchema,
   ProjectSummarySchema,
   ProjectViewSchema,
+  ProposalViewSchema,
   PublishBodySchema,
+  ReferenceRowSchema,
   PreparedTriageSchema,
   SampleRoleSchema,
   SampleViewSchema,
+  SegmentationViewSchema,
+  StageViewSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
   SurveyBodySchema,
@@ -112,6 +116,8 @@ const DRAFT_NOT_VALID = res(
     issues: z.array(z.object({ path: z.string(), message: z.string() })),
   }),
 );
+const STAGE_ORDER_CONFLICT = '`finish the {stage} stage first (accept or skip it)`';
+const JobsCreated = z.object({ jobs: z.array(JobSummarySchema) });
 const WORKBENCH_DOCS =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
 
@@ -1406,6 +1412,34 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   /** Preview anchors over every prepared sample (worker task `segment`; ADR 0007). */
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/segmentations',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'previewSegmentation',
+        summary: 'Preview section anchors on the samples',
+        description: md`
+          Queues an anchor preview: the worker splits every ready sample into sections with the
+          given \`document\` block (\`sections\`, and optionally \`copies\` and
+          \`pageMarkers\`; default: the open draft's), using the same code as production.
+          Poll \`GET …/segmentations/{jobId}\`. A project has one preview at a time: a new one
+          replaces the old. A preview that runs over 10 seconds (an anchor regex that
+          backtracks) is stopped and goes to \`needs_review\`.
+        `,
+        params: ProjectIdParams,
+        body: z.object({
+          document: z
+            .unknown()
+            .optional()
+            .describe("A template's `document` block. Default: the open draft's."),
+        }),
+        response: {
+          202: res('The queued preview.', SegmentationViewSchema),
+          400: error('Zod issues, or `invalid sections` (with `issues`).'),
+          404: PROJECT_NOT_FOUND,
+          409: error('`no prepared samples to segment`.'),
+        },
+      },
+    },
     async (req, reply) => {
       const projectId = req.params.id;
       if (!(await workbench.getProject(projectId))) {
@@ -1449,6 +1483,27 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string; jobId: string } }>(
     '/workbench/projects/:id/segmentations/:jobId',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'getSegmentation',
+        summary: 'Get an anchor preview',
+        description: md`
+          A preview's status and, once it succeeded, its result: per sample, the kept copy's
+          pages, the sections found (pages and characters) and the required sections missing;
+          and the anchors whose regex is invalid. \`error: result missing\` when the result
+          file is gone.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          jobId: z.string().uuid().describe('The preview job id.'),
+        }),
+        response: {
+          200: res('The preview.', SegmentationViewSchema),
+          404: error('`segmentation not found`.'),
+        },
+      },
+    },
     async (req, reply) => {
       const params = SegmentationParams.safeParse(req.params);
       const job = params.success
@@ -1687,6 +1742,52 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'startStage',
+        summary: 'Run a drafting stage',
+        description: md`
+          Asks the drafting model (the \`draft\` alias) for a stage's proposal, as a \`draft\`
+          job; poll \`GET …/proposals\`. Stages run in order (\`survey\`, \`outputs\`,
+          \`sections\`, \`steps\`): an earlier stage must be accepted or skipped first.
+
+          - \`survey\` proposes questions about the document type; the other stages propose
+            typed changes to the open draft (fields and tables, sections and copies, steps).
+            The \`sections\` stage checks its anchors on every dev sample and gets one round of
+            feedback.
+          - \`revise\` (outside the order, cannot be skipped) answers the open feedback and the
+            latest dev evaluation's failures; it needs open feedback.
+          - \`references\` instead queues reference runs (\`201\` with the jobs): the draft
+            model on every ready dev sample without a reference, stopped for review so the
+            values can be verified and saved as references.
+
+          Only dev samples are ever sent to the model (the holdout rule). A \`local\` project
+          only uses local models.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          stage: z
+            .enum(['survey', 'outputs', 'sections', 'steps', 'references', 'revise'])
+            .describe('The stage.'),
+        }),
+        response: {
+          201: res('`references`: the queued reference runs.', JobsCreated),
+          202: res('The proposal, running.', ProposalViewSchema),
+          400: error(
+            '`stage {stage} is not available yet`, or `the draft is not valid` (references).',
+          ),
+          404: PROJECT_NOT_FOUND,
+          409: error(
+            `${STAGE_ORDER_CONFLICT}, \`no open draft; start the next version on the Template ` +
+              'tab`, `the project has no template version`, `add feedback before asking for a ' +
+              'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
+              'to run`, `every dev sample already has a reference` or `reference runs are ' +
+              'already running`.',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       if (req.params.stage === 'references') return startReferences(req.params.id, reply);
       const params = StageParams.safeParse(req.params);
@@ -1752,21 +1853,62 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/stages', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    return allStages(app, req.params.id);
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/stages',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'listStages',
+        summary: "Get the drafting stages' states",
+        description: md`
+          Each stage's state: \`pending\`, \`running\`, \`proposed\` (waiting for a
+          decision), \`accepted\`, \`skipped\`, or \`stale\` (an earlier stage was accepted
+          again since). \`references\` is accepted once every ready dev sample has a verified
+          reference. States are derived, never stored.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The stages.', z.array(StageViewSchema)), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return allStages(app, req.params.id);
+    },
+  );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/references', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const query = ReferencesQuery.safeParse(req.query ?? {});
-    if (!query.success) return reply.code(400).send({ error: query.error.issues });
-    return referenceRows(app, req.params.id, query.data.set ?? 'dev');
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/references',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'listReferenceRows',
+        summary: "List the samples' references",
+        description: md`
+          One row per ready sample of the set (\`dev\` by default, or \`holdout\`): its
+          reference for the open draft's version, if any (pinned version, the version it was
+          carried from, and \`outdated\`: output changes since it was verified, which mean
+          verify it again), and its latest reference or test run.
+        `,
+        params: ProjectIdParams,
+        querystring: ReferencesQuery,
+        response: {
+          200: res('The rows.', z.array(ReferenceRowSchema)),
+          400: error('Zod issues: `set` must be `dev` or `holdout`.'),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const query = ReferencesQuery.safeParse(req.query ?? {});
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      return referenceRows(app, req.params.id, query.data.set ?? 'dev');
+    },
+  );
 
   /**
    * Holdout references: run the template's own models (no override) on every ready holdout
@@ -1826,6 +1968,27 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'skipStage',
+        summary: 'Skip a drafting stage',
+        description: md`
+          Marks a stage done without a proposal, for when the draft already covers it. The
+          stage order still applies. \`revise\` cannot be skipped.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          stage: z.string().describe('The stage.'),
+        }),
+        response: {
+          201: res("Every stage's state.", z.array(StageViewSchema)),
+          400: error('`stage revise cannot be skipped`, or `stage {stage} is not available yet`.'),
+          404: PROJECT_NOT_FOUND,
+          409: error(`${STAGE_ORDER_CONFLICT}.`),
+        },
+      },
+    },
     async (req, reply) => {
       if (req.params.stage === 'revise') {
         return reply.code(400).send({ error: 'stage revise cannot be skipped' });
@@ -1854,17 +2017,73 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/proposals', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const jobs = new Map((await app.deps.repo.listDraftJobs(req.params.id)).map((j) => [j.id, j]));
-    const proposals = await workbench.listProposals(req.params.id);
-    return Promise.all(proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null)));
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/proposals',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'listProposals',
+        summary: "List a project's proposals",
+        description: md`
+          Every drafting proposal, with its status (derived from its job): \`running\`,
+          \`ready\` (waiting for a decision), \`failed\`, \`accepted\`,
+          \`partially_accepted\` or \`rejected\`. A ready proposal's \`body\` is the survey's
+          questions, or the stage's notes and typed changes.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The proposals.', z.array(ProposalViewSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const jobs = new Map(
+        (await app.deps.repo.listDraftJobs(req.params.id)).map((j) => [j.id, j]),
+      );
+      const proposals = await workbench.listProposals(req.params.id);
+      return Promise.all(proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null)));
+    },
+  );
 
   app.post<{ Params: { id: string; pid: string } }>(
     '/workbench/projects/:id/proposals/:pid/decision',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'decideProposal',
+        summary: 'Accept or reject a proposal',
+        description: md`
+          Decides a ready proposal. Rejecting, or accepting a survey, records the decision.
+          Accepting a change proposal applies the chosen \`changes\` (indexes into its list;
+          all of them for \`accepted\`, some for \`partially_accepted\`) to the open draft.
+          It is refused when the draft version changed since the proposal, or when the draft
+          was edited where a chosen change applies (accept the others, or run the stage again).
+          Accepting a \`revise\` proposal, fully or partly, resolves the feedback it answered.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          pid: z.string().uuid().describe('The proposal id.'),
+        }),
+        body: DecisionBody,
+        response: {
+          200: res('The decided proposal.', ProposalViewSchema),
+          400: error(
+            'Zod issues, `changes can only be chosen when accepting a drafting change ' +
+              'proposal`, `choose the changes to accept`, or `no such change`.',
+          ),
+          404: error('`proposal not found`.'),
+          409: error(
+            '`proposal is {status}`, `proposal was already decided`, `the draft version changed ' +
+              'since this proposal; re-run the stage`, `the draft changed since this proposal ' +
+              'where these changes apply: …`, or `the draft is no longer open; …`.',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       const params = ProposalParams.safeParse(req.params);
       if (!params.success) return reply.code(404).send({ error: 'proposal not found' });

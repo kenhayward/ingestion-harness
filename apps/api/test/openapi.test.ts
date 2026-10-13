@@ -166,12 +166,8 @@ const UNDOCUMENTED = new Set([
   'GET /api/workbench/projects/{id}/feedback',
   'GET /api/workbench/projects/{id}/iterations',
   'GET /api/workbench/projects/{id}/iterations/{iid}',
-  'GET /api/workbench/projects/{id}/proposals',
   'GET /api/workbench/projects/{id}/publications',
   'GET /api/workbench/projects/{id}/publish-gate',
-  'GET /api/workbench/projects/{id}/references',
-  'GET /api/workbench/projects/{id}/segmentations/{jobId}',
-  'GET /api/workbench/projects/{id}/stages',
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
@@ -180,11 +176,7 @@ const UNDOCUMENTED = new Set([
   'POST /api/workbench/projects/{id}/feedback',
   'POST /api/workbench/projects/{id}/holdout/reference-runs',
   'POST /api/workbench/projects/{id}/iterations/{iid}/restore',
-  'POST /api/workbench/projects/{id}/proposals/{pid}/decision',
   'POST /api/workbench/projects/{id}/publish',
-  'POST /api/workbench/projects/{id}/segmentations',
-  'POST /api/workbench/projects/{id}/stages/{stage}',
-  'POST /api/workbench/projects/{id}/stages/{stage}/skip',
 ]);
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;

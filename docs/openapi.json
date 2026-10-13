@@ -13800,6 +13800,548 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/segmentations": {
+      "post": {
+        "operationId": "previewSegmentation",
+        "summary": "Preview section anchors on the samples",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Queues an anchor preview: the worker splits every ready sample into sections with the\ngiven `document` block (`sections`, and optionally `copies` and\n`pageMarkers`; default: the open draft's), using the same code as production.\nPoll `GET …/segmentations/{jobId}`. A project has one preview at a time: a new one\nreplaces the old. A preview that runs over 10 seconds (an anchor regex that\nbacktracks) is stopped and goes to `needs_review`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document": {
+                    "description": "A template's `document` block. Default: the open draft's."
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The queued preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "anchorErrors": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "samples": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "firstPage": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "pageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "error": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "missingRequired": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "sections": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "found": {
+                                          "type": "boolean"
+                                        },
+                                        "page": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "line": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "chars": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "found",
+                                        "page",
+                                        "line",
+                                        "chars"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "sampleId",
+                                  "firstPage",
+                                  "pageCount",
+                                  "error",
+                                  "missingRequired",
+                                  "sections"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "anchorErrors",
+                            "samples"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobId",
+                    "status",
+                    "error",
+                    "result"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued preview."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or `invalid sections` (with `issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, or `invalid sections` (with `issues`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no prepared samples to segment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no prepared samples to segment`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/segmentations/{jobId}": {
+      "get": {
+        "operationId": "getSegmentation",
+        "summary": "Get an anchor preview",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "A preview's status and, once it succeeded, its result: per sample, the kept copy's\npages, the sections found (pages and characters) and the required sections missing;\nand the anchors whose regex is invalid. `error: result missing` when the result\nfile is gone.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "description": "The preview job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "anchorErrors": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            },
+                            "samples": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "firstPage": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "pageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "error": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "missingRequired": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "sections": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "found": {
+                                          "type": "boolean"
+                                        },
+                                        "page": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "line": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "chars": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "found",
+                                        "page",
+                                        "line",
+                                        "chars"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "sampleId",
+                                  "firstPage",
+                                  "pageCount",
+                                  "error",
+                                  "missingRequired",
+                                  "sections"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "anchorErrors",
+                            "samples"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobId",
+                    "status",
+                    "error",
+                    "result"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The preview."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`segmentation not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`segmentation not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/data-policy": {
       "put": {
         "operationId": "setDataPolicy",
@@ -14136,6 +14678,3597 @@
                   ],
                   "additionalProperties": true,
                   "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/stages/{stage}": {
+      "post": {
+        "operationId": "startStage",
+        "summary": "Run a drafting stage",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Asks the drafting model (the `draft` alias) for a stage's proposal, as a `draft`\njob; poll `GET …/proposals`. Stages run in order (`survey`, `outputs`,\n`sections`, `steps`): an earlier stage must be accepted or skipped first.\n\n- `survey` proposes questions about the document type; the other stages propose\n  typed changes to the open draft (fields and tables, sections and copies, steps).\n  The `sections` stage checks its anchors on every dev sample and gets one round of\n  feedback.\n- `revise` (outside the order, cannot be skipped) answers the open feedback and the\n  latest dev evaluation's failures; it needs open feedback.\n- `references` instead queues reference runs (`201` with the jobs): the draft\n  model on every ready dev sample without a reference, stopped for review so the\n  values can be verified and saved as references.\n\nOnly dev samples are ever sent to the model (the holdout rule). A `local` project\nonly uses local models.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "survey",
+                "outputs",
+                "sections",
+                "steps",
+                "references",
+                "revise"
+              ]
+            },
+            "in": "path",
+            "name": "stage",
+            "required": true,
+            "description": "The stage."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "`references`: the queued reference runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "documentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "specId": {
+                            "type": "string"
+                          },
+                          "specVersion": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "needs_review",
+                              "awaiting_review",
+                              "rejected",
+                              "cancelled"
+                            ]
+                          },
+                          "modelOverride": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "modelsUsed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "task": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "publish",
+                              "rerun",
+                              "prepare",
+                              "segment",
+                              "draft",
+                              "export"
+                            ]
+                          },
+                          "test": {
+                            "type": "boolean"
+                          },
+                          "referenceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "projectId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewReasons": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "documentId",
+                          "filename",
+                          "specId",
+                          "specVersion",
+                          "status",
+                          "modelOverride",
+                          "modelsUsed",
+                          "attempts",
+                          "error",
+                          "task",
+                          "test",
+                          "referenceId",
+                          "projectId",
+                          "reviewReasons",
+                          "reviewer",
+                          "reviewNote",
+                          "reviewedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "jobs"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`references`: the queued reference runs."
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The proposal, running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "stage": {
+                      "type": "string",
+                      "enum": [
+                        "survey",
+                        "outputs",
+                        "sections",
+                        "steps",
+                        "references",
+                        "revise"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "ready",
+                        "failed",
+                        "accepted",
+                        "partially_accepted",
+                        "rejected"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "briefVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "structure": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "howToFind": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "howToFind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "variants": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "candidates": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "where": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "field",
+                                          "table"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "where",
+                                      "kind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "questions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "why": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "why"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "summary",
+                                "structure",
+                                "variants",
+                                "candidates",
+                                "questions"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "notes": {
+                                  "type": "string"
+                                },
+                                "changes": {
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putField"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "type": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "text",
+                                                  "integer",
+                                                  "decimal",
+                                                  "date",
+                                                  "boolean",
+                                                  "enum",
+                                                  "list"
+                                                ],
+                                                "default": "text"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "enum": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "minItems": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "id"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTable"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "columns": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "name": {
+                                                      "type": "string"
+                                                    },
+                                                    "type": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "text",
+                                                        "integer",
+                                                        "decimal",
+                                                        "date",
+                                                        "boolean",
+                                                        "enum",
+                                                        "list"
+                                                      ],
+                                                      "default": "text"
+                                                    },
+                                                    "description": {
+                                                      "type": "string"
+                                                    },
+                                                    "enum": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      },
+                                                      "minItems": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "minItems": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeOutput"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putSection"
+                                            ]
+                                          },
+                                          "section": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "anchor": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "required": {
+                                                "type": "boolean",
+                                                "default": true
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "anchor"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "section",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeSection"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setCopies"
+                                            ]
+                                          },
+                                          "copies": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "anchor": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "select": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "first",
+                                                      "last"
+                                                    ],
+                                                    "default": "last"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "anchor"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "copies",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putStep"
+                                            ]
+                                          },
+                                          "step": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "extract"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "fields": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "default": []
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "minItems": 1
+                                                  },
+                                                  "instructions": {
+                                                    "type": "string"
+                                                  },
+                                                  "prompt": {
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "string",
+                                                    "default": "default"
+                                                  },
+                                                  "pageImages": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "integer",
+                                                      "exclusiveMinimum": 0
+                                                    },
+                                                    "default": []
+                                                  },
+                                                  "maxAttempts": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 5,
+                                                    "default": 2
+                                                  },
+                                                  "maxTokens": {
+                                                    "type": "integer",
+                                                    "minimum": 256,
+                                                    "maximum": 128000,
+                                                    "default": 64000
+                                                  },
+                                                  "chunkPages": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "context": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "propertyNames": {
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "default": {}
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "sections"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "check"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "description": {
+                                                    "type": "string"
+                                                  },
+                                                  "values": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "reference": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "aliases": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "maxDistance": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "default": 2
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "values",
+                                                  "reference"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "step",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeStep"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setPreamble"
+                                            ]
+                                          },
+                                          "preamble": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "preamble",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "anchorCheck": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "anchorErrors": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "samples": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "firstPage": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
+                                              },
+                                              "pageCount": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              "error": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "missingRequired": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "sections": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "found": {
+                                                      "type": "boolean"
+                                                    },
+                                                    "page": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "integer",
+                                                          "exclusiveMinimum": 0
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "line": {
+                                                      "type": [
+                                                        "string",
+                                                        "null"
+                                                      ]
+                                                    },
+                                                    "chars": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id",
+                                                    "found",
+                                                    "page",
+                                                    "line",
+                                                    "chars"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "sampleId",
+                                              "firstPage",
+                                              "pageCount",
+                                              "error",
+                                              "missingRequired",
+                                              "sections"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "anchorErrors",
+                                        "samples"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "notes",
+                                "changes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acceptedChanges": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "decidedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "stage",
+                    "status",
+                    "error",
+                    "briefVersion",
+                    "model",
+                    "body",
+                    "acceptedChanges",
+                    "createdAt",
+                    "decidedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The proposal, running."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`stage {stage} is not available yet`, or `the draft is not valid` (references).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`stage {stage} is not available yet`, or `the draft is not valid` (references)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Template tab`, `the project has no template version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Template tab`, `the project has no template version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/stages": {
+      "get": {
+        "operationId": "listStages",
+        "summary": "Get the drafting stages' states",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Each stage's state: `pending`, `running`, `proposed` (waiting for a\ndecision), `accepted`, `skipped`, or `stale` (an earlier stage was accepted\nagain since). `references` is accepted once every ready dev sample has a verified\nreference. States are derived, never stored.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stage": {
+                        "type": "string",
+                        "enum": [
+                          "survey",
+                          "outputs",
+                          "sections",
+                          "steps",
+                          "references",
+                          "revise"
+                        ]
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "running",
+                          "proposed",
+                          "accepted",
+                          "skipped",
+                          "stale"
+                        ]
+                      },
+                      "completedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "stage",
+                      "state",
+                      "completedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The stages."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/references": {
+      "get": {
+        "operationId": "listReferenceRows",
+        "summary": "List the samples' references",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "One row per ready sample of the set (`dev` by default, or `holdout`): its\nreference for the open draft's version, if any (pinned version, the version it was\ncarried from, and `outdated`: output changes since it was verified, which mean\nverify it again), and its latest reference or test run.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dev",
+                "holdout"
+              ]
+            },
+            "in": "query",
+            "name": "set",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sampleId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "filename": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "carriedFrom": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "outdated": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "createdAt",
+                              "version",
+                              "carriedFrom",
+                              "outdated"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "run": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "jobId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "succeeded",
+                                  "failed",
+                                  "needs_review",
+                                  "awaiting_review",
+                                  "rejected",
+                                  "cancelled"
+                                ]
+                              },
+                              "error": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "modelOverride": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "jobId",
+                              "status",
+                              "error",
+                              "modelOverride"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sampleId",
+                      "filename",
+                      "sha256",
+                      "reference",
+                      "run"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The rows."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues: `set` must be `dev` or `holdout`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues: `set` must be `dev` or `holdout`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/stages/{stage}/skip": {
+      "post": {
+        "operationId": "skipStage",
+        "summary": "Skip a drafting stage",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Marks a stage done without a proposal, for when the draft already covers it. The\nstage order still applies. `revise` cannot be skipped.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "stage",
+            "required": true,
+            "description": "The stage."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Every stage's state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stage": {
+                        "type": "string",
+                        "enum": [
+                          "survey",
+                          "outputs",
+                          "sections",
+                          "steps",
+                          "references",
+                          "revise"
+                        ]
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "running",
+                          "proposed",
+                          "accepted",
+                          "skipped",
+                          "stale"
+                        ]
+                      },
+                      "completedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "stage",
+                      "state",
+                      "completedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "Every stage's state."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`stage revise cannot be skipped`, or `stage {stage} is not available yet`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`stage revise cannot be skipped`, or `stage {stage} is not available yet`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`finish the {stage} stage first (accept or skip it)`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`finish the {stage} stage first (accept or skip it)`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/proposals": {
+      "get": {
+        "operationId": "listProposals",
+        "summary": "List a project's proposals",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposals.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "stage": {
+                        "type": "string",
+                        "enum": [
+                          "survey",
+                          "outputs",
+                          "sections",
+                          "steps",
+                          "references",
+                          "revise"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "running",
+                          "ready",
+                          "failed",
+                          "accepted",
+                          "partially_accepted",
+                          "rejected"
+                        ]
+                      },
+                      "error": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "briefVersion": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "model": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "body": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "summary": {
+                                    "type": "string"
+                                  },
+                                  "structure": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "howToFind": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "description",
+                                        "howToFind"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "variants": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "candidates": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "where": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "field",
+                                            "table"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "description",
+                                        "where",
+                                        "kind"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "questions": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "question": {
+                                          "type": "string"
+                                        },
+                                        "why": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "question",
+                                        "why"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "summary",
+                                  "structure",
+                                  "variants",
+                                  "candidates",
+                                  "questions"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "notes": {
+                                    "type": "string"
+                                  },
+                                  "changes": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putField"
+                                              ]
+                                            },
+                                            "field": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-z][a-z0-9_-]*$"
+                                                },
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "text",
+                                                    "integer",
+                                                    "decimal",
+                                                    "date",
+                                                    "boolean",
+                                                    "enum",
+                                                    "list"
+                                                  ],
+                                                  "default": "text"
+                                                },
+                                                "description": {
+                                                  "type": "string"
+                                                },
+                                                "enum": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  },
+                                                  "minItems": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "id"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "field",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putTable"
+                                              ]
+                                            },
+                                            "table": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-z][a-z0-9_-]*$"
+                                                },
+                                                "name": {
+                                                  "type": "string"
+                                                },
+                                                "description": {
+                                                  "type": "string"
+                                                },
+                                                "columns": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "id": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      },
+                                                      "name": {
+                                                        "type": "string"
+                                                      },
+                                                      "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "text",
+                                                          "integer",
+                                                          "decimal",
+                                                          "date",
+                                                          "boolean",
+                                                          "enum",
+                                                          "list"
+                                                        ],
+                                                        "default": "text"
+                                                      },
+                                                      "description": {
+                                                        "type": "string"
+                                                      },
+                                                      "enum": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string"
+                                                        },
+                                                        "minItems": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "id"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
+                                                  "minItems": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "columns"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "table",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "removeOutput"
+                                              ]
+                                            },
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "id",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putSection"
+                                              ]
+                                            },
+                                            "section": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-z][a-z0-9_-]*$"
+                                                },
+                                                "anchor": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "required": {
+                                                  "type": "boolean",
+                                                  "default": true
+                                                },
+                                                "description": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "anchor"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "section",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "removeSection"
+                                              ]
+                                            },
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "id",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "setCopies"
+                                              ]
+                                            },
+                                            "copies": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "anchor": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "select": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "first",
+                                                        "last"
+                                                      ],
+                                                      "default": "last"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "anchor"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "copies",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putStep"
+                                              ]
+                                            },
+                                            "step": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "type": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "extract"
+                                                      ]
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "fields": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      },
+                                                      "default": []
+                                                    },
+                                                    "table": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "sections": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      },
+                                                      "minItems": 1
+                                                    },
+                                                    "instructions": {
+                                                      "type": "string"
+                                                    },
+                                                    "prompt": {
+                                                      "type": "string"
+                                                    },
+                                                    "model": {
+                                                      "type": "string",
+                                                      "default": "default"
+                                                    },
+                                                    "pageImages": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "integer",
+                                                        "exclusiveMinimum": 0
+                                                      },
+                                                      "default": []
+                                                    },
+                                                    "maxAttempts": {
+                                                      "type": "integer",
+                                                      "minimum": 1,
+                                                      "maximum": 5,
+                                                      "default": 2
+                                                    },
+                                                    "maxTokens": {
+                                                      "type": "integer",
+                                                      "minimum": 256,
+                                                      "maximum": 128000,
+                                                      "default": 64000
+                                                    },
+                                                    "chunkPages": {
+                                                      "type": "integer",
+                                                      "exclusiveMinimum": 0
+                                                    },
+                                                    "context": {
+                                                      "type": "object",
+                                                      "additionalProperties": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "propertyNames": {
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      },
+                                                      "default": {}
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "type",
+                                                    "id",
+                                                    "sections"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "type": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "check"
+                                                      ]
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "description": {
+                                                      "type": "string"
+                                                    },
+                                                    "values": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "reference": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "aliases": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "maxDistance": {
+                                                      "type": "integer",
+                                                      "minimum": 0,
+                                                      "default": 2
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "type",
+                                                    "id",
+                                                    "values",
+                                                    "reference"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "step",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "removeStep"
+                                              ]
+                                            },
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "id",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "setPreamble"
+                                              ]
+                                            },
+                                            "preamble": {
+                                              "type": "string"
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "preamble",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "anchorCheck": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "anchorErrors": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "samples": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "sampleId": {
+                                                  "type": "string"
+                                                },
+                                                "firstPage": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
+                                                },
+                                                "pageCount": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "error": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "missingRequired": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "sections": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "id": {
+                                                        "type": "string"
+                                                      },
+                                                      "found": {
+                                                        "type": "boolean"
+                                                      },
+                                                      "page": {
+                                                        "anyOf": [
+                                                          {
+                                                            "type": "integer",
+                                                            "exclusiveMinimum": 0
+                                                          },
+                                                          {
+                                                            "type": "null"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "line": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "chars": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "id",
+                                                      "found",
+                                                      "page",
+                                                      "line",
+                                                      "chars"
+                                                    ],
+                                                    "additionalProperties": true
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "sampleId",
+                                                "firstPage",
+                                                "pageCount",
+                                                "error",
+                                                "missingRequired",
+                                                "sections"
+                                              ],
+                                              "additionalProperties": true
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "anchorErrors",
+                                          "samples"
+                                        ],
+                                        "additionalProperties": true
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "notes",
+                                  "changes"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "acceptedChanges": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "decidedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "stage",
+                      "status",
+                      "error",
+                      "briefVersion",
+                      "model",
+                      "body",
+                      "acceptedChanges",
+                      "createdAt",
+                      "decidedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The proposals."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/proposals/{pid}/decision": {
+      "post": {
+        "operationId": "decideProposal",
+        "summary": "Accept or reject a proposal",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback it answered.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "accepted",
+                      "rejected"
+                    ]
+                  },
+                  "changes": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "description": "The proposal id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The decided proposal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "stage": {
+                      "type": "string",
+                      "enum": [
+                        "survey",
+                        "outputs",
+                        "sections",
+                        "steps",
+                        "references",
+                        "revise"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "ready",
+                        "failed",
+                        "accepted",
+                        "partially_accepted",
+                        "rejected"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "briefVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "structure": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "howToFind": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "howToFind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "variants": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "candidates": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "where": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "field",
+                                          "table"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "where",
+                                      "kind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "questions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "why": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "why"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "summary",
+                                "structure",
+                                "variants",
+                                "candidates",
+                                "questions"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "notes": {
+                                  "type": "string"
+                                },
+                                "changes": {
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putField"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "type": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "text",
+                                                  "integer",
+                                                  "decimal",
+                                                  "date",
+                                                  "boolean",
+                                                  "enum",
+                                                  "list"
+                                                ],
+                                                "default": "text"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "enum": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "minItems": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "id"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTable"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "columns": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "name": {
+                                                      "type": "string"
+                                                    },
+                                                    "type": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "text",
+                                                        "integer",
+                                                        "decimal",
+                                                        "date",
+                                                        "boolean",
+                                                        "enum",
+                                                        "list"
+                                                      ],
+                                                      "default": "text"
+                                                    },
+                                                    "description": {
+                                                      "type": "string"
+                                                    },
+                                                    "enum": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      },
+                                                      "minItems": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "minItems": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeOutput"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putSection"
+                                            ]
+                                          },
+                                          "section": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "anchor": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "required": {
+                                                "type": "boolean",
+                                                "default": true
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "anchor"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "section",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeSection"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setCopies"
+                                            ]
+                                          },
+                                          "copies": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "anchor": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "select": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "first",
+                                                      "last"
+                                                    ],
+                                                    "default": "last"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "anchor"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "copies",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putStep"
+                                            ]
+                                          },
+                                          "step": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "extract"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "fields": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "default": []
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "minItems": 1
+                                                  },
+                                                  "instructions": {
+                                                    "type": "string"
+                                                  },
+                                                  "prompt": {
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "type": "string",
+                                                    "default": "default"
+                                                  },
+                                                  "pageImages": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "integer",
+                                                      "exclusiveMinimum": 0
+                                                    },
+                                                    "default": []
+                                                  },
+                                                  "maxAttempts": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 5,
+                                                    "default": 2
+                                                  },
+                                                  "maxTokens": {
+                                                    "type": "integer",
+                                                    "minimum": 256,
+                                                    "maximum": 128000,
+                                                    "default": 64000
+                                                  },
+                                                  "chunkPages": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "context": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "propertyNames": {
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "default": {}
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "sections"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "check"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "description": {
+                                                    "type": "string"
+                                                  },
+                                                  "values": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "reference": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "aliases": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "maxDistance": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "default": 2
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "values",
+                                                  "reference"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "step",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeStep"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setPreamble"
+                                            ]
+                                          },
+                                          "preamble": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "preamble",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "anchorCheck": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "anchorErrors": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "samples": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "firstPage": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
+                                              },
+                                              "pageCount": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              "error": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "missingRequired": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "sections": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "found": {
+                                                      "type": "boolean"
+                                                    },
+                                                    "page": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "integer",
+                                                          "exclusiveMinimum": 0
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "line": {
+                                                      "type": [
+                                                        "string",
+                                                        "null"
+                                                      ]
+                                                    },
+                                                    "chars": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id",
+                                                    "found",
+                                                    "page",
+                                                    "line",
+                                                    "chars"
+                                                  ],
+                                                  "additionalProperties": true
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "sampleId",
+                                              "firstPage",
+                                              "pageCount",
+                                              "error",
+                                              "missingRequired",
+                                              "sections"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "anchorErrors",
+                                        "samples"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "notes",
+                                "changes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acceptedChanges": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "decidedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "stage",
+                    "status",
+                    "error",
+                    "briefVersion",
+                    "model",
+                    "body",
+                    "acceptedChanges",
+                    "createdAt",
+                    "decidedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The decided proposal."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, `changes can only be chosen when accepting a drafting change proposal`, `choose the changes to accept`, or `no such change`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, `changes can only be chosen when accepting a drafting change proposal`, `choose the changes to accept`, or `no such change`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`proposal not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`proposal not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`proposal is {status}`, `proposal was already decided`, `the draft version changed since this proposal; re-run the stage`, `the draft changed since this proposal where these changes apply: …`, or `the draft is no longer open; …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`proposal is {status}`, `proposal was already decided`, `the draft version changed since this proposal; re-run the stage`, `the draft changed since this proposal where these changes apply: …`, or `the draft is no longer open; …`."
                 }
               }
             }
