@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
+import { registerOpenApi } from './openapi/plugin.js';
 import type { S3KeyService } from './s3keys/service.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
@@ -65,6 +66,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(multipart, { limits: { fileSize: deps.maxUploadBytes, files: 1 } });
   await app.register(cookie);
+  await registerOpenApi(app); // before the routes: swagger collects them as they are added
   await registerAccess(app); // before the route plugins: its hook must cover them all
 
   await app.register(healthRoutes);

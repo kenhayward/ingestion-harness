@@ -6,6 +6,9 @@ import { Icon, type IconName } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 import { attentionCount, initials, sectionOf } from './derive.js';
 
+/** The API reference (served by the API, public: docs/design/api-docs.md). */
+export const API_DOCS = '/api/docs/';
+
 function NavLink({
   href,
   icon,
@@ -151,6 +154,12 @@ export function AppShell({
               <NavLink href="#/access" icon="key" label="Access" current={section === 'access'} />
             </>
           )}
+          <a className="nav-foot" href={API_DOCS} target="_blank" rel="noopener">
+            <Icon name="file" size={18} />
+            <span className="nav-label">API docs</span>
+            <Icon name="open" size={14} />
+            <span className="visually-hidden"> (opens in a new tab)</span>
+          </a>
         </nav>
         <main className="page">{children}</main>
       </div>

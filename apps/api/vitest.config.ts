@@ -12,6 +12,7 @@ export default defineProject({
     name: 'api',
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    setupFiles: ['test/setup.ts'],
     exclude: ['test/integration/**'], // needs dev-infra: npm run test:integration
   },
 });

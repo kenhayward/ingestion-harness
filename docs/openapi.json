@@ -1,0 +1,1170 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ingestion Harness API",
+    "version": "0.1.0",
+    "description": "The Ingestion Harness extracts the contents of PDFs whose structure is known in advance and\npublishes them as validated CSV and JSON. This API is what the web app uses.\n\n## Signing in\n\nEvery `/api` route needs a session except `POST /api/auth/login`, `POST /api/auth/logout`\nand these docs. Sign in with an access token; the response sets the `ih_session` cookie, which\nthe browser sends with every request. Signed out, a guarded route answers `401`\n`{ \"error\": \"sign in required\" }`. \"Try it\" in these docs uses your session when you are\nsigned in to the app in the same browser.\n\n## Errors\n\nErrors are JSON: `{ \"error\": \"message\" }`, or `{ \"error\": [ ...Zod issues ] }` for some\nvalidation failures. IDs are UUIDs; a malformed ID is a `404`, the same as an unknown one.\n\n## Admin routes\n\nRoutes marked **Admin token required** (`x-admin: true`) answer `403`\n`{ \"error\": \"admins only\" }` to a session opened with a user token."
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "ih_session",
+        "description": "Session cookie set by `POST /api/auth/login`."
+      }
+    },
+    "schemas": {}
+  },
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login",
+        "summary": "Sign in with an access token",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "Opens a session for an active access token and sets the `ih_session` cookie\n(HttpOnly, SameSite=Strict, Secure when the request came over HTTPS). The cookie lasts\nuntil the token expires (at most 400 days, the browser limit; tokens that never expire\nget the maximum), but the server ends a session after 7 days without use.\n\nA wrong, expired or revoked token, or a missing one, is a `401`. After 10 failed\nattempts in 15 minutes a client (an IP address, or an IPv6 /64) gets `429` until older\nfailures age out; other clients are unaffected.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The access token: `ih_` and 43 more characters."
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Signed in; the session cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "user"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the token expires; null = never."
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "label",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Signed in; the session cookie is set."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid or expired token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`invalid or expired token`."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`too many attempts, try again later`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`too many attempts, try again later`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "summary": "Sign out",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "Ends the current session and clears the `ih_session` cookie. Other sessions opened\nwith the same token stay signed in (revoke the token to end them all). Answers `204`\neven when there is no session.",
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Signed out."
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "me",
+        "summary": "Get the signed-in token",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "The role, label and expiry of the token the current session was opened with. The web\napp calls this on load to choose between the sign-in page and the app, and to show the\nadmin pages only to admins.",
+        "responses": {
+          "200": {
+            "description": "The signed-in token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "user"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the token expires; null = never."
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "label",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The signed-in token."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tokens": {
+      "get": {
+        "operationId": "listTokens",
+        "summary": "List access tokens",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Every access token, newest first, with its status:\n`active`, `expired`, `revoked`, or `current-admin` for the admin token of the\nrunning API. Plaintext tokens are never stored, so they are not listed.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "admin",
+                          "user"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "expiresAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "revokedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "lastUsedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "expired",
+                          "revoked",
+                          "current-admin"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "role",
+                      "createdAt",
+                      "expiresAt",
+                      "revokedAt",
+                      "lastUsedAt",
+                      "status"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The tokens."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createToken",
+        "summary": "Issue a user access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Issues a new user token. The plaintext `token` is in this\nresponse only: give it to the person who will sign in with it. `expiresInDays` is\n1, 7, 30, 90 or 365, or `null` for a token that never expires.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Who or what the token is for, e.g. \"Ken – laptop\"."
+                  },
+                  "expiresInDays": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          7
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          30
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          90
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          365
+                        ]
+                      },
+                      {
+                        "enum": [
+                          "null"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "expiresInDays"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The new token and its record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "The plaintext token. Shown only in this response."
+                    },
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "user"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "current-admin"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "role",
+                        "createdAt",
+                        "expiresAt",
+                        "revokedAt",
+                        "lastUsedAt",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "record"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The new token and its record."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tokens/{id}/revoke": {
+      "post": {
+        "operationId": "revokeToken",
+        "summary": "Revoke an access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Revokes a user token and ends every session opened with it.\nThe token stays in the list as `revoked`, so its history is kept; delete it to remove\nit. The admin token cannot be revoked (it rotates on every API start).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The token id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Revoked; its sessions are ended."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: no token with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`not found`: no token with this id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin token rotates on restart and cannot be revoked or deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`the admin token rotates on restart and cannot be revoked or deleted`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tokens/{id}": {
+      "delete": {
+        "operationId": "deleteToken",
+        "summary": "Delete an access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Deletes a user token and its sessions. Unlike revoking, the\ntoken disappears from the list. The admin token cannot be deleted (it rotates on every\nAPI start).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The token id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Deleted, with its sessions."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: no token with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`not found`: no token with this id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin token rotates on restart and cannot be revoked or deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`the admin token rotates on restart and cannot be revoked or deleted`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "liveness",
+        "summary": "Check the API process is running",
+        "tags": [
+          "Health"
+        ],
+        "description": "Liveness check: answers as long as the API process can serve requests. It checks no\ndependencies, so a database or storage outage does not make it fail (use `/readyz`\nfor that). Behind the app's nginx, `/healthz` is answered by nginx itself.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The process is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The process is up."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "Check the API can reach its database and storage",
+        "tags": [
+          "Health"
+        ],
+        "description": "Readiness check: pings Postgres (`db`) and the inbox bucket in object storage\n(`storage`). Answers `200` with `status: ok` when both respond, otherwise `503`\nwith `status: degraded` and the failed check's error message.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Postgres and storage are reachable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Each dependency's result: `ok`, or the error message of the failed check."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "checks"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Postgres and storage are reachable."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one dependency failed its check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Each dependency's result: `ok`, or the error message of the failed check."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "checks"
+                  ],
+                  "additionalProperties": false,
+                  "description": "At least one dependency failed its check."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "security": [
+    {
+      "session": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Documents",
+      "description": "Upload a PDF to process it with a document type. The API stores the file in the inbox\nbucket, records a document and queues a job; the worker does the rest."
+    },
+    {
+      "name": "Jobs",
+      "description": "A job processes one document with one version of a document type. Jobs move through\n`queued`, `running` and then `succeeded`, `awaiting_review`, `needs_review`\n(a processing problem for an operator), `failed` (after retries), `rejected` or\n`cancelled`. See the [job lifecycle](https://github.com/kenhayward/ingestion-harness/blob/main/docs/architecture.md#job-lifecycle)."
+    },
+    {
+      "name": "Review & steps",
+      "description": "Jobs of document types with a review policy stop in `awaiting_review`. Reviewers read the\ndraft outputs, record edits, then approve (the edited outputs are published) or reject\n(final). Each extraction step's run can be inspected and re-run."
+    },
+    {
+      "name": "Results",
+      "description": "Published outputs, read from the final target bucket: the documents a job delivered, their\nvalues and their files."
+    },
+    {
+      "name": "Specs",
+      "description": "Document definitions loaded from the repository's `specs/` folder (legacy `spec.yaml` and\n`template.yaml`). Versions are immutable once published."
+    },
+    {
+      "name": "Templates",
+      "description": "Document types kept in the database: drafts are editable, published versions are immutable.\nTemplates import and export as YAML. See\n[ADR 0003](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md)."
+    },
+    {
+      "name": "References & regression",
+      "description": "References are verified output values for a sample PDF. Regression runs process the\nreferences' PDFs with a template version and score the outputs against them; metrics\nsummarise a document type's runs."
+    },
+    {
+      "name": "Models",
+      "description": "Language models the worker discovered from the configured providers. Model refs are\n`provider/model-id` or an alias such as `default` or `fast`."
+    },
+    {
+      "name": "Projects & data policy",
+      "description": "The Workbench builds a document type from sample PDFs, one project per type (the project id\nis the template id). A project's data policy decides whether its documents may be sent to\nexternal model providers (`external`) or only to local ones (`local`). See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md) and the\n[Workbench design](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md)."
+    },
+    {
+      "name": "Samples & brief",
+      "description": "Samples are the project's PDFs, each in the **dev** set (seen by drafting) or the\n**holdout** set (used only to score). Uploading a sample prepares its text (with OCR where\nneeded). The brief describes what the document type must extract."
+    },
+    {
+      "name": "Drafting stages & proposals",
+      "description": "A drafting model proposes the template in stages (survey, outputs, sections, steps), each a\nset of typed changes the user accepts in full or in part. Anchor previews check section\nanchors against the dev samples."
+    },
+    {
+      "name": "Test runs",
+      "description": "Test runs process samples with the open draft. They are never delivered to the target."
+    },
+    {
+      "name": "Evaluation, iterations & comparisons",
+      "description": "An evaluation runs the draft over a sample set and scores the outputs against the\nreferences; each evaluation is recorded as an iteration with a snapshot of the definition.\nComparisons run several models over the same samples."
+    },
+    {
+      "name": "Feedback & revise",
+      "description": "Feedback notes on dev samples and iterations, and the **revise** stage, which proposes\nchanges from the open feedback and the latest evaluation failures."
+    },
+    {
+      "name": "Holdout & publish gate",
+      "description": "Holdout reference runs and the publish gate: a version is published only when its newest\nholdout evaluation covers every ready holdout sample and scores at or above the project's\nthreshold, unless an override reason is given."
+    },
+    {
+      "name": "Bundles",
+      "description": "Export a project as a zip bundle (samples, prepared text, brief, draft and drafting\ncontext) and import one as a new project."
+    },
+    {
+      "name": "Auth & sessions",
+      "description": "Sign in with an access token to get a session cookie (`ih_session`). Every `/api` route\nneeds the session except sign-in, sign-out and these docs. See\n[ADR 0006](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0006-token-access.md)."
+    },
+    {
+      "name": "Access tokens",
+      "description": "Admins issue and revoke the access tokens people sign in with. The admin token itself\nrotates on every API start and is printed in the API log."
+    },
+    {
+      "name": "Data-lake S3 keys",
+      "description": "Read-only S3 credentials for data-lake consumers of the publish bucket. Secrets are shown\nonce. See [ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md)."
+    },
+    {
+      "name": "Health",
+      "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Pipeline",
+      "tags": [
+        "Documents",
+        "Jobs",
+        "Review & steps",
+        "Results"
+      ]
+    },
+    {
+      "name": "Configuration",
+      "tags": [
+        "Specs",
+        "Templates",
+        "References & regression",
+        "Models"
+      ]
+    },
+    {
+      "name": "Workbench",
+      "tags": [
+        "Projects & data policy",
+        "Samples & brief",
+        "Drafting stages & proposals",
+        "Test runs",
+        "Evaluation, iterations & comparisons",
+        "Feedback & revise",
+        "Holdout & publish gate",
+        "Bundles"
+      ]
+    },
+    {
+      "name": "Administration",
+      "tags": [
+        "Auth & sessions",
+        "Access tokens",
+        "Data-lake S3 keys",
+        "Health"
+      ]
+    }
+  ]
+}

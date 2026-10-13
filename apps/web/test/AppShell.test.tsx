@@ -30,6 +30,19 @@ describe('app shell', () => {
     );
   });
 
+  it.each(['user', 'admin'] as const)(
+    'links %s sessions to the API docs in a new tab',
+    async (role) => {
+      const api = fakeApi({ me: vi.fn(async () => ({ role, label: 'Ken', expiresAt: null })) });
+      render(<App api={api} pollMs={0} />);
+      const nav = await screen.findByRole('navigation', { name: 'Main' });
+      const link = within(nav).getByRole('link', { name: 'API docs (opens in a new tab)' });
+      expect(link).toHaveAttribute('href', '/api/docs/');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener');
+    },
+  );
+
   it('badges Jobs with the number of jobs needing attention', async () => {
     const api = fakeApi({
       listJobs: vi.fn(async () =>
