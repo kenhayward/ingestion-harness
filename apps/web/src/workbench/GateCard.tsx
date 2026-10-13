@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Publication, PublishGateView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Meter } from '../ui/Meter.js';
@@ -8,6 +8,10 @@ const DOT = '·';
 const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
 /** The meters' scale (handoff §8): 70–100 %. */
 const SCALE_MIN = 0.7;
+
+/** Where the threshold sits on the 70-100 % scale, as the Meter's tick does. */
+const tickLeft = (t: number) =>
+  `${Math.round(Math.min(1, Math.max(0, (t - SCALE_MIN) / (1 - SCALE_MIN))) * 10000) / 100}%`;
 
 export interface ThresholdInfo {
   value: number;
@@ -23,13 +27,16 @@ export function useGate(api: Api, projectId: string, draft: number | null, refre
     threshold: ThresholdInfo | null;
   }>({ gate: null, publications: [], threshold: null });
   const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
   const reload = useCallback(async () => {
+    const n = ++seq.current;
     try {
       const [gate, publications, view] = await Promise.all([
         draft === null ? null : api.getPublishGate(projectId),
         api.listPublications(projectId),
         api.getProject(projectId),
       ]);
+      if (n !== seq.current) return;
       const { publishThreshold, thresholdSetBy, thresholdSetAt } = view.project;
       setState({
         gate,
@@ -38,7 +45,7 @@ export function useGate(api: Api, projectId: string, draft: number | null, refre
       });
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      if (n === seq.current) setError((err as Error).message);
     }
   }, [api, projectId, draft]);
   useEffect(() => {
@@ -72,6 +79,7 @@ function GateMeter({
         min={SCALE_MIN}
         threshold={threshold}
         tone={tone}
+        showTickWithoutValue
       />
       <span className="gate-figure">{pct(value)}</span>
     </div>
@@ -177,7 +185,9 @@ export function GateCard({
             />
             <div className="gate-scale" aria-hidden="true">
               <span>70%</span>
-              <span>Threshold {pct(limit)}</span>
+              <span className="gate-scale-threshold" style={{ left: tickLeft(limit) }}>
+                Threshold {pct(limit)}
+              </span>
               <span>100%</span>
             </div>
             <p className="muted gate-optional">
@@ -203,7 +213,9 @@ export function GateCard({
               {gate.hints.map((h) => (
                 <li key={h.key}>
                   {hintText(h)}{' '}
-                  <a href={`#/workbench/${projectId}/${h.stage}`}>{HINT_LINK[h.stage]}</a>
+                  <a href={`#/workbench/${encodeURIComponent(projectId)}/${h.stage}`}>
+                    {HINT_LINK[h.stage]}
+                  </a>
                 </li>
               ))}
             </ul>

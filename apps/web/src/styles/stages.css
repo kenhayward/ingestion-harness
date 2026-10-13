@@ -2258,12 +2258,19 @@ label.inline.list-select {
   text-align: right;
 }
 .gate-scale {
+  position: relative;
   display: flex;
   justify-content: space-between;
+  min-height: 1.4em;
   margin-left: calc(min(120px, 30%) + 12px);
   margin-right: 60px;
   color: var(--ih-muted);
   font-size: var(--ih-text-xs);
+}
+.gate-scale-threshold {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 .gate-hints {
   padding: 12px 16px;

@@ -209,7 +209,7 @@ export function historySummary(bars: readonly HistoryBar[], threshold: number): 
 export function parseThreshold(text: string): { value: number } | { error: string } {
   const t = text.trim();
   const n = Number(t);
-  if (t === '' || !Number.isInteger(n) || n < 0 || n > 100) {
+  if (!/^\d{1,3}$/.test(t) || n > 100) {
     return { error: 'Enter a whole percentage from 0 to 100' };
   }
   return { value: n / 100 };

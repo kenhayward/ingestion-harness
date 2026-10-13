@@ -184,6 +184,9 @@ describe('parseThreshold', () => {
     ['-1', error],
     ['85.5', error],
     ['abc', error],
+    ['1e1', error],
+    ['+5', error],
+    ['0x10', error],
   ])('%j', (text, expected) => {
     expect(parseThreshold(text)).toEqual(expected);
   });

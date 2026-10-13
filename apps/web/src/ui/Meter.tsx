@@ -10,6 +10,7 @@ export function Meter({
   min = 0,
   max = 1,
   tone = 'accent',
+  showTickWithoutValue = false,
 }: {
   label: string;
   value: number | null;
@@ -17,6 +18,8 @@ export function Meter({
   min?: number;
   max?: number;
   tone?: StageTone;
+  /** Draw the threshold tick on an empty track when there is no score. */
+  showTickWithoutValue?: boolean;
 }) {
   // A figure that is not a number (NaN, Infinity) is no score at all.
   const value = rawValue !== null && Number.isFinite(rawValue) ? rawValue : null;
@@ -33,7 +36,7 @@ export function Meter({
       {value !== null && (
         <span className="meter-fill" style={{ width: at(value), background: TONE_COLOR[tone] }} />
       )}
-      {value !== null && threshold !== undefined && (
+      {(value !== null || showTickWithoutValue) && threshold !== undefined && (
         <span className="meter-tick" style={{ left: at(threshold) }} />
       )}
     </span>

@@ -1,7 +1,8 @@
 import type { ComponentProps } from 'react';
-import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { PublishGateView } from '@ih/shared';
 import type { Api } from '../src/api/client.js';
 import { GateCard, PublicationsLog, useGate } from '../src/workbench/GateCard.js';
 import { fakeApi, projectView, publication, publishGateView } from './fake-api.js';
@@ -17,7 +18,7 @@ function card(props: Partial<ComponentProps<typeof GateCard>> = {}, overrides: P
   });
   const onChanged = vi.fn();
   const onPublished = vi.fn();
-  render(
+  const element = (over: Partial<ComponentProps<typeof GateCard>> = {}) => (
     <GateCard
       api={api}
       projectId="letter"
@@ -30,9 +31,15 @@ function card(props: Partial<ComponentProps<typeof GateCard>> = {}, overrides: P
       onChanged={onChanged}
       onPublished={onPublished}
       {...props}
-    />,
+      {...over}
+    />
   );
-  return { api, onChanged, onPublished };
+  const view = render(element());
+  return { api, onChanged, onPublished, view: { element, rerender: view.rerender } };
+}
+
+function cardWithView() {
+  return card();
 }
 
 const below = publishGateView({
@@ -190,11 +197,42 @@ describe('GateCard', () => {
     expect(screen.queryByText(/Threshold set by/)).toBeNull();
   });
 
-  it('keeps "Published vN" after publishing even once the draft is gone', async () => {
-    const view = card();
+  it('keeps "Published vN" once the draft is gone, with no Publish button', async () => {
+    const { api, view } = cardWithView();
     await userEvent.click(screen.getByRole('button', { name: 'Publish v2' }));
     expect(await screen.findByText('Published v2')).toBeInTheDocument();
-    expect(view.api.publish).toHaveBeenCalledTimes(1);
+    expect(api.publish).toHaveBeenCalledTimes(1);
+    view.rerender(view.element({ draft: null, published: 2, gate: null }));
+    expect(screen.getByText('Published v2')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish v/ })).toBeNull();
+  });
+
+  it('publishes directly when the gate passes', async () => {
+    const { api } = card({
+      gate: publishGateView({ passes: true, score: 0.95, iterationId: crypto.randomUUID() }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Publish v2' }));
+    expect(api.publish).toHaveBeenCalledWith('letter', undefined);
+    expect(await screen.findByText('Published v2')).toBeInTheDocument();
+  });
+
+  it('places the threshold label under its tick and draws the tick without a score', () => {
+    card();
+    const label = screen.getByText('Threshold 90%');
+    expect(label.style.left).toBe('66.67%');
+    const holdout = screen.getByRole('img', { name: 'Holdout score: no score yet' });
+    expect(holdout.querySelector('.meter-tick')).not.toBeNull();
+  });
+
+  it('encodes the project id in hint links', () => {
+    card({
+      projectId: 'a b',
+      gate: { ...below, hints: [{ key: 'k', accuracy: 0, cause: 'no_step', stage: 'steps' }] },
+    });
+    expect(screen.getByRole('link', { name: 'Open Steps' })).toHaveAttribute(
+      'href',
+      '#/workbench/a%20b/steps',
+    );
   });
 });
 
@@ -241,5 +279,31 @@ describe('useGate', () => {
     await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(1));
     rerender({ k: 'b' });
     await waitFor(() => expect(api.getPublishGate).toHaveBeenCalledTimes(2));
+  });
+
+  it('ignores a slow response that a newer load has superseded', async () => {
+    let release: (v: PublishGateView) => void = () => {};
+    const slow = new Promise<PublishGateView>((r) => (release = r));
+    const getPublishGate = vi
+      .fn()
+      .mockReturnValueOnce(slow)
+      .mockResolvedValue(publishGateView({ reason: 'newer' }));
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()), getPublishGate });
+    const { result, rerender } = renderHook(({ k }) => useGate(api, 'letter', 2, k), {
+      initialProps: { k: 'a' },
+    });
+    rerender({ k: 'b' });
+    await waitFor(() => expect(result.current.gate?.reason).toBe('newer'));
+    await act(async () => release(publishGateView({ reason: 'stale' })));
+    expect(result.current.gate?.reason).toBe('newer');
+  });
+
+  it('shows why a load failed', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listPublications: vi.fn(async () => Promise.reject(new Error('store down'))),
+    });
+    const { result } = renderHook(() => useGate(api, 'letter', 2, ''));
+    await waitFor(() => expect(result.current.error).toBe('store down'));
   });
 });
