@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { BriefBodySchema } from '@ih/shared';
+import { BriefBodySchema, stableJson } from '@ih/shared';
 import type {
   Brief,
   BriefBody,
@@ -9,6 +9,7 @@ import type {
   EvaluationModel,
   EvaluationSet,
   FeedbackItem,
+  JobSummary,
   ProposalDecision,
   Publication,
   SampleRole,
@@ -16,6 +17,8 @@ import type {
   WorkbenchProject,
 } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
+import type { MemoryTemplateRepo } from '../templates/repo.js';
+import type { NewDocument, RemovedJob, StoredObject } from '../repositories/types.js';
 
 /** A workbench sample joined with its document row. */
 export interface SampleRecord {
@@ -91,16 +94,44 @@ export interface IterationRecord {
   uncached: boolean;
   /** Cached summary once every job has finished; null while running. */
   scores: { score: number | null; completed: number; total: number } | null;
+  /**
+   * The publish gate's raw holdout score (migration 0020), valid while `fingerprint` (a hash of
+   * the iteration's jobs) is unchanged; stored only once every job has finished.
+   */
+  gateCache: { fingerprint: string; score: number | null; completed: number; total: number } | null;
   createdAt: string;
 }
 
 export type NewIteration = Omit<
   IterationRecord,
-  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
+  'id' | 'scores' | 'gateCache' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
 > &
   Partial<Pick<IterationRecord, 'groupId' | 'uncached' | 'sampleShas'>>;
 
 export class WorkbenchConflictError extends Error {}
+
+export type NewPublication = Omit<Publication, 'id' | 'publishedAt'>;
+
+export interface PublishDraftInput {
+  projectId: string;
+  version: number;
+  /** The definition the gate was decided for; publishing refuses any other. */
+  definition: Record<string, unknown>;
+  publication: NewPublication;
+}
+
+export type PublishDraftResult =
+  | { result: 'published'; publication: Publication }
+  | { result: 'changed' }
+  | { result: 'not-draft' };
+
+/** What a deleted project leaves to clean up in the internal store. */
+export interface RemovedProject {
+  /** Every deleted job with its draft outputs (`inboxObject` is always null: see `documents`). */
+  jobs: RemovedJob[];
+  /** Inbox PDFs of the deleted documents that no remaining document row shares. */
+  documents: StoredObject[];
+}
 
 /** Persistence for workbench projects, samples and briefs (ADR 0007; migration 0008). */
 export interface WorkbenchRepo {
@@ -127,9 +158,19 @@ export interface WorkbenchRepo {
     policy: DataPolicy,
     by: string | null,
   ): Promise<WorkbenchProject | null>;
-  /** Null when the project is unknown. */
-  setPublishThreshold(id: string, threshold: number): Promise<WorkbenchProject | null>;
-  recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>): Promise<Publication>;
+  /** Null when the project is unknown. `actor` is the label of the token that changed it. */
+  setPublishThreshold(
+    id: string,
+    threshold: number,
+    actor: string | null,
+  ): Promise<WorkbenchProject | null>;
+  recordPublication(p: NewPublication): Promise<Publication>;
+  /**
+   * Publishes the template draft `version` and records the publication in one transaction:
+   * `not-draft` when the version is not an open draft, `changed` when its definition is no
+   * longer `definition` (both write nothing).
+   */
+  publishDraft(input: PublishDraftInput): Promise<PublishDraftResult>;
   /** Newest first. */
   listPublications(projectId: string): Promise<Publication[]>;
   createProposal(p: NewProposal): Promise<ProposalRecord>;
@@ -161,9 +202,25 @@ export interface WorkbenchRepo {
   /** The iterations of one model comparison, oldest first. */
   listGroup(projectId: string, groupId: string): Promise<IterationRecord[]>;
   setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>): Promise<void>;
+  setGateCache(
+    iterationId: string,
+    cache: NonNullable<IterationRecord['gateCache']>,
+  ): Promise<void>;
+  /**
+   * Deletes the project in one transaction: its jobs (with their history, queued and running
+   * ones included), the type's project-less test jobs, feedback, iterations, publications,
+   * proposals, stage skips, briefs, samples, the template's references, every document of the
+   * type that nothing else uses and the template's draft rows. Files are the caller's.
+   * `published` (nothing written) when any version of the template is published; null when the
+   * project is unknown. Locks the template rows before the project row, as `publishDraft` does.
+   */
+  deleteProject(id: string): Promise<RemovedProject | 'published' | null>;
 }
 
-/** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
+/**
+ * In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given; the
+ * template repo stands in for the `templates` table that the Pg transactions share.
+ */
 export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly projects = new Map<string, WorkbenchProject>();
   readonly samples = new Map<string, NewSample & { id: string; createdAt: string }>();
@@ -174,7 +231,10 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
 
-  constructor(private readonly jobs: MemoryRepo) {}
+  constructor(
+    private readonly jobs: MemoryRepo,
+    private readonly templates: MemoryTemplateRepo,
+  ) {}
 
   async listProjects() {
     return [...this.projects.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -199,23 +259,47 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
       publishThreshold: 0.9,
+      thresholdSetBy: null,
+      thresholdSetAt: null,
     };
     this.projects.set(id, project);
     return project;
   }
 
-  async setPublishThreshold(id: string, threshold: number) {
+  async setPublishThreshold(id: string, threshold: number, actor: string | null) {
     const project = this.projects.get(id);
     if (!project) return null;
-    const updated = { ...project, publishThreshold: threshold };
+    const updated = {
+      ...project,
+      publishThreshold: threshold,
+      thresholdSetBy: actor,
+      thresholdSetAt: this.now(),
+    };
     this.projects.set(id, updated);
     return updated;
   }
 
-  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+  async recordPublication(p: NewPublication) {
     const row: Publication = { ...p, id: randomUUID(), publishedAt: this.now() };
     this.publications.push(row);
     return row;
+  }
+
+  async publishDraft(input: PublishDraftInput): Promise<PublishDraftResult> {
+    const record = await this.templates.get(input.projectId, input.version);
+    if (record?.status !== 'draft') return { result: 'not-draft' };
+    if (stableJson(record.definition) !== stableJson(input.definition)) {
+      return { result: 'changed' };
+    }
+    // The publication first: when it fails the draft stays open, as the Pg rollback leaves it.
+    const publication = await this.recordPublication(input.publication);
+    try {
+      await this.templates.publish(input.projectId, input.version);
+    } catch (err) {
+      this.publications.splice(this.publications.indexOf(publication), 1);
+      throw err;
+    }
+    return { result: 'published', publication };
   }
 
   async listPublications(projectId: string) {
@@ -398,6 +482,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       uncached: input.uncached ?? false,
       id: randomUUID(),
       scores: null,
+      gateCache: null,
       createdAt: this.now(),
     };
     this.iterations.push(record);
@@ -419,6 +504,105 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
     const at = this.iterations.findIndex((i) => i.id === id);
     if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, scores };
+  }
+
+  async setGateCache(iterationId: string, gateCache: NonNullable<IterationRecord['gateCache']>) {
+    const at = this.iterations.findIndex((i) => i.id === iterationId);
+    if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, gateCache };
+  }
+
+  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
+    if (!this.projects.has(id)) return null;
+    const versions = (await this.templates.list()).filter((t) => t.id === id);
+    if (versions.some((t) => t.status === 'published')) return 'published';
+    const repo = this.jobs;
+    const removed: RemovedJob[] = [];
+    const draftsOf = (jobId: string) =>
+      (repo.outputs.get(jobId) ?? [])
+        .filter((o) => o.stage === 'draft')
+        .map((o) => ({ bucket: o.bucket, key: o.key }));
+    // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
+    // and regression runs of a type that was never published).
+    const owned = (j: JobSummary) =>
+      j.projectId === id || (j.projectId === null && j.test && j.specId === id);
+    for (const job of [...repo.jobs.values()].filter(owned)) {
+      removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
+      repo.jobs.delete(job.id);
+    }
+    for (const map of [repo.draftJobs, repo.exportJobs, repo.segmentJobs]) {
+      for (const job of [...map.values()].filter((j) => j.projectId === id)) {
+        removed.push({ jobId: job.id, draftObjects: [], inboxObject: null });
+        map.delete(job.id);
+      }
+    }
+    for (const { jobId } of removed) {
+      for (const map of [
+        repo.outputs,
+        repo.edits,
+        repo.stepRuns,
+        repo.events,
+        repo.publishedAt,
+        repo.jobParams,
+        repo.priorities,
+        repo.reruns,
+      ]) {
+        map.delete(jobId);
+      }
+      // ON DELETE SET NULL (migration 0005): other templates' references keep their row.
+      for (const ref of repo.references.values()) {
+        if (ref.sourceJobId === jobId) repo.references.set(ref.id, { ...ref, sourceJobId: null });
+      }
+    }
+    const ofProject = (r: { projectId: string }) => r.projectId === id;
+    for (const rows of [
+      this.feedback,
+      this.publications,
+      this.iterations,
+      this.proposals,
+      this.skips,
+      this.briefs,
+    ] as { projectId: string }[][]) {
+      for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
+    }
+    for (const [sampleId, sample] of this.samples) {
+      if (sample.projectId === id) this.samples.delete(sampleId);
+    }
+    repo.sampleDocuments.clear();
+    for (const sample of this.samples.values()) repo.sampleDocuments.add(sample.documentId);
+    for (const [refId, ref] of repo.references) {
+      if (ref.templateId !== id) continue;
+      repo.references.delete(refId);
+      // ON DELETE SET NULL (migrations 0005 and 0018).
+      for (const job of repo.jobs.values()) {
+        if (job.referenceId === refId) repo.jobs.set(job.id, { ...job, referenceId: null });
+      }
+      for (const other of repo.references.values()) {
+        if (other.copiedFrom === refId)
+          repo.references.set(other.id, { ...other, copiedFrom: null });
+      }
+    }
+    const deleted: NewDocument[] = [];
+    for (const doc of [...repo.documents.values()]) {
+      if (doc.specId !== id) continue;
+      const used =
+        [...repo.jobs.values()].some((j) => j.documentId === doc.id) ||
+        [...repo.references.values()].some((r) => r.documentId === doc.id) ||
+        repo.sampleDocuments.has(doc.id);
+      if (used) continue;
+      repo.documents.delete(doc.id);
+      deleted.push(doc);
+    }
+    const documents: StoredObject[] = [];
+    for (const doc of deleted) {
+      const shared = [...repo.documents.values()].some(
+        (d) => d.bucket === doc.bucket && d.objectKey === doc.objectKey,
+      );
+      const listed = documents.some((o) => o.bucket === doc.bucket && o.key === doc.objectKey);
+      if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
+    }
+    this.projects.delete(id);
+    for (const t of versions) await this.templates.deleteDraft(id, t.version);
+    return { jobs: removed, documents };
   }
 
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
@@ -447,6 +631,8 @@ interface ProjectRow {
   data_policy_changed_at: Date | null;
   data_policy_changed_by: string | null;
   publish_threshold: string;
+  threshold_set_by: string | null;
+  threshold_set_at: Date | null;
 }
 
 interface SampleRow {
@@ -515,6 +701,7 @@ interface IterationRow {
   group_id: string | null;
   uncached: boolean;
   scores: IterationRecord['scores'];
+  gate_cache: IterationRecord['gateCache'];
   created_at: Date;
 }
 
@@ -531,6 +718,7 @@ const toIteration = (r: IterationRow): IterationRecord => ({
   groupId: r.group_id,
   uncached: r.uncached,
   scores: r.scores,
+  gateCache: r.gate_cache,
   createdAt: r.created_at.toISOString(),
 });
 
@@ -598,6 +786,8 @@ const toProject = (r: ProjectRow): WorkbenchProject => ({
   dataPolicyChangedAt: r.data_policy_changed_at?.toISOString() ?? null,
   dataPolicyChangedBy: r.data_policy_changed_by,
   publishThreshold: Number(r.publish_threshold),
+  thresholdSetBy: r.threshold_set_by,
+  thresholdSetAt: r.threshold_set_at?.toISOString() ?? null,
 });
 
 const toSample = (r: SampleRow): SampleRecord => ({
@@ -645,16 +835,64 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     return rows[0] ? toProject(rows[0]) : null;
   }
 
-  async setPublishThreshold(id: string, threshold: number) {
+  async setPublishThreshold(id: string, threshold: number, actor: string | null) {
     const { rows } = await this.pool.query<ProjectRow>(
-      'UPDATE workbench_projects SET publish_threshold = $2 WHERE id = $1 RETURNING *',
-      [id, threshold],
+      `UPDATE workbench_projects
+          SET publish_threshold = $2, threshold_set_by = $3, threshold_set_at = now()
+        WHERE id = $1 RETURNING *`,
+      [id, threshold, actor],
     );
     return rows[0] ? toProject(rows[0]) : null;
   }
 
-  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
-    const { rows } = await this.pool.query<PublicationRow>(
+  async recordPublication(p: NewPublication) {
+    return this.insertPublication(this.pool, p);
+  }
+
+  async publishDraft(input: PublishDraftInput): Promise<PublishDraftResult> {
+    const client = await this.pool.connect();
+    let failed: unknown = undefined;
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{
+        definition: Record<string, unknown>;
+        status: string;
+      }>('SELECT definition, status FROM templates WHERE id = $1 AND version = $2 FOR UPDATE', [
+        input.projectId,
+        input.version,
+      ]);
+      const row = rows[0];
+      const refused: PublishDraftResult | null =
+        row?.status !== 'draft'
+          ? { result: 'not-draft' }
+          : stableJson(row.definition) !== stableJson(input.definition)
+            ? { result: 'changed' }
+            : null;
+      if (refused) {
+        await client.query('ROLLBACK');
+        return refused;
+      }
+      // Twin of PgTemplateRepo.publish (apps/api/src/templates/repo.ts): keep the two in step.
+      await client.query(
+        `UPDATE templates SET status = 'published', published_at = now(), updated_at = now()
+          WHERE id = $1 AND version = $2 AND status = 'draft'`,
+        [input.projectId, input.version],
+      );
+      const publication = await this.insertPublication(client, input.publication);
+      await client.query('COMMIT');
+      return { result: 'published', publication };
+    } catch (err) {
+      failed = err;
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      // A client whose transaction failed is discarded rather than returned to the pool.
+      client.release(failed instanceof Error ? failed : undefined);
+    }
+  }
+
+  private async insertPublication(db: pg.Pool | pg.PoolClient, p: NewPublication) {
+    const { rows } = await db.query<PublicationRow>(
       `INSERT INTO workbench_publications
          (project_id, version, iteration_id, score, threshold, override_reason, published_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -929,6 +1167,109 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       id,
       JSON.stringify(scores),
     ]);
+  }
+
+  async setGateCache(iterationId: string, cache: NonNullable<IterationRecord['gateCache']>) {
+    await this.pool.query('UPDATE workbench_iterations SET gate_cache = $2 WHERE id = $1', [
+      iterationId,
+      JSON.stringify(cache),
+    ]);
+  }
+
+  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
+    const client = await this.pool.connect();
+    let failed: unknown = undefined;
+    try {
+      await client.query('BEGIN');
+      // The template rows first, then the project: publishDraft takes the same order (its
+      // template row, then the project through the publication's FK), so the two cannot
+      // deadlock. A publish that commits first is seen here; one that waits finds no row.
+      const versions = await client.query<{ version: number; status: string }>(
+        'SELECT version, status FROM templates WHERE id = $1 ORDER BY version FOR UPDATE',
+        [id],
+      );
+      const found = await client.query(
+        'SELECT 1 FROM workbench_projects WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!found.rowCount) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      if (versions.rows.some((v) => v.status === 'published')) {
+        await client.query('ROLLBACK');
+        return 'published';
+      }
+      // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
+      // and regression runs of a type that was never published).
+      const owned = `j.project_id = $1
+         OR (j.project_id IS NULL AND j.test
+             AND EXISTS (SELECT 1 FROM documents d WHERE d.id = j.document_id AND d.spec_id = $1))`;
+      const outputs = await client.query<{
+        id: string;
+        bucket: string | null;
+        object_key: string | null;
+      }>(
+        `SELECT j.id, o.bucket, o.object_key
+           FROM jobs j LEFT JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'draft'
+          WHERE ${owned}
+          ORDER BY j.created_at, j.id`,
+        [id],
+      );
+      const jobs = new Map<string, RemovedJob>();
+      for (const r of outputs.rows) {
+        const job = jobs.get(r.id) ?? { jobId: r.id, draftObjects: [], inboxObject: null };
+        if (r.bucket !== null && r.object_key !== null) {
+          job.draftObjects.push({ bucket: r.bucket, key: r.object_key });
+        }
+        jobs.set(r.id, job);
+      }
+      // Children first (FKs from migrations 0008-0016). Feedback points at proposals and
+      // iterations, publications at iterations, proposals at jobs.
+      for (const table of [
+        'workbench_feedback',
+        'workbench_publications',
+        'workbench_iterations',
+        'workbench_proposals',
+        'workbench_stage_skips',
+        'workbench_briefs',
+        'workbench_samples',
+      ]) {
+        await client.query(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
+      }
+      // job_events, job_outputs, review_edits and step_runs cascade (0001, 0002, 0004); other
+      // jobs' reference_id and references' source_job_id are set null (0005).
+      await client.query(`DELETE FROM jobs j WHERE ${owned}`, [id]);
+      // Other jobs' reference_id and copies' copied_from are set null (0005, 0018).
+      await client.query('DELETE FROM template_references WHERE template_id = $1', [id]);
+      const docs = await client.query<{ bucket: string; object_key: string }>(
+        `DELETE FROM documents d WHERE d.spec_id = $1
+            AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)
+            AND NOT EXISTS (SELECT 1 FROM workbench_samples WHERE document_id = d.id)
+          RETURNING d.bucket, d.object_key`,
+        [id],
+      );
+      const documents: StoredObject[] = [];
+      for (const d of docs.rows) {
+        if (documents.some((o) => o.bucket === d.bucket && o.key === d.object_key)) continue;
+        const shared = await client.query(
+          'SELECT 1 FROM documents WHERE bucket = $1 AND object_key = $2 LIMIT 1',
+          [d.bucket, d.object_key],
+        );
+        if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
+      }
+      await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
+      await client.query(`DELETE FROM templates WHERE id = $1 AND status = 'draft'`, [id]);
+      await client.query('COMMIT');
+      return { jobs: [...jobs.values()], documents };
+    } catch (err) {
+      failed = err;
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release(failed instanceof Error ? failed : undefined);
+    }
   }
 
   private async sample(id: string) {

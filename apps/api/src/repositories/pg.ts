@@ -186,6 +186,7 @@ export class PgRepo implements IngestionRepo {
     modelOverride: string | null,
     test = false,
     referenceId: string | null = null,
+    params: Record<string, unknown> | null = null,
   ): Promise<JobSummary> {
     return this.insertDocumentAndJob(doc, {
       modelOverride,
@@ -194,7 +195,7 @@ export class PgRepo implements IngestionRepo {
       projectId: null,
       task: 'process',
       priority: 0,
-      params: null,
+      params,
     });
   }
 
@@ -217,6 +218,16 @@ export class PgRepo implements IngestionRepo {
     const { rows } = await this.pool.query<SegmentRow>(
       `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
        VALUES ($1, 'draft', true, $2, 3, $3)
+       RETURNING id, project_id, status, error, created_at, updated_at`,
+      [projectId, WORKBENCH_PRIORITY, JSON.stringify(params)],
+    );
+    return toSegmentJob(rows[0]!);
+  }
+
+  async createFinishedDraftJob(projectId: string, params: Record<string, unknown>) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params, status)
+       VALUES ($1, 'draft', true, $2, 3, $3, 'succeeded')
        RETURNING id, project_id, status, error, created_at, updated_at`,
       [projectId, WORKBENCH_PRIORITY, JSON.stringify(params)],
     );
@@ -517,7 +528,7 @@ export class PgRepo implements IngestionRepo {
 
   async retryJob(
     id: string,
-    { model, specVersion }: RetryOptions = {},
+    { model, specVersion, outputs }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const { rowCount } = await this.pool.query(
       // A cancelled publish/rerun resumes as that task; a preparation stays a preparation; other
@@ -533,7 +544,10 @@ export class PgRepo implements IngestionRepo {
                 review_reasons = CASE WHEN status = 'succeeded' THEN NULL ELSE review_reasons END,
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
                 locked_by = NULL, locked_at = NULL, updated_at = now(),
-                model_override = CASE WHEN $2 THEN $3 ELSE model_override END
+                model_override = CASE WHEN $2 THEN $3 ELSE model_override END,
+                params = CASE WHEN $5 THEN COALESCE(params, '{}'::jsonb)
+                                           || jsonb_build_object('outputs', $6::jsonb)
+                              ELSE params END
           -- document_id IS NOT NULL: segment previews (document-less) are not retryable
           WHERE id = $1 AND status IN ('failed', 'needs_review', 'cancelled', 'succeeded')
             AND document_id IS NOT NULL
@@ -544,7 +558,14 @@ export class PgRepo implements IngestionRepo {
             AND (SELECT status FROM prev) = 'succeeded')
        UPDATE documents d SET spec_version = COALESCE($4::int, d.spec_version)
          FROM retried WHERE d.id = retried.document_id`,
-      [id, model !== undefined, model ?? null, specVersion ?? null],
+      [
+        id,
+        model !== undefined,
+        model ?? null,
+        specVersion ?? null,
+        outputs !== undefined,
+        JSON.stringify(outputs ?? null),
+      ],
     );
     return rowCount ? await this.getJob(id) : null;
   }
@@ -749,6 +770,8 @@ export class PgRepo implements IngestionRepo {
   async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
     // Concurrent callers both pass NOT EXISTS; the live-name unique index makes the second a no-op.
     // Any row of the target version, live or superseded (deleted), means it has its own set.
+    // The source is the newest earlier version with any row, so an emptied version passes on
+    // nothing rather than the set before it.
     // Copies keep the source's created_at: when the sample was verified.
     const { rowCount } = await this.pool.query(
       `INSERT INTO template_references
@@ -759,8 +782,7 @@ export class PgRepo implements IngestionRepo {
          FROM template_references r
         WHERE r.template_id = $1 AND r.superseded_at IS NULL
           AND r.template_version = (SELECT max(template_version) FROM template_references
-                                     WHERE template_id = $1 AND superseded_at IS NULL
-                                       AND template_version < $2)
+                                     WHERE template_id = $1 AND template_version < $2)
           AND NOT EXISTS (SELECT 1 FROM template_references
                            WHERE template_id = $1 AND template_version = $2)
         ORDER BY r.created_at, r.id
@@ -787,7 +809,11 @@ export class PgRepo implements IngestionRepo {
     return (rowCount ?? 0) > 0;
   }
 
-  async createRegressionJob(reference: Reference, version: number): Promise<JobSummary> {
+  async createRegressionJob(
+    reference: Reference,
+    version: number,
+    params: Record<string, unknown> | null = null,
+  ): Promise<JobSummary> {
     const { rows } = await this.pool.query<{
       filename: string;
       sha256: string;
@@ -811,6 +837,7 @@ export class PgRepo implements IngestionRepo {
       null,
       true,
       reference.id,
+      params,
     );
   }
 

@@ -57,6 +57,9 @@ export interface WorkbenchProject {
   dataPolicyChangedBy: string | null;
   /** Holdout score (0..1) a draft needs to publish without an override (ADR 0007). */
   publishThreshold: number;
+  /** Label of the token that last changed the threshold (null: never, or no access control). */
+  thresholdSetBy: string | null;
+  thresholdSetAt: string | null;
 }
 
 export interface ProjectSummary extends WorkbenchProject {

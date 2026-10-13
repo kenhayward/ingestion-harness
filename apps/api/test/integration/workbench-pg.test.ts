@@ -95,6 +95,30 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect((await repo.listProjectJobs(projectId)).map((j) => j.id)).toEqual([prepare.id]);
   });
 
+  it('creates a finished draft job that is listed and never claimable', async () => {
+    const projectId = await newProject();
+    const params = { stage: 'survey', dataPolicy: 'local', imported: true };
+    const job = await repo.createFinishedDraftJob(projectId, params);
+    expect(job).toMatchObject({ projectId, status: 'succeeded', error: null });
+    expect((await repo.listDraftJobs(projectId)).map((j) => [j.id, j.status])).toEqual([
+      [job.id, 'succeeded'],
+    ]);
+    const { rows } = await pool.query<{
+      task: string;
+      test: boolean;
+      priority: number;
+      document_id: string | null;
+      params: Record<string, unknown>;
+    }>('SELECT task, test, priority, document_id, params FROM jobs WHERE id = $1', [job.id]);
+    expect(rows[0]).toEqual({
+      task: 'draft',
+      test: true,
+      priority: -10,
+      document_id: null,
+      params,
+    });
+  });
+
   it('keeps one export job per project, even when two start at once', async () => {
     const projectId = await newProject();
     const other = await newProject();
@@ -434,6 +458,66 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.listReferences(projectId, 2)).toEqual([]);
   });
 
+  it('carries an emptied version forward as empty, never the version before it', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    await repo.createReference({
+      templateId: projectId,
+      name: 'a',
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 1,
+      verifiedOutputs: {},
+    });
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(1);
+    for (const r of await repo.listReferences(projectId, 2)) {
+      expect(await repo.deleteReference(projectId, r.id)).toBe(true);
+    }
+    expect(await repo.carryReferencesForward(projectId, 3)).toBe(0);
+    expect(await repo.listReferences(projectId, 3)).toEqual([]);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.name)).toEqual(['a']);
+  });
+
+  it('stores params on document jobs and regression jobs', async () => {
+    const projectId = await newProject();
+    const outputs = { fields: [{ id: 'sender' }] };
+    const job = await repo.createDocumentAndJob(doc(projectId), null, true, null, { outputs });
+    expect(await paramsOf(job.id)).toEqual({ outputs });
+    const plain = await repo.createDocumentAndJob(doc(projectId), null);
+    expect(await paramsOf(plain.id)).toBeNull();
+    const reference = await repo.createReference({
+      templateId: projectId,
+      name: 'r',
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const regression = await repo.createRegressionJob(reference, 2, { outputs });
+    expect(await paramsOf(regression.id)).toEqual({ outputs });
+    expect(await paramsOf((await repo.createRegressionJob(reference, 2)).id)).toBeNull();
+  });
+
+  it('refreshes the outputs snapshot on retry, keeping the other params', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      params: { dataPolicy: 'local', outputs: { fields: [] } },
+    });
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [job.id]);
+    const outputs = { fields: [{ id: 'sender' }] };
+    expect(await repo.retryJob(job.id, { outputs })).not.toBeNull();
+    expect(await paramsOf(job.id)).toEqual({ dataPolicy: 'local', outputs });
+    const plain = await repo.createDocumentAndJob(doc(projectId), null, true);
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [plain.id]);
+    expect(await repo.retryJob(plain.id, { outputs: null })).not.toBeNull();
+    expect(await paramsOf(plain.id)).toEqual({ outputs: null });
+    await pool.query(`UPDATE jobs SET status = 'failed' WHERE id = $1`, [plain.id]);
+    expect(await repo.retryJob(plain.id)).not.toBeNull();
+    expect(await paramsOf(plain.id)).toEqual({ outputs: null }); // untouched without the option
+  });
+
   it('serializes concurrent saves of the same PDF at one version', async () => {
     const projectId = await newProject();
     const source = doc(projectId);
@@ -525,11 +609,37 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     ]);
   });
 
+  it('stores the publish gate cache of an iteration', async () => {
+    const projectId = await newProject();
+    const i = await workbench.createIteration({
+      projectId,
+      templateVersion: 1,
+      definition: { id: projectId, version: 1 },
+      briefVersion: null,
+      set: 'holdout',
+      model: null,
+      jobIds: [randomUUID()],
+    });
+    expect(i.gateCache).toBeNull();
+    const cache = { fingerprint: 'f'.repeat(64), score: 0.75, completed: 3, total: 4 };
+    await workbench.setGateCache(i.id, cache);
+    expect((await workbench.getIteration(projectId, i.id))!.gateCache).toEqual(cache);
+    const unscored = { fingerprint: 'e'.repeat(64), score: null, completed: 0, total: 1 };
+    await workbench.setGateCache(i.id, unscored);
+    expect((await workbench.listIterations(projectId))[0]!.gateCache).toEqual(unscored);
+  });
+
   it('stores the publish threshold and logs publications as numbers, newest first', async () => {
     const projectId = await newProject();
     expect((await workbench.getProject(projectId))!.publishThreshold).toBe(0.9);
-    expect((await workbench.setPublishThreshold(projectId, 0.75))!.publishThreshold).toBe(0.75);
-    expect(await workbench.setPublishThreshold('it-nope', 0.5)).toBeNull();
+    expect(await workbench.getProject(projectId)).toMatchObject({
+      thresholdSetBy: null,
+      thresholdSetAt: null,
+    });
+    const set = (await workbench.setPublishThreshold(projectId, 0.75, 'ken'))!;
+    expect(set).toMatchObject({ publishThreshold: 0.75, thresholdSetBy: 'ken' });
+    expect(Number.isNaN(Date.parse(set.thresholdSetAt!))).toBe(false);
+    expect(await workbench.setPublishThreshold('it-nope', 0.5, null)).toBeNull();
     const holdout = await workbench.createIteration({
       projectId,
       templateVersion: 1,
@@ -561,6 +671,83 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(a).toMatchObject({ score: null, threshold: 0.75 });
     expect(b).toMatchObject({ score: 0.92, threshold: 0.75, iterationId: holdout.id });
     expect((await workbench.listPublications(projectId)).map((p) => p.id)).toEqual([b.id, a.id]);
+  });
+
+  describe('publishDraft', () => {
+    const definition = { id: 'x', version: 1, outputs: { fields: [] }, name: 'Letter' };
+    const draftOf = async () => {
+      const projectId = await newProject();
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', $2)`,
+        [projectId, JSON.stringify(definition)],
+      );
+      return projectId;
+    };
+    const publication = (projectId: string) => ({
+      projectId,
+      version: 1,
+      iterationId: null,
+      score: 0.95,
+      threshold: 0.9,
+      overrideReason: null,
+      publishedBy: 'ken',
+    });
+    const statusOf = async (projectId: string) =>
+      (
+        await pool.query<{ status: string; published_at: Date | null }>(
+          'SELECT status, published_at FROM templates WHERE id = $1 AND version = 1',
+          [projectId],
+        )
+      ).rows[0]!;
+
+    it('publishes the draft and records the publication together', async () => {
+      const projectId = await draftOf();
+      const result = await workbench.publishDraft({
+        projectId,
+        version: 1,
+        // Key order differs from the stored jsonb: compared as stable JSON.
+        definition: { name: 'Letter', outputs: { fields: [] }, version: 1, id: 'x' },
+        publication: publication(projectId),
+      });
+      expect(result.result).toBe('published');
+      expect(await statusOf(projectId)).toMatchObject({ status: 'published' });
+      expect((await statusOf(projectId)).published_at).not.toBeNull();
+      const listed = await workbench.listPublications(projectId);
+      expect(result).toEqual({ result: 'published', publication: listed[0] });
+      expect(listed[0]).toMatchObject(publication(projectId));
+    });
+
+    it('writes nothing when the draft changed or is not an open draft', async () => {
+      const projectId = await draftOf();
+      const input = { projectId, version: 1, publication: publication(projectId) };
+      expect(
+        await workbench.publishDraft({ ...input, definition: { ...definition, name: 'Old' } }),
+      ).toEqual({ result: 'changed' });
+      expect(await workbench.publishDraft({ ...input, version: 2, definition })).toEqual({
+        result: 'not-draft',
+      });
+      expect(await statusOf(projectId)).toMatchObject({ status: 'draft' });
+      await pool.query(`UPDATE templates SET status = 'published' WHERE id = $1`, [projectId]);
+      expect(await workbench.publishDraft({ ...input, definition })).toEqual({
+        result: 'not-draft',
+      });
+      expect(await workbench.listPublications(projectId)).toEqual([]);
+    });
+
+    it('rolls the publish back when the publication insert fails', async () => {
+      const projectId = await draftOf();
+      await expect(
+        workbench.publishDraft({
+          projectId,
+          version: 1,
+          definition,
+          // No such iteration: the foreign key fails the INSERT inside the transaction.
+          publication: { ...publication(projectId), iterationId: randomUUID() },
+        }),
+      ).rejects.toThrow(/foreign key/);
+      expect(await statusOf(projectId)).toEqual({ status: 'draft', published_at: null });
+      expect(await workbench.listPublications(projectId)).toEqual([]);
+    });
   });
 
   it('groups comparison iterations and records uncached runs', async () => {
@@ -603,5 +790,232 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       ['head', true],
       ['tail', false],
     ]);
+  });
+
+  it('deletes a project with every row it owns in one call, and leaves another project alone', async () => {
+    /** A project with samples, jobs of every kind, a reference, iterations and the rest. */
+    const populate = async () => {
+      const projectId = await newProject();
+      const sampleDoc = doc(projectId);
+      const prepare = await repo.createWorkbenchJob(sampleDoc, { projectId, task: 'prepare' });
+      await workbench.addSample({
+        projectId,
+        documentId: prepare.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      await workbench.saveBrief(projectId, EMPTY_BRIEF);
+      await workbench.addSkip(projectId, 'survey');
+      const source = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+      const reference = await repo.createReference({
+        templateId: projectId,
+        name: 'first',
+        documentId: source.documentId,
+        sourceJobId: source.id,
+        expected: { fields: {}, tables: {} },
+      });
+      const run = await repo.createWorkbenchJob(doc(projectId), {
+        projectId,
+        task: 'process',
+        referenceId: reference.id,
+      });
+      await pool.query(
+        `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
+         VALUES ($1, 'document', 'json', 'outputs', $2, 'draft')`,
+        [run.id, `${projectId}/draft.json`],
+      );
+      await pool.query(
+        `INSERT INTO step_runs (job_id, step_id, trigger, status, started_at)
+         VALUES ($1, 'head', 'process', 'succeeded', now())`,
+        [run.id],
+      );
+      await pool.query(`INSERT INTO job_events (job_id, level, message) VALUES ($1, 'info', 'x')`, [
+        run.id,
+      ]);
+      const iteration = await workbench.createIteration({
+        projectId,
+        templateVersion: 1,
+        definition: {},
+        briefVersion: 1,
+        set: 'dev',
+        model: null,
+        jobIds: [run.id],
+      });
+      const draft = await repo.createDraftJob(projectId, { stage: 'outputs' });
+      const proposal = await workbench.createProposal({
+        id: draft.id,
+        projectId,
+        stage: 'outputs',
+        briefVersion: 1,
+      });
+      const feedback = await workbench.createFeedback({
+        projectId,
+        target: 'field',
+        targetId: 'sender',
+        sampleId: null,
+        iterationId: iteration.id,
+        body: 'Use the letterhead',
+      });
+      await workbench.resolveFeedback(projectId, [feedback.id], proposal.id);
+      await workbench.recordPublication({
+        projectId,
+        version: 1,
+        iterationId: iteration.id,
+        score: 1,
+        threshold: 0.9,
+        overrideReason: null,
+        publishedBy: null,
+      });
+      await repo.createSegmentJob(projectId, segmentParams);
+      await repo.createExportJob(projectId, { stage: 'export' });
+      // A Templates-page test upload of the type: a test job with no project.
+      const upload = await repo.createDocumentAndJob(doc(projectId), null, true);
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
+        [projectId],
+      );
+      return { projectId, sampleDoc, run, upload };
+    };
+    const counts = async (projectId: string) => {
+      const { rows } = await pool.query<Record<string, number>>(
+        `SELECT
+           (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
+           (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
+           (SELECT count(*)::int FROM workbench_briefs WHERE project_id = $1) AS briefs,
+           (SELECT count(*)::int FROM workbench_stage_skips WHERE project_id = $1) AS skips,
+           (SELECT count(*)::int FROM workbench_proposals WHERE project_id = $1) AS proposals,
+           (SELECT count(*)::int FROM workbench_iterations WHERE project_id = $1) AS iterations,
+           (SELECT count(*)::int FROM workbench_feedback WHERE project_id = $1) AS feedback,
+           (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
+           (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
+           (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
+           (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents,
+           (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
+        [projectId],
+      );
+      return rows[0]!;
+    };
+    const target = await populate();
+    const other = await populate();
+    const before = await counts(other.projectId);
+    expect(Object.values(before).every((n) => n > 0)).toBe(true);
+
+    const removed = await workbench.deleteProject(target.projectId);
+    if (!removed || removed === 'published') throw new Error(`not deleted: ${removed}`);
+    // prepare, source, run, draft, segment and export jobs, and the project-less test upload.
+    expect(removed.jobs).toHaveLength(7);
+    expect(removed.jobs.map((j) => j.jobId)).toContain(target.upload.id);
+    expect(removed.jobs.find((j) => j.jobId === target.run.id)!.draftObjects).toEqual([
+      { bucket: 'outputs', key: `${target.projectId}/draft.json` },
+    ]);
+    expect(removed.documents).toHaveLength(4);
+    expect(removed.documents).toContainEqual({ bucket: 'inbox', key: target.sampleDoc.objectKey });
+
+    expect(Object.values(await counts(target.projectId)).every((n) => n === 0)).toBe(true);
+    const orphans = await pool.query(
+      `SELECT 1 FROM job_outputs WHERE job_id = $1
+       UNION ALL SELECT 1 FROM step_runs WHERE job_id = $1
+       UNION ALL SELECT 1 FROM job_events WHERE job_id = $1`,
+      [target.run.id],
+    );
+    expect(orphans.rowCount).toBe(0);
+    expect(await counts(other.projectId)).toEqual(before);
+    expect(await workbench.deleteProject(target.projectId)).toBeNull();
+  });
+
+  describe('deleteProject against publishDraft', () => {
+    const definition = { id: 'x', version: 1, outputs: { fields: [] } };
+    const projectWithDraft = async () => {
+      const projectId = await newProject();
+      const prepare = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+      await workbench.addSample({
+        projectId,
+        documentId: prepare.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', $2)`,
+        [projectId, JSON.stringify(definition)],
+      );
+      return projectId;
+    };
+    const publish = (projectId: string) =>
+      workbench.publishDraft({
+        projectId,
+        version: 1,
+        definition,
+        publication: {
+          projectId,
+          version: 1,
+          iterationId: null,
+          score: null,
+          threshold: 0.9,
+          overrideReason: 'integration race',
+          publishedBy: null,
+        },
+      });
+    const state = async (projectId: string) =>
+      (
+        await pool.query<Record<string, number>>(
+          `SELECT
+             (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
+             (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
+             (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
+             (SELECT count(*)::int FROM templates WHERE id = $1 AND status = 'published') AS published,
+             (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
+          [projectId],
+        )
+      ).rows[0]!;
+
+    it('refuses a published type and writes nothing', async () => {
+      const projectId = await projectWithDraft();
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 2, 'draft', '{}')`,
+        [projectId],
+      );
+      expect((await publish(projectId)).result).toBe('published');
+      expect(await workbench.deleteProject(projectId)).toBe('published');
+      expect(await state(projectId)).toEqual({
+        projects: 1,
+        samples: 1,
+        publications: 1,
+        published: 1,
+        templates: 2,
+      });
+    });
+
+    it('never deadlocks and leaves one consistent outcome when both run at once', async () => {
+      for (let round = 0; round < 8; round++) {
+        const projectId = await projectWithDraft();
+        // Alternate which call is issued first.
+        const [published, deleted] =
+          round % 2 === 0
+            ? await Promise.all([publish(projectId), workbench.deleteProject(projectId)])
+            : await Promise.all([workbench.deleteProject(projectId), publish(projectId)]).then(
+                ([d, p]) => [p, d] as const,
+              );
+        if (published.result === 'published') {
+          expect(deleted).toBe('published');
+          expect(await state(projectId)).toEqual({
+            projects: 1,
+            samples: 1,
+            publications: 1,
+            published: 1,
+            templates: 1,
+          });
+        } else {
+          expect(published).toEqual({ result: 'not-draft' });
+          expect(deleted).toMatchObject({ jobs: expect.any(Array) });
+          expect(await state(projectId)).toEqual({
+            projects: 0,
+            samples: 0,
+            publications: 0,
+            published: 0,
+            templates: 0,
+          });
+        }
+      }
+    });
   });
 });

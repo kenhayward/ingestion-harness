@@ -195,8 +195,8 @@ enforced here, in one place, and covered by tests.
 
 The export bundle is a deterministic zip of the project's drafting material, for drafting elsewhere
 or for importing into another deployment. Layout: `manifest.json` (format, version, project,
-template and brief versions, samples, stages), `README.md`, `context.md`, `brief.json`,
-`template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
+template and brief versions, samples, stages, `completedStages`), `README.md`, `context.md`,
+`brief.json`, `survey.json` (the accepted survey, when there is one), `template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
 
 - **Dev only.** Holdout samples are refused at export; only dev samples are included, and
   `context.md` is exactly `build_context`, so it carries the same dev-only guarantee as drafting.
@@ -204,9 +204,44 @@ template and brief versions, samples, stages), `README.md`, `context.md`, `brief
 - **One export per project:** a new export replaces the previous export job and its zip.
 - **Import** creates a `local` project with template draft v1, the brief and the dev samples, which
   are re-prepared (each queues a `prepare` job). It validates the whole bundle before writing
-  anything and refuses an id that already exists (import under another id).
-- **Not imported:** the accepted survey and the stage states. The imported project's own drafting
-  context therefore differs from the bundle's `context.md` until the survey is redone.
+  anything and refuses an id that already exists (import under another id). A failure after the
+  project exists names it; delete the project and import again.
+- **Import streams through temporary files.** The upload is saved to a temp dir under the size
+  limit, then inflated as a stream: the metadata entries (`manifest.json`, `brief.json`,
+  `template.yaml`, `survey.json`) stay in memory (8 MiB in total at most), each sample PDF goes
+  to its own temp file (hashed as it is written), and other entries are inflated only to count
+  toward the limits. An upload or metadata past its limit is a 400 `bundle is too large`. The
+  temp dir is always removed.
+- **Survey and stages:** `completedStages` lists the proposal stages accepted or skipped at
+  export. Import accepts `survey.json` as a survey proposal (a finished `draft` job no worker
+  claims, model `imported`) and records the other completed stages as skipped, in stage order so
+  none is stale; a completed survey without `survey.json` is recorded as skipped. Bundles without
+  `completedStages` import with every stage pending.
+- **Compatibility:** bundles exported by this version carry `completedStages` and still say
+  format version 1. A deployment running older code (before `completedStages`) refuses them,
+  because its manifest schema is strict about unknown keys; upgrade it before importing. Older
+  bundles import here unchanged.
+
+### Deleting a project
+
+`DELETE /projects/:id` deletes a project whose document type was never published (a published
+type keeps its project: 409). One transaction first locks the type's template rows and refuses if
+any is published, then locks the project (the order `publishDraft` uses, so a publish and a delete
+racing each other cannot deadlock: one wins cleanly). It removes the project's jobs (with their
+events, outputs, step runs and proposals), the type's project-less test jobs (Templates-page test
+uploads and regression runs of the never-published type), feedback, iterations, publications,
+stage skips, briefs and samples, the type's references, every document of the type that no other
+job, reference or sample uses, and the template's draft rows.
+
+Jobs are deleted whatever their status, queued and running ones included. This is an exception to
+ADR 0005 (which refuses to delete an active job), like segment preview and export replacement: a
+worker mid-run finds its status writes guarded (`AND status = 'running'`) and stops, but it may
+leave files it wrote after the clean-up behind.
+
+The files are then removed best-effort, as for a deleted job (ADR 0005): each job's drafts and
+`runs/{jobId}/`, the inbox PDFs no remaining document shares, and `drafting/<id>/`,
+`segmentation/<id>/` and `exports/<id>/` in the runs bucket. The content-keyed caches are kept: the
+prepared text, the step cache and the OCR cache. The id can then be used again.
 
 ### Models and data policy
 
@@ -262,11 +297,18 @@ Rules:
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
 - The publish gate uses the holdout score: at or above `publish_threshold` publishes directly;
   below it, publishing needs an override reason, recorded on the publication.
+- The threshold records who last set it and when (`threshold_set_by`, the token label, and
+  `threshold_set_at`; migration 0020).
+- Publishing re-checks that the draft is still the one the gate was decided for, publishes the
+  template and records the publication in one transaction (`WorkbenchRepo.publishDraft`), so a
+  publication is never logged without its template being published, or the reverse.
 - Only an honest holdout run counts: the newest complete holdout iteration of the current draft
   that ran the template's own models (iterations with a model override are for exploration and
   never count), covered every ready holdout sample, and compared every sample it evaluated (a
-  job that failed, needs review, was cancelled or deleted fails the gate). Its score is always
-  recomputed from the raw model output, so review edits on a holdout job cannot raise it.
+  job that failed, needs review, was cancelled or deleted fails the gate). Its score is computed
+  from the raw model output, so review edits on a holdout job cannot raise it, and cached under a
+  fingerprint of the iteration's jobs (id, status, update time, reference), so it is recomputed
+  whenever one of them changes.
 - Holdout history is a count of the holdout iterations that evaluated the sample, recorded by
   sha256 on the iteration (`sample_shas`, migration 0017) so it survives deleted jobs.
 
@@ -290,17 +332,27 @@ How it works (migration 0018):
   reference runs (dev and holdout), evaluation and so the holdout gate's coverage, until the user
   re-verifies it. Regression ignores outdated references.
 - The verified outputs are those the run was checked against, not the draft at save time.
-  Reference runs (dev and holdout) snapshot the draft's outputs into `params.outputs`, and
-  "Save as reference" uses that snapshot. Without one, it uses the published version's outputs,
+  Every test run of a draft snapshots the draft's outputs into `params.outputs`: reference runs
+  (dev and holdout), dev test runs, evaluations (dev and holdout), model comparisons, regression
+  runs of a draft version and Templates test uploads (`draftOutputsSnapshot`). "Save as
+  reference" uses that snapshot, so a later draft edit (say, to the steps) does not block the
+  save. Retrying a draft test run refreshes the snapshot to the current draft; a step re-run
+  keeps it (a stale snapshot only makes a saved reference outdated). Without one (jobs created before the snapshot), it uses the published version's outputs,
   or the draft's when the draft has not changed since the run was created; a draft edited after
   the run is a 409 (`the draft changed after this run; run it again`). A run of a version that no
   longer exists saves `{}`, which is outdated as soon as the version has outputs again.
 - `GET /api/templates/:id/references?version=N` returns the version's regression set
-  (`versionReferences`): outdated references are left out.
+  (`versionReferences`): one reference per PDF (sha256), the one pinned to the version over an
+  unpinned one, then the newest, so a PDF is never run twice; a PDF whose pick is outdated is
+  left out (no fallback to an unpinned reference), matching the Workbench, which marks that
+  sample unverified.
 - Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
   instead of deleting it, so older iterations keep their comparisons. Deleting a pinned reference
   supersedes it too. Carrying skips a version that has any row, live or superseded, so deleted
-  copies don't come back; copies keep the source's `created_at`.
+  copies don't come back; copies keep the source's `created_at`. The carry source is the newest
+  earlier version with any row, live or superseded, and only its live rows are copied: a version
+  whose references were all deleted passes on nothing, and the version before it is not
+  resurrected.
 - Two saves of the same PDF at the same version serialize on an advisory transaction lock
   (template, version, sha256), so only one stays live.
 - Other document types keep unpinned references that apply to every version.
@@ -316,6 +368,7 @@ All routes are under `/api/workbench`, covered by the session hook and the `acce
 ```text
 GET/POST          /projects                       list / create
 GET/PATCH         /projects/:id                   detail / name, threshold
+DELETE            /projects/:id                   unpublished types only (409 once published)
 PUT               /projects/:id/data-policy       admin only
 POST              /projects/:id/samples           upload (multipart), enqueues prepare
 PATCH/DELETE      /projects/:id/samples/:sid      role / remove
@@ -436,4 +489,5 @@ fast, users will go back to editing YAML by hand.
   draft alone while an evaluation is running.
 - Decided in phase 2, on design grounds (real timings are still to be measured): the worker
   wakes on `NOTIFY ih_jobs`; the UI polls the preview every 300 ms.
-- **Open:** retention of archived projects and their samples (follow ADR 0005's deletion rules).
+- **Open:** retention of the projects of published types and their samples (follow ADR 0005's
+  deletion rules). A project whose type was never published can be deleted outright.

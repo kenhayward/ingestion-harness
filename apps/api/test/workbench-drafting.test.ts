@@ -108,7 +108,10 @@ describe('data policy', () => {
       url: '/api/workbench/projects/letter/test-runs',
     });
     const [job] = run.json().jobs as { id: string }[];
-    expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local' });
+    expect(repo.jobParams.get(job!.id)).toEqual({
+      dataPolicy: 'local',
+      outputs: letter(1).outputs,
+    });
   });
 
   it('revoking to local downgrades the project jobs already created; allowing never upgrades', async () => {

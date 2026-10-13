@@ -126,7 +126,7 @@ describe('evaluations', () => {
       modelOverride: 'fast',
       specVersion: 1,
     });
-    expect(repo.jobParams.get(jobId!)).toEqual({ dataPolicy: 'local' });
+    expect(repo.jobParams.get(jobId!)).toEqual({ dataPolicy: 'local', outputs: letter(1).outputs });
     expect((await evaluate({ model: 'opus' })).statusCode).toBe(400);
   });
 

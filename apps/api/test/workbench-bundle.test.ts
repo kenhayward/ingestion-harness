@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,6 +21,8 @@ import { MemoryAccessRepo } from '../src/access/repo.js';
 import type { AppDeps } from '../src/app.js';
 import { TemplateConflictError } from '../src/templates/repo.js';
 import { WorkbenchConflictError } from '../src/workbench/repo.js';
+import { BundleError, readBundle, type ReadBundleOptions } from '../src/workbench/bundle-import.js';
+import { acceptedSurvey } from '../src/routes/workbench.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -102,6 +108,7 @@ describe('export', () => {
       brief,
       draft: letter(1),
       survey: null,
+      completedStages: [],
       samples: [
         {
           sampleId: dev.id,
@@ -152,6 +159,20 @@ describe('export', () => {
 
     const view = (await start()).json() as ExportView;
     expect(repo.exportJobs.get(view.jobId)!.params.survey).toEqual(survey);
+  });
+
+  it('carries the completed stages', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    for (const stage of ['survey', 'outputs']) {
+      const skipped = await app.inject({
+        method: 'POST',
+        url: `/api/workbench/projects/letter/stages/${stage}/skip`,
+      });
+      expect(skipped.statusCode).toBe(201);
+    }
+    const view = (await start()).json() as ExportView;
+    expect(repo.exportJobs.get(view.jobId)!.params.completedStages).toEqual(['survey', 'outputs']);
   });
 
   it('replaces the previous export and deletes its zip', async () => {
@@ -358,6 +379,8 @@ const pdfBytes = (n: number) => Buffer.from(`%PDF-1.7\n% bundle ${n}\n%%EOF\n`);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const memoYaml = 'id: memo\nversion: 3\nname: Memo\noutputs:\n  fields: []\n  tables: []\n';
 const samplePath = `samples/${sha(pdfBytes(1))}.pdf`;
+/** A 4 KiB PDF: over the per-file limit for `maxUploadBytes: 1024`. */
+const pdf4KiB = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0x41)]);
 
 /** A bundle's entries; `samples` are listed as m1.pdf, m2.pdf, … (default: one PDF). */
 function bundleFiles(
@@ -419,6 +442,11 @@ function bundleWithout(name: string) {
   delete files[name];
   return Buffer.from(zipSync(files));
 }
+
+/** The import temp dirs under the OS temp dir. */
+// Safe as a global snapshot: no other test file makes ih-import- dirs in the OS tmpdir.
+const tmpEntries = async () =>
+  (await readdir(tmpdir())).filter((name) => name.startsWith('ih-import-')).sort();
 
 const importBundle = (app: FastifyInstance, zip: Buffer, fields: Record<string, string> = {}) =>
   app.inject({
@@ -524,6 +552,12 @@ describe('import', () => {
       /^brief\.json: /,
     ],
     [
+      'a survey.json that is not a survey',
+      () => bundle({ files: { 'survey.json': strToU8('{"summary": 3}') } }),
+      {},
+      /^survey\.json: /,
+    ],
+    [
       'a sample that is not a PDF',
       () => bundle({ samples: [Buffer.from('not a pdf')] }),
       {},
@@ -571,6 +605,69 @@ describe('import', () => {
     expect(repo.jobs.size).toBe(0);
   });
 
+  const importedSurvey = {
+    summary: 'Memos.',
+    structure: [{ name: 'Header', description: 'Sender', howToFind: 'Top' }],
+    variants: [],
+    candidates: [],
+    questions: [],
+  };
+  const stagesOf = async (app: FastifyInstance, id: string) =>
+    (
+      (await app.inject(`/api/workbench/projects/${id}/stages`)).json() as {
+        stage: string;
+        state: string;
+      }[]
+    )
+      .filter((s) => s.stage !== 'references')
+      .map((s) => [s.stage, s.state]);
+
+  it('imports the accepted survey and the completed stages', async () => {
+    const { app, repo } = await testApp();
+    const zip = bundle({
+      manifest: { completedStages: ['survey', 'outputs', 'sections'] },
+      files: { 'survey.json': strToU8(JSON.stringify(importedSurvey)) },
+    });
+    const res = await importBundle(app, zip);
+    expect(res.statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'accepted'],
+      ['outputs', 'skipped'],
+      ['sections', 'skipped'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toEqual(importedSurvey);
+    // Nothing for a worker to run but the samples' prepare jobs.
+    expect((await repo.listDraftJobs('memo')).map((j) => j.status)).toEqual(['succeeded']);
+    const queued = [...repo.jobs.values()].filter((j) => j.status === 'queued');
+    expect(queued.map((j) => j.task)).toEqual(['prepare']);
+  });
+
+  it('leaves every stage pending for a bundle without completed stages or a survey', async () => {
+    const { app } = await testApp();
+    expect((await importBundle(app, bundle())).statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'pending'],
+      ['outputs', 'pending'],
+      ['sections', 'pending'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toBeNull();
+  });
+
+  it('records a completed survey without survey.json as skipped', async () => {
+    const { app } = await testApp();
+    const res = await importBundle(app, bundle({ manifest: { completedStages: ['survey'] } }));
+    expect(res.statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'skipped'],
+      ['outputs', 'pending'],
+      ['sections', 'pending'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toBeNull();
+  });
+
   it('keeps a padded bundle small enough to upload', () => {
     // The guard is on inflated bytes: the zipped padding is far below the upload limit.
     expect(bundle({ files: PADDING }).length).toBeLessThan(1024 * 12);
@@ -613,7 +710,7 @@ describe('import', () => {
       const res = await importBundle(app, bundle());
       expect(res.statusCode).toBe(500);
       expect(res.json().error).toBe(
-        'import failed after creating project memo; delete is not available, so import again under another id',
+        'import failed after creating project memo; delete the project and import again',
       );
     },
   );
@@ -660,4 +757,114 @@ describe('import', () => {
       expect(res.json().error).toBe('memo already exists here; import under another id');
     },
   );
+
+  it('removes its temporary files after an import and after a refusal', async () => {
+    const { app } = await testApp();
+    const before = await tmpEntries();
+    expect((await importBundle(app, bundle())).statusCode).toBe(201);
+    expect((await importBundle(app, Buffer.from('nope'))).statusCode).toBe(400);
+    const refused = await importBundle(app, bundle({ manifest: { formatVersion: 2 } }));
+    expect(refused.statusCode).toBe(400);
+    expect(await tmpEntries()).toEqual(before);
+  });
+
+  it('refuses metadata entries past the text allowance with 400', async () => {
+    const { app, repo, store, templates } = await testApp();
+    // Whitespace before the JSON: valid, and tiny once compressed, but 9 MiB in memory.
+    const padded = strToU8(`${' '.repeat(9 * 1024 * 1024)}{}`);
+    const res = await importBundle(app, bundle({ files: { 'survey.json': padded } }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle is too large');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+
+  it('refuses an upload over the bundle limit with 400 and leaves no temp dir', async () => {
+    // The limit is maxUploadBytes * MAX_SAMPLES + 8 MiB. Busboy stops the file at that size and
+    // ends the stream as `truncated`; @fastify/multipart only throws RequestFileTooLargeError
+    // (413) from toBuffer(), which the streaming import does not use.
+    const { app, repo, store, templates } = await testApp({ maxUploadBytes: 1024 });
+    const before = await tmpEntries();
+    const res = await importBundle(app, Buffer.alloc(8 * 1024 * 1024 + 64 * 1024));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle is too large');
+    expect(await tmpEntries()).toEqual(before);
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+
+  it('refuses a sample over the upload limit while streaming it', async () => {
+    const { app, repo, store, templates } = await testApp({ maxUploadBytes: 1024 });
+    const res = await importBundle(app, bundle({ samples: [pdf4KiB] }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('sample m1.pdf: larger than the upload limit');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+});
+
+describe('readBundle', () => {
+  const opts = { maxUploadBytes: 1024 * 1024, maxInflated: 64 * 1024 * 1024, maxEntries: 40 };
+  const read = (zip: Uint8Array, over: Partial<ReadBundleOptions> = {}) =>
+    readBundle(Readable.from([Buffer.from(zip)]), { ...opts, ...over });
+
+  it('keeps the metadata in memory and each sample PDF in a temp file', async () => {
+    const files = bundleFiles({ files: { 'context.md': strToU8('# Context') } });
+    const got = await read(zipSync(files));
+    try {
+      expect([...got.text.keys()].sort()).toEqual(['brief.json', 'manifest.json', 'template.yaml']);
+      expect(got.text.get('template.yaml')?.toString()).toBe(memoYaml);
+      expect([...got.samples.keys()]).toEqual([samplePath]);
+      const sample = got.samples.get(samplePath)!;
+      expect(sample).toMatchObject({
+        sha256: sha(pdfBytes(1)),
+        size: pdfBytes(1).length,
+        head: pdfBytes(1).subarray(0, 8),
+      });
+      expect(sample.path.startsWith(got.dir)).toBe(true);
+      expect(await readFile(sample.path)).toEqual(pdfBytes(1));
+    } finally {
+      const { rm } = await import('node:fs/promises');
+      await rm(got.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stops writing a sample once it passes the upload limit', async () => {
+    const zip = zipSync(bundleFiles({ samples: [pdf4KiB] }));
+    const got = await read(zip, { maxUploadBytes: 1024 });
+    try {
+      const sample = got.samples.get(`samples/${sha(pdf4KiB)}.pdf`)!;
+      expect(sample.size).toBeGreaterThan(1024);
+      expect(existsSync(sample.path)).toBe(false);
+    } finally {
+      const { rm } = await import('node:fs/promises');
+      await rm(got.dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each<[string, Uint8Array, Partial<ReadBundleOptions>, string]>([
+    ['not a zip', strToU8('nope'), {}, 'not a valid bundle (zip)'],
+    ['too many entries', zipSync(bundleFiles()), { maxEntries: 2 }, 'bundle is too large'],
+    [
+      'too many inflated bytes',
+      zipSync(bundleFiles()),
+      { maxInflated: 100 },
+      'bundle is too large',
+    ],
+    [
+      'metadata past the text allowance',
+      zipSync(bundleFiles()),
+      { maxMetadata: 100 },
+      'bundle is too large',
+    ],
+  ])('throws a BundleError for %s and leaves no temp dir', async (_l, zip, over, message) => {
+    const before = await tmpEntries();
+    const err = await read(zip, over).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BundleError);
+    expect((err as Error).message).toBe(message);
+    expect(await tmpEntries()).toEqual(before);
+  });
 });

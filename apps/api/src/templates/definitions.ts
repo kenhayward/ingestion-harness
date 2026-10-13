@@ -29,6 +29,15 @@ export function validateTemplate(definition: unknown): TemplateIssue[] {
   );
 }
 
+/**
+ * Params of a test run of a draft: a snapshot of the draft's outputs, so a reference saved from
+ * the run remembers what it was checked against even after later draft edits (the worker
+ * ignores `outputs`).
+ */
+export const draftOutputsSnapshot = (definition: Record<string, unknown>) => ({
+  outputs: definition.outputs ?? null,
+});
+
 export type Resolved =
   { ok: true; definition: Definition; draft: boolean } | { ok: false; error: string };
 

@@ -69,12 +69,13 @@ import {
   type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
+import { removeJobFiles } from '../jobs/delete.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
-import { validateTemplate } from '../templates/definitions.js';
+import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';
 import { isPdf, multipartField } from '../uploads.js';
 import {
   WorkbenchConflictError,
@@ -170,7 +171,8 @@ function statusOf(p: ProposalRecord, job: ProjectJob | null): ProposalStatus {
   return job.status === 'succeeded' ? 'ready' : 'failed';
 }
 
-async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageView[]> {
+/** The four proposal stages (`STAGE_ORDER`), without references. */
+export async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const jobs = new Map((await app.deps.repo.listDraftJobs(projectId)).map((j) => [j.id, j]));
   const proposals = (await app.deps.workbench.listProposals(projectId)).map((p) => ({
     stage: p.stage,
@@ -374,14 +376,11 @@ function sampleDocument(sample: SampleRecord, projectId: string, version: number
 
 const activeJob = (status: JobStatus) => status === 'queued' || status === 'running';
 
-/**
- * Params of a reference run: forced review, plus a snapshot of the draft's outputs so a reference
- * saved from it remembers what the run was checked against (the worker ignores `outputs`).
- */
+/** Params of a reference run: forced review, plus the draft's outputs snapshot. */
 const referenceRunParams = (
   dataPolicy: z.infer<typeof DataPolicySchema>,
   definition: Record<string, unknown>,
-) => ({ dataPolicy, forceReview: true, outputs: definition.outputs ?? null });
+) => ({ dataPolicy, forceReview: true, ...draftOutputsSnapshot(definition) });
 
 /** A reference row plus the sample's newest reference run (draft model), for stage state. */
 interface ReferenceEntry {
@@ -602,17 +601,34 @@ async function iterationView(
   };
 }
 
+/** A job whose result can still change: the gate does not cache an iteration holding one. */
+const unsettledJob = (status: JobStatus) =>
+  status === 'queued' || status === 'running' || status === 'awaiting_review';
+
+/**
+ * What the gate's cached score of an iteration depends on: each of its jobs (in `jobIds` order)
+ * as `[id, status, updatedAt, referenceId]`, a deleted job as `[id, null, null, null]`.
+ */
+function gateFingerprint(jobIds: string[], jobs: (JobSummary | null)[]): string {
+  const parts = jobIds.map((id, n) => {
+    const job = jobs[n];
+    return job ? [id, job.status, job.updatedAt, job.referenceId] : [id, null, null, null];
+  });
+  return createHash('sha256').update(stableJson(parts)).digest('hex');
+}
+
 /**
  * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
- * draft (version and definition) with the template's own models count; their scores are always
- * recomputed from the jobs (raw output, so review edits never raise them), and coverage is
- * measured against the holdout samples that are ready now. `definition` is the `stableJson` of
- * the draft the gate was decided for.
+ * draft (version and definition) with the template's own models count; their scores are computed
+ * from the jobs (raw output, so review edits never raise them) and cached per iteration under a
+ * fingerprint of its jobs (`gateFingerprint`), so a score is reused only while none of its jobs
+ * changed. Coverage is always measured against the holdout samples that are ready now.
+ * `definition` is the draft the gate was decided for.
  */
 async function gateFor(
   app: FastifyInstance,
   project: WorkbenchProject,
-): Promise<GateView & { draft: number | null; definition: string | null }> {
+): Promise<GateView & { draft: number | null; definition: Record<string, unknown> | null }> {
   const { draft } = await versionsOf(app.deps.templates, project.id);
   if (draft === null) {
     return {
@@ -625,11 +641,14 @@ async function gateFor(
       definition: null,
     };
   }
-  const current = stableJson((await app.deps.templates.get(project.id, draft))!.definition);
+  const { definition } = (await app.deps.templates.get(project.id, draft))!;
+  const current = stableJson(definition);
   const ready = (await sampleViews(app, project.id))
     .filter((s) => s.record.role === 'holdout' && s.view.state === 'ready')
     .map((s) => s.record.sha256);
-  const shaByJob = await jobShas(app, project.id);
+  const runs = await app.deps.repo.listProjectRuns(project.id);
+  const shaByJob = new Map(runs.map((r) => [r.job.id, r.sha256]));
+  const jobById = new Map(runs.map((r) => [r.job.id, r.job]));
   const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
     (i) => i.set === 'holdout',
   );
@@ -649,15 +668,27 @@ async function gateFor(
         // publishGate ignores it; not worth scoring.
         return { ...base, status: 'running', score: null, completed: 0, total: i.jobIds.length };
       }
+      // Relies on evaluation jobs being RUN_TASKS (process, rerun, publish), the tasks
+      // listProjectRuns returns: a job of any other task would read as deleted (null) here.
+      const jobs = i.jobIds.map((id) => jobById.get(id) ?? null);
+      const fingerprint = gateFingerprint(i.jobIds, jobs);
+      if (i.gateCache?.fingerprint === fingerprint) {
+        // Only stored once every job had finished, so the iteration is complete.
+        const { score, completed, total } = i.gateCache;
+        return { ...base, status: 'complete', score, completed, total };
+      }
       const view = await iterationView(app, i);
       const { status, score, completed, total } = view;
+      if (status === 'complete' && jobs.every((j) => j === null || !unsettledJob(j.status))) {
+        await app.deps.workbench.setGateCache(i.id, { fingerprint, score, completed, total });
+      }
       return { ...base, status, score, completed, total };
     }),
   );
   return {
     ...publishGate({ threshold: project.publishThreshold, candidates }),
     draft,
-    definition: current,
+    definition,
   };
 }
 
@@ -756,7 +787,11 @@ async function startIteration(
         {
           projectId,
           task: 'process',
-          params: { dataPolicy: project.dataPolicy, ...(uncached ? { uncached: true } : {}) },
+          params: {
+            dataPolicy: project.dataPolicy,
+            ...(uncached ? { uncached: true } : {}),
+            ...draftOutputsSnapshot(record.definition),
+          },
           referenceId: row.reference!.id,
           modelOverride: model,
         },
@@ -843,13 +878,55 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.patch<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
     const body = ThresholdBodySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const project = await workbench.setPublishThreshold(req.params.id, body.data.publishThreshold);
+    const project = await workbench.setPublishThreshold(
+      req.params.id,
+      body.data.publishThreshold,
+      req.auth?.label ?? null,
+    );
     if (!project) return reply.code(404).send({ error: 'project not found' });
     req.log.info(
-      { projectId: project.id, publishThreshold: project.publishThreshold },
+      {
+        projectId: project.id,
+        publishThreshold: project.publishThreshold,
+        by: project.thresholdSetBy,
+      },
       'publish threshold changed',
     );
     return projectView(app, project);
+  });
+
+  /**
+   * Delete a project whose type was never published: its rows and template drafts in one
+   * transaction (which also refuses a published type), then its internal files (best-effort).
+   * Published types keep their project.
+   */
+  app.delete<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
+    const id = req.params.id;
+    const removed = await workbench.deleteProject(id);
+    if (!removed) return reply.code(404).send({ error: 'project not found' });
+    if (removed === 'published') {
+      return reply.code(409).send({
+        error: `${id} has a published version; published document types keep their project`,
+      });
+    }
+    const { store, buckets } = app.deps;
+    await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
+    const files = await Promise.allSettled([
+      ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
+      ...['drafting', 'segmentation', 'exports'].map((prefix) =>
+        store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
+      ),
+    ]);
+    for (const result of files) {
+      if (result.status === 'rejected') {
+        req.log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
+      }
+    }
+    req.log.info(
+      { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
+      'workbench project deleted',
+    );
+    return reply.code(204).send();
   });
 
   app.get<{ Params: ProjectParams }>(
@@ -879,25 +956,32 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         .code(409)
         .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
     }
-    // The gate was decided for the draft as it was read then; an edit since then voids it.
-    const now = await templates.get(projectId, draft);
-    if (!now || stableJson(now.definition) !== definition) {
+    // The gate was decided for the draft as it was read then; an edit since then voids it. The
+    // re-check, the publish and the publication record share one transaction.
+    const outcome = await workbench.publishDraft({
+      projectId,
+      version: draft,
+      definition: definition!,
+      publication: {
+        projectId,
+        version: draft,
+        iterationId: gate.iterationId,
+        score: gate.score,
+        threshold: gate.threshold,
+        // An override is recorded only when it was needed.
+        overrideReason: gate.passes ? null : overrideReason!,
+        publishedBy: req.auth?.label ?? null,
+      },
+    });
+    if (outcome.result === 'changed') {
       return reply
         .code(409)
         .send({ error: 'the draft changed while publishing; check the gate again' });
     }
-    const published = await templates.publish(projectId, draft);
-    if (!published) return reply.code(409).send({ error: 'the draft is no longer open' });
-    const publication = await workbench.recordPublication({
-      projectId,
-      version: draft,
-      iterationId: gate.iterationId,
-      score: gate.score,
-      threshold: gate.threshold,
-      // An override is recorded only when it was needed.
-      overrideReason: gate.passes ? null : overrideReason!,
-      publishedBy: req.auth?.label ?? null,
-    });
+    if (outcome.result === 'not-draft') {
+      return reply.code(409).send({ error: 'no open draft to publish' });
+    }
+    const { publication } = outcome;
     req.log.info(
       {
         projectId,
@@ -1014,7 +1098,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (draft === null) {
       return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
     }
-    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+    const { definition } = (await templates.get(projectId, draft))!;
+    const issues = validateTemplate(definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
     const ready = (await sampleViews(app, projectId)).filter(
       (s) => s.view.role === 'dev' && s.view.state === 'ready',
@@ -1025,7 +1110,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
           projectId,
           task: 'process',
-          params: { dataPolicy: project.dataPolicy },
+          params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
         }),
       ),
     );

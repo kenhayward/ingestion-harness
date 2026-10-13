@@ -81,6 +81,7 @@ export class MemoryRepo implements IngestionRepo {
     modelOverride: string | null,
     test = false,
     referenceId: string | null = null,
+    params: Record<string, unknown> | null = null,
   ): Promise<JobSummary> {
     this.documents.set(doc.id, doc);
     const now = new Date().toISOString();
@@ -107,6 +108,7 @@ export class MemoryRepo implements IngestionRepo {
       updatedAt: now,
     };
     this.jobs.set(job.id, job);
+    if (params) this.jobParams.set(job.id, params);
     return job;
   }
 
@@ -119,9 +121,9 @@ export class MemoryRepo implements IngestionRepo {
       modelOverride ?? null,
       true,
       referenceId ?? null,
+      params ?? null,
     );
     this.priorities.set(job.id, WORKBENCH_PRIORITY);
-    if (params) this.jobParams.set(job.id, params);
     return this.update(job.id, { projectId, task });
   }
 
@@ -137,6 +139,13 @@ export class MemoryRepo implements IngestionRepo {
     };
     this.draftJobs.set(job.id, { ...job, params });
     return job;
+  }
+
+  async createFinishedDraftJob(projectId: string, params: Record<string, unknown>) {
+    const job = await this.createDraftJob(projectId, params);
+    const finished: ProjectJob = { ...job, status: 'succeeded' };
+    this.draftJobs.set(job.id, { ...finished, params });
+    return finished;
   }
 
   async listDraftJobs(projectId: string) {
@@ -367,10 +376,13 @@ export class MemoryRepo implements IngestionRepo {
 
   async retryJob(
     id: string,
-    { model, specVersion }: RetryOptions = {},
+    { model, specVersion, outputs }: RetryOptions = {},
   ): Promise<JobSummary | null> {
     const job = this.jobs.get(id);
     if (!job || !RETRYABLE.includes(job.status)) return null;
+    if (outputs !== undefined) {
+      this.jobParams.set(id, { ...(this.jobParams.get(id) ?? {}), outputs: outputs ?? null });
+    }
     // A cancelled publish/rerun resumes as that task (keeps the approval / re-run request);
     // preparation stays a preparation; other failures re-run processing.
     const task = job.status === 'cancelled' || job.task === 'prepare' ? job.task : 'process';
@@ -460,13 +472,14 @@ export class MemoryRepo implements IngestionRepo {
     // A version with any row, live or superseded (deleted), already has its own set.
     const rows = [...this.references.values()].filter((r) => r.templateId === templateId);
     if (rows.some((r) => r.templateVersion === toVersion)) return 0;
-    const live = this.liveReferences(templateId);
-    const earlier = live
+    // The source is the newest earlier version with any row: an emptied version passes on
+    // nothing rather than the set before it.
+    const earlier = rows
       .map((r) => r.templateVersion)
       .filter((v): v is number => v !== null && v < toVersion);
     if (!earlier.length) return 0;
     const from = Math.max(...earlier);
-    const sources = live.filter((r) => r.templateVersion === from);
+    const sources = this.liveReferences(templateId).filter((r) => r.templateVersion === from);
     for (const s of sources) {
       const copy: Reference = {
         ...s,
@@ -496,10 +509,14 @@ export class MemoryRepo implements IngestionRepo {
     return this.references.delete(id);
   }
 
-  async createRegressionJob(reference: Reference, version: number): Promise<JobSummary> {
+  async createRegressionJob(
+    reference: Reference,
+    version: number,
+    params: Record<string, unknown> | null = null,
+  ): Promise<JobSummary> {
     const source = this.documents.get(reference.documentId)!;
     const doc = { ...source, id: randomUUID(), specVersion: version };
-    return this.createDocumentAndJob(doc, null, true, reference.id);
+    return this.createDocumentAndJob(doc, null, true, reference.id, params);
   }
 
   async listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]> {

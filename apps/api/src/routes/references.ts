@@ -6,6 +6,7 @@ import { jobDocument, regressionReport, versionReferences } from '../regression/
 import { diffDefinitions } from '../regression/diff.js';
 import { computeMetrics } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
+import { draftOutputsSnapshot } from '../templates/definitions.js';
 
 const STALE = Symbol('stale');
 
@@ -20,8 +21,8 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
     (await app.deps.templates.list()).some((r) => r.id === id);
 
   /**
-   * The outputs a Workbench run was checked against: its snapshot (`params.outputs`, written by
-   * the reference-run routes), else its published version's outputs, else the draft's when the
+   * The outputs a Workbench run was checked against: its snapshot (`params.outputs`, written on
+   * every test run of a draft), else its published version's outputs, else the draft's when the
    * draft has not changed since the run (STALE otherwise). A missing version gives `{}`, which a
    * reference never trusts once the version has outputs again.
    */
@@ -110,18 +111,19 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version/regression',
     async (req, reply) => {
       const version = Number(req.params.version);
-      if (!(await app.deps.templates.get(req.params.id, version))) {
-        return reply.code(404).send({ error: 'template version not found' });
-      }
+      const record = await app.deps.templates.get(req.params.id, version);
+      if (!record) return reply.code(404).send({ error: 'template version not found' });
       const references = await versionReferences(app, req.params.id, version);
       if (!references.length) {
         return reply
           .code(400)
           .send({ error: 'no references yet: save a reviewed job as a reference first' });
       }
+      // A draft can change after the run: snapshot the outputs it was run against.
+      const params = record.status === 'draft' ? draftOutputsSnapshot(record.definition) : null;
       const jobs = [];
       for (const reference of references) {
-        jobs.push(await app.deps.repo.createRegressionJob(reference, version));
+        jobs.push(await app.deps.repo.createRegressionJob(reference, version, params));
       }
       return reply.code(201).send({ jobs });
     },

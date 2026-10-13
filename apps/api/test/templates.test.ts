@@ -192,6 +192,10 @@ describe('uploads against database templates', () => {
 
     const test = await upload({ specId: 'letter', specVersion: '2', test: 'true' });
     expect(test.json()).toMatchObject({ specVersion: 2, test: true });
+    // the draft's outputs at the run, which Save as reference trusts after later draft edits
+    expect(await repo.getJobParams(test.json().id)).toEqual({
+      outputs: definition('letter', 2).outputs,
+    });
 
     repo.jobs.set(test.json().id, { ...repo.jobs.get(test.json().id)!, status: 'awaiting_review' });
     // Approving a test run (a workbench reference run) is allowed: the publish task writes the

@@ -44,3 +44,12 @@ their files. The worker owns status transitions while a job runs.
   jobs.
 - Storage clean-up can leave orphaned files if S3 is down (logged), but never database rows that
   point at deleted files.
+
+## Addendum (2026-10-13): deletions of active jobs
+Only finished jobs can be deleted through the jobs routes. Three Workbench operations delete jobs
+whatever their status, queued and running ones included: a new segment preview replaces the old
+one, a new export replaces the previous export job, and deleting a Workbench project
+(`DELETE /api/workbench/projects/:id`) removes every job of the project and the type's
+project-less test jobs. A worker running one of those jobs finds its status writes guarded (the
+claim above), so the deleted row stays deleted, but files it writes after the clean-up (drafts,
+`runs/{jobId}/` audit objects) can be left behind as orphans.

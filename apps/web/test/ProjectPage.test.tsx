@@ -62,6 +62,70 @@ describe('ProjectPage', () => {
     expect(getProject).toHaveBeenCalledTimes(2);
   });
 
+  it('deletes an unpublished project once its id is typed, then opens the Workbench list', async () => {
+    const onNavigate = vi.fn();
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1, published: null })),
+      deleteProject: vi.fn(async () => undefined),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="samples"
+        onNavigate={onNavigate}
+        pollMs={60_000}
+        role="user"
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete project' }));
+    const confirmBox = screen.getByLabelText('Type letter to confirm');
+    const submit = screen.getByRole('button', { name: 'Delete project' });
+    expect(submit).toBeDisabled();
+    await userEvent.type(confirmBox, 'lettr');
+    expect(submit).toBeDisabled();
+    await userEvent.type(confirmBox, '{Enter}');
+    expect(api.deleteProject).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    await userEvent.clear(confirmBox);
+    await userEvent.type(confirmBox, 'letter');
+    expect(submit).toBeEnabled();
+    await userEvent.click(submit);
+    expect(api.deleteProject).toHaveBeenCalledWith('letter');
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench');
+  });
+
+  it('shows why a delete was refused', async () => {
+    const onNavigate = vi.fn();
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1, published: null })),
+      deleteProject: vi.fn(async () => {
+        throw new ApiError(
+          'letter has a published version; published document types keep their project',
+          409,
+        );
+      }),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="samples"
+        onNavigate={onNavigate}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete project' }));
+    await userEvent.type(screen.getByLabelText('Type letter to confirm'), 'letter');
+    await userEvent.click(screen.getByRole('button', { name: 'Delete project' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'letter has a published version; published document types keep their project',
+    );
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
   it('shows the data policy and lets an admin allow external models after confirming', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const api = fakeApi({

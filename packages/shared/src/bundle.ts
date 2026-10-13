@@ -36,6 +36,11 @@ export const BundleManifestSchema = z
       )
       .max(MAX_SAMPLES),
     stages: z.array(z.string()),
+    /**
+     * Proposal stages accepted or skipped at export time (absent in older bundles). Import
+     * accepts the survey from `survey.json` and records the others as skipped.
+     */
+    completedStages: z.array(z.enum(['survey', 'outputs', 'sections', 'steps'])).optional(),
   })
   .strict();
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;

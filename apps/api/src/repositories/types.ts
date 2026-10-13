@@ -74,6 +74,8 @@ export type DeleteJobResult =
 export interface RetryOptions {
   model?: string | null;
   specVersion?: number;
+  /** Set `params.outputs` (a draft test run's snapshot), keeping the other params. */
+  outputs?: unknown;
 }
 
 /** Workbench jobs run after production work (jobs.priority; ADR 0007). */
@@ -126,6 +128,8 @@ export interface IngestionRepo {
     modelOverride: string | null,
     test?: boolean,
     referenceId?: string | null,
+    /** jobs.params, e.g. a draft test run's `{ outputs }` snapshot. Default null. */
+    params?: Record<string, unknown> | null,
   ): Promise<JobSummary>;
   /** A test job of a workbench project, queued behind production work. */
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
@@ -150,6 +154,11 @@ export interface IngestionRepo {
    * jobs are kept: each one backs a proposal.
    */
   createDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
+  /**
+   * A document-less `draft` job that is already `succeeded` and so never claimed: the record
+   * behind a proposal whose body came from elsewhere (an imported bundle's survey).
+   */
+  createFinishedDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
   /** Draft jobs of a project, newest first. */
   listDraftJobs(projectId: string): Promise<ProjectJob[]>;
   /**
@@ -205,13 +214,19 @@ export interface IngestionRepo {
   /** Every reference (superseded and of every version) with its PDF's sha256, newest first. */
   listReferencesWithSha(templateId: string): Promise<(Reference & { sha256: string })[]>;
   /**
-   * Copies the live references of the newest earlier version to `toVersion`, unless that version
-   * already has live pinned references. Idempotent; returns the number of copies.
+   * Copies the live references of the newest earlier version that has any reference row (live or
+   * superseded) to `toVersion`, unless `toVersion` already has rows of its own. An emptied
+   * version therefore passes on nothing. Idempotent; returns the number of copies.
    */
   carryReferencesForward(templateId: string, toVersion: number): Promise<number>;
   deleteReference(templateId: string, id: string): Promise<boolean>;
   /** Test job of `version` re-running the reference's PDF (new document row, same object). */
-  createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;
+  createRegressionJob(
+    reference: Reference,
+    version: number,
+    /** jobs.params, e.g. a draft version's `{ outputs }` snapshot. Default null. */
+    params?: Record<string, unknown> | null,
+  ): Promise<JobSummary>;
   /** Regression jobs of a template version, newest first. */
   /** The newest regression job per reference for a version (older runs are history). */
   listLatestRegressionJobs(templateId: string, version: number): Promise<JobDetail[]>;

@@ -29,6 +29,7 @@ export function PublishPanel({
   const [gate, setGate] = useState<GateView | null>(null);
   const [publications, setPublications] = useState<Publication[]>([]);
   const [threshold, setThreshold] = useState('');
+  const [thresholdSet, setThresholdSet] = useState<{ by: string; at: string } | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [published, setPublished] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -44,6 +45,10 @@ export function PublishPanel({
       setGate(nextGate);
       setPublications(nextPublications);
       setThreshold(String(Math.round(view.project.publishThreshold * 100)));
+      const { thresholdSetBy, thresholdSetAt } = view.project;
+      setThresholdSet(
+        thresholdSetBy && thresholdSetAt ? { by: thresholdSetBy, at: thresholdSetAt } : null,
+      );
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -113,6 +118,13 @@ export function PublishPanel({
           Save threshold
         </button>
       </div>
+      {thresholdSet && (
+        <p>
+          <small className="muted">
+            Threshold set by {thresholdSet.by} on {new Date(thresholdSet.at).toLocaleDateString()}
+          </small>
+        </p>
+      )}
       {draft !== null && needsOverride && (
         <label>
           Override reason

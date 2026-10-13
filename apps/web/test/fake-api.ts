@@ -315,6 +315,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
+    deleteProject: vi.fn(async () => {
+      throw new Error('deleteProject not stubbed');
+    }),
     startExport: vi.fn(async () => {
       throw new Error('startExport not stubbed');
     }),
@@ -383,6 +386,8 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
       publishThreshold: 0.9,
+      thresholdSetBy: null,
+      thresholdSetAt: null,
     },
     draft: 1,
     published: null,
