@@ -9,8 +9,21 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { OutputsView } from './OutputsView.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
+import { StaleBanner } from './StaleBanner.js';
 import { TabHeader } from './TabHeader.js';
+import { useDefinitions } from './useDefinitions.js';
+
+const DESCRIPTION: Record<ChangeStage, string | undefined> = {
+  outputs:
+    'The fields and tables every document of this type produces. The model proposes them from the brief and survey; you choose which to apply.',
+  sections:
+    'Where each section of the text starts. The model proposes anchors from the dev samples; you choose which to apply.',
+  steps:
+    'Each step sends some sections of the text to a model and fills some outputs; check steps compare values.',
+  revise: undefined,
+};
 
 const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
@@ -59,6 +72,9 @@ export function StagePanel({
   pollMs,
   onApplied,
   onSkipped,
+  draft,
+  published = null,
+  briefVersion = null,
   canSkip = true,
   title,
   item = null,
@@ -72,6 +88,11 @@ export function StagePanel({
   pollMs: number;
   onApplied: () => void;
   onSkipped: () => void;
+  /** Outputs/Steps: the open draft and live versions shown beside the proposal; omit to hide. */
+  draft?: number | null;
+  published?: number | null;
+  /** The project's current brief version (stale-proposal banner). */
+  briefVersion?: number | null;
   /** False for stages the API refuses to skip (revise). */
   canSkip?: boolean;
   /** With a title the panel opens with the tab header (Propose and Skip as its actions). */
@@ -85,6 +106,16 @@ export function StagePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const showsDefinition = (stage === 'outputs' || stage === 'steps') && typeof draft === 'number';
+  const definitions = useDefinitions(
+    api,
+    projectId,
+    typeof draft === 'number' ? draft : null,
+    stage === 'outputs' ? published : null,
+    showsDefinition,
+  );
+  const draftDef = showsDefinition ? definitions.draftDef : null;
 
   const refresh = useCallback(async () => {
     try {
@@ -140,6 +171,7 @@ export function StagePanel({
       const chosen = [...selected].sort((a, b) => a - b);
       setProposal(await api.decideProposal(projectId, proposal.id, 'accepted', chosen));
       onApplied();
+      await definitions.reload();
     });
   const reject = () =>
     act(async () => {
@@ -173,7 +205,12 @@ export function StagePanel({
     return (
       <div>
         {title !== undefined && (
-          <TabHeader title={title} item={item ?? null} note={POLICY_NOTE[dataPolicy]} />
+          <TabHeader
+            title={title}
+            item={item ?? null}
+            note={POLICY_NOTE[dataPolicy]}
+            description={DESCRIPTION[stage]}
+          />
         )}
         {error ? (
           <>
@@ -193,6 +230,25 @@ export function StagePanel({
     label: NEXT[stage].label,
     text: NEXT[stage].text,
   };
+
+  const card =
+    body && proposal ? (
+      <ProposalCard
+        projectId={projectId}
+        proposal={proposal}
+        body={body}
+        definition={draftDef}
+        draftVersion={typeof draft === 'number' ? draft : null}
+        selected={selected}
+        onToggle={toggle}
+        onApply={() => void accept()}
+        onReject={() => void reject()}
+        busy={busy}
+        now={now}
+        note={anchorLine}
+        next={nextStep}
+      />
+    ) : null;
 
   const actions = (
     <>
@@ -215,7 +271,13 @@ export function StagePanel({
   return (
     <div className="stage-panel">
       {title !== undefined ? (
-        <TabHeader title={title} item={item} note={POLICY_NOTE[dataPolicy]} actions={actions} />
+        <TabHeader
+          title={title}
+          item={item}
+          note={POLICY_NOTE[dataPolicy]}
+          description={DESCRIPTION[stage]}
+          actions={actions}
+        />
       ) : (
         <>
           <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
@@ -227,22 +289,40 @@ export function StagePanel({
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
-      {body && proposal && (
-        <ProposalCard
-          projectId={projectId}
-          proposal={proposal}
-          body={body}
-          definition={null}
-          draftVersion={null}
-          selected={selected}
-          onToggle={toggle}
-          onApply={() => void accept()}
-          onReject={() => void reject()}
-          busy={busy}
-          now={now}
-          note={anchorLine}
-          next={nextStep}
-        />
+      {title !== undefined && item?.state === 'stale' && (
+        <StaleBanner>
+          {item.status}. Propose again to draft from the latest information; the draft keeps what
+          you applied until you apply new changes.
+        </StaleBanner>
+      )}
+      {title !== undefined &&
+        proposal?.briefVersion != null &&
+        briefVersion !== null &&
+        briefVersion > proposal.briefVersion && (
+          <StaleBanner tone="info">
+            This proposal used brief v{proposal.briefVersion}; the brief is now v{briefVersion}.
+            Propose again to draft from the latest brief; what you applied stays in the draft until
+            you apply new changes.
+          </StaleBanner>
+        )}
+      {showsDefinition && definitions.error && (
+        <p role="alert">
+          Could not load draft v{draft}: {definitions.error}
+        </p>
+      )}
+      {stage === 'outputs' && draftDef && typeof draft === 'number' ? (
+        <>
+          {proposal?.status === 'ready' && card}
+          <OutputsView
+            draftVersion={draft}
+            liveVersion={definitions.liveDef ? published : null}
+            draftDef={draftDef}
+            liveDef={definitions.liveDef}
+          />
+          {proposal?.status !== 'ready' && card}
+        </>
+      ) : (
+        card
       )}
     </div>
   );

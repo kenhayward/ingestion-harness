@@ -919,3 +919,77 @@ label.inline.list-select {
   background: var(--ih-code-bg);
   overflow-wrap: anywhere;
 }
+
+.summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.summary-chips li {
+  padding: 3px 10px;
+  border-radius: var(--ih-radius-pill);
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+}
+.outputs-card {
+  margin-bottom: 16px;
+  padding: 0;
+  overflow: hidden;
+}
+.outputs-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.outputs-card-head h3 {
+  margin: 0;
+  font-size: var(--ih-text-md);
+}
+.outputs-card-head .segmented {
+  margin-left: auto;
+}
+.outputs-scroll {
+  overflow-x: auto;
+}
+.outputs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.outputs-table th,
+.outputs-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ih-border-soft);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.outputs-table th {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+}
+.output-id .kind-tag {
+  margin-right: 6px;
+}
+.output-column {
+  padding-left: 36px !important;
+}
+.type-chip {
+  padding: 1px 6px;
+  border-radius: var(--ih-radius-sm);
+  background: var(--ih-neutral-bg);
+  color: var(--ih-neutral-fg);
+}
+.outputs-table tr.removed {
+  background: var(--ih-danger-bg);
+}
+.outputs-table tr.removed .output-id code,
+.outputs-table tr.removed .output-name {
+  text-decoration: line-through;
+}
