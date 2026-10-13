@@ -24164,6 +24164,180 @@
         }
       }
     },
+    "/api/workbench/pins": {
+      "get": {
+        "operationId": "listProjectPins",
+        "summary": "List the pinned projects",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "The ids of the projects the signed-in token has pinned, most recently pinned first.\nPins belong to the token, so each token sees its own. A deleted project is dropped.",
+        "responses": {
+          "200": {
+            "description": "The pinned project ids.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "The pinned project ids."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/pins/{projectId}": {
+      "put": {
+        "operationId": "pinProject",
+        "summary": "Pin a project",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "Pins the project for the signed-in token. Pinning an already pinned project changes\nnothing: it keeps its original place in the order.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Pinned."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unpinProject",
+        "summary": "Unpin a project",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "Removes the project from the signed-in token's pins. Unpinning a project that is not\npinned (or does not exist) is not an error.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unpinned."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/access/s3-keys": {
       "get": {
         "operationId": "listS3Keys",
