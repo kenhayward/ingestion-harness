@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JobStatus } from './jobs.js';
+import { JobStatusSchema } from './jobs.js';
 import { MAX_SAMPLES } from './workbench.js';
 
 /**
@@ -46,10 +46,11 @@ export const BundleManifestSchema = z
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;
 
 /** An export job of a project, newest first in lists. */
-export interface ExportView {
-  jobId: string;
-  status: JobStatus;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export const ExportViewSchema = z.object({
+  jobId: z.string().uuid(),
+  status: JobStatusSchema,
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ExportView = z.infer<typeof ExportViewSchema>;

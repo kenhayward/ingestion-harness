@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   AVAILABLE_STAGES,
   BriefBodySchema,
+  BriefSchema,
   DRAFT_STAGES,
   DataPolicySchema,
   EVALUATION_MODELS,
@@ -12,10 +13,14 @@ import {
   EMPTY_BRIEF,
   FeedbackBodySchema,
   MAX_SAMPLES,
+  JobSummarySchema,
   PreparedTextSchema,
+  ProjectSummarySchema,
+  ProjectViewSchema,
   PublishBodySchema,
   PreparedTriageSchema,
   SampleRoleSchema,
+  SampleViewSchema,
   SegmentDocumentSchema,
   SegmentationResultSchema,
   SurveyBodySchema,
@@ -70,6 +75,7 @@ import {
   type WorkbenchProject,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
+import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
@@ -88,6 +94,26 @@ export const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
 
 type ProjectParams = { id: string };
+
+/** Route docs (docs/design/api-docs.md). */
+const ProjectIdParams = z.object({
+  id: z.string().describe('The project id: the id of its document type.'),
+});
+const SampleIdParams = z.object({
+  id: z.string().describe('The project id.'),
+  sid: z.string().uuid().describe('The sample id.'),
+});
+const PROJECT_NOT_FOUND = error('`project not found`.');
+const SAMPLE_NOT_FOUND = error('`sample not found`.');
+const DRAFT_NOT_VALID = res(
+  'The open draft is not valid: `the draft is not valid`, with `issues`.',
+  z.object({
+    error: z.string(),
+    issues: z.array(z.object({ path: z.string(), message: z.string() })),
+  }),
+);
+const WORKBENCH_DOCS =
+  'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
 
 const PolicyBody = z.object({ dataPolicy: DataPolicySchema }).strict();
 const StageParams = z.object({ id: Id, stage: z.enum(DRAFT_STAGES) });
@@ -831,103 +857,203 @@ async function startIteration(
 export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   const { workbench, templates } = app.deps;
 
-  app.get('/workbench/projects', async (): Promise<ProjectSummary[]> => {
-    const projects = await workbench.listProjects();
-    return Promise.all(
-      projects.map(async (p) => {
-        const { draft, published } = await versionsOf(templates, p.id);
-        return { ...p, draft, published, samples: (await workbench.listSamples(p.id)).length };
-      }),
-    );
-  });
+  app.get(
+    '/workbench/projects',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'listProjects',
+        summary: 'List Workbench projects',
+        description: md`
+          Every Workbench project (one per document type) with its open draft, latest published
+          version and sample count.
+        `,
+        response: { 200: res('The projects.', z.array(ProjectSummarySchema)) },
+      },
+    },
+    async (): Promise<ProjectSummary[]> => {
+      const projects = await workbench.listProjects();
+      return Promise.all(
+        projects.map(async (p) => {
+          const { draft, published } = await versionsOf(templates, p.id);
+          return { ...p, draft, published, samples: (await workbench.listSamples(p.id)).length };
+        }),
+      );
+    },
+  );
 
   /** New project. An existing document type is opened: its open draft, or a new next draft. */
-  app.post('/workbench/projects', async (req, reply) => {
-    const body = CreateProject.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const { id } = body.data;
-    if (await workbench.getProject(id)) {
-      return reply.code(409).send({ error: `a workbench project for ${id} already exists` });
-    }
-    const { draft, latest } = await versionsOf(templates, id);
-    let name = body.data.name;
-    if (latest === null) {
-      if (!name) return reply.code(400).send({ error: 'name is required for a new document type' });
-      await templates.create(id, 1, skeleton(id, name), 'draft');
-    } else {
-      name = String(latest.definition.name ?? id);
-      if (draft === null) await createNextDraft(templates, id);
-    }
-    try {
-      const project = await workbench.createProject(id, name);
-      return reply.code(201).send(await projectView(app, project));
-    } catch (err) {
-      if (err instanceof WorkbenchConflictError)
-        return reply.code(409).send({ error: err.message });
-      throw err;
-    }
-  });
+  app.post(
+    '/workbench/projects',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'createProject',
+        summary: 'Create a Workbench project',
+        description: md`
+          Starts a project for a document type. For a new type, \`name\` is required and a v1
+          draft is created. For an existing type, the project opens its draft (a new next draft
+          when none is open) and takes the type's name. New projects are \`local\`: their
+          samples may only be sent to local models until an admin allows external ones. See the
+          [Workbench design](${WORKBENCH_DOCS}).`,
+        body: CreateProject,
+        response: {
+          201: res('The new project.', ProjectViewSchema),
+          400: error(
+            'Zod issues for an invalid id, or `name is required for a new document type`.',
+          ),
+          409: error('`a workbench project for {id} already exists`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = CreateProject.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id } = body.data;
+      if (await workbench.getProject(id)) {
+        return reply.code(409).send({ error: `a workbench project for ${id} already exists` });
+      }
+      const { draft, latest } = await versionsOf(templates, id);
+      let name = body.data.name;
+      if (latest === null) {
+        if (!name)
+          return reply.code(400).send({ error: 'name is required for a new document type' });
+        await templates.create(id, 1, skeleton(id, name), 'draft');
+      } else {
+        name = String(latest.definition.name ?? id);
+        if (draft === null) await createNextDraft(templates, id);
+      }
+      try {
+        const project = await workbench.createProject(id, name);
+        return reply.code(201).send(await projectView(app, project));
+      } catch (err) {
+        if (err instanceof WorkbenchConflictError)
+          return reply.code(409).send({ error: err.message });
+        throw err;
+      }
+    },
+  );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
-    const project = await workbench.getProject(req.params.id);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    return projectView(app, project);
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'getProject',
+        summary: 'Get a Workbench project',
+        description: md`
+          The project's settings (data policy, publish threshold, who changed them), its open
+          draft and latest published version, and the latest version of its brief.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The project.', ProjectViewSchema), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      const project = await workbench.getProject(req.params.id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      return projectView(app, project);
+    },
+  );
 
   /** Project settings: the holdout score a draft needs to publish without an override. */
-  app.patch<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
-    const body = ThresholdBodySchema.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const project = await workbench.setPublishThreshold(
-      req.params.id,
-      body.data.publishThreshold,
-      req.auth?.label ?? null,
-    );
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    req.log.info(
-      {
-        projectId: project.id,
-        publishThreshold: project.publishThreshold,
-        by: project.thresholdSetBy,
+  app.patch<{ Params: ProjectParams }>(
+    '/workbench/projects/:id',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'updateProject',
+        summary: 'Set the publish threshold',
+        description: md`
+          Sets the holdout score (0 to 1, default 0.9) a draft needs to publish without an
+          override reason. The change is recorded with the signed-in token's label.
+        `,
+        params: ProjectIdParams,
+        body: ThresholdBodySchema,
+        response: {
+          200: res('The project.', ProjectViewSchema),
+          400: error('Zod issues: `publishThreshold` must be between 0 and 1.'),
+          404: PROJECT_NOT_FOUND,
+        },
       },
-      'publish threshold changed',
-    );
-    return projectView(app, project);
-  });
+    },
+    async (req, reply) => {
+      const body = ThresholdBodySchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const project = await workbench.setPublishThreshold(
+        req.params.id,
+        body.data.publishThreshold,
+        req.auth?.label ?? null,
+      );
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      req.log.info(
+        {
+          projectId: project.id,
+          publishThreshold: project.publishThreshold,
+          by: project.thresholdSetBy,
+        },
+        'publish threshold changed',
+      );
+      return projectView(app, project);
+    },
+  );
 
   /**
    * Delete a project whose type was never published: its rows and template drafts in one
    * transaction (which also refuses a published type), then its internal files (best-effort).
    * Published types keep their project.
    */
-  app.delete<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
-    const id = req.params.id;
-    const removed = await workbench.deleteProject(id);
-    if (!removed) return reply.code(404).send({ error: 'project not found' });
-    if (removed === 'published') {
-      return reply.code(409).send({
-        error: `${id} has a published version; published document types keep their project`,
-      });
-    }
-    const { store, buckets } = app.deps;
-    await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
-    const files = await Promise.allSettled([
-      ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
-      ...['drafting', 'segmentation', 'exports'].map((prefix) =>
-        store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
-      ),
-    ]);
-    for (const result of files) {
-      if (result.status === 'rejected') {
-        req.log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
+  app.delete<{ Params: ProjectParams }>(
+    '/workbench/projects/:id',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'deleteProject',
+        summary: 'Delete an unpublished project',
+        description: md`
+          Deletes a project whose document type was never published: its samples, brief,
+          proposals, feedback, iterations, jobs and template drafts, then its files (best
+          effort). A document type with a published version keeps its project.
+        `,
+        params: ProjectIdParams,
+        response: {
+          204: noContent('Deleted.'),
+          404: PROJECT_NOT_FOUND,
+          409: error(
+            '`{id} has a published version; published document types keep their project`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const id = req.params.id;
+      const removed = await workbench.deleteProject(id);
+      if (!removed) return reply.code(404).send({ error: 'project not found' });
+      if (removed === 'published') {
+        return reply.code(409).send({
+          error: `${id} has a published version; published document types keep their project`,
+        });
       }
-    }
-    req.log.info(
-      { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
-      'workbench project deleted',
-    );
-    return reply.code(204).send();
-  });
+      const { store, buckets } = app.deps;
+      await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
+      const files = await Promise.allSettled([
+        ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
+        ...['drafting', 'segmentation', 'exports'].map((prefix) =>
+          store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
+        ),
+      ]);
+      for (const result of files) {
+        if (result.status === 'rejected') {
+          req.log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
+        }
+      }
+      req.log.info(
+        { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
+        'workbench project deleted',
+      );
+      return reply.code(204).send();
+    },
+  );
 
   app.get<{ Params: ProjectParams }>(
     '/workbench/projects/:id/publish-gate',
@@ -1009,34 +1135,111 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   const findSample = async (projectId: string, sampleId: string) =>
     (await sampleViews(app, projectId)).find((s) => s.record.id === sampleId) ?? null;
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/samples', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    return (await sampleViews(app, req.params.id)).map((s) => s.view);
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/samples',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'listSamples',
+        summary: "List a project's samples",
+        description: md`
+          The project's sample PDFs with their role (\`dev\` or \`holdout\`) and preparation
+          state: \`preparing\` while the worker extracts the text (with OCR where needed),
+          \`ready\` with the triage (pages, OCR'd pages, characters), or \`failed\` with the
+          error. \`holdoutRuns\` counts the holdout evaluations that used the PDF.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The samples.', z.array(SampleViewSchema)), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return (await sampleViews(app, req.params.id)).map((s) => s.view);
+    },
+  );
 
   /** Upload one sample PDF (multipart: `role` field first, then the file). */
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/samples', async (req, reply) => {
-    const projectId = req.params.id;
-    const project = await workbench.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    const file = await req.file();
-    if (!file) return reply.code(400).send({ error: 'file part is required' });
-    const role = SampleRoleSchema.safeParse(multipartField(file, 'role') ?? 'dev');
-    if (!role.success) return reply.code(400).send({ error: 'role must be dev or holdout' });
-    const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
-    const added = await addSampleFile(app, project, {
-      filename: file.filename,
-      body,
-      role: role.data,
-    });
-    if ('error' in added) return reply.code(added.code).send({ error: added.error });
-    return reply.code(201).send(added.view);
-  });
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/samples',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'addSample',
+        summary: 'Upload a sample PDF',
+        consumes: ['multipart/form-data'],
+        description: md`
+          Adds a sample PDF to the project and queues its preparation (text extraction, with
+          OCR for pages without a text layer). Send \`role\` **before** the file. **Dev**
+          samples are what drafting sees; **holdout** samples are only used to score the draft
+          before publishing, never shown to a drafting model. A project holds at most 12
+          samples, each PDF once.
+        `,
+        params: ProjectIdParams,
+        body: multipart(
+          {
+            role: {
+              type: 'string',
+              enum: ['dev', 'holdout'],
+              description: '`dev` (default) or `holdout`.',
+            },
+          },
+          [],
+        ),
+        response: {
+          201: res('The new sample, preparing.', SampleViewSchema),
+          400: error('`file part is required`, or `role must be dev or holdout`.'),
+          404: PROJECT_NOT_FOUND,
+          406: error('The request is not `multipart/form-data`.'),
+          409: error(
+            '`a project holds at most 12 samples`, or `this PDF is already a sample of the project`.',
+          ),
+          413: error('The file is larger than the upload limit.'),
+          415: error('`file is not a PDF`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const file = await req.file();
+      if (!file) return reply.code(400).send({ error: 'file part is required' });
+      const role = SampleRoleSchema.safeParse(multipartField(file, 'role') ?? 'dev');
+      if (!role.success) return reply.code(400).send({ error: 'role must be dev or holdout' });
+      const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
+      const added = await addSampleFile(app, project, {
+        filename: file.filename,
+        body,
+        role: role.data,
+      });
+      if ('error' in added) return reply.code(added.code).send({ error: added.error });
+      return reply.code(201).send(added.view);
+    },
+  );
 
   app.patch<{ Params: { id: string; sid: string } }>(
     '/workbench/projects/:id/samples/:sid',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'setSampleRole',
+        summary: "Change a sample's role",
+        description: md`
+          Moves a sample between the dev and holdout sets. A sample moved to holdout stops
+          being sent to drafting models, and bundles exported while it was dev can no longer be
+          downloaded.
+        `,
+        params: SampleIdParams,
+        body: RoleBody,
+        response: {
+          200: res('The sample.', SampleViewSchema),
+          400: error('Zod issues: `role` must be `dev` or `holdout`.'),
+          404: SAMPLE_NOT_FOUND,
+        },
+      },
+    },
     async (req, reply) => {
       const params = SampleParams.safeParse(req.params);
       if (!params.success) return reply.code(404).send({ error: 'sample not found' });
@@ -1054,6 +1257,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete<{ Params: { id: string; sid: string } }>(
     '/workbench/projects/:id/samples/:sid',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'removeSample',
+        summary: 'Remove a sample',
+        description: md`
+          Removes a sample from the project. Its document and earlier jobs are kept, so past
+          evaluations still show it.
+        `,
+        params: SampleIdParams,
+        response: { 204: noContent('Removed.'), 404: SAMPLE_NOT_FOUND },
+      },
+    },
     async (req, reply) => {
       const params = SampleParams.safeParse(req.params);
       const removed =
@@ -1064,6 +1280,24 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: { id: string; sid: string } }>(
     '/workbench/projects/:id/samples/:sid/text',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'getSampleText',
+        summary: "Get a sample's prepared text",
+        description: md`
+          The text the worker extracted from a ready sample, page by page, with \`ocr: true\`
+          on pages read by the vision model. This is the text segmentation and drafting work
+          from.
+        `,
+        params: SampleIdParams,
+        response: {
+          200: res('The prepared text.', PreparedTextSchema),
+          404: SAMPLE_NOT_FOUND,
+          409: error('`sample is {state}, not ready`, or `prepared text is missing`.'),
+        },
+      },
+    },
     async (req, reply) => {
       const params = SampleParams.safeParse(req.params);
       const sample = params.success ? await findSample(params.data.id, params.data.sid) : null;
@@ -1078,44 +1312,96 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /** Save the brief: a new version when it changed, else the latest one (200). */
-  app.put<{ Params: ProjectParams }>('/workbench/projects/:id/brief', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const body = BriefBodySchema.safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const latest = await workbench.latestBrief(req.params.id);
-    if (latest && JSON.stringify(latest.body) === JSON.stringify(body.data)) return latest;
-    return reply.code(201).send(await workbench.saveBrief(req.params.id, body.data));
-  });
+  app.put<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/brief',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'saveBrief',
+        summary: 'Save the brief',
+        description: md`
+          The brief tells the drafting model what the document type is for: its purpose, the
+          outputs wanted, an example, a glossary, known variants, rules, and the answers to the
+          survey's questions. Saving a changed brief creates a new version (\`201\`); saving
+          the same brief returns the latest version (\`200\`). Missing fields are empty.
+        `,
+        params: ProjectIdParams,
+        body: BriefBodySchema,
+        response: {
+          200: res('Unchanged: the latest version.', BriefSchema),
+          201: res('The new version.', BriefSchema),
+          400: error('Zod issues for an invalid brief.'),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const body = BriefBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const latest = await workbench.latestBrief(req.params.id);
+      if (latest && JSON.stringify(latest.body) === JSON.stringify(body.data)) return latest;
+      return reply.code(201).send(await workbench.saveBrief(req.params.id, body.data));
+    },
+  );
 
   /** Test-run the open draft on every prepared dev sample (holdout samples are not used). */
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
-    const projectId = req.params.id;
-    const project = await workbench.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    const { draft } = await versionsOf(templates, projectId);
-    if (draft === null) {
-      return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
-    }
-    const { definition } = (await templates.get(projectId, draft))!;
-    const issues = validateTemplate(definition);
-    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const ready = (await sampleViews(app, projectId)).filter(
-      (s) => s.view.role === 'dev' && s.view.state === 'ready',
-    );
-    if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
-    const jobs = await Promise.all(
-      ready.map(({ record }) =>
-        app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
-          projectId,
-          task: 'process',
-          params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
-        }),
-      ),
-    );
-    return reply.code(201).send({ jobs });
-  });
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/test-runs',
+    {
+      schema: {
+        tags: ['Test runs'],
+        operationId: 'startTestRuns',
+        summary: 'Test-run the draft on the dev samples',
+        description: md`
+          Queues a test job of the open draft for every ready dev sample (holdout samples are
+          never used). Jobs carry the project's data policy and a snapshot of the draft's
+          outputs. Test runs reuse a step's stored output when its full input is unchanged
+          (the step cache), so only changed steps call a model. They are never delivered.
+        `,
+        params: ProjectIdParams,
+        response: {
+          201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
+          400: DRAFT_NOT_VALID,
+          404: PROJECT_NOT_FOUND,
+          409: error(
+            '`no open draft to test; start the next version first`, or `no prepared dev ' +
+              'samples to run`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft to test; start the next version first' });
+      }
+      const { definition } = (await templates.get(projectId, draft))!;
+      const issues = validateTemplate(definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const ready = (await sampleViews(app, projectId)).filter(
+        (s) => s.view.role === 'dev' && s.view.state === 'ready',
+      );
+      if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+      const jobs = await Promise.all(
+        ready.map(({ record }) =>
+          app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
+            projectId,
+            task: 'process',
+            params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
+          }),
+        ),
+      );
+      return reply.code(201).send({ jobs });
+    },
+  );
 
   /** Preview anchors over every prepared sample (worker task `segment`; ADR 0007). */
   app.post<{ Params: ProjectParams }>(
@@ -1176,26 +1462,74 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    return (await app.deps.repo.listProjectJobs(req.params.id)).filter((j) => j.task !== 'prepare');
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/test-runs',
+    {
+      schema: {
+        tags: ['Test runs'],
+        operationId: 'listTestRuns',
+        summary: "List a project's jobs",
+        description: md`
+          The project's jobs except sample preparation: test runs, reference runs and
+          evaluation jobs, newest first. Open one with \`GET /api/jobs/{id}/review\`.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The jobs.', z.array(JobSummarySchema)), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return (await app.deps.repo.listProjectJobs(req.params.id)).filter(
+        (j) => j.task !== 'prepare',
+      );
+    },
+  );
 
-  app.put<{ Params: ProjectParams }>('/workbench/projects/:id/data-policy', async (req, reply) => {
-    if (!isAdmin(app, req)) return reply.code(403).send({ error: 'admins only' });
-    const body = PolicyBody.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const project = await workbench.setDataPolicy(
-      req.params.id,
-      body.data.dataPolicy,
-      req.auth?.label ?? null,
-    );
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    req.log.info({ projectId: project.id, dataPolicy: project.dataPolicy }, 'data policy changed');
-    return projectView(app, project);
-  });
+  app.put<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/data-policy',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        'x-admin': true,
+        operationId: 'setDataPolicy',
+        summary: "Set a project's data policy",
+        description: md`
+          **Admin token required.** \`local\`: the project's documents and sample text may only
+          go to models on providers marked \`location: local\`. \`external\`: external
+          providers are allowed too. Switching to \`local\` also makes every existing job of the
+          project local-only, so queued jobs, retries and step re-runs cannot go external after
+          the revocation; switching to \`external\` never upgrades old jobs. See
+          [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
+        `,
+        params: ProjectIdParams,
+        body: PolicyBody,
+        response: {
+          200: res('The project.', ProjectViewSchema),
+          400: error('Zod issues: `dataPolicy` must be `local` or `external`.'),
+          403: error('`admins only`.'),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isAdmin(app, req)) return reply.code(403).send({ error: 'admins only' });
+      const body = PolicyBody.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const project = await workbench.setDataPolicy(
+        req.params.id,
+        body.data.dataPolicy,
+        req.auth?.label ?? null,
+      );
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      req.log.info(
+        { projectId: project.id, dataPolicy: project.dataPolicy },
+        'data policy changed',
+      );
+      return projectView(app, project);
+    },
+  );
 
   /** References stage: run the draft model on every ready dev sample that has no reference. */
   async function startReferences(projectId: string, reply: FastifyReply) {
