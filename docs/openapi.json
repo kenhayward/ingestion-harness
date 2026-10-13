@@ -17620,6 +17620,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17703,6 +17710,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17726,6 +17740,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17771,6 +17792,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17794,6 +17822,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17842,6 +17877,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17994,6 +18036,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -18017,6 +18066,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -18040,6 +18096,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -20208,6 +20271,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20291,6 +20361,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20314,6 +20391,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20359,6 +20443,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20382,6 +20473,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20430,6 +20528,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20582,6 +20687,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20605,6 +20717,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20628,6 +20747,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20894,7 +21020,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback it answered.",
+        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback its applied\nchanges answer (their `answers`); a proposal whose changes name none resolves all the\nfeedback it was sent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21180,6 +21306,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21263,6 +21396,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21286,6 +21426,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21331,6 +21478,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21354,6 +21508,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21402,6 +21563,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21554,6 +21722,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21577,6 +21752,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21600,6 +21782,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [

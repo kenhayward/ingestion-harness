@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
+  answeredFeedback,
   AVAILABLE_STAGES,
   BriefBodySchema,
   BriefSchema,
@@ -48,6 +49,8 @@ import {
   buildScorecard,
   conflictingChanges,
   failureDiffs,
+  revisionFailures,
+  type RevisionFeedback,
   draftingKey,
   finishedJob,
   firstIncomplete,
@@ -315,6 +318,18 @@ async function proposalView(
     model: parsed.data.model,
     body,
   };
+}
+
+/** The ready dev samples a drafting call may send (the holdout rule, ADR 0007), in sample order. */
+function devSamplesOf(views: Awaited<ReturnType<typeof sampleViews>>) {
+  return views
+    .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+    .map((s) => ({
+      sampleId: s.record.id,
+      filename: s.record.filename,
+      sha256: s.record.sha256,
+      role: 'dev' as const,
+    }));
 }
 
 /** Samples with their state, derived from each one's latest prepare job. */
@@ -2049,28 +2064,35 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   }
 
   /**
-   * What a revision is asked to answer, or null when no open feedback remains. Holdout rule
-   * (ADR 0007): feedback naming a sample that is not a ready dev sample now is dropped, and the
-   * failures come from the latest complete dev iteration, restricted to the current dev samples.
-   * The template's own runs are preferred over model-comparison members (groupId set), which
-   * fall back only when no own run is complete; failuresFrom names the iteration used.
+   * What a revision is asked to answer (also the RV1 preview). Holdout rule (ADR 0007): feedback
+   * naming a sample that is not a ready dev sample now is dropped, and the failures come from the
+   * latest complete dev iteration, restricted to the current dev samples and trimmed with
+   * `revisionFailures` (the worker's own selection is then a no-op, so what the preview shows is
+   * what is sent). The template's own runs are preferred over model-comparison members (groupId
+   * set), which fall back only when no own run is complete; failuresFrom names the iteration used.
+   * Each feedback item carries its id: the model answers feedback by it (RV2).
    */
   async function reviseInputs(
     projectId: string,
     dev: { sampleId: string; filename: string }[],
   ): Promise<{
-    feedback: { target: string; targetId: string; sample: string | null; body: string }[];
-    failures: FailureDiff[];
-    failuresFrom?: { templateVersion: number; model: EvaluationModel | null };
-    feedbackIds: string[];
-  } | null> {
+    params: {
+      feedback: RevisionFeedback[];
+      failures: FailureDiff[];
+      failuresFrom?: { templateVersion: number; model: EvaluationModel | null };
+      feedbackIds: string[];
+    };
+    /** Failing dev samples before the cap. */
+    failuresTotal: number;
+    source: { iteration: IterationRecord; compared: number } | null;
+  }> {
     const names = new Map(dev.map((s) => [s.sampleId, s.filename]));
+    const devIds = new Set(names.keys());
     const open = (await workbench.listFeedback(projectId)).filter(
       (f) => f.resolvedBy === null && (f.sampleId === null || names.has(f.sampleId)),
     );
-    if (!open.length) return null;
-    let failures: FailureDiff[] = [];
-    let failuresFrom: { templateVersion: number; model: EvaluationModel | null } | undefined;
+    let all: FailureDiff[] = [];
+    let source: { iteration: IterationRecord; compared: number } | null = null;
     const devRuns = (await workbench.listIterations(projectId)).filter((i) => i.set === 'dev');
     // Stable sort: own runs first, newest first within each group.
     const candidates = [...devRuns].sort(
@@ -2079,20 +2101,35 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     for (const iteration of candidates) {
       const view = await iterationView(app, iteration);
       if (view.status !== 'complete') continue;
-      failures = failureDiffs(view.samples, new Set(names.keys()));
-      failuresFrom = { templateVersion: iteration.templateVersion, model: iteration.model };
+      all = failureDiffs(view.samples, devIds);
+      const compared = view.samples.filter(
+        (s) => s.comparison !== null && s.sampleId !== null && devIds.has(s.sampleId),
+      ).length;
+      source = { iteration, compared };
       break;
     }
     return {
-      feedback: open.map((f) => ({
-        target: f.target,
-        targetId: f.targetId,
-        sample: f.sampleId === null ? null : (names.get(f.sampleId) ?? null),
-        body: f.body,
-      })),
-      failures,
-      ...(failuresFrom ? { failuresFrom } : {}),
-      feedbackIds: open.map((f) => f.id),
+      params: {
+        feedback: open.map((f) => ({
+          id: f.id,
+          target: f.target,
+          targetId: f.targetId,
+          sample: f.sampleId === null ? null : (names.get(f.sampleId) ?? null),
+          body: f.body,
+        })),
+        failures: revisionFailures(all, new Set(names.values())),
+        ...(source
+          ? {
+              failuresFrom: {
+                templateVersion: source.iteration.templateVersion,
+                model: source.iteration.model,
+              },
+            }
+          : {}),
+        feedbackIds: open.map((f) => f.id),
+      },
+      failuresTotal: all.length,
+      source,
     };
   }
 
@@ -2289,16 +2326,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const record = draft !== null ? await templates.get(projectId, draft) : latest;
       if (!record) return reply.code(409).send({ error: 'the project has no template version' });
       // Holdout rule (ADR 0007): only dev samples ever reach a drafting model.
-      const samples = (await sampleViews(app, projectId))
-        .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
-        .map((s) => ({
-          sampleId: s.record.id,
-          filename: s.record.filename,
-          sha256: s.record.sha256,
-          role: 'dev' as const,
-        }));
+      const samples = devSamplesOf(await sampleViews(app, projectId));
       const revision = stage === 'revise' ? await reviseInputs(projectId, samples) : null;
-      if (stage === 'revise' && !revision) {
+      if (revision && !revision.params.feedback.length) {
         return reply.code(409).send({ error: 'add feedback before asking for a revision' });
       }
       // A revision can work from feedback alone; the other stages read the samples.
@@ -2314,7 +2344,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         draft: record.definition,
         samples,
         ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
-        ...(revision ?? {}),
+        ...(revision?.params ?? {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
@@ -2323,7 +2353,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         briefVersion: brief?.version ?? null,
         baseVersion: changeStage ? record.version : null,
         baseDefinition: changeStage ? record.definition : null,
-        feedbackIds: revision?.feedbackIds ?? null,
+        feedbackIds: revision?.params.feedbackIds ?? null,
       });
       return reply.code(202).send(await proposalView(app, proposal, job));
     },
@@ -2665,7 +2695,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           all of them for \`accepted\`, some for \`partially_accepted\`) to the open draft.
           It is refused when the draft version changed since the proposal, or when the draft
           was edited where a chosen change applies (accept the others, or run the stage again).
-          Accepting a \`revise\` proposal, fully or partly, resolves the feedback it answered.
+          Accepting a \`revise\` proposal, fully or partly, resolves the feedback its applied
+          changes answer (their \`answers\`); a proposal whose changes name none resolves all the
+          feedback it was sent.
         `,
         params: z.object({
           id: z.string().describe('The project id.'),
@@ -2754,9 +2786,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         chosen,
       );
       if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
-      // Accepted, fully or partly: the revision answered its feedback.
+      // Accepted, fully or partly (RV2): the feedback the applied changes answer, or all of it
+      // when no change names any (proposals from before RV2).
       if (record.stage === 'revise') {
-        await workbench.resolveFeedback(projectId, record.feedbackIds ?? [], pid);
+        await workbench.resolveFeedback(
+          projectId,
+          answeredFeedback(proposed, chosen, record.feedbackIds ?? []),
+          pid,
+        );
       }
       req.log.info({ projectId, proposal: pid, applied: chosen }, 'drafting changes applied');
       return proposalView(app, decided, job);
