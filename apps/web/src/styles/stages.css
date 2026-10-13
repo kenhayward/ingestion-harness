@@ -1628,7 +1628,8 @@ label.inline.list-select {
 .eval-accuracy,
 .eval-history,
 .eval-runbar,
-.eval-compare {
+.eval-compare,
+.revise-feedback {
   padding: 12px 16px;
 }
 .brief-card h3,
@@ -1652,7 +1653,8 @@ label.inline.list-select {
 .eval-accuracy h3,
 .eval-history h3,
 .eval-runbar h3,
-.eval-compare h3 {
+.eval-compare h3,
+.revise-feedback h3 {
   font-weight: 600;
 }
 
@@ -2654,4 +2656,58 @@ label.inline.list-select {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* Revise (handoff §9) */
+.feedback-list {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.feedback-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--ih-border);
+}
+.feedback-num {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+  font-size: var(--ih-text-sm);
+}
+.feedback-text {
+  min-width: 0;
+}
+.feedback-text p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+.feedback-origin {
+  font-size: var(--ih-text-sm);
+}
+.feedback-add {
+  display: grid;
+  gap: 8px;
+}
+.feedback-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.feedback-add-row > * {
+  min-width: 0;
+}
+.feedback-add textarea {
+  flex: 1 1 240px;
+  min-height: 52px;
 }
