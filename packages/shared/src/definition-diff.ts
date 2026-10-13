@@ -52,9 +52,15 @@ function diff(a: unknown, b: unknown, path: string, out: DefinitionChange[]): vo
   }
   if (isObj(a) && isObj(b)) {
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-      if (!(key in b)) out.push({ kind: 'removed', path: join(path, key), before: a[key] });
-      else if (!(key in a)) out.push({ kind: 'added', path: join(path, key), after: b[key] });
-      else diff(a[key], b[key], join(path, key), out);
+      // An absent list is an empty one (the schema defaults it), so a draft written without
+      // `outputs.tables` does not "gain" them when saved with `[]`.
+      if (!(key in b)) {
+        if (Array.isArray(a[key])) diff(a[key], [], join(path, key), out);
+        else out.push({ kind: 'removed', path: join(path, key), before: a[key] });
+      } else if (!(key in a)) {
+        if (Array.isArray(b[key])) diff([], b[key], join(path, key), out);
+        else out.push({ kind: 'added', path: join(path, key), after: b[key] });
+      } else diff(a[key], b[key], join(path, key), out);
     }
     return;
   }

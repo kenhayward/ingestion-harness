@@ -172,11 +172,7 @@ describe('the draft change log through the routes (TP1)', () => {
 async function project() {
   const ctx = await testApp();
   await ctx.app.inject(json('POST', '/api/workbench/projects', { id: 'letter', name: 'Letter' }));
-  // outputs.tables present, as the editor saves it (applying a change adds the key otherwise)
-  await ctx.templates.updateDraft('letter', 1, {
-    ...letter(1),
-    outputs: { fields: letter(1).outputs.fields, tables: [] },
-  });
+  await ctx.templates.updateDraft('letter', 1, letter(1)); // no outputs.tables, as imported YAML
   const pdf = Buffer.from('%PDF-1.7\n% sample\n%%EOF\n');
   const s = (
     await ctx.app.inject({
@@ -241,16 +237,49 @@ describe('Workbench writes to the draft (TP1)', () => {
     });
   });
 
+  it('logs nothing for a proposal or a restore that changes nothing', async () => {
+    const { app, templates, finish, workbench } = await project();
+    const count = async () => (await templates.listChanges('letter', 1)).length;
+    const before = await count();
+    await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/stages/survey/skip' });
+    const p = (
+      await app.inject({ method: 'POST', url: '/api/workbench/projects/letter/stages/outputs' })
+    ).json() as ProposalView;
+    // The draft has this field already, and no `tables` key.
+    await finish(p.id, 'outputs', {
+      notes: '',
+      changes: [{ op: 'putField', field: { id: 'sender', type: 'text' }, reason: 'r' }],
+    });
+    const decided = await app.inject(
+      json('POST', `/api/workbench/projects/letter/proposals/${p.id}/decision`, {
+        decision: 'accepted',
+        changes: [0],
+      }),
+    );
+    expect(decided.statusCode).toBe(200);
+    const iteration = await workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: letter(1),
+      briefVersion: null,
+      set: 'dev',
+      model: null,
+      jobIds: [],
+    });
+    const restored = await app.inject({
+      method: 'POST',
+      url: `/api/workbench/projects/letter/iterations/${iteration.id}/restore`,
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(await count()).toBe(before);
+  });
+
   it('logs a restored iteration', async () => {
     const { app, templates, workbench } = await project();
     const iteration = await workbench.createIteration({
       projectId: 'letter',
       templateVersion: 1,
-      definition: {
-        ...letter(1),
-        name: 'Old letter',
-        outputs: { fields: letter(1).outputs.fields, tables: [] },
-      },
+      definition: { ...letter(1), name: 'Old letter' },
       briefVersion: null,
       set: 'dev',
       model: null,

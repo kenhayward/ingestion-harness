@@ -170,3 +170,30 @@ describe('TemplateChangeSchema', () => {
   it('refuses an unknown source', () =>
     expect(TemplateChangeSchema.safeParse({ ...entry, source: 'survey' }).success).toBe(false));
 });
+
+describe('an absent list is an empty one', () => {
+  const absent = (key: 'fields' | 'tables') => {
+    const d = structuredClone(base) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    delete d.outputs[key];
+    return d;
+  };
+  const empty = (key: 'fields' | 'tables') => {
+    const d = structuredClone(base) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    d.outputs[key] = [];
+    return d;
+  };
+
+  it.each(['fields', 'tables'] as const)('absent %s against [] is no change, both ways', (key) => {
+    expect(diffDefinitions(absent(key), empty(key))).toEqual([]);
+    expect(diffDefinitions(empty(key), absent(key))).toEqual([]);
+  });
+
+  it('absent tables against one table is that table added, and removed the other way', () => {
+    expect(diffDefinitions(absent('tables'), base)).toEqual([
+      { kind: 'added', path: 'outputs.tables[lines]', after: base.outputs.tables[0] },
+    ]);
+    expect(diffDefinitions(base, absent('tables'))).toEqual([
+      { kind: 'removed', path: 'outputs.tables[lines]', before: base.outputs.tables[0] },
+    ]);
+  });
+});
