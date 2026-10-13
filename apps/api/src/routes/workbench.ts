@@ -360,6 +360,10 @@ async function referenceEntries(
           id: reference.id,
           name: reference.name,
           createdAt: reference.createdAt,
+          // Placeholders until carried and outdated references land (phase 5b, task 3).
+          version: reference.templateVersion,
+          carriedFrom: null,
+          outdated: [],
         },
         run: run && {
           jobId: run.id,

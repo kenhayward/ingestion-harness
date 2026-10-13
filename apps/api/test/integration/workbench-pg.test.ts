@@ -15,7 +15,11 @@ import { EMPTY_BRIEF } from '@ih/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
 import { PgRepo } from '../../src/repositories/pg.js';
-import type { NewDocument, SegmentJobParams } from '../../src/repositories/types.js';
+import {
+  ReferenceConflictError,
+  type NewDocument,
+  type SegmentJobParams,
+} from '../../src/repositories/types.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
@@ -307,6 +311,69 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
 
     const refs = await repo.listReferencesWithSha(projectId);
     expect(refs.map((r) => [r.name, r.sha256])).toEqual([['first', source.sha256]]);
+  });
+
+  it('pins, supersedes and carries references forward across versions', async () => {
+    const projectId = await newProject();
+    const source = doc(projectId);
+    const job = await repo.createWorkbenchJob(source, { projectId, task: 'process' });
+    const other = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    const outputs = { fields: [{ id: 'sender' }] };
+    const base = {
+      templateId: projectId,
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+    };
+    const first = await repo.createReference({
+      ...base,
+      name: 'a',
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+    });
+    expect(first).toMatchObject({ templateVersion: 1, verifiedOutputs: outputs, supersededAt: null });
+    const again = await repo.createReference({
+      ...base,
+      name: 'a',
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+    });
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+    const all = await repo.listReferencesWithSha(projectId);
+    expect(all.find((r) => r.id === first.id)!.supersededAt).not.toBeNull();
+    // a different sample under a taken name is refused, and the refusal changes nothing
+    await expect(
+      repo.createReference({
+        ...base,
+        documentId: other.documentId,
+        sourceJobId: other.id,
+        name: 'a',
+        templateVersion: 1,
+        verifiedOutputs: outputs,
+      }),
+    ).rejects.toThrow(ReferenceConflictError);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+
+    const [n1, n2] = await Promise.all([
+      repo.carryReferencesForward(projectId, 2),
+      repo.carryReferencesForward(projectId, 2),
+    ]);
+    expect(n1 + n2).toBe(1);
+    const v2 = await repo.listReferences(projectId, 2);
+    expect(v2.map((r) => [r.name, r.copiedFrom, r.templateVersion, r.verifiedOutputs])).toEqual([
+      ['a', again.id, 2, outputs],
+    ]);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(0);
+
+    const unpinned = await repo.createReference({ ...base, name: 'u' });
+    expect(unpinned).toMatchObject({ templateVersion: null, verifiedOutputs: null });
+    expect((await repo.listReferences(projectId, 9)).map((r) => r.id)).toEqual([unpinned.id]);
+
+    // deleting the source keeps the copy (copied_from ON DELETE SET NULL)
+    await repo.deleteReference(projectId, again.id);
+    const copies = (await repo.listReferences(projectId, 2)).filter((r) => r.templateVersion === 2);
+    expect(copies.map((r) => [r.id, r.copiedFrom])).toEqual([[v2[0]!.id, null]]);
   });
 
   it('records iterations and caches their scores', async () => {

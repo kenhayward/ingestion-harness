@@ -25,6 +25,7 @@ import {
   type SegmentJob,
   type SegmentJobParams,
   type NewDocument,
+  type NewReference,
   type NewEdit,
   type StoredObject,
   WORKBENCH_PRIORITY,
@@ -144,6 +145,10 @@ interface ReferenceRow {
   source_job_id: string | null;
   expected: Reference['expected'];
   created_at: Date;
+  template_version: number | null;
+  copied_from: string | null;
+  verified_outputs: unknown;
+  superseded_at: Date | null;
 }
 
 const toReference = (r: ReferenceRow): Reference => ({
@@ -154,6 +159,10 @@ const toReference = (r: ReferenceRow): Reference => ({
   sourceJobId: r.source_job_id,
   expected: r.expected,
   createdAt: r.created_at.toISOString(),
+  templateVersion: r.template_version,
+  copiedFrom: r.copied_from,
+  verifiedOutputs: r.verified_outputs ?? null,
+  supersededAt: r.superseded_at?.toISOString() ?? null,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -620,27 +629,56 @@ export class PgRepo implements IngestionRepo {
     return rowCount ? await this.getJob(jobId) : null;
   }
 
-  async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
-    const { rows } = await this.pool.query<ReferenceRow>(
-      `INSERT INTO template_references (template_id, name, document_id, source_job_id, expected)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (template_id, name) DO NOTHING RETURNING *`,
-      [
-        input.templateId,
-        input.name,
-        input.documentId,
-        input.sourceJobId,
-        JSON.stringify(input.expected),
-      ],
-    );
-    if (!rows[0]) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
-    return toReference(rows[0]);
+  async createReference(input: NewReference): Promise<Reference> {
+    const version = input.templateVersion ?? null;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (version !== null) {
+        // Re-verifying a sample at this version: the old reference is kept for older iterations.
+        await client.query(
+          `UPDATE template_references SET superseded_at = now()
+            WHERE template_id = $1 AND template_version = $2 AND superseded_at IS NULL
+              AND document_id IN (SELECT id FROM documents
+                                   WHERE sha256 = (SELECT sha256 FROM documents WHERE id = $3))`,
+          [input.templateId, version, input.documentId],
+        );
+      }
+      // Names are unique among live references of one version (template_references_live_name_idx).
+      const { rows } = await client.query<ReferenceRow>(
+        `INSERT INTO template_references
+           (template_id, template_version, name, document_id, source_job_id, expected, verified_outputs)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT DO NOTHING RETURNING *`,
+        [
+          input.templateId,
+          version,
+          input.name,
+          input.documentId,
+          input.sourceJobId,
+          JSON.stringify(input.expected),
+          version === null ? null : JSON.stringify(input.verifiedOutputs ?? null),
+        ],
+      );
+      // A refused save rolls back the supersede above: nothing changes.
+      if (!rows[0]) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
+      await client.query('COMMIT');
+      return toReference(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
-  async listReferences(templateId: string): Promise<Reference[]> {
+  async listReferences(templateId: string, version?: number): Promise<Reference[]> {
     const { rows } = await this.pool.query<ReferenceRow>(
-      'SELECT * FROM template_references WHERE template_id = $1 ORDER BY created_at',
-      [templateId],
+      `SELECT * FROM template_references
+        WHERE template_id = $1 AND superseded_at IS NULL
+          AND ($2::int IS NULL OR template_version IS NULL OR template_version = $2)
+        ORDER BY created_at, id`,
+      [templateId, version ?? null],
     );
     return rows.map(toReference);
   }
@@ -652,6 +690,29 @@ export class PgRepo implements IngestionRepo {
       [templateId],
     );
     return rows.map((r) => ({ ...toReference(r), sha256: r.sha256 }));
+  }
+
+  async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
+    // Concurrent callers both pass NOT EXISTS; the live-name unique index makes the second a no-op.
+    const { rowCount } = await this.pool.query(
+      `INSERT INTO template_references
+         (template_id, template_version, name, document_id, source_job_id, expected,
+          verified_outputs, copied_from)
+       SELECT r.template_id, $2, r.name, r.document_id, r.source_job_id, r.expected,
+              r.verified_outputs, r.id
+         FROM template_references r
+        WHERE r.template_id = $1 AND r.superseded_at IS NULL
+          AND r.template_version = (SELECT max(template_version) FROM template_references
+                                     WHERE template_id = $1 AND superseded_at IS NULL
+                                       AND template_version < $2)
+          AND NOT EXISTS (SELECT 1 FROM template_references
+                           WHERE template_id = $1 AND superseded_at IS NULL
+                             AND template_version = $2)
+        ORDER BY r.created_at, r.id
+       ON CONFLICT DO NOTHING`,
+      [templateId, toVersion],
+    );
+    return rowCount ?? 0;
   }
 
   async deleteReference(templateId: string, id: string): Promise<boolean> {

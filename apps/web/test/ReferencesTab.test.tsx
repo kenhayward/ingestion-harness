@@ -40,7 +40,14 @@ describe('ReferencesTab', () => {
         referenceRow({
           filename: 'b.pdf',
           run: null,
-          reference: { id: 'r1', name: 'b', createdAt: '' },
+          reference: {
+            id: 'r1',
+            name: 'b',
+            createdAt: '',
+            version: 1,
+            carriedFrom: null,
+            outdated: [],
+          },
         }),
       ]),
     });
