@@ -1,18 +1,57 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { OverviewItem, ReferenceRow } from '@ih/shared';
 import { ReferencesTab } from '../src/workbench/ReferencesTab.js';
-import { fakeApi, job, referenceRow } from './fake-api.js';
+import { fakeApi, job, referenceInfo, referenceRow, templateView } from './fake-api.js';
 
-function tab(overrides = {}, hasDraft = true) {
-  const api = fakeApi(overrides);
+const definition = {
+  id: 'letter',
+  version: 2,
+  name: 'Letter',
+  document: { sections: [{ id: 'all', anchor: '\\A' }] },
+  outputs: {
+    fields: [{ id: 'sender' }, { id: 'total' }, { id: 'due_date' }],
+    tables: [],
+  },
+  pipeline: [{ type: 'extract', id: 'head', fields: ['sender', 'total'], sections: ['all'] }],
+};
+const item: OverviewItem = {
+  stage: 'references',
+  state: 'pending',
+  status: 'Optional, not started',
+  metrics: [],
+};
+const run = (status: NonNullable<ReferenceRow['run']>['status'], jobId = 'j1') => ({
+  jobId,
+  status,
+  error: null,
+  modelOverride: 'draft',
+});
+const saved = (filename: string, o = {}) =>
+  referenceRow({ filename, reference: referenceInfo({ name: filename, ...o }) });
+
+function tab(
+  rows: { dev?: ReferenceRow[]; holdout?: ReferenceRow[] } = {},
+  overrides = {},
+  props: Partial<{ draft: number | null; published: number | null }> = {},
+) {
+  const api = fakeApi({
+    listReferenceRows: vi.fn(async (_id: string, set?: string) =>
+      set === 'holdout' ? (rows.holdout ?? []) : (rows.dev ?? []),
+    ),
+    getTemplate: vi.fn(async () => templateView(definition)),
+    ...overrides,
+  });
   const onChanged = vi.fn();
   render(
     <ReferencesTab
       api={api}
       projectId="letter"
       dataPolicy="local"
-      hasDraft={hasDraft}
+      draft={props.draft === undefined ? 2 : props.draft}
+      published={props.published === undefined ? 1 : props.published}
+      item={item}
       pollMs={1}
       onChanged={onChanged}
     />,
@@ -21,179 +60,127 @@ function tab(overrides = {}, hasDraft = true) {
 }
 
 describe('ReferencesTab', () => {
-  it('explains how a run becomes a reference', async () => {
-    tab();
+  it('has the tab header with the optional status, the description and Skip', async () => {
+    const { api, onChanged } = tab({}, { skipStage: vi.fn(async () => []) });
+    const header = (await screen.findByRole('heading', { level: 2, name: 'References' })).closest(
+      'header',
+    )!;
+    expect(within(header).getByText('Optional, not started')).toBeInTheDocument();
     expect(
-      await screen.findByText(
-        'Open each run in Review, correct the values, approve, then Save as reference.',
+      within(header).getByText(
+        /you correct and approve them in Review and save them as the reference/,
       ),
     ).toBeInTheDocument();
+    await userEvent.click(within(header).getByRole('button', { name: 'Skip this stage' }));
+    expect(api.skipStage).toHaveBeenCalledWith('letter', 'references');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it('lists each dev sample with its run and reference', async () => {
-    tab({
-      listReferenceRows: vi.fn(async () => [
-        referenceRow({
-          filename: 'a.pdf',
-          run: { jobId: 'j1', status: 'awaiting_review', error: null, modelOverride: 'draft' },
-        }),
-        referenceRow({
-          filename: 'b.pdf',
-          run: null,
-          reference: {
-            id: 'r1',
-            name: 'b',
-            createdAt: '',
-            version: 1,
-            carriedFrom: null,
-            outdated: [],
-            sourceJobId: null,
-            verifiedBy: null,
-            corrections: null,
-            reverified: null,
-          },
-        }),
-      ]),
-    });
-    const table = await screen.findByRole('table', { name: 'References' });
-    const a = within(table).getByText('a.pdf').closest('tr')!;
-    expect(within(a).getByRole('link', { name: 'Verify in Review' })).toHaveAttribute(
-      'href',
-      '#/review/j1',
+  it('runs the draft model on the unverified count, and gives the reason when it cannot', async () => {
+    const { api, onChanged } = tab(
+      { dev: [referenceRow({ filename: 'a.pdf' }), saved('b.pdf')] },
+      { proposeReferences: vi.fn(async () => [job()]) },
     );
-    expect(within(a).getByText('Not verified')).toBeInTheDocument();
-    const b = within(table).getByText('b.pdf').closest('tr')!;
-    expect(within(b).getByText('✓ b')).toBeInTheDocument();
-  });
-
-  it('shows carried and outdated references', async () => {
-    tab({
-      listReferenceRows: vi.fn(async (_id: string, set?: string) =>
-        set === 'holdout'
-          ? []
-          : [
-              referenceRow({
-                filename: 'a.pdf',
-                reference: {
-                  id: 'r1',
-                  name: 'a',
-                  createdAt: 't',
-                  version: 2,
-                  carriedFrom: 1,
-                  outdated: [],
-                  sourceJobId: null,
-                  verifiedBy: null,
-                  corrections: null,
-                  reverified: null,
-                },
-              }),
-              referenceRow({
-                filename: 'b.pdf',
-                reference: {
-                  id: 'r2',
-                  name: 'b',
-                  createdAt: 't',
-                  version: 2,
-                  carriedFrom: 1,
-                  outdated: ['field:date', 'table:lines.qty'],
-                  sourceJobId: null,
-                  verifiedBy: null,
-                  corrections: null,
-                  reverified: null,
-                },
-              }),
-            ],
-      ),
-    });
-    expect((await screen.findAllByText('carried from v1')).length).toBe(2);
-    expect(screen.getByText(/re-verify: field:date, table:lines\.qty changed/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/only those whose outputs changed need verifying again/),
-    ).toBeInTheDocument();
-    const verified = screen.getByText('a.pdf').closest('tr')!;
-    const outdated = screen.getByText('b.pdf').closest('tr')!;
-    expect(verified.textContent).toContain('✓');
-    expect(outdated.textContent).not.toContain('✓');
-    // a note, not an error
-    expect(within(outdated).getByRole('status')).toHaveTextContent(
-      're-verify: field:date, table:lines.qty changed',
-    );
-  });
-
-  it('runs the draft model on unverified samples and polls while they run', async () => {
-    const dev = vi
-      .fn()
-      .mockResolvedValueOnce([referenceRow({ run: null })])
-      .mockResolvedValueOnce([
-        referenceRow({
-          run: { jobId: 'j1', status: 'running', error: null, modelOverride: 'draft' },
-        }),
-      ])
-      .mockResolvedValue([
-        referenceRow({
-          run: { jobId: 'j1', status: 'awaiting_review', error: null, modelOverride: 'draft' },
-        }),
-      ]);
-    const listReferenceRows = vi.fn(async (_id: string, set?: string) =>
-      set === 'holdout' ? [] : dev(),
-    );
-    const { api, onChanged } = tab({
-      listReferenceRows,
-      proposeReferences: vi.fn(async () => [job()]),
-    });
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Run the draft model on unverified samples' }),
+      await screen.findByRole('button', { name: 'Run the draft model on 1 unverified' }),
     );
     expect(api.proposeReferences).toHaveBeenCalledWith('letter');
     expect(onChanged).toHaveBeenCalled();
-    expect(await screen.findByRole('link', { name: 'Verify in Review' })).toBeInTheDocument();
   });
 
-  it('lists holdout references and runs the template on unverified holdout samples', async () => {
-    const listReferenceRows = vi.fn(async (_id: string, set?: string) =>
-      set === 'holdout'
-        ? [
-            referenceRow({
-              filename: 'h.pdf',
-              run: { jobId: 'hj1', status: 'awaiting_review', error: null, modelOverride: null },
-            }),
-          ]
-        : [],
-    );
-    const { api, onChanged } = tab({
-      listReferenceRows,
-      startHoldoutReferenceRuns: vi.fn(async () => [job()]),
+  it.each<[string, ReferenceRow[], number | null, string]>([
+    ['no draft', [referenceRow()], null, 'Start a draft version first'],
+    ['every dev sample verified', [saved('a.pdf')], 2, 'Every dev sample has a verified reference'],
+    [
+      'runs in progress',
+      [referenceRow({ run: run('running') })],
+      2,
+      'Reference runs are still running',
+    ],
+  ])('disables the dev run button: %s', async (_name, dev, draft, reason) => {
+    tab({ dev }, {}, { draft });
+    const button = await screen.findByRole('button', {
+      name: /^Run the draft model on \d+ unverified$/,
     });
-    expect(
-      await screen.findByText(
-        "Holdout samples are extracted by the template's own models; drafting never sees them.",
-      ),
-    ).toBeInTheDocument();
-    const table = await screen.findByRole('table', { name: 'Holdout references' });
-    const h = within(table).getByText('h.pdf').closest('tr')!;
-    expect(within(h).getByRole('link', { name: 'Verify in Review' })).toHaveAttribute(
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', reason);
+  });
+
+  it('shows the ready banner with why references were re-verified, and links to Evaluate', async () => {
+    tab({
+      dev: [
+        saved('a.pdf', { reverified: { from: 1, changed: ['field:due_date'] } }),
+        saved('b.pdf'),
+      ],
+      holdout: [saved('h.pdf')],
+    });
+    const banner = await screen.findByRole('region', { name: 'Ready to evaluate' });
+    expect(banner).toHaveTextContent(
+      'Ready to evaluate. 2 dev and 1 holdout references match the draft v2 outputs. 1 was re-verified this version because these outputs changed: due_date.',
+    );
+    expect(within(banner).getByRole('link', { name: 'Go to Evaluate' })).toHaveAttribute(
       'href',
-      '#/review/hj1',
+      '#/workbench/letter/evaluate',
     );
-    expect(listReferenceRows).toHaveBeenCalledWith('letter', 'holdout');
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Run the template on unverified holdout samples' }),
-    );
-    expect(api.startHoldoutReferenceRuns).toHaveBeenCalledWith('letter');
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it('needs an open draft', async () => {
-    tab({}, false);
+  it('has no ready banner while a sample is unverified', async () => {
+    tab({ dev: [saved('a.pdf'), referenceRow({ filename: 'b.pdf' })] });
+    await screen.findByText('1 / 2'); // the rows have loaded (the Samples list arrives in Task 8)
+    expect(screen.queryByRole('region', { name: 'Ready to evaluate' })).toBeNull();
+  });
+
+  it('shows the dev, holdout and right-first-time cards', async () => {
+    tab({
+      dev: [
+        saved('a.pdf'),
+        saved('b.pdf', { corrections: [{ key: 'total', kind: 'corrected', proposed: '1' }] }),
+        referenceRow({ filename: 'c.pdf' }),
+      ],
+      holdout: [saved('h.pdf'), referenceRow({ filename: 'i.pdf' })],
+    });
+    const dev = (await screen.findByRole('heading', { name: 'Dev references' })).closest(
+      'section',
+    )!;
+    expect(dev).toHaveTextContent('2 / 3verified for v2');
     expect(
-      await screen.findByRole('button', { name: 'Run the draft model on unverified samples' }),
-    ).toBeDisabled();
+      within(dev).getByRole('img', { name: 'Dev references verified: 67%' }),
+    ).toBeInTheDocument();
+    const holdout = screen.getByRole('heading', { name: 'Holdout references' }).closest('section')!;
+    expect(holdout).toHaveTextContent('1 / 2verified for v2');
+    expect(holdout).toHaveTextContent(
+      'Extracted by the template’s own models — never seen by drafting',
+    );
+    const right = screen.getByRole('heading', { name: 'Right first time' }).closest('section')!;
+    expect(right).toHaveTextContent('3 / 475% of dev values');
+    expect(right).toHaveTextContent('Excludes due_date, which no step fills yet');
   });
 
-  it('skips the stage', async () => {
-    const { api, onChanged } = tab({ skipStage: vi.fn(async () => []) });
-    await userEvent.click(await screen.findByRole('button', { name: 'Skip this stage' }));
-    expect(api.skipStage).toHaveBeenCalledWith('letter', 'references');
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  it('counts per output where the draft model needed you, and links an output without a step to Steps', async () => {
+    tab({
+      dev: [
+        saved('a.pdf', {
+          corrections: [
+            { key: 'total', kind: 'corrected', proposed: '1' },
+            { key: 'due_date', kind: 'entered', proposed: null },
+          ],
+        }),
+        saved('b.pdf', { corrections: [{ key: 'due_date', kind: 'entered', proposed: null }] }),
+      ],
+    });
+    const strip = (
+      await screen.findByRole('heading', { name: 'Where the draft model needed you' })
+    ).closest('section')!;
+    const chips = within(strip).getAllByRole('listitem');
+    expect(chips.map((c) => c.textContent)).toEqual([
+      'sender 0 — right first time',
+      'total 1 — corrected',
+      'due_date 2 — entered by hand',
+    ]);
+    expect(within(strip).getByRole('link', { name: 'the Steps tab' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/steps',
+    );
+    expect(strip).toHaveTextContent('due_date has no step yet — add one on the Steps tab.');
   });
 });

@@ -594,7 +594,7 @@ describe('ProjectPage', () => {
       await within(rail).findByRole('link', { name: 'References: Needs your decision' }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole('button', { name: 'Run the draft model on unverified samples' }),
+      await screen.findByRole('button', { name: /^Run the draft model on \d+ unverified$/ }),
     ).toBeInTheDocument();
     unmount();
     render(

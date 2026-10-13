@@ -345,14 +345,15 @@ export function ProjectPage({
               />
             </>
           )}
-          {tab === 'references' && header('references')}
           {tab === 'references' && (
             <ReferencesTab
               key={`references-${revision}`}
               api={api}
               projectId={project.id}
               dataPolicy={project.dataPolicy}
-              hasDraft={draft !== null}
+              draft={draft}
+              published={published}
+              item={itemOf('references')}
               pollMs={pollMs}
               onChanged={changed}
             />
