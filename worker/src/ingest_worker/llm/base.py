@@ -5,6 +5,10 @@ from typing import Any, Literal, Protocol
 
 ProviderKind = Literal["anthropic", "openai-chat", "openai-responses"]
 
+#: Model listing (discovery) runs in the worker loop before each claim: a down or unreachable
+#: endpoint must fail fast, not wait out the extraction timeout (`timeoutS`) and its retries.
+DISCOVERY_TIMEOUT_S = 10.0
+
 
 @dataclass(frozen=True)
 class ModelDescriptor:

@@ -6,6 +6,7 @@ from typing import Any, Literal
 import anthropic
 
 from .base import (
+    DISCOVERY_TIMEOUT_S,
     CompletionRequest,
     CompletionResult,
     LLMError,
@@ -57,7 +58,9 @@ class AnthropicProvider:
     def list_models(self) -> list[ModelDescriptor]:
         return [
             ModelDescriptor(self.name, "anthropic", m.id, m.display_name)
-            for m in self._client.models.list()
+            for m in self._client.with_options(
+                timeout=DISCOVERY_TIMEOUT_S, max_retries=0
+            ).models.list()
         ]
 
     def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:

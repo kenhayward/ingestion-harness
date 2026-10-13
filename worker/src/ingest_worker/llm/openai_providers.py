@@ -7,6 +7,7 @@ from typing import Any, Literal
 import openai
 
 from .base import (
+    DISCOVERY_TIMEOUT_S,
     CompletionRequest,
     CompletionResult,
     LLMError,
@@ -79,7 +80,9 @@ class _OpenAIBase:
     def list_models(self) -> list[ModelDescriptor]:
         return [
             ModelDescriptor(self.name, self.kind, m.id, None)
-            for m in self._client.models.list()
+            for m in self._client.with_options(
+                timeout=DISCOVERY_TIMEOUT_S, max_retries=0
+            ).models.list()
             if not self._model_filter or self._model_filter.search(m.id)
         ]
 
