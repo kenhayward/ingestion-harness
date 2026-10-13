@@ -470,17 +470,58 @@ describe('publish gate score cache', () => {
   it('reads no job documents when nothing about the iteration changed', async () => {
     const ctx = await project();
     const iteration = await holdoutRun(ctx, 'Acme');
-    // The overview's gate carries no hints. GET …/publish-gate also builds the scorecard for
-    // its hints (EV1), which reads the documents on every call by design.
-    const overviewGate = async () =>
-      (await ctx.app.inject('/api/workbench/projects/letter/overview')).json().gate;
     const reads = countDocumentReads(ctx);
-    const first = await overviewGate();
+    const first = await gateOf(ctx);
     expect(first).toMatchObject({ iterationId: iteration.id, score: 1, passes: true });
     expect(reads.count).toBeGreaterThan(0);
     reads.count = 0;
-    expect(await overviewGate()).toEqual(first);
+    expect(await gateOf(ctx)).toEqual(first);
     expect(reads.count).toBe(0);
+  });
+
+  it('serves the hints from the cache too', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    const reads = countDocumentReads(ctx);
+    const first = await gateOf(ctx);
+    expect(first.hints).toHaveLength(1);
+    reads.count = 0;
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBe(0);
+  });
+
+  it('recomputes the hints of a cache row stored without them', async () => {
+    const ctx = await project();
+    const iteration = await holdoutRun(ctx, 'Wrong');
+    const first = await gateOf(ctx);
+    const { fingerprint, score, completed, total } = (await ctx.app.deps.workbench.getIteration(
+      'letter',
+      iteration.id,
+    ))!.gateCache!;
+    await ctx.app.deps.workbench.setGateCache(iteration.id, {
+      fingerprint,
+      score,
+      completed,
+      total,
+    });
+    const reads = countDocumentReads(ctx);
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBeGreaterThan(0);
+    reads.count = 0;
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBe(0);
+  });
+
+  it('recomputes the hints when the threshold changed', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    await gateOf(ctx);
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/workbench/projects/letter',
+      payload: { publishThreshold: 0 },
+    });
+    expect((await gateOf(ctx)).hints).toEqual([]);
   });
 
   it('keeps coverage live on a cache hit', async () => {
