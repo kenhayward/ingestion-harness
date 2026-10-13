@@ -28,7 +28,14 @@ function callout(job: JobSummary): { title: string; lines: string[]; tone: strin
   }
 }
 
-const fileName = (o: JobOutput) => o.key.split('/').pop() ?? `${o.outputId}.${o.format}`;
+/** "3 files: 2 CSV, 1 JSON": what the ZIP holds. */
+function filesText(outputs: readonly JobOutput[]): string {
+  const byFormat = new Map<string, number>();
+  for (const o of outputs) byFormat.set(o.format, (byFormat.get(o.format) ?? 0) + 1);
+  const parts = [...byFormat].map(([format, n]) => `${n} ${format.toUpperCase()}`);
+  const n = outputs.length;
+  return `${n} ${n === 1 ? 'file' : 'files'}: ${parts.join(', ')}`;
+}
 
 /** Job detail panel (UI handoff §1): what happened, what came out, what to do next. */
 export function JobDetailPanel({
@@ -71,8 +78,8 @@ export function JobDetailPanel({
   }, [api, job.id, job.status, job.updatedAt]);
 
   const note = callout(job);
+  // Only delivered outputs are offered: drafts (awaiting review, test runs) are not deliverables.
   const published = (outputs ?? []).filter((o) => o.stage === 'published');
-  const shown = published.length ? published : (outputs ?? []).filter((o) => o.stage === 'draft');
 
   return (
     <aside className="job-panel" aria-label="Job details">
@@ -117,22 +124,14 @@ export function JobDetailPanel({
         )}
       </dl>
       {error && <p className="error">Couldn't load details: {error}</p>}
-      {shown.length > 0 && (
-        <section
-          className="outputs"
-          aria-label={published.length ? 'Published outputs' : 'Draft outputs'}
-        >
-          <h3>{published.length ? 'Published outputs' : 'Draft outputs'}</h3>
-          {shown.map((o) => (
-            <a
-              key={`${o.stage}:${o.outputId}`}
-              href={api.outputUrl(job.id, o.outputId, { stage: o.stage })}
-            >
-              <Icon name="download" />
-              <span className="mono">{fileName(o)}</span>
-              {o.format === 'csv' && o.rowCount !== null && <span>{o.rowCount} rows</span>}
-            </a>
-          ))}
+      {published.length > 0 && (
+        <section className="outputs" aria-label="Published outputs">
+          <h3>Published outputs</h3>
+          <a href={api.archiveUrl(job.id)} aria-label={`Download ${job.filename} outputs as ZIP`}>
+            <Icon name="download" />
+            Download outputs (ZIP)
+          </a>
+          <p className="muted">{filesText(published)}</p>
         </section>
       )}
       <JobActions
