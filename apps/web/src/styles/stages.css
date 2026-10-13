@@ -1611,7 +1611,8 @@ label.inline.list-select {
 .refs-needs,
 .refs-samples,
 .refs-detail,
-.gate-card {
+.gate-card,
+.eval-latest {
   padding: 12px 16px;
 }
 .brief-card h3,
@@ -1630,7 +1631,8 @@ label.inline.list-select {
 .refs-needs h3,
 .refs-samples h3,
 .refs-detail h3,
-.gate-card h3 {
+.gate-card h3,
+.eval-latest h3 {
   font-weight: 600;
 }
 
@@ -2312,5 +2314,95 @@ label.inline.list-select {
   }
   .gate-scale {
     margin: 0;
+  }
+}
+
+/* Evaluate: latest run */
+.eval-latest-head h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.eval-samples {
+  list-style: none;
+  margin: 12px -16px 0;
+  padding: 0;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.eval-sample {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 48px minmax(0, 1.4fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--ih-border-soft);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.eval-sample[aria-pressed='true'] {
+  border-left-color: var(--ih-accent);
+  background: var(--ih-sel-row);
+}
+.eval-sample > * {
+  min-width: 0;
+}
+.eval-file {
+  overflow-wrap: anywhere;
+}
+.eval-score {
+  font-weight: 600;
+  text-align: right;
+}
+.eval-score[data-tone='ok'] {
+  color: var(--ih-ok-fg);
+}
+.eval-score[data-tone='warn'] {
+  color: var(--ih-warn-fg);
+}
+.eval-off {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+  overflow-wrap: anywhere;
+}
+.eval-detail {
+  margin-top: 12px;
+  min-width: 0;
+}
+.eval-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.eval-detail td code {
+  overflow-wrap: anywhere;
+}
+.eval-miss,
+.eval-bad {
+  color: var(--ih-danger-fg);
+  font-weight: 600;
+}
+.eval-ok {
+  color: var(--ih-ok-fg);
+}
+.eval-comment-row td {
+  background: var(--ih-info-bg);
+}
+.eval-comment-row textarea {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+}
+@media (max-width: 760px) {
+  .eval-sample {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+  .eval-sample .meter,
+  .eval-off {
+    grid-column: 1 / -1;
   }
 }
