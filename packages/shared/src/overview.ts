@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { STAGE_ORDER, type StageState, type StageView } from './drafting.js';
 import { GateViewSchema, percent, type GateView } from './evaluation.js';
-import { ProjectViewSchema, type Brief, type ProposalStatus } from './workbench.js';
+import {
+  DATA_POLICIES,
+  ProjectSummarySchema,
+  ProjectViewSchema,
+  type Brief,
+  type ProjectSummary,
+  type ProposalStatus,
+} from './workbench.js';
 
 /**
  * The ten steps of a document type as the Workbench list and Overview map show them
@@ -37,18 +44,21 @@ export const OVERVIEW_LABEL: Record<OverviewStage, string> = {
   publish: 'Publish',
 };
 
-export type OverviewPhase = 'prepare' | 'draft' | 'verify' | 'published';
+export const OVERVIEW_PHASES = ['prepare', 'draft', 'verify', 'published'] as const;
+export type OverviewPhase = (typeof OVERVIEW_PHASES)[number];
 
-export type NextActionKind =
-  | 'refresh'
-  | 'decide'
-  | 'brief'
-  | 'samples'
-  | 'running'
-  | 'below_threshold'
-  | 'publish'
-  | 'start_version'
-  | 'continue';
+export const NEXT_ACTION_KINDS = [
+  'refresh',
+  'decide',
+  'brief',
+  'samples',
+  'running',
+  'below_threshold',
+  'publish',
+  'start_version',
+  'continue',
+] as const;
+export type NextActionKind = (typeof NEXT_ACTION_KINDS)[number];
 
 export interface NextAction {
   kind: NextActionKind;
@@ -589,4 +599,160 @@ export function overviewNext(
   }
   const reason = action.kind === 'publish' ? sentence(inputs.gate.reason) : '';
   return { stage: action.stage, title: `Next: ${lowerFirst(action.label)}`, reason };
+}
+
+export const LIST_FILTERS = [
+  'all',
+  'attention',
+  'running',
+  'ready',
+  'progress',
+  'published',
+] as const;
+export const LIST_SORTS = ['activity', 'name', 'score', 'samples'] as const;
+export const PAGE_SIZES = [25, 50, 100] as const;
+
+export const ProjectListQuerySchema = z
+  .object({
+    q: z.string().trim().max(100).optional(),
+    filter: z.enum(LIST_FILTERS).default('all'),
+    phase: z.enum(OVERVIEW_PHASES).optional(),
+    policy: z.enum(DATA_POLICIES).optional(),
+    sort: z.enum(LIST_SORTS).default('activity'),
+    /** Comma-separated project ids (at most 20): only those rows (the list's pinned and recent cards). */
+    ids: z
+      .string()
+      .transform((s) =>
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      )
+      .refine((a) => a.length <= 20, 'at most 20 ids')
+      .optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    size: z.coerce
+      .number()
+      .int()
+      .refine((n) => (PAGE_SIZES as readonly number[]).includes(n), 'size must be 25, 50 or 100')
+      .default(25),
+  })
+  .strict();
+export type ProjectListQuery = z.infer<typeof ProjectListQuerySchema>;
+
+export const ProjectListItemSchema = ProjectSummarySchema.extend({
+  stages: z
+    .array(z.object({ stage: z.enum(OVERVIEW_STAGES), state: OverviewStateSchema }))
+    .length(10),
+  phase: z.enum(OVERVIEW_PHASES),
+  done: z.number().int().min(0).max(10),
+  next: z
+    .object({
+      kind: z.enum(NEXT_ACTION_KINDS),
+      stage: z.enum(OVERVIEW_STAGES).nullable(),
+      label: z.string(),
+    })
+    .nullable(),
+  /** Latest complete holdout score of the draft (else of the live version); null when none. */
+  holdoutScore: z.number().nullable(),
+  devSamples: z.number().int(),
+  holdoutSamples: z.number().int(),
+  lastActivityAt: z.string(),
+  /** What the facets count (running also covers unfinished runs, which no stage shows). */
+  flags: z.object({ attention: z.boolean(), running: z.boolean(), ready: z.boolean() }),
+});
+export type ProjectListItem = z.infer<typeof ProjectListItemSchema>;
+
+const FacetsSchema = z.object(
+  Object.fromEntries(LIST_FILTERS.map((f) => [f, z.number().int()])) as Record<
+    (typeof LIST_FILTERS)[number],
+    z.ZodNumber
+  >,
+);
+export const ProjectListPageSchema = z.object({
+  items: z.array(ProjectListItemSchema),
+  total: z.number().int(),
+  facets: FacetsSchema,
+});
+export type ProjectListPage = z.infer<typeof ProjectListPageSchema>;
+
+/** One list row from the same inputs the project page uses. */
+export function listItemFrom(input: {
+  summary: ProjectSummary;
+  inputs: OverviewInputs;
+  runsUnfinished: number;
+  holdoutScore: number | null;
+  devSamples: number;
+  holdoutSamples: number;
+  lastActivityAt: string;
+}): ProjectListItem {
+  const entries = overviewStates(input.inputs);
+  const { phase, done } = phaseOf(entries, input.inputs.draft);
+  const has = (...states: OverviewState[]) => entries.some((e) => states.includes(e.state));
+  return {
+    ...input.summary,
+    stages: entries.map((e) => ({ stage: e.stage, state: e.state })),
+    phase,
+    done,
+    next: nextAction(input.inputs, entries),
+    holdoutScore: input.holdoutScore,
+    devSamples: input.devSamples,
+    holdoutSamples: input.holdoutSamples,
+    lastActivityAt: input.lastActivityAt,
+    flags: {
+      attention: has('stale', 'proposed', 'warn'),
+      running: has('running') || input.runsUnfinished > 0 || input.inputs.evaluation.running,
+      ready: input.inputs.draft !== null && input.inputs.gate.passes,
+    },
+  };
+}
+
+const inFacet = (f: (typeof LIST_FILTERS)[number], i: ProjectListItem) =>
+  f === 'all' ||
+  (f === 'attention' && i.flags.attention) ||
+  (f === 'running' && i.flags.running) ||
+  (f === 'ready' && i.flags.ready) ||
+  (f === 'progress' && i.draft !== null) ||
+  (f === 'published' && i.draft === null);
+
+const ORDER: Record<
+  (typeof LIST_SORTS)[number],
+  (a: ProjectListItem, b: ProjectListItem) => number
+> = {
+  activity: (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt),
+  name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  score: (a, b) =>
+    a.holdoutScore === b.holdoutScore
+      ? 0
+      : a.holdoutScore === null
+        ? 1
+        : b.holdoutScore === null
+          ? -1
+          : a.holdoutScore - b.holdoutScore,
+  samples: (a, b) => a.samples - b.samples,
+};
+
+/** Search, phase and policy, then facet counts, the filter chip, the sort and the page (handoff W1). */
+export function queryProjects(
+  items: readonly ProjectListItem[],
+  query: ProjectListQuery,
+): ProjectListPage {
+  const needle = query.q?.toLowerCase() ?? '';
+  const base = items.filter(
+    (i) =>
+      (needle === '' ||
+        i.name.toLowerCase().includes(needle) ||
+        i.id.toLowerCase().includes(needle)) &&
+      (query.ids === undefined || query.ids.includes(i.id)) &&
+      (query.phase === undefined || i.phase === query.phase) &&
+      (query.policy === undefined || i.dataPolicy === query.policy),
+  );
+  const facets = Object.fromEntries(
+    LIST_FILTERS.map((f) => [f, base.filter((i) => inFacet(f, i)).length]),
+  ) as ProjectListPage['facets'];
+  const sorted = base
+    .filter((i) => inFacet(query.filter, i))
+    .sort((a, b) => ORDER[query.sort](a, b) || a.id.localeCompare(b.id));
+  const start = (query.page - 1) * query.size;
+  return { items: sorted.slice(start, start + query.size), total: sorted.length, facets };
 }

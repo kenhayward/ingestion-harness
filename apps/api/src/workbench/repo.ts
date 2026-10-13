@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { BriefBodySchema, stableJson } from '@ih/shared';
 import type {
@@ -215,6 +215,33 @@ export interface WorkbenchRepo {
    * project is unknown. Locks the template rows before the project row, as `publishDraft` does.
    */
   deleteProject(id: string): Promise<RemovedProject | 'published' | null>;
+  /**
+   * Per project, a hash of everything the project overview reads (the project row, its jobs,
+   * samples, proposals, skips, briefs, iterations, publications, feedback, template versions and
+   * references), and the latest activity time. Equal fingerprints mean an unchanged list row.
+   */
+  projectFingerprints(): Promise<ProjectFingerprint[]>;
+  /** The cached list rows by project id (migration 0022). */
+  listCache(): Promise<Map<string, ListCacheEntry>>;
+  /** Upserts a project's cached list row; a project that no longer exists is ignored. */
+  putListCache(projectId: string, fingerprint: string, item: unknown): Promise<void>;
+  /** The owner's pinned project ids, most recently pinned first. */
+  listPins(owner: string): Promise<string[]>;
+  /** False when the project is unknown. Pinning again keeps the first pin. */
+  pin(owner: string, projectId: string): Promise<boolean>;
+  /** Idempotent. */
+  unpin(owner: string, projectId: string): Promise<void>;
+}
+
+export interface ProjectFingerprint {
+  id: string;
+  fingerprint: string;
+  lastActivityAt: string;
+}
+
+export interface ListCacheEntry {
+  fingerprint: string;
+  item: unknown;
 }
 
 /**
@@ -230,6 +257,9 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly iterations: IterationRecord[] = [];
   readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
+  readonly listCacheRows = new Map<string, ListCacheEntry>();
+  /** owner → project id → pinned at. */
+  readonly pins = new Map<string, Map<string, string>>();
 
   constructor(
     private readonly jobs: MemoryRepo,
@@ -254,7 +284,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     const project: WorkbenchProject = {
       id,
       name,
-      createdAt: new Date().toISOString(),
+      createdAt: this.now(),
       dataPolicy: 'local',
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
@@ -322,7 +352,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
         `document ${sample.documentId} is already a sample of ${sample.projectId}`,
       );
     }
-    const row = { ...sample, id: randomUUID(), createdAt: new Date().toISOString() };
+    const row = { ...sample, id: randomUUID(), createdAt: this.now() };
     this.samples.set(row.id, row);
     this.jobs.sampleDocuments.add(sample.documentId);
     return this.record(row);
@@ -358,7 +388,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
 
   async saveBrief(projectId: string, body: BriefBody) {
     const version = ((await this.latestBrief(projectId))?.version ?? 0) + 1;
-    const brief = { projectId, version, body, createdAt: new Date().toISOString() };
+    const brief = { projectId, version, body, createdAt: this.now() };
     this.briefs.push(brief);
     return brief;
   }
@@ -369,7 +399,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     const updated: WorkbenchProject = {
       ...project,
       dataPolicy: policy,
-      dataPolicyChangedAt: new Date().toISOString(),
+      dataPolicyChangedAt: this.now(),
       dataPolicyChangedBy: by,
     };
     this.projects.set(id, updated);
@@ -601,8 +631,100 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
     }
     this.projects.delete(id);
+    // ON DELETE CASCADE (migration 0022).
+    this.listCacheRows.delete(id);
+    for (const pins of this.pins.values()) pins.delete(id);
     for (const t of versions) await this.templates.deleteDraft(id, t.version);
     return { jobs: removed, documents };
+  }
+
+  async projectFingerprints(): Promise<ProjectFingerprint[]> {
+    const repo = this.jobs;
+    const templates = await this.templates.list();
+    const references = [...repo.references.values()];
+    const projectJobs = [
+      ...repo.jobs.values(),
+      ...repo.draftJobs.values(),
+      ...repo.exportJobs.values(),
+      ...repo.segmentJobs.values(),
+    ];
+    return (await this.listProjects()).map((project) => {
+      const id = project.id;
+      const of = <T extends { projectId: string | null }>(rows: Iterable<T>) =>
+        [...rows].filter((r) => r.projectId === id);
+      const jobs = of(projectJobs).map((j) => [j.id, j.status, j.updatedAt]);
+      const samples = of(this.samples.values()).map((s) => [s.id, s.role, s.createdAt]);
+      const briefs = of(this.briefs).map((b) => [b.version, b.createdAt]);
+      const proposals = of(this.proposals).map((p) => [p.id, p.decision, p.createdAt, p.decidedAt]);
+      const skips = of(this.skips).map((s) => [s.stage, s.skippedAt]);
+      const iterations = of(this.iterations).map((i) => [i.id, i.createdAt, i.scores, i.gateCache]);
+      const publications = of(this.publications).map((p) => [p.id, p.publishedAt]);
+      const feedback = of(this.feedback).map((f) => [f.id, f.resolvedBy, f.createdAt]);
+      const versions = templates
+        .filter((t) => t.id === id)
+        .map((t) => [t.version, t.status, t.updatedAt, t.definition]);
+      const refs = references
+        .filter((r) => r.templateId === id)
+        .map((r) => [r.id, r.templateVersion, r.createdAt, r.supersededAt]);
+      const fingerprint = createHash('md5')
+        .update(
+          JSON.stringify([
+            project,
+            jobs,
+            samples,
+            briefs,
+            proposals,
+            skips,
+            iterations,
+            publications,
+            feedback,
+            versions,
+            refs,
+          ]),
+        )
+        .digest('hex');
+      const times = [
+        project.createdAt,
+        ...jobs.map((j) => j[2] as string),
+        ...samples.map((s) => s[2] as string),
+        ...briefs.map((b) => b[1] as string),
+        ...proposals.flatMap((p) => [p[2], p[3]]),
+        ...skips.map((s) => s[1] as string),
+        ...iterations.map((i) => i[1] as string),
+        ...publications.map((p) => p[1] as string),
+        ...feedback.map((f) => f[2] as string),
+        ...versions.map((t) => t[2] as string),
+        ...refs.flatMap((r) => [r[2], r[3]]),
+      ].filter((t): t is string => typeof t === 'string');
+      const lastActivityAt = times.reduce((a, b) => (b > a ? b : a));
+      return { id, fingerprint, lastActivityAt };
+    });
+  }
+
+  async listCache() {
+    return new Map(this.listCacheRows);
+  }
+
+  async putListCache(projectId: string, fingerprint: string, item: unknown) {
+    if (!this.projects.has(projectId)) return;
+    this.listCacheRows.set(projectId, { fingerprint, item });
+  }
+
+  async listPins(owner: string) {
+    const pins = [...(this.pins.get(owner)?.entries() ?? [])];
+    return pins.sort((a, b) => b[1].localeCompare(a[1])).map(([id]) => id);
+  }
+
+  async pin(owner: string, projectId: string) {
+    if (!this.projects.has(projectId)) return false;
+    const pins = this.pins.get(owner) ?? new Map<string, string>();
+    if (!pins.has(projectId)) pins.set(projectId, this.now());
+    this.pins.set(owner, pins);
+    return true;
+  }
+
+  async unpin(owner: string, projectId: string) {
+    this.pins.get(owner)?.delete(projectId);
   }
 
   private record(row: NewSample & { id: string; createdAt: string }): SampleRecord {
@@ -815,6 +937,72 @@ const SAMPLE_SELECT = `
   SELECT s.id, s.project_id, s.document_id, d.filename, d.sha256, d.size_bytes, d.bucket,
          d.object_key, s.role, s.added_for_version, s.created_at
     FROM workbench_samples s JOIN documents d ON d.id = s.document_id`;
+
+/**
+ * One row per project: an md5 over cheap aggregates of every table the project overview reads,
+ * and the latest activity time. Each value is coalesced so a NULL never shifts the others.
+ * Jobs carry an order-free hash of (id, status) because some status writes leave `updated_at`
+ * alone; samples list (id, role) so a role switch shows.
+ */
+const FINGERPRINT_SQL = `
+  SELECT p.id,
+         md5(concat_ws('|',
+           p.name, p.data_policy, coalesce(p.data_policy_changed_at::text, ''),
+           p.publish_threshold::text, coalesce(p.threshold_set_at::text, ''),
+           coalesce(j.n, 0), coalesce(j.at::text, ''), coalesce(j.h, 0),
+           coalesce(s.n, 0), coalesce(s.holdout, 0), coalesce(s.at::text, ''), coalesce(s.roles, ''),
+           coalesce(pr.n, 0), coalesce(pr.at::text, ''), coalesce(pr.decided_at::text, ''),
+           coalesce(pr.decided, 0),
+           coalesce(sk.n, 0), coalesce(sk.at::text, ''),
+           coalesce(b.version, 0),
+           coalesce(i.n, 0), coalesce(i.at::text, ''), coalesce(i.scored, 0), coalesce(i.gated, 0),
+           coalesce(pu.n, 0), coalesce(pu.at::text, ''),
+           coalesce(f.n, 0), coalesce(f.resolved, 0), coalesce(f.at::text, ''),
+           coalesce(t.n, 0), coalesce(t.at::text, ''), coalesce(t.versions, ''),
+           coalesce(r.n, 0), coalesce(r.at::text, ''), coalesce(r.superseded, 0),
+           coalesce(r.superseded_at::text, '')
+         )) AS fingerprint,
+         greatest(p.created_at, j.at, s.at, pr.at, pr.decided_at, sk.at, b.at, i.at, pu.at, f.at,
+                  t.at, r.at, r.superseded_at) AS last_activity_at
+    FROM workbench_projects p
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(updated_at) AS at,
+                      sum(hashtext(id::text || status::text)) AS h
+                 FROM jobs WHERE project_id IS NOT NULL GROUP BY project_id) j
+      ON j.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, count(*) FILTER (WHERE role = 'holdout') AS holdout,
+                      max(created_at) AS at, string_agg(id::text || role, ',' ORDER BY id) AS roles
+                 FROM workbench_samples GROUP BY project_id) s
+      ON s.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(created_at) AS at,
+                      max(decided_at) AS decided_at, count(decision) AS decided
+                 FROM workbench_proposals GROUP BY project_id) pr
+      ON pr.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(skipped_at) AS at
+                 FROM workbench_stage_skips GROUP BY project_id) sk
+      ON sk.project_id = p.id
+    LEFT JOIN (SELECT project_id, max(version) AS version, max(created_at) AS at
+                 FROM workbench_briefs GROUP BY project_id) b
+      ON b.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(created_at) AS at, count(scores) AS scored,
+                      count(gate_cache) AS gated
+                 FROM workbench_iterations GROUP BY project_id) i
+      ON i.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, max(published_at) AS at
+                 FROM workbench_publications GROUP BY project_id) pu
+      ON pu.project_id = p.id
+    LEFT JOIN (SELECT project_id, count(*) AS n, count(resolved_by) AS resolved,
+                      max(created_at) AS at
+                 FROM workbench_feedback GROUP BY project_id) f
+      ON f.project_id = p.id
+    LEFT JOIN (SELECT id, count(*) AS n, max(updated_at) AS at,
+                      string_agg(version || status, ',' ORDER BY version) AS versions
+                 FROM templates GROUP BY id) t
+      ON t.id = p.id
+    LEFT JOIN (SELECT template_id, count(*) AS n, max(created_at) AS at,
+                      count(superseded_at) AS superseded, max(superseded_at) AS superseded_at
+                 FROM template_references GROUP BY template_id) r
+      ON r.template_id = p.id
+   ORDER BY p.id`;
 
 /** Postgres adapter (migration 0008). */
 export class PgWorkbenchRepo implements WorkbenchRepo {
@@ -1270,6 +1458,76 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     } finally {
       client.release(failed instanceof Error ? failed : undefined);
     }
+  }
+
+  async projectFingerprints(): Promise<ProjectFingerprint[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      fingerprint: string;
+      last_activity_at: Date;
+    }>(FINGERPRINT_SQL);
+    return rows.map((r) => ({
+      id: r.id,
+      fingerprint: r.fingerprint,
+      lastActivityAt: r.last_activity_at.toISOString(),
+    }));
+  }
+
+  async listCache() {
+    const { rows } = await this.pool.query<{
+      project_id: string;
+      fingerprint: string;
+      item: unknown;
+    }>('SELECT project_id, fingerprint, item FROM workbench_list_cache');
+    return new Map(rows.map((r) => [r.project_id, { fingerprint: r.fingerprint, item: r.item }]));
+  }
+
+  async putListCache(projectId: string, fingerprint: string, item: unknown) {
+    try {
+      await this.pool.query(
+        `INSERT INTO workbench_list_cache (project_id, fingerprint, item)
+         SELECT id, $2, $3 FROM workbench_projects WHERE id = $1
+         ON CONFLICT (project_id) DO UPDATE
+           SET fingerprint = EXCLUDED.fingerprint, item = EXCLUDED.item, computed_at = now()`,
+        [projectId, fingerprint, JSON.stringify(item)],
+      );
+    } catch (err) {
+      // The project was deleted between the read and the insert: nothing to cache.
+      if ((err as { code?: string }).code !== '23503') throw err;
+    }
+  }
+
+  async listPins(owner: string) {
+    const { rows } = await this.pool.query<{ project_id: string }>(
+      `SELECT project_id FROM workbench_pins WHERE owner = $1
+        ORDER BY pinned_at DESC, project_id`,
+      [owner],
+    );
+    return rows.map((r) => r.project_id);
+  }
+
+  async pin(owner: string, projectId: string) {
+    try {
+      const { rows } = await this.pool.query<{ found: boolean }>(
+        `WITH project AS (SELECT id FROM workbench_projects WHERE id = $2),
+              pinned AS (
+                INSERT INTO workbench_pins (owner, project_id) SELECT $1, id FROM project
+                ON CONFLICT (owner, project_id) DO NOTHING)
+         SELECT EXISTS (SELECT 1 FROM project) AS found`,
+        [owner, projectId],
+      );
+      return rows[0]!.found;
+    } catch (err) {
+      if ((err as { code?: string }).code === '23503') return false; // deleted meanwhile
+      throw err;
+    }
+  }
+
+  async unpin(owner: string, projectId: string) {
+    await this.pool.query('DELETE FROM workbench_pins WHERE owner = $1 AND project_id = $2', [
+      owner,
+      projectId,
+    ]);
   }
 
   private async sample(id: string) {

@@ -20,6 +20,8 @@ import {
   MAX_SAMPLES,
   JobSummarySchema,
   PreparedTextSchema,
+  ProjectListPageSchema,
+  ProjectListQuerySchema,
   ProjectSummarySchema,
   ProjectViewSchema,
   ProposalViewSchema,
@@ -85,6 +87,7 @@ import {
   type WorkbenchProject,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
+import { listProjectsPage } from '../workbench/list.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
@@ -891,7 +894,7 @@ async function startIteration(
 export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   const { workbench, templates } = app.deps;
 
-  app.get(
+  app.get<{ Querystring: Record<string, string> }>(
     '/workbench/projects',
     {
       schema: {
@@ -899,22 +902,52 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listProjects',
         summary: 'List Workbench projects',
         description: md`
-          Every Workbench project (one per document type) with its open draft, latest published
-          version and sample count.
+          A page of the Workbench projects (one per document type), each with its stage states,
+          phase, next step, holdout score and sample counts. \`q\` matches the name or id;
+          \`phase\` and \`policy\` narrow the list; \`filter\` picks a chip. \`total\` counts
+          what every filter leaves, and \`facets\` count each chip ignoring \`filter\` (but
+          honouring \`q\`, \`phase\` and \`policy\`). Sorts: \`activity\` (latest first),
+          \`name\`, \`score\` (lowest first, none last), \`samples\` (fewest first). A page
+          past the end has no items. Rows are recomputed only for projects that changed since
+          the last request.
+
+          Deprecated: \`all=1\` returns every project unpaged, as an array of summaries (draft,
+          published version and sample count), and ignores the other parameters.
         `,
-        response: { 200: res('The projects.', z.array(ProjectSummarySchema)) },
+        querystring: ProjectListQuerySchema.extend({
+          all: z.literal('1').optional().describe('Deprecated: the unpaged summary array.'),
+        }),
+        response: {
+          200: res(
+            'The page; with `all=1` the unpaged list (deprecated).',
+            z.union([ProjectListPageSchema, z.array(ProjectSummarySchema)]),
+          ),
+          400: error(
+            'Zod issues for an invalid query (for example `size` other than 25, 50 or 100).',
+          ),
+        },
       },
     },
-    async (): Promise<ProjectSummary[]> => {
-      const projects = await workbench.listProjects();
-      return Promise.all(
-        projects.map(async (p) => {
-          const { draft, published } = await versionsOf(templates, p.id);
-          return { ...p, draft, published, samples: (await workbench.listSamples(p.id)).length };
-        }),
-      );
+    async (req, reply) => {
+      if (req.query.all !== '1') {
+        const query = ProjectListQuerySchema.safeParse(req.query);
+        if (!query.success) return reply.code(400).send({ error: query.error.issues });
+        return listProjectsPage(app, query.data);
+      }
+      return listAllProjects();
     },
   );
+
+  /** The unpaged list behind `?all=1` (until the web moves to the paged list). */
+  async function listAllProjects(): Promise<ProjectSummary[]> {
+    const projects = await workbench.listProjects();
+    return Promise.all(
+      projects.map(async (p) => {
+        const { draft, published } = await versionsOf(templates, p.id);
+        return { ...p, draft, published, samples: (await workbench.listSamples(p.id)).length };
+      }),
+    );
+  }
 
   /** New project. An existing document type is opened: its open draft, or a new next draft. */
   app.post(
