@@ -409,3 +409,50 @@ describe('http api: project overview', () => {
     expect(calls).toEqual([['GET', '/api/workbench/projects/letter/overview']]);
   });
 });
+
+describe('http api: workbench list and pins', () => {
+  it('requests only the set params, in order, with ids comma-joined', async () => {
+    const fetchMock = vi.fn(async (_url: string) =>
+      Response.json({ items: [], total: 0, facets: {} }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listProjectPage({
+      q: 'inv',
+      filter: 'attention',
+      ids: ['a', 'b'],
+      page: 2,
+      size: 50,
+    });
+    await api.listProjectPage({});
+    const expected = new URLSearchParams({
+      q: 'inv',
+      filter: 'attention',
+      ids: 'a,b',
+      page: '2',
+      size: '50',
+    }).toString();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `/api/workbench/projects?${expected}`,
+      '/api/workbench/projects',
+    ]);
+  });
+
+  it('lists, pins and unpins', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'PUT' || init?.method === 'DELETE'
+        ? new Response(null, { status: 204 })
+        : Response.json(['a']),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    expect(await api.listPins()).toEqual(['a']);
+    await api.pin('a b');
+    await api.unpin('a b');
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
+      ['/api/workbench/pins', 'GET'],
+      ['/api/workbench/pins/a%20b', 'PUT'],
+      ['/api/workbench/pins/a%20b', 'DELETE'],
+    ]);
+  });
+});
