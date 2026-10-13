@@ -107,9 +107,10 @@ describe('data policy', () => {
       method: 'POST',
       url: '/api/workbench/projects/letter/test-runs',
     });
-    const [job] = run.json().jobs as { id: string }[];
+    const [job] = run.json().jobs as { id: string; batchId: string }[];
     expect(repo.jobParams.get(job!.id)).toEqual({
       dataPolicy: 'local',
+      batchId: job!.batchId,
       outputs: letter(1).outputs,
     });
   });

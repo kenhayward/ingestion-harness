@@ -15482,7 +15482,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "Queues a test job of the open draft for every ready dev sample (holdout samples are\nnever used). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
+        "description": "Queues a test job of the open draft for every ready dev sample, or for the ready dev\nsamples in `sampleIds` (holdout samples are never used). The jobs of one call share\na `batchId` (the Test runs tab's batches). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15494,6 +15494,16 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 80
+                  },
+                  "sampleIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "description": "Only these samples (each a ready dev sample). Default: every ready dev sample."
                   }
                 },
                 "additionalProperties": false
@@ -15709,7 +15719,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`).",
+            "description": "Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), a sample id that is not a sample of this project, or a holdout sample.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15722,7 +15732,7 @@
                     }
                   },
                   "additionalProperties": true,
-                  "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`)."
+                  "description": "Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), a sample id that is not a sample of this project, or a holdout sample."
                 }
               }
             }
@@ -15782,7 +15792,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to test; start the next version first`, or `no prepared dev samples to run`.",
+            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15808,7 +15818,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to test; start the next version first`, or `no prepared dev samples to run`."
+                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`."
                 }
               }
             }

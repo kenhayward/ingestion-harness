@@ -137,6 +137,89 @@ describe('workbench dev test runs', () => {
     const listed = (await app.inject('/api/workbench/projects/letter/test-runs')).json();
     expect(listed.map((j: { id: string }) => j.id).sort()).toEqual(jobs.map((j) => j.id).sort());
   });
+
+  const runWith = (app: Awaited<ReturnType<typeof project>>['app'], payload: object) =>
+    app.inject({ method: 'POST', url: '/api/workbench/projects/letter/test-runs', payload });
+
+  it('runs only the chosen ready dev samples, as one batch (TR1, TR2)', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    const a = await add(1);
+    await add(2);
+    const c = await add(3);
+    const res = await runWith(app, { sampleIds: [a.id, c.id] });
+    expect(res.statusCode).toBe(201);
+    const jobs = res.json().jobs as { id: string; filename: string; batchId: string }[];
+    expect(jobs.map((j) => j.filename).sort()).toEqual(['s1.pdf', 's3.pdf']);
+    const [batch] = new Set(jobs.map((j) => j.batchId));
+    expect(batch).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(jobs.map((j) => j.batchId)).size).toBe(1);
+    for (const j of jobs) expect(repo.jobParams.get(j.id)).toMatchObject({ batchId: batch });
+
+    const again = (await runWith(app, {})).json().jobs as { batchId: string }[];
+    expect(again).toHaveLength(3); // no sampleIds: every ready dev sample
+    expect(new Set(again.map((j) => j.batchId)).size).toBe(1);
+    expect(again[0]!.batchId).not.toBe(batch);
+    const listed = (await app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+      batchId: string | null;
+    }[];
+    expect(new Set(listed.map((j) => j.batchId))).toEqual(new Set([batch, again[0]!.batchId]));
+  });
+
+  it('refuses holdout, unknown and unprepared samples before queuing anything', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    const dev = await add(1);
+    const holdout = await add(2, 'holdout');
+    const preparing = await add(3, 'dev', false);
+    const before = repo.jobs.size;
+
+    const held = await runWith(app, { sampleIds: [dev.id, holdout.id] });
+    expect(held.statusCode).toBe(400);
+    expect(held.json().error).toBe(
+      's2.pdf is a holdout sample: holdout samples are never test-run',
+    );
+    const unknown = await runWith(app, { sampleIds: ['00000000-0000-4000-8000-000000000009'] });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json().error).toBe(
+      'sample 00000000-0000-4000-8000-000000000009 is not a sample of this project',
+    );
+    const notReady = await runWith(app, { sampleIds: [preparing.id] });
+    expect(notReady.statusCode).toBe(409);
+    expect(notReady.json().error).toBe('s3.pdf is not prepared yet');
+    expect(repo.jobs.size).toBe(before);
+  });
+
+  it.each([
+    ['an empty selection', { sampleIds: [] }],
+    [
+      'a duplicate',
+      {
+        sampleIds: ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001'],
+      },
+    ],
+    ['a non-uuid', { sampleIds: ['s1.pdf'] }],
+  ])('rejects %s', async (_name, payload) => {
+    const { app, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    await add(1);
+    expect((await runWith(app, payload)).statusCode).toBe(400);
+  });
+
+  it('keeps a retried run in its batch', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    await add(1);
+    const [job] = (await runWith(app, {})).json().jobs as { id: string; batchId: string }[];
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'failed' });
+    const retried = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job!.id}/retry`,
+      payload: {},
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().batchId).toBe(job!.batchId);
+  });
 });
 
 describe('dev test run housekeeping', () => {
