@@ -143,7 +143,10 @@ describe('ProposalCard', () => {
     const [first, second] = within(screen.getByRole('region', { name: 'Proposal' })).getAllByRole(
       'listitem',
     );
+    if (!first || !second) throw new Error('expected two changes');
     expect(first).toHaveTextContent('Answers 1');
+    expect(within(first).getByText('Answers 1').parentElement).toHaveClass('proposal-badge');
+    expect(second.querySelector('.proposal-badge')).toBeNull();
     expect(second).not.toHaveTextContent('Answers');
     expect(
       screen.getByText('Feedback a change answers is marked answered when you apply it.'),

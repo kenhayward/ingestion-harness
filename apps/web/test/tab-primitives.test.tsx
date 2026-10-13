@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Meter } from '../src/ui/Meter.js';
@@ -158,5 +158,10 @@ describe('StaleBanner', () => {
     const note = screen.getByRole('note');
     expect(note).toHaveAttribute('data-tone', 'warn');
     expect(within(note).queryByRole('img', { name: 'Stale' })).toBeNull();
+    cleanup();
+    render(<StaleBanner>Default tone.</StaleBanner>);
+    expect(
+      within(screen.getByRole('note')).getByRole('img', { name: 'Stale' }),
+    ).toBeInTheDocument();
   });
 });

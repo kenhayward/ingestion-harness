@@ -885,8 +885,12 @@ label.inline.list-select {
   background: var(--ih-warn-bg);
 }
 .proposal-badge {
+  grid-column: 3;
   align-self: start;
   min-width: 0;
+}
+.proposal-changes li > details {
+  grid-column: 3;
 }
 .proposal-footer-note {
   font-size: var(--ih-text-sm);

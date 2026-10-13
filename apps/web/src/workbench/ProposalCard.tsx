@@ -155,6 +155,7 @@ export function ProposalCard({
           const verb = definition ? changeVerb(c, definition) : null;
           const diff = definition ? changeDiff(c, definition) : null;
           const line = note?.(c) ?? null;
+          const badgeNode = badge?.(c, i);
           return (
             <li key={`${i}-${c.op}`}>
               <input
@@ -173,7 +174,7 @@ export function ProposalCard({
                 <span className="proposal-line muted">{c.reason}</span>
                 {line && <span className="proposal-line muted">{line}</span>}
               </label>
-              {badge && <span className="proposal-badge">{badge(c, i)}</span>}
+              {badgeNode != null && <span className="proposal-badge">{badgeNode}</span>}
               <details>
                 <summary>Details</summary>
                 <pre>{JSON.stringify(c, null, 2)}</pre>
