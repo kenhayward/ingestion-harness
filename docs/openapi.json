@@ -18276,12 +18276,19 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "skippedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
                       "stage",
                       "state",
-                      "completedAt"
+                      "completedAt",
+                      "skippedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -18995,12 +19002,19 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "skippedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
                       "stage",
                       "state",
-                      "completedAt"
+                      "completedAt",
+                      "skippedAt"
                     ],
                     "additionalProperties": true
                   },
