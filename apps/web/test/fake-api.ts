@@ -347,6 +347,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     saveBrief: vi.fn(async () => {
       throw new Error('saveBrief not stubbed');
     }),
+    listBriefVersions: vi.fn(async () => []),
+    getBriefVersion: vi.fn(async () => {
+      throw new Error('getBriefVersion not stubbed');
+    }),
     runDevTests: vi.fn(async () => ({ jobs: [] })),
     listTestRuns: vi.fn(async () => []),
     startSegmentation: vi.fn(async () => {

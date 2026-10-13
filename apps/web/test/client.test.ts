@@ -391,6 +391,21 @@ describe('http api: feedback', () => {
   });
 });
 
+describe('http api: brief versions', () => {
+  it('lists versions and reads one', async () => {
+    const fetchMock = vi.fn(async () => respond(200, []));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listBriefVersions('letter');
+    await api.getBriefVersion('letter', 2);
+    const urls = (fetchMock.mock.calls as unknown as [string][]).map(([url]) => url);
+    expect(urls).toEqual([
+      '/api/workbench/projects/letter/briefs',
+      '/api/workbench/projects/letter/briefs/2',
+    ]);
+  });
+});
+
 describe('http api: project overview', () => {
   it('reads a project overview', async () => {
     const body = { project: { id: 'letter' }, stages: [], next: null, gate: {} };
