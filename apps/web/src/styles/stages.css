@@ -3140,8 +3140,12 @@ label.inline.list-select {
   display: grid;
   gap: 8px;
 }
+/* Buttons centre their content app-wide: each row starts at the left edge instead. */
 .step-list-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: start;
+  justify-items: start;
   gap: 2px;
   width: 100%;
   min-width: 0;
