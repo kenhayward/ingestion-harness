@@ -310,6 +310,11 @@ export function StagePanel({
           Could not load draft v{draft}: {definitions.error}
         </p>
       )}
+      {stage === 'outputs' && draftDef && definitions.liveError && (
+        <p role="alert">
+          Could not load live v{published}: {definitions.liveError}
+        </p>
+      )}
       {stage === 'outputs' && draftDef && typeof draft === 'number' ? (
         <>
           {proposal?.status === 'ready' && card}
