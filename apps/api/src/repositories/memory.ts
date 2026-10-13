@@ -370,8 +370,7 @@ export class MemoryRepo implements IngestionRepo {
     const secs = jobs
       .filter(
         (j) =>
-          j.status !== 'queued' &&
-          j.status !== 'running' &&
+          (j.status === 'succeeded' || j.status === 'awaiting_review') &&
           j.startedAt &&
           j.finishedAt &&
           Date.parse(j.finishedAt) > since,

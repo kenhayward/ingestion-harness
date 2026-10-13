@@ -84,6 +84,58 @@ describe('RunsTab', () => {
     expect(button).toHaveAttribute('title', 'Select at least one prepared dev sample');
   });
 
+  it('does not claim zero samples before the first load', async () => {
+    let release: (s: ReturnType<typeof ready>[]) => void = () => {};
+    tab(
+      fakeApi({
+        listSamples: vi.fn(
+          () =>
+            new Promise<ReturnType<typeof ready>[]>((resolve) => {
+              release = resolve;
+            }),
+        ),
+      }),
+    );
+    const loading = screen.getByRole('button', { name: 'Run on dev samples' });
+    expect(loading).toBeDisabled();
+    expect(loading).toHaveAttribute('title', 'Loading samples…');
+    release([ready(1), ready(2)]);
+    expect(await runButton()).toHaveTextContent('Run on 2 dev samples');
+  });
+
+  describe('a sample that becomes ready while the tab is open', () => {
+    // Sample 3 is preparing at first, so the tab keeps polling until it is ready.
+    function withPreparingSample() {
+      const samples = [
+        ready(1),
+        ready(2),
+        sampleView({ id: ready(3).id, filename: 's3.pdf', state: 'preparing' }),
+      ];
+      tab(fakeApi({ listSamples: vi.fn(async () => [...samples]) }), { pollMs: 20 });
+      return () => {
+        samples[2] = ready(3);
+      };
+    }
+
+    it('joins an untouched selection', async () => {
+      const becomeReady = withPreparingSample();
+      expect(await runButton()).toHaveTextContent('Run on 2 dev samples');
+      becomeReady();
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: 's3.pdf' })).toBeChecked());
+      expect(await runButton()).toHaveTextContent('Run on 3 dev samples');
+    });
+
+    it('stays off once the user has changed the selection', async () => {
+      const becomeReady = withPreparingSample();
+      await userEvent.click(await screen.findByRole('checkbox', { name: 's1.pdf' }));
+      expect(await runButton()).toHaveTextContent('Run on 1 dev sample');
+      becomeReady();
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: 's3.pdf' })).toBeEnabled());
+      expect(screen.getByRole('checkbox', { name: 's3.pdf' })).not.toBeChecked();
+      expect(await runButton()).toHaveTextContent('Run on 1 dev sample');
+    });
+  });
+
   it('cannot run without an open draft, and says why', async () => {
     tab(fakeApi({ listSamples: vi.fn(async () => [ready(1)]) }), { draft: null });
     const button = await runButton();

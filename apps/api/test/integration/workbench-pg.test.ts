@@ -1497,6 +1497,14 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
          FROM generate_series(1, 50)`,
       [timed.id],
     );
+    // Quick failures and reviews, newer still, are not timed: they would pull the median to 1 s.
+    await pool.query(
+      `INSERT INTO jobs (document_id, status, started_at, finished_at)
+       SELECT $1, s, now() + interval '2 hours', now() + interval '2 hours 1 second'
+         FROM unnest(ARRAY['needs_review', 'failed', 'cancelled']::job_status[]) s,
+              generate_series(1, 20)`,
+      [timed.id],
+    );
     try {
       const after = await repo.queueStats();
       expect(after.queued).toBe(before.queued + 2); // `queued` + the job created with `timed`

@@ -471,7 +471,8 @@ export class PgRepo implements IngestionRepo {
 
   async queueStats(): Promise<QueueStats> {
     // Document jobs only (any query bypassing JOB_SELECT must exclude document-less rows).
-    // A requeued job keeps its old times until reclaimed, so the median reads finished runs only.
+    // A requeued job keeps its old times until reclaimed, so the median reads finished runs only,
+    // and only those that did the whole extraction (a quick failure or review would drag it down).
     const { rows } = await this.pool.query<{
       queued: string;
       running: string;
@@ -483,7 +484,7 @@ export class PgRepo implements IngestionRepo {
                  FROM (SELECT extract(epoch FROM finished_at - started_at)::float8 AS secs
                          FROM jobs
                         WHERE document_id IS NOT NULL
-                          AND status NOT IN ('queued', 'running')
+                          AND status IN ('succeeded', 'awaiting_review')
                           AND finished_at >= started_at
                           AND finished_at > now() - interval '24 hours'
                         ORDER BY finished_at DESC LIMIT 50) t) AS median

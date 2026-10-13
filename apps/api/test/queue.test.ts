@@ -57,6 +57,29 @@ describe('GET /api/queue/summary', () => {
     });
   });
 
+  it('times succeeded and awaiting-review runs only, not quick failures or reviews', async () => {
+    const { app, repo } = await testApp();
+    const jobs = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) => repo.createDocumentAndJob(doc(n), null)),
+    );
+    const now = Date.now();
+    const took = (seconds: number) => ({
+      startedAt: new Date(now - 100_000).toISOString(),
+      finishedAt: new Date(now - 100_000 + seconds * 1000).toISOString(),
+    });
+    const [ok, review, quick, failed, queued] = jobs;
+    repo.jobs.set(ok!.id, { ...ok!, status: 'succeeded', ...took(60) });
+    repo.jobs.set(review!.id, { ...review!, status: 'awaiting_review', ...took(60) });
+    repo.jobs.set(quick!.id, { ...quick!, status: 'needs_review', ...took(1) });
+    repo.jobs.set(failed!.id, { ...failed!, status: 'failed', ...took(2) });
+    expect(queued!.status).toBe('queued');
+    expect((await app.inject('/api/queue/summary')).json()).toEqual({
+      ahead: 1,
+      running: 0,
+      etaSeconds: 60,
+    });
+  });
+
   it('ignores runs that finished more than a day ago', async () => {
     const { app, repo } = await testApp();
     const [, old] = await Promise.all([1, 2].map((n) => repo.createDocumentAndJob(doc(n), null)));

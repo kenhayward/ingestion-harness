@@ -117,8 +117,10 @@ export function RunsTab({
     else next.add(id);
     setPicked(next);
   };
-  const blocked = runBlockedReason(draft, selected.size);
-  const label = runLabel(selected.size);
+  // Before the first load there is no count to show: neither "0 dev samples" nor a reason to pick.
+  const loading = data === null && draft !== null;
+  const blocked = loading ? 'Loading samples…' : runBlockedReason(draft, selected.size);
+  const label = loading ? 'Run on dev samples' : runLabel(selected.size);
 
   const { batches, others } = useMemo(() => runBatches(data?.runs ?? []), [data]);
   const { shown, hidden } = splitBatches(batches);
