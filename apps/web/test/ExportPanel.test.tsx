@@ -22,7 +22,9 @@ describe('ExportPanel', () => {
       .mockResolvedValueOnce([exp({ status: 'running' })])
       .mockResolvedValue([exp({ status: 'succeeded' })]);
     const api = fakeApi({ listExports, startExport: vi.fn(async () => exp()) });
-    render(<ExportPanel api={api} projectId="letter" dataPolicy="external" pollMs={10} />);
+    render(
+      <ExportPanel api={api} role="admin" projectId="letter" dataPolicy="external" pollMs={10} />,
+    );
     await userEvent.click(await screen.findByRole('button', { name: 'Export bundle' }));
     expect(api.startExport).toHaveBeenCalledWith('letter');
     const link = await screen.findByRole('link', { name: 'Download bundle' });
@@ -30,7 +32,15 @@ describe('ExportPanel', () => {
   });
 
   it('says local-only exports need the admin token', async () => {
-    render(<ExportPanel api={fakeApi()} projectId="letter" dataPolicy="local" pollMs={10} />);
+    render(
+      <ExportPanel
+        api={fakeApi()}
+        role="admin"
+        projectId="letter"
+        dataPolicy="local"
+        pollMs={10}
+      />,
+    );
     expect(await screen.findByText(/admin token/)).toBeInTheDocument();
   });
 
@@ -38,7 +48,9 @@ describe('ExportPanel', () => {
     const api = fakeApi({
       listExports: vi.fn(async () => [exp({ status: 'needs_review', error: 'boom' })]),
     });
-    render(<ExportPanel api={api} projectId="letter" dataPolicy="external" pollMs={10} />);
+    render(
+      <ExportPanel api={api} role="admin" projectId="letter" dataPolicy="external" pollMs={10} />,
+    );
     expect(await screen.findByText(/boom/)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Download bundle' })).not.toBeInTheDocument();
   });
@@ -49,8 +61,56 @@ describe('ExportPanel', () => {
         throw new Error('exporting a local-only project needs the admin token');
       }),
     });
-    render(<ExportPanel api={api} projectId="letter" dataPolicy="external" pollMs={10} />);
+    render(
+      <ExportPanel api={api} role="admin" projectId="letter" dataPolicy="external" pollMs={10} />,
+    );
     await userEvent.click(await screen.findByRole('button', { name: 'Export bundle' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('needs the admin token');
+  });
+
+  it.each<['admin' | 'user', boolean]>([
+    ['admin', true],
+    ['user', false],
+  ])('offers a local-only bundle download to %s: %s', async (role, offered) => {
+    const api = fakeApi({ listExports: vi.fn(async () => [exp({ status: 'succeeded' })]) });
+    render(<ExportPanel api={api} role={role} projectId="letter" dataPolicy="local" pollMs={10} />);
+    expect(await screen.findByText(/Export ready/)).toBeInTheDocument();
+    const link = screen.queryByRole('link', { name: 'Download bundle' });
+    const note = screen.queryByText(
+      "Downloading a local-only project's bundle needs the admin token.",
+    );
+    if (offered) {
+      expect(link).toBeInTheDocument();
+      expect(note).not.toBeInTheDocument();
+    } else {
+      expect(link).not.toBeInTheDocument();
+      expect(note).toBeInTheDocument();
+    }
+  });
+
+  it('offers the download to a user on an external project', async () => {
+    const api = fakeApi({ listExports: vi.fn(async () => [exp({ status: 'succeeded' })]) });
+    render(<ExportPanel api={api} role="user" projectId="letter" dataPolicy="external" />);
+    expect(await screen.findByRole('link', { name: 'Download bundle' })).toBeInTheDocument();
+  });
+
+  it('clears a polling error once a poll succeeds', async () => {
+    const listExports = vi
+      .fn()
+      .mockResolvedValueOnce([exp({ status: 'running' })])
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue([exp({ status: 'succeeded' })]);
+    render(
+      <ExportPanel
+        api={fakeApi({ listExports })}
+        role="admin"
+        projectId="letter"
+        dataPolicy="external"
+        pollMs={10}
+      />,
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    await screen.findByRole('link', { name: 'Download bundle' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

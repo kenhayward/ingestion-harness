@@ -7,11 +7,14 @@ const ACTIVE = new Set(['queued', 'running']);
 /** Export the project's drafting bundle (dev samples only) and download the latest one. */
 export function ExportPanel({
   api,
+  role,
   projectId,
   dataPolicy,
   pollMs = 3000,
 }: {
   api: Api;
+  /** The session's role: a local-only project's bundle downloads with the admin token only. */
+  role: 'admin' | 'user';
   projectId: string;
   dataPolicy: DataPolicy;
   pollMs?: number;
@@ -24,6 +27,7 @@ export function ExportPanel({
     try {
       const all = await api.listExports(projectId);
       setLatest(all[0] ?? null);
+      setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -71,9 +75,13 @@ export function ExportPanel({
           {latest.status === 'succeeded' ? (
             <>
               Export ready.{' '}
-              <a href={api.exportBundleUrl(projectId, latest.jobId)} download>
-                Download bundle
-              </a>
+              {dataPolicy === 'local' && role !== 'admin' ? (
+                <span>Downloading a local-only project&apos;s bundle needs the admin token.</span>
+              ) : (
+                <a href={api.exportBundleUrl(projectId, latest.jobId)} download>
+                  Download bundle
+                </a>
+              )}
             </>
           ) : active ? (
             `Export ${latest.status}…`

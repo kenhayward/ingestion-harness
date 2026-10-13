@@ -172,6 +172,7 @@ export function ProjectPage({
           />
           <ExportPanel
             api={api}
+            role={role}
             projectId={project.id}
             dataPolicy={project.dataPolicy}
             pollMs={pollMs}
