@@ -270,6 +270,7 @@ describe('publish gate', () => {
       score: null,
       passes: false,
       reason: 'no open draft to publish',
+      hints: [],
     });
     const res = await publish(ctx, { overrideReason: 'An override cannot help here' });
     expect(res.statusCode).toBe(409);
@@ -478,6 +479,51 @@ describe('publish gate score cache', () => {
     expect(reads.count).toBe(0);
   });
 
+  it('serves the hints from the cache too', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    const reads = countDocumentReads(ctx);
+    const first = await gateOf(ctx);
+    expect(first.hints).toHaveLength(1);
+    reads.count = 0;
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBe(0);
+  });
+
+  it('recomputes the hints of a cache row stored without them', async () => {
+    const ctx = await project();
+    const iteration = await holdoutRun(ctx, 'Wrong');
+    const first = await gateOf(ctx);
+    const { fingerprint, score, completed, total } = (await ctx.app.deps.workbench.getIteration(
+      'letter',
+      iteration.id,
+    ))!.gateCache!;
+    await ctx.app.deps.workbench.setGateCache(iteration.id, {
+      fingerprint,
+      score,
+      completed,
+      total,
+    });
+    const reads = countDocumentReads(ctx);
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBeGreaterThan(0);
+    reads.count = 0;
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBe(0);
+  });
+
+  it('recomputes the hints when the threshold changed', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    await gateOf(ctx);
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/workbench/projects/letter',
+      payload: { publishThreshold: 0 },
+    });
+    expect((await gateOf(ctx)).hints).toEqual([]);
+  });
+
   it('keeps coverage live on a cache hit', async () => {
     const ctx = await project();
     await holdoutRun(ctx, 'Acme');
@@ -567,5 +613,62 @@ describe('publish gate score cache', () => {
       'application/json',
     );
     expect(await gateOf(ctx)).toMatchObject({ score: 0, passes: false });
+  });
+});
+
+describe('publish gate hints (EV1)', () => {
+  it('has no hints without a deciding holdout run', async () => {
+    const ctx = await project();
+    expect(await gateOf(ctx)).toMatchObject({ iterationId: null, hints: [] });
+  });
+
+  it('has no hints when every output meets the threshold', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect(await gateOf(ctx)).toMatchObject({ passes: true, hints: [] });
+  });
+
+  it('names an output the run gets wrong, fixed with Revise', async () => {
+    const ctx = await project();
+    const iteration = await holdoutRun(ctx, 'Wrong');
+    expect(await gateOf(ctx)).toMatchObject({
+      iterationId: iteration.id,
+      passes: false,
+      hints: [{ key: 'sender', accuracy: 0, cause: 'low_accuracy', stage: 'revise' }],
+    });
+  });
+
+  it('names a referenced value no step of the draft fills, fixed on Steps', async () => {
+    const ctx = await project();
+    const h = await ctx.add(9);
+    await ctx.setRole(h.id, 'holdout');
+    // An unpinned reference (as legacy ones are) can hold a value the draft has no output for.
+    const job = await ctx.repo.createWorkbenchJob(
+      {
+        id: crypto.randomUUID(),
+        filename: h.filename,
+        sha256: h.sha256,
+        sizeBytes: 1,
+        specId: 'letter',
+        specVersion: 1,
+        bucket: 'inbox',
+        objectKey: `letter/${h.id}`,
+      },
+      { projectId: 'letter', task: 'process' },
+    );
+    await ctx.repo.createReference({
+      templateId: 'letter',
+      name: h.filename,
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: { sender: 'Acme', due_date: '2026-10-03' }, tables: {} },
+    });
+    await ctx.evaluate({ set: 'holdout' });
+    const [run] = (await ctx.repo.listProjectRuns('letter')).filter((r) => r.job.referenceId);
+    await ctx.finish(run!.job.id, 'Acme');
+    expect(await gateOf(ctx)).toMatchObject({
+      score: 0.5,
+      hints: [{ key: 'due_date', accuracy: 0, cause: 'no_step', stage: 'steps' }],
+    });
   });
 });

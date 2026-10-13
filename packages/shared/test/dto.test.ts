@@ -5,6 +5,7 @@ import {
   ExportViewSchema,
   FeedbackItemSchema,
   GateViewSchema,
+  PublishGateViewSchema,
   IterationViewSchema,
   ModelInfoSchema,
   isOffered,
@@ -322,6 +323,19 @@ describe.each([
     GateViewSchema,
     { threshold: 0.9, iterationId: null, score: null, passes: false, reason: 'no run' },
     'passes',
+  ],
+  [
+    'PublishGateView',
+    PublishGateViewSchema,
+    {
+      threshold: 0.9,
+      iterationId: null,
+      score: null,
+      passes: false,
+      reason: 'no run',
+      hints: [{ key: 'sender', accuracy: 0, cause: 'no_step', stage: 'steps' }],
+    },
+    'hints',
   ],
   [
     'Publication',

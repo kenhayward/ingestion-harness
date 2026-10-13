@@ -17,6 +17,8 @@ import {
   FeedbackBodySchema,
   FeedbackItemSchema,
   GateViewSchema,
+  PublishGateViewSchema,
+  gateHints,
   IterationSummarySchema,
   KEEPABLE_STAGES,
   IterationViewSchema,
@@ -68,7 +70,9 @@ import {
   type GateCandidate,
   type FailureDiff,
   type FeedbackItem,
+  type GateHint,
   type GateView,
+  type PublishGateView,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -847,7 +851,16 @@ function gateFingerprint(jobIds: string[], jobs: (JobSummary | null)[]): string 
 export async function gateFor(
   app: FastifyInstance,
   project: WorkbenchProject,
-): Promise<GateView & { draft: number | null; definition: Record<string, unknown> | null }> {
+  /** The hints are wanted: a cache row without them (or for another threshold) is a miss. */
+  { withHints = false }: { withHints?: boolean } = {},
+): Promise<
+  GateView & {
+    draft: number | null;
+    definition: Record<string, unknown> | null;
+    /** What lowers the deciding iteration's score; cached with its score (EV1). */
+    hints: GateHint[];
+  }
+> {
   const { draft } = await versionsOf(app.deps.templates, project.id);
   if (draft === null) {
     return {
@@ -858,6 +871,7 @@ export async function gateFor(
       reason: 'no open draft to publish',
       draft,
       definition: null,
+      hints: [],
     };
   }
   const { definition } = (await app.deps.templates.get(project.id, draft))!;
@@ -871,6 +885,7 @@ export async function gateFor(
   const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
     (i) => i.set === 'holdout',
   );
+  const hintsOf = new Map<string, GateHint[]>();
   const candidates = await Promise.all(
     holdout.map(async (i): Promise<GateCandidate> => {
       const matchesDraft = i.templateVersion === draft && stableJson(i.definition) === current;
@@ -891,23 +906,44 @@ export async function gateFor(
       // listProjectRuns returns: a job of any other task would read as deleted (null) here.
       const jobs = i.jobIds.map((id) => jobById.get(id) ?? null);
       const fingerprint = gateFingerprint(i.jobIds, jobs);
-      if (i.gateCache?.fingerprint === fingerprint) {
+      const cache = i.gateCache;
+      if (
+        cache?.fingerprint === fingerprint &&
+        (!withHints ||
+          (cache.hints !== undefined && cache.hintsThreshold === project.publishThreshold))
+      ) {
         // Only stored once every job had finished, so the iteration is complete.
-        const { score, completed, total } = i.gateCache;
+        const { score, completed, total } = cache;
+        if (cache.hints !== undefined) hintsOf.set(i.id, cache.hints);
         return { ...base, status: 'complete', score, completed, total };
       }
       const view = await iterationView(app, i);
       const { status, score, completed, total } = view;
+      const hints = gateHints({
+        threshold: project.publishThreshold,
+        scorecard: view.scorecard,
+        definition,
+      });
+      hintsOf.set(i.id, hints);
       if (status === 'complete' && jobs.every((j) => j === null || !unsettledJob(j.status))) {
-        await app.deps.workbench.setGateCache(i.id, { fingerprint, score, completed, total });
+        await app.deps.workbench.setGateCache(i.id, {
+          fingerprint,
+          score,
+          completed,
+          total,
+          hints,
+          hintsThreshold: project.publishThreshold,
+        });
       }
       return { ...base, status, score, completed, total };
     }),
   );
+  const decided = publishGate({ threshold: project.publishThreshold, candidates });
   return {
-    ...publishGate({ threshold: project.publishThreshold, candidates }),
+    ...decided,
     draft,
     definition,
+    hints: (decided.iterationId && hintsOf.get(decided.iterationId)) || [],
   };
 }
 
@@ -1296,16 +1332,27 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           needs review, was cancelled or deleted fails it), and scored at or above the
           project's threshold. \`reason\` says why it passes or fails. Scores are recomputed
           from the models' raw output, so review edits cannot raise them.
+
+          \`hints\` (handoff EV1) are the deciding iteration's fields and \`table.column\`s
+          below the threshold, worst first, at most 5: \`no_step\` when no step of the draft
+          fills the output (fix on the Steps tab, \`stage: steps\`), else \`low_accuracy\`
+          (\`stage: revise\`). Empty without a deciding iteration. The overview's \`gate\`
+          carries no hints.
         `,
         params: ProjectIdParams,
-        response: { 200: res('The gate.', GateViewSchema), 404: PROJECT_NOT_FOUND },
+        response: {
+          200: res('The gate and what lowers its score.', PublishGateViewSchema),
+          404: PROJECT_NOT_FOUND,
+        },
       },
     },
-    async (req, reply): Promise<GateView> => {
+    async (req, reply): Promise<PublishGateView> => {
       const project = await workbench.getProject(req.params.id);
       if (!project) return reply.code(404).send({ error: 'project not found' });
-      const { threshold, iterationId, score, passes, reason } = await gateFor(app, project);
-      return { threshold, iterationId, score, passes, reason };
+      const { threshold, iterationId, score, passes, reason, hints } = await gateFor(app, project, {
+        withHints: true,
+      });
+      return { threshold, iterationId, score, passes, reason, hints };
     },
   );
 

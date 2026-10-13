@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import type {
   FeedbackItem,
   GateView,
+  PublishGateView,
   IterationView,
   JobSummary,
   ProjectListItem,
@@ -377,7 +378,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     setPublishThreshold: vi.fn(async () => {
       throw new Error('setPublishThreshold not stubbed');
     }),
-    getPublishGate: vi.fn(async () => gateView()),
+    getPublishGate: vi.fn(async () => publishGateView()),
     getProjectOverview: vi.fn(async () => projectOverview()),
     publish: vi.fn(async () => {
       throw new Error('publish not stubbed');
@@ -603,4 +604,8 @@ export function proposalView(overrides: Partial<ProposalView> = {}): ProposalVie
     decidedAt: null,
     ...overrides,
   };
+}
+
+export function publishGateView(overrides: Partial<PublishGateView> = {}): PublishGateView {
+  return { ...gateView(), hints: [], ...overrides };
 }

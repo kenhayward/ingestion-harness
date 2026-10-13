@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildScorecard,
+  gateHints,
+  MAX_GATE_HINTS,
+  type Accuracy,
+  type GateHint,
   comparisonRows,
   FeedbackBodySchema,
   MAX_FIELD_DIFFS,
@@ -402,5 +406,128 @@ describe('publish bodies', () => {
     expect(ThresholdBodySchema.safeParse({ publishThreshold: 0.8 }).success).toBe(true);
     expect(ThresholdBodySchema.safeParse({ publishThreshold: 1.2 }).success).toBe(false);
     expect(ThresholdBodySchema.safeParse({ publishThreshold: -0.1 }).success).toBe(false);
+  });
+});
+
+describe('gateHints (EV1)', () => {
+  const acc = (id: string, matched: number, total: number): Accuracy => ({
+    id,
+    matched,
+    total,
+    accuracy: matched / total,
+  });
+  const definition = {
+    outputs: {
+      fields: [{ id: 'sender' }, { id: 'due_date' }],
+      tables: [{ id: 'line_items', columns: [{ id: 'qty' }] }],
+    },
+    pipeline: [
+      { type: 'extract', id: 'head', fields: ['sender'] },
+      { type: 'extract', id: 'lines', table: 'line_items' },
+    ],
+  };
+  type Case = [
+    string,
+    number,
+    { fields: Accuracy[]; columns: Accuracy[] },
+    unknown,
+    [string, GateHint['cause']][],
+  ];
+
+  it.each<Case>([
+    [
+      'nothing below the threshold',
+      0.9,
+      { fields: [acc('sender', 2, 2)], columns: [] },
+      definition,
+      [],
+    ],
+    [
+      'at the threshold is not below it',
+      0.9,
+      { fields: [acc('sender', 9, 10)], columns: [] },
+      definition,
+      [],
+    ],
+    [
+      'a filled output that is often wrong',
+      0.9,
+      { fields: [acc('sender', 1, 2)], columns: [] },
+      definition,
+      [['sender', 'low_accuracy']],
+    ],
+    [
+      'an output no step fills',
+      0.9,
+      { fields: [acc('due_date', 0, 2)], columns: [] },
+      definition,
+      [['due_date', 'no_step']],
+    ],
+    [
+      'a key the draft does not define',
+      0.9,
+      { fields: [acc('vat', 0, 2)], columns: [] },
+      definition,
+      [['vat', 'no_step']],
+    ],
+    [
+      'a column takes its table coverage',
+      0.95,
+      { fields: [], columns: [acc('line_items.qty', 13, 14)] },
+      definition,
+      [['line_items.qty', 'low_accuracy']],
+    ],
+    [
+      'a column of an undefined table',
+      0.9,
+      { fields: [], columns: [acc('lines.qty', 0, 4)] },
+      definition,
+      [['lines.qty', 'no_step']],
+    ],
+    [
+      'worst first, no_step before low_accuracy on a tie, then by key',
+      0.9,
+      {
+        fields: [acc('sender', 0, 2), acc('due_date', 0, 2), acc('vat', 0, 2)],
+        columns: [acc('line_items.qty', 1, 2)],
+      },
+      definition,
+      [
+        ['due_date', 'no_step'],
+        ['vat', 'no_step'],
+        ['sender', 'low_accuracy'],
+        ['line_items.qty', 'low_accuracy'],
+      ],
+    ],
+    [
+      'a malformed definition: nothing is filled',
+      0.9,
+      { fields: [acc('sender', 0, 1)], columns: [] },
+      null,
+      [['sender', 'no_step']],
+    ],
+  ])('%s', (_name, threshold, scorecard, def, expected) => {
+    expect(
+      gateHints({ threshold, scorecard, definition: def }).map((h) => [h.key, h.cause]),
+    ).toEqual(expected);
+  });
+
+  it('names the fixing tab and keeps the accuracy', () => {
+    expect(
+      gateHints({
+        threshold: 0.9,
+        scorecard: { fields: [acc('due_date', 0, 2), acc('sender', 1, 2)], columns: [] },
+        definition,
+      }),
+    ).toEqual([
+      { key: 'due_date', accuracy: 0, cause: 'no_step', stage: 'steps' },
+      { key: 'sender', accuracy: 0.5, cause: 'low_accuracy', stage: 'revise' },
+    ]);
+  });
+
+  it(`keeps at most ${MAX_GATE_HINTS}`, () => {
+    const fields = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => acc(id, 0, 1));
+    const hints = gateHints({ threshold: 0.9, scorecard: { fields, columns: [] }, definition });
+    expect(hints.map((h) => h.key)).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 });
