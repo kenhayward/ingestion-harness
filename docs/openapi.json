@@ -2777,6 +2777,78 @@
         }
       }
     },
+    "/api/queue/summary": {
+      "get": {
+        "operationId": "getQueueSummary",
+        "summary": "How long a new run would wait",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "The queue a new Workbench test run waits behind: `ahead` counts the queued jobs\nwith a document (production first, then earlier Workbench runs), `running` the jobs\nrunning now, and `etaSeconds` is a rough wait from the median duration of the\nnewest timed runs of the last 24 hours, shared among the busy workers (null without\nsuch runs; 0 when nothing is queued). Counts only: no job or project is named.",
+        "responses": {
+          "200": {
+            "description": "The queue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ahead": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "running": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "etaSeconds": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ahead",
+                    "running",
+                    "etaSeconds"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queue."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{id}": {
       "get": {
         "operationId": "getJob",

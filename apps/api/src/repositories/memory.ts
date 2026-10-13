@@ -17,6 +17,7 @@ import {
   type DeleteJobResult,
   type IngestionRepo,
   type JobEventRecord,
+  type QueueStats,
   type JobReview,
   type ListJobsQuery,
   type ListPublishedQuery,
@@ -360,6 +361,37 @@ export class MemoryRepo implements IngestionRepo {
         return event ? [{ jobId, message, data: event.data, at: event.at }] : [];
       }),
     );
+  }
+
+  async queueStats(): Promise<QueueStats> {
+    const jobs = [...this.jobs.values()];
+    const since = Date.now() - 24 * 3600_000;
+    // A requeued job keeps its old times until reclaimed: only finished runs are timed.
+    const secs = jobs
+      .filter(
+        (j) =>
+          j.status !== 'queued' &&
+          j.status !== 'running' &&
+          j.startedAt &&
+          j.finishedAt &&
+          Date.parse(j.finishedAt) > since,
+      )
+      .sort((a, b) => b.finishedAt!.localeCompare(a.finishedAt!))
+      .slice(0, 50)
+      .map((j) => (Date.parse(j.finishedAt!) - Date.parse(j.startedAt!)) / 1000)
+      .filter((s) => s >= 0)
+      .sort((a, b) => a - b);
+    const mid = secs.length / 2;
+    const median = !secs.length
+      ? null
+      : secs.length % 2
+        ? secs[Math.floor(mid)]!
+        : (secs[mid - 1]! + secs[mid]!) / 2;
+    return {
+      queued: jobs.filter((j) => j.status === 'queued').length,
+      running: jobs.filter((j) => j.status === 'running').length,
+      medianSeconds: median,
+    };
   }
 
   async cancelJob(id: string): Promise<JobSummary | null> {

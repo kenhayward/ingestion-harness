@@ -19,6 +19,7 @@ import {
   type DeleteJobResult,
   type IngestionRepo,
   type JobEventRecord,
+  type QueueStats,
   type JobReview,
   type ListJobsQuery,
   type ListPublishedQuery,
@@ -466,6 +467,35 @@ export class PgRepo implements IngestionRepo {
       data: r.data,
       at: r.at.toISOString(),
     }));
+  }
+
+  async queueStats(): Promise<QueueStats> {
+    // Document jobs only (any query bypassing JOB_SELECT must exclude document-less rows).
+    // A requeued job keeps its old times until reclaimed, so the median reads finished runs only.
+    const { rows } = await this.pool.query<{
+      queued: string;
+      running: string;
+      median: number | null;
+    }>(
+      `SELECT count(*) FILTER (WHERE status = 'queued') AS queued,
+              count(*) FILTER (WHERE status = 'running') AS running,
+              (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY secs)
+                 FROM (SELECT extract(epoch FROM finished_at - started_at)::float8 AS secs
+                         FROM jobs
+                        WHERE document_id IS NOT NULL
+                          AND status NOT IN ('queued', 'running')
+                          AND finished_at >= started_at
+                          AND finished_at > now() - interval '24 hours'
+                        ORDER BY finished_at DESC LIMIT 50) t) AS median
+         FROM jobs
+        WHERE document_id IS NOT NULL AND status IN ('queued', 'running')`,
+    );
+    const row = rows[0]!;
+    return {
+      queued: Number(row.queued),
+      running: Number(row.running),
+      medianSeconds: row.median === null ? null : Number(row.median),
+    };
   }
 
   async getJob(id: string): Promise<JobDetail | null> {

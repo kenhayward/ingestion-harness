@@ -1481,4 +1481,31 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       expect((await workbench.projectFingerprints()).some((f) => f.id === projectId)).toBe(false);
     });
   });
+
+  it('counts the queue and takes the median of the newest timed runs (TR4)', async () => {
+    const projectId = await newProject();
+    const before = await repo.queueStats();
+    const queued = await repo.createDocumentAndJob(doc(projectId), null);
+    const running = await repo.createDocumentAndJob(doc(projectId), null);
+    await pool.query(`UPDATE jobs SET status = 'running' WHERE id = $1`, [running.id]);
+    // 50 runs finished "later" than anything else, so they are the newest 50: median 20 s.
+    const timed = doc(projectId);
+    await repo.createDocumentAndJob(timed, null);
+    await pool.query(
+      `INSERT INTO jobs (document_id, status, started_at, finished_at)
+       SELECT $1, 'succeeded', now() + interval '1 hour', now() + interval '1 hour 20 seconds'
+         FROM generate_series(1, 50)`,
+      [timed.id],
+    );
+    try {
+      const after = await repo.queueStats();
+      expect(after.queued).toBe(before.queued + 2); // `queued` + the job created with `timed`
+      expect(after.running).toBe(before.running + 1);
+      expect(after.medianSeconds).toBeCloseTo(20, 3);
+    } finally {
+      await pool.query(`DELETE FROM documents WHERE id = ANY($1::uuid[])`, [
+        [queued.documentId, running.documentId, timed.id],
+      ]);
+    }
+  });
 });

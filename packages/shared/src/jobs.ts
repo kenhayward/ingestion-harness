@@ -116,6 +116,18 @@ export const TestRunSchema = JobSummarySchema.extend({
 });
 export type TestRun = z.infer<typeof TestRunSchema>;
 
+/**
+ * The queue a new Workbench run waits behind (handoff TR4): queued document jobs (production
+ * and earlier Workbench runs), the jobs running now, and a rough wait (null without recent timed
+ * runs; 0 when nothing is queued).
+ */
+export const QueueSummarySchema = z.object({
+  ahead: z.number().int().nonnegative(),
+  running: z.number().int().nonnegative(),
+  etaSeconds: z.number().int().nonnegative().nullable(),
+});
+export type QueueSummary = z.infer<typeof QueueSummarySchema>;
+
 export const JobOutputSchema = z.object({
   outputId: z.string(),
   /** draft: outputs bucket (pre-review); published: final target. */
