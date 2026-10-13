@@ -112,18 +112,21 @@ export const EditRequestSchema = z.union([
 ]);
 export type EditRequest = z.infer<typeof EditRequestSchema>;
 
-export interface ReviewEdit {
-  id: number;
-  at: string;
-  field: string | null;
-  table: string | null;
-  row: number | null;
-  column: string | null;
-  oldValue: unknown;
-  newValue: unknown;
-  editor: string | null;
-  reason: string | null;
-}
+/** A recorded reviewer edit: a field, or a table cell (`table`, 1-based `row`, `column`). */
+export const ReviewEditSchema = z.object({
+  id: z.number().int(),
+  at: z.string(),
+  field: z.string().nullable(),
+  table: z.string().nullable(),
+  row: z.number().int().nullable(),
+  column: z.string().nullable(),
+  /** The value before this edit: the previous edit's value, or the draft's. */
+  oldValue: z.unknown(),
+  newValue: z.unknown(),
+  editor: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type ReviewEdit = z.infer<typeof ReviewEditSchema>;
 
 export const ApproveRequestSchema = z
   .object({ reviewer: z.string().optional(), note: z.string().optional() })
@@ -133,21 +136,22 @@ export const RejectRequestSchema = z
   .strict();
 
 /** One extract step execution recorded by the worker (step_runs). */
-export interface StepRun {
-  id: number;
-  stepId: string;
-  trigger: 'process' | 'rerun';
-  model: string | null;
-  attempts: number;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  status: 'succeeded' | 'failed';
+export const StepRunSchema = z.object({
+  id: z.number().int(),
+  stepId: z.string(),
+  trigger: z.enum(['process', 'rerun']),
+  model: z.string().nullable(),
+  attempts: z.number().int(),
+  inputTokens: z.number().int().nullable(),
+  outputTokens: z.number().int().nullable(),
+  status: z.enum(['succeeded', 'failed']),
   /** Served from the workbench step cache (no model call). */
-  cached: boolean;
-  error: string | null;
-  startedAt: string;
-  finishedAt: string;
-}
+  cached: z.boolean(),
+  error: z.string().nullable(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+});
+export type StepRun = z.infer<typeof StepRunSchema>;
 
 export const RerunRequestSchema = z
   .object({
