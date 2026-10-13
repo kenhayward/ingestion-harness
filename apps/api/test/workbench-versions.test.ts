@@ -7,12 +7,13 @@ import {
   type SampleView,
   type StageView,
 } from '@ih/shared';
-import { letter, multipart, testApp } from './helpers.js';
+import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 
 async function project() {
   const ctx = await testApp();
+  seedModelChoices(ctx); // main (the default), fast (local), cloud (external)
   await ctx.app.inject({
     method: 'POST',
     url: '/api/workbench/projects',
@@ -338,7 +339,7 @@ describe('references across versions (workbench)', () => {
       ...(await created(`${base}/evaluations`, { set: 'holdout' })),
       ...(await created(`${base}/evaluations/compare`, {})),
     ];
-    expect(runs).toHaveLength(6); // 1 test run, 1 dev, 1 holdout, 3 compared models
+    expect(runs).toHaveLength(5); // 1 test run, 1 dev, 1 holdout, 2 compared model choices
     for (const id of runs) {
       expect(await repo.getJobParams(id)).toMatchObject({
         dataPolicy: 'local',

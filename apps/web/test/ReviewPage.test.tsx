@@ -273,20 +273,8 @@ describe('ReviewPage', () => {
     expect(screen.getByLabelText(/Rejection reason/)).toHaveValue('');
   });
 
-  it('lists step runs and re-runs a step with a different model and guidance', async () => {
-    const offered = (ref: string, enabled = true) => ({
-      ref,
-      provider: ref.split('/')[0]!,
-      providerKind: 'openai-chat' as const,
-      modelId: ref.split('/')[1]!,
-      displayName: null,
-      enabled,
-      discoveredAt: '',
-      curated: true,
-    });
+  it('lists step runs and re-runs a step with another model choice and guidance', async () => {
     const { api, onDone } = setup({
-      // GET /api/models lists the offered models (ADR 0010); a disabled one is not offered.
-      listModels: vi.fn(async () => [offered('other/better'), offered('other/off', false)]),
       getStepRuns: vi.fn(async () => [
         {
           id: 1,
@@ -308,11 +296,13 @@ describe('ReviewPage', () => {
     const row = await screen.findByRole('row', { name: /data/ });
     expect(row).toHaveTextContent('local/qwen');
     await userEvent.click(within(row).getByRole('button', { name: 'Re-run data' }));
-    const model = screen.getByRole('combobox', { name: 'Model for re-run' });
+    const dialog = screen.getByRole('dialog', { name: 'Re-run data' });
+    expect(dialog).toHaveTextContent('Only data calls the model again');
+    const model = within(dialog).getByRole('combobox', { name: 'Model' });
     expect(within(model).getByRole('option', { name: 'Step default' })).toBeInTheDocument();
-    await within(model).findByRole('option', { name: 'other/better' });
-    expect(within(model).queryByRole('option', { name: 'other/off' })).toBeNull();
-    await userEvent.selectOptions(model, 'other/better');
+    // The model choices, by label (ADR 0010, phase 4c).
+    await within(model).findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(model, 'New for testing only');
     await userEvent.type(screen.getByLabelText('Guidance for re-run'), 'Results are numeric.');
     const pages = screen.getByLabelText('Pages to show the model');
     expect(pages).toHaveValue('1'); // defaults to the page in the viewer
@@ -320,7 +310,7 @@ describe('ReviewPage', () => {
     await userEvent.type(pages, '3, 2');
     await userEvent.click(screen.getByRole('button', { name: 'Queue re-run' }));
     expect(api.rerunStep).toHaveBeenCalledWith(JOB_ID, 'data', {
-      model: 'other/better',
+      model: 'test',
       instructions: 'Results are numeric.',
       pageImages: [3, 2],
     });

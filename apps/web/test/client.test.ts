@@ -326,6 +326,7 @@ describe('http api: comparison', () => {
     const api = createHttpApi('/api');
     await api.startEvaluation('letter', null, { uncached: true });
     await api.startComparison('letter', { uncached: true });
+    await api.startComparison('letter', { models: ['main', 'test'] });
     await api.getComparison('letter', 'g1');
     const calls = fetchMock.mock.calls.map(([url, init]) => [
       init?.method ?? 'GET',
@@ -335,8 +336,28 @@ describe('http api: comparison', () => {
     expect(calls).toEqual([
       ['POST', '/api/workbench/projects/letter/evaluations', { uncached: true }],
       ['POST', '/api/workbench/projects/letter/evaluations/compare', { uncached: true }],
+      ['POST', '/api/workbench/projects/letter/evaluations/compare', { models: ['main', 'test'] }],
       ['GET', '/api/workbench/projects/letter/comparisons/g1', undefined],
     ]);
+  });
+});
+
+describe('http api: model choices', () => {
+  it('lists the choices every picker offers', async () => {
+    const choices = [
+      {
+        id: 'main',
+        label: 'Main',
+        description: '',
+        ref: 'local/q',
+        location: 'local',
+        isDefault: true,
+      },
+    ];
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, { choices }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await createHttpApi('/api').listPickerChoices()).toEqual(choices);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/models/choices');
   });
 });
 
@@ -537,5 +558,26 @@ describe('http api: LLM endpoints', () => {
       ['/api/llm/endpoints/gpu2/models', 'PUT', JSON.stringify({ models: ['a'] })],
       ['/api/llm/endpoints/gpu2', 'DELETE', null],
     ]);
+  });
+});
+
+describe('http api: runs with a model choice (phase 4d)', () => {
+  it('sends the model choice of a dev test run and of a test upload, before the file', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      respond(200, { jobs: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.runDevTests('letter', 'test');
+    await api.runDevTests('letter', null);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { model: 'test' },
+      {},
+    ]);
+    fetchMock.mockClear();
+    await api.testRun(new File(['%PDF'], 'a.pdf'), 'letter', 2, 'test');
+    const form = fetchMock.mock.calls[0]![1]!.body as FormData;
+    expect([...form.keys()]).toEqual(['specId', 'specVersion', 'test', 'model', 'file']);
+    expect(form.get('model')).toBe('test');
   });
 });

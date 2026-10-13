@@ -11,6 +11,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Meter } from '../ui/Meter.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { TabHeader } from './TabHeader.js';
 import {
   REFERENCE_FILTERS,
@@ -137,20 +138,20 @@ export function ReferencesTab({
     }
   };
 
-  const propose = () =>
-    act(async () => {
-      const jobs = await api.proposeReferences(projectId);
-      setMessage(`${jobs.length} run${jobs.length === 1 ? '' : 's'} queued`);
-      onChanged();
-      await refresh();
-    });
-  const proposeHoldout = () =>
-    act(async () => {
-      const jobs = await api.startHoldoutReferenceRuns(projectId);
-      setMessage(`${jobs.length} holdout run${jobs.length === 1 ? '' : 's'} queued`);
-      onChanged();
-      await refresh();
-    });
+  /** The reference runs the re-process dialog is asking about (their model is fixed). */
+  const [asking, setAsking] = useState<'dev' | 'holdout' | null>(null);
+  const startRuns = async (set: 'dev' | 'holdout') => {
+    setError(null);
+    setMessage(null);
+    const jobs =
+      set === 'dev'
+        ? await api.proposeReferences(projectId)
+        : await api.startHoldoutReferenceRuns(projectId);
+    const runs = `${jobs.length}${set === 'holdout' ? ' holdout' : ''} run${jobs.length === 1 ? '' : 's'}`;
+    setMessage(`${runs} queued`);
+    onChanged();
+    await refresh();
+  };
   const skip = () =>
     act(async () => {
       await api.skipStage(projectId, 'references');
@@ -183,9 +184,9 @@ export function ReferencesTab({
               className="primary"
               disabled={devReason !== null}
               title={devReason ?? undefined}
-              onClick={() => void propose()}
+              onClick={() => setAsking('dev')}
             >
-              Run the draft model on {devCount} unverified
+              Run the draft model on {devCount} unverified…
             </button>
             <button type="button" disabled={busy} onClick={() => void skip()}>
               Skip this stage
@@ -291,9 +292,9 @@ export function ReferencesTab({
                 type="button"
                 disabled={holdoutReason !== null}
                 title={holdoutReason ?? undefined}
-                onClick={() => void proposeHoldout()}
+                onClick={() => setAsking('holdout')}
               >
-                Run the template on {holdoutCount} unverified
+                Run the template on {holdoutCount} unverified…
               </button>
             }
           />
@@ -319,6 +320,27 @@ export function ReferencesTab({
         or columns need verifying again; renaming or describing an output does not. Holdout samples
         are extracted by the live template’s own models and are never sent to the draft model.
       </p>
+      {asking && (
+        <ReprocessDialog
+          title={
+            asking === 'dev'
+              ? `Reference runs on ${devCount} dev sample${devCount === 1 ? '' : 's'}`
+              : `Reference runs on ${holdoutCount} holdout sample${holdoutCount === 1 ? '' : 's'}`
+          }
+          confirmLabel="Run"
+          choices={[]}
+          fixedModel={asking === 'dev' ? 'The drafting model' : "The template's own models"}
+          summary={
+            <p>
+              {asking === 'dev'
+                ? 'The drafting model proposes values for each unverified dev sample. Each run stops for review: correct the values, approve, then save it as the reference.'
+                : 'The template runs on each unverified holdout sample with its own models (drafting never sees holdout). Each run stops for review: correct, approve, then save it as the reference.'}
+            </p>
+          }
+          onConfirm={() => startRuns(asking)}
+          onClose={() => setAsking(null)}
+        />
+      )}
     </div>
   );
 }

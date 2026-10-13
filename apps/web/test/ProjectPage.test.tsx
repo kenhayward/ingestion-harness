@@ -625,12 +625,12 @@ describe('ProjectPage', () => {
       await within(rail).findByRole('link', { name: 'References: Needs your decision' }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole('button', { name: /^Run the draft model on \d+ unverified$/ }),
+      await screen.findByRole('button', { name: /^Run the draft model on \d+ unverified…$/ }),
     ).toBeInTheDocument();
     unmount();
     render(
       <ProjectPage api={api} projectId="letter" tab="evaluate" onNavigate={vi.fn()} role="admin" />,
     );
-    expect(await screen.findByRole('button', { name: 'Evaluate v1 on dev' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Evaluate v1 on dev…' })).toBeInTheDocument();
   });
 });

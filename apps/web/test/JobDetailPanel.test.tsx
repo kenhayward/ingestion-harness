@@ -32,7 +32,6 @@ const output = (o: Partial<JobOutput>): JobOutput => ({
 
 const defaults = {
   onChanged: vi.fn(),
-  retryModel: '',
   models: [],
   specTitles: new Map<string, string>(),
   now: Date.parse('2026-10-12T12:00:00Z'),
@@ -158,6 +157,6 @@ describe('JobDetailPanel', () => {
     render(<JobDetailPanel api={api} job={j} {...defaults} />);
     expect(await screen.findByText(/Couldn't load details: 404/)).toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('boom');
-    expect(screen.getByRole('button', { name: 'Retry with spec default' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry gone.pdf' })).toBeInTheDocument();
   });
 });

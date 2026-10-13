@@ -1,6 +1,6 @@
 # 0010: LLM endpoints and curated models live in the database; .env seeds them
 
-**Status:** accepted · 2026-10-13 · phases 1-3, 4a and 4b implemented
+**Status:** accepted · 2026-10-13 · phases 1-4 implemented
 
 ## Context
 Content Transformation Studio (CT Studio) had one local LLM endpoint (`LOCAL_LLM_BASE_URL`) next
@@ -72,8 +72,25 @@ rather than by editing files and restarting workers.
    step or job. `LLM_CHOICES` seeds the choices (else `DEFAULT_MODEL`/`FAST_MODEL`, for
    compatibility); the aliases move across with their edit marks. Discover is a flag on the
    endpoint whose version bump makes workers rebuild and list models now.
-   **Next (4c, 4d):** one model picker of choices everywhere (aliases and refs alike replaced by
-   choices; Workbench evaluate and compare by choice), and one re-process dialog.
+   **4c:** one model picker everywhere. `GET /api/models/choices` (any signed-in user) lists
+   the offered choices, the default first, each with the model it runs and its endpoint's
+   location; the web's `ModelPicker` shows them by label with that model below and an External
+   tag, and disables external choices for a local-only project. Upload, retry, step re-run, the
+   template step's model, and Workbench evaluate take a choice id (`default` is the default
+   choice; uploads and retries still accept an offered `endpoint/model` ref from API callers).
+   Workbench compare runs a set of 2-6 choices in the order given (absent: every choice the
+   project may use), and an external choice for a local-only project is a 400 there; an
+   iteration's `model` is a free string (the column never had a CHECK, so older `default`,
+   `fast` and `draft` iterations need no migration and still show by name). A draft step
+   naming an `endpoint/model` ref is a template issue (it blocks publishing); published
+   versions and `spec.yaml` keep running theirs.
+   **4d:** one re-process dialog for every re-run (`ReprocessDialog`, on `Dialog`): it says
+   what will run, offers the picker (or shows the model a run must use) and runs only on
+   confirm; a refusal stays in the dialog. Jobs (Retry, Re-process; the upload strip's model no
+   longer drives Retry, which starts from the job's own model), the Review step re-run (with its
+   guidance and pages), the Workbench (Run on dev samples, which now takes a choice; Evaluate;
+   Compare, its set of choices in the dialog; both reference runs, their model fixed) and
+   Document types (test runs; regression, fixed to the template's own models).
 
 ## Consequences
 - **The database is now the source of truth for models.** The config file and `.env` describe

@@ -1,5 +1,4 @@
 import {
-  EVALUATION_MODELS,
   type Accuracy,
   type Comparison,
   type EvaluationSet,
@@ -117,7 +116,6 @@ export interface HistoryRow {
   running: boolean;
 }
 
-const modelRank = (h: IterationSummary) => (h.model ? EVALUATION_MODELS.indexOf(h.model) : -1);
 const scoreOf = (h: IterationSummary) => (h.status === 'complete' ? h.score : null);
 const whole = (n: number | null) => (n === null ? '–' : String(Math.round(n * 100)));
 
@@ -148,7 +146,11 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
     }
     if (seen.has(h.groupId)) return [];
     seen.add(h.groupId);
-    const group = [...members.get(h.groupId)!].sort((a, b) => modelRank(a) - modelRank(b));
+    // In the order they were started (the order the choices were asked for); the history is
+    // newest first, so equal timestamps keep the reverse of its order.
+    const group = [...members.get(h.groupId)!]
+      .reverse()
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const scores = group.map(scoreOf).filter((s): s is number => s !== null);
     return [
       {

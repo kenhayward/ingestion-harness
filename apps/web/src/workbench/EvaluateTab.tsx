@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  EVALUATION_MODELS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
-  type EvaluationModel,
   type EvaluationSet,
   type IterationSummary,
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { Segmented, type SegmentedOption } from '../ui/Segmented.js';
 import { AccuracyCard, HistoryCard } from './EvaluateHistory.js';
 import { LatestRun } from './EvaluateLatest.js';
@@ -65,7 +65,16 @@ export function EvaluateTab({
   onGateChanged?: () => void;
 }) {
   const [set, setSet] = useState<EvaluationSet>('dev');
-  const [model, setModel] = useState<EvaluationModel | ''>('');
+  const choices = useModelChoices(api);
+  /** The re-process dialog open for an evaluation or a comparison. */
+  const [asking, setAsking] = useState<'evaluate' | 'compare' | null>(null);
+  /** The choices ticked for a comparison; null: every one this project may use. */
+  const [ticked, setTicked] = useState<string[] | null>(null);
+  const usable = choices.filter((c) => dataPolicy === 'external' || c.location === 'local');
+  const compared = ticked ?? usable.map((c) => c.id);
+  /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
+  const nameOf = (m: string | null) =>
+    m === null ? 'template' : (choices.find((c) => c.id === m)?.label ?? m);
   const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
@@ -182,21 +191,20 @@ export function EvaluateTab({
               : null;
   const compareBlocked = draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked;
 
-  const evaluate = () =>
-    act(async () => {
-      const started = await api.startEvaluation(projectId, holdout ? null : model || null, {
-        uncached,
-        set,
-      });
-      setCurrent(started);
-      setHistory((h) => [started, ...(h ?? [])]);
-      onStarted?.();
+  /** Run from the re-process dialog: a refusal stays there, with its reason. */
+  const evaluate = async (model: string | null) => {
+    const started = await api.startEvaluation(projectId, holdout ? null : model, {
+      uncached,
+      set,
     });
-  const compare = () =>
-    act(async () => {
-      setComparison(await api.startComparison(projectId, { uncached }));
-      onStarted?.();
-    });
+    setCurrent(started);
+    setHistory((h) => [started, ...(h ?? [])]);
+    onStarted?.();
+  };
+  const compare = async () => {
+    setComparison(await api.startComparison(projectId, { uncached, models: compared }));
+    onStarted?.();
+  };
   const restore = (id: string) =>
     void act(async () => {
       if (!window.confirm('Replace the open draft with the template from this iteration?')) return;
@@ -228,22 +236,6 @@ export function EvaluateTab({
       <section className="card eval-runbar" aria-label="Run">
         <h3>Run</h3>
         <Segmented label="Sample set" options={SETS} value={set} onChange={setSet} />
-        <label>
-          Model{' '}
-          <select
-            value={holdout ? '' : model}
-            disabled={holdout}
-            title={holdout ? HOLDOUT_MODEL_REASON : undefined}
-            onChange={(e) => setModel(e.target.value as EvaluationModel | '')}
-          >
-            <option value="">Template&apos;s models</option>
-            {EVALUATION_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
         <label title="Skip the step cache: every step calls its model">
           <input
             type="checkbox"
@@ -253,28 +245,91 @@ export function EvaluateTab({
           Fresh model calls
         </label>
         <span className="muted eval-runbar-note">
-          {holdout ? "Holdout: template's models only" : 'Dev: any model, or compare'}
+          {holdout ? "Holdout: template's models only" : 'Dev: any model choice, or compare'}
         </span>
         <div className="eval-runbar-actions">
           <button
             type="button"
             disabled={compareBlocked !== null}
             title={compareBlocked ?? undefined}
-            onClick={() => void compare()}
+            onClick={() => setAsking('compare')}
           >
-            Compare models
+            Compare models…
           </button>
           <button
             type="button"
             className="primary"
             disabled={evaluateBlocked !== null}
             title={evaluateBlocked ?? undefined}
-            onClick={() => void evaluate()}
+            onClick={() => setAsking('evaluate')}
           >
-            {draft === null ? `Evaluate on ${set}` : `Evaluate v${draft} on ${set}`}
+            {draft === null ? `Evaluate on ${set}` : `Evaluate v${draft} on ${set}`}…
           </button>
         </div>
       </section>
+      {asking === 'evaluate' && draft !== null && (
+        <ReprocessDialog
+          title={`Evaluate v${draft} on ${set}`}
+          confirmLabel="Evaluate"
+          choices={choices}
+          emptyLabel="Template's models"
+          dataPolicy={dataPolicy}
+          {...(holdout ? { fixedModel: "The template's own models" } : {})}
+          summary={
+            <p>
+              Runs v{draft} on every verified {set} reference and scores it
+              {uncached ? ', every step calling its model (fresh)' : ''}.
+              {holdout ? ` ${HOLDOUT_MODEL_REASON}.` : ''}
+            </p>
+          }
+          onConfirm={evaluate}
+          onClose={() => setAsking(null)}
+        />
+      )}
+      {asking === 'compare' && draft !== null && (
+        <ReprocessDialog
+          title={`Compare models on v${draft}`}
+          confirmLabel="Compare"
+          choices={choices}
+          noModel
+          canConfirm={compared.length >= 2}
+          summary={
+            <p>
+              Evaluates v{draft} on the dev samples once per model choice ticked (at least two),
+              side by side{uncached ? ', every step calling its model (fresh)' : ''}.
+            </p>
+          }
+          onConfirm={compare}
+          onClose={() => setAsking(null)}
+        >
+          <fieldset className="compare-choices" aria-label="Models to compare">
+            <legend className="muted">Compare (at least two)</legend>
+            {choices.map((c) => {
+              const allowed = usable.includes(c);
+              return (
+                <label key={c.id} title={c.ref}>
+                  <input
+                    type="checkbox"
+                    disabled={!allowed}
+                    checked={allowed && compared.includes(c.id)}
+                    onChange={(e) =>
+                      setTicked(
+                        e.target.checked
+                          ? usable
+                              .map((u) => u.id)
+                              .filter((id) => id === c.id || compared.includes(id))
+                          : compared.filter((id) => id !== c.id),
+                      )
+                    }
+                  />{' '}
+                  {c.label}
+                  {c.location === 'external' ? ' · external' : ''}
+                </label>
+              );
+            })}
+          </fieldset>
+        </ReprocessDialog>
+      )}
       {error && <p role="alert">{error}</p>}
       {comparison && (
         <section className="card eval-compare" aria-label="Models compared">
@@ -286,7 +341,7 @@ export function EvaluateTab({
                   <th scope="col">Measure</th>
                   {comparison.iterations.map((i) => (
                     <th scope="col" key={i.id}>
-                      {i.model ?? 'template'}
+                      {nameOf(i.model)}
                       {i.status === 'running' && ' (running)'}
                     </th>
                   ))}

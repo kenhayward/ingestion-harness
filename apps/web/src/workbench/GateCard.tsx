@@ -120,9 +120,12 @@ export function GateCard({
   const hintsId = useId();
   const saved = threshold?.value;
   const [text, setText] = useState(saved === undefined ? '' : String(Math.round(saved * 100)));
+  /** The field was typed in since it last showed the stored threshold. */
+  const [edited, setEdited] = useState(false);
   useEffect(() => {
-    if (saved !== undefined) setText(String(Math.round(saved * 100)));
-  }, [saved]);
+    // A stored threshold that arrives (or changes) never overwrites what is being typed.
+    if (saved !== undefined && !edited) setText(String(Math.round(saved * 100)));
+  }, [saved, edited]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justPublished, setJustPublished] = useState<number | null>(null);
@@ -143,6 +146,7 @@ export function GateCard({
   const save = () =>
     act(async () => {
       if (!('value' in parsed)) return;
+      // The field already shows what was saved; it keeps it rather than flicker back.
       await api.setPublishThreshold(projectId, parsed.value);
       onChanged();
     });
@@ -231,7 +235,10 @@ export function GateCard({
             max={100}
             step={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setEdited(true);
+            }}
           />
         </label>
         <button

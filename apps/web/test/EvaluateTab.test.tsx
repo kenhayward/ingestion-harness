@@ -9,6 +9,12 @@ import {
 } from '../src/workbench/EvaluateTab.js';
 import { fakeApi, iterationView, projectView, referenceInfo, referenceRow } from './fake-api.js';
 
+/** Confirms the open re-process dialog (Evaluate or Compare). */
+async function confirmDialog(label: string) {
+  const dialog = await screen.findByRole('dialog');
+  await userEvent.click(within(dialog).getByRole('button', { name: label }));
+}
+
 function tab(overrides: Partial<Api> = {}, draft: number | null = 2, pollMs = 1) {
   const api = fakeApi({
     getProject: vi.fn(async () => projectView()),
@@ -45,7 +51,8 @@ describe('EvaluateTab', () => {
       'aria-pressed',
       'true',
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on dev' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on dev…' }));
+    await confirmDialog('Evaluate');
     expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {
       uncached: false,
       set: 'dev',
@@ -53,19 +60,42 @@ describe('EvaluateTab', () => {
     await waitFor(() => expect(onStarted).toHaveBeenCalledTimes(1));
   });
 
-  it('passes the chosen model and fresh model calls on dev', async () => {
+  it('passes the model choice picked in the dialog, and fresh model calls, on dev', async () => {
     const it0 = iterationView({ status: 'running', score: null });
     const { api } = tab({
       startEvaluation: vi.fn(async () => it0),
       getIteration: vi.fn(async () => it0),
     });
-    await userEvent.selectOptions(await screen.findByLabelText('Model'), 'fast');
-    await userEvent.click(screen.getByLabelText('Fresh model calls'));
-    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on dev' }));
-    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'fast', {
+    await userEvent.click(await screen.findByLabelText('Fresh model calls'));
+    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on dev…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Evaluate v2 on dev' });
+    expect(dialog).toHaveTextContent('every step calling its model (fresh)');
+    const model = within(dialog).getByRole('combobox', { name: 'Model' });
+    expect(model).toHaveValue('');
+    expect(
+      (within(model).getByRole('option', { name: /Cloud model/ }) as HTMLOptionElement).disabled,
+    ).toBe(true);
+    await within(model).findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(model, 'New for testing only');
+    expect(api.startEvaluation).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Evaluate' }));
+    expect(api.startEvaluation).toHaveBeenCalledWith('letter', 'test', {
       uncached: true,
       set: 'dev',
     });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('keeps a refused evaluation in the dialog, with the reason', async () => {
+    tab({
+      startEvaluation: vi.fn(async () => {
+        throw new Error('unknown model choice gone');
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v2 on dev…' }));
+    await confirmDialog('Evaluate');
+    const dialog = screen.getByRole('dialog', { name: 'Evaluate v2 on dev' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('unknown model choice gone');
   });
 
   it("holdout forces the template's models and cannot compare models, with reasons", async () => {
@@ -74,17 +104,17 @@ describe('EvaluateTab', () => {
       startEvaluation: vi.fn(async () => it0),
       getIteration: vi.fn(async () => it0),
     });
-    await userEvent.selectOptions(await screen.findByLabelText('Model'), 'fast');
-    await userEvent.click(screen.getByRole('button', { name: 'Holdout' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Holdout' }));
     expect(screen.getByRole('button', { name: 'Holdout' })).toHaveAttribute('aria-pressed', 'true');
-    const select = screen.getByLabelText('Model');
-    expect(select).toBeDisabled();
-    expect(select).toHaveValue('');
-    expect(select).toHaveAttribute('title', HOLDOUT_MODEL_REASON);
-    const compare = screen.getByRole('button', { name: 'Compare models' });
+    const compare = screen.getByRole('button', { name: 'Compare models…' });
     expect(compare).toBeDisabled();
     expect(compare).toHaveAttribute('title', COMPARE_HOLDOUT_REASON);
-    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on holdout' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on holdout…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Evaluate v2 on holdout' });
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    expect(dialog).toHaveTextContent("The template's own models");
+    expect(dialog).toHaveTextContent(HOLDOUT_MODEL_REASON);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Evaluate' }));
     expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {
       uncached: false,
       set: 'holdout',
@@ -93,10 +123,10 @@ describe('EvaluateTab', () => {
 
   it('needs an open draft, and says so', async () => {
     const { api } = tab({}, null);
-    const evaluate = await screen.findByRole('button', { name: 'Evaluate on dev' });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate on dev…' });
     expect(evaluate).toBeDisabled();
     expect(evaluate).toHaveAttribute('title', 'Start a draft version first');
-    expect(screen.getByRole('button', { name: 'Compare models' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Compare models…' })).toHaveAttribute(
       'title',
       'Start a draft version first',
     );
@@ -161,7 +191,8 @@ describe('EvaluateTab', () => {
       startEvaluation: vi.fn(async () => running),
       getIteration: vi.fn(async () => running),
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v2 on dev' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v2 on dev…' }));
+    await confirmDialog('Evaluate');
     expect(await screen.findByRole('alert')).toHaveTextContent('history unavailable');
   });
 
@@ -171,30 +202,67 @@ describe('EvaluateTab', () => {
       2,
       60_000,
     );
-    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v2 on dev' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v2 on dev…' }));
+    await confirmDialog('Evaluate');
     expect(await screen.findByText('no ready dev samples')).toBeInTheDocument();
     expect(onStarted).not.toHaveBeenCalled();
   });
 
-  it('compares models side by side and tells the page', async () => {
+  it('compares model choices side by side, headed by their labels, and tells the page', async () => {
     const group = 'g1';
     const views = [
-      iterationView({ model: 'default', groupId: group, score: 0.75 }),
-      iterationView({ model: 'fast', groupId: group, score: 0.5 }),
+      iterationView({ model: 'main', groupId: group, score: 0.75 }),
+      iterationView({ model: 'test', groupId: group, score: 0.5 }),
+      // From before model choices: shown by its name.
       iterationView({ model: 'draft', groupId: group, score: 1 }),
     ];
     const { api, onStarted } = tab({
       startComparison: vi.fn(async () => ({ groupId: group, iterations: views })),
       getComparison: vi.fn(async () => ({ groupId: group, iterations: views })),
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Compare models' }));
-    expect(api.startComparison).toHaveBeenCalledWith('letter', { uncached: false });
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare models…' }));
+    await within(screen.getByRole('dialog')).findByRole('checkbox', {
+      name: 'New for testing only',
+    });
+    await confirmDialog('Compare');
+    // Every choice a local-only project may use (the external one is out).
+    expect(api.startComparison).toHaveBeenCalledWith('letter', {
+      uncached: false,
+      models: ['main', 'test'],
+    });
     const table = await screen.findByRole('table', { name: 'Model comparison' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Measure', 'Main Production Model', 'New for testing only', 'draft']);
     const score = within(table).getByText('score').closest('tr')!;
     expect(score).toHaveTextContent('75%');
     expect(score).toHaveTextContent('50%');
     expect(score).toHaveTextContent('100%');
     expect(onStarted).toHaveBeenCalled();
+  });
+
+  it('compares the model choices ticked in the dialog, at least two, never an external one here', async () => {
+    const { api } = tab({
+      startComparison: vi.fn(async () => ({ groupId: 'g1', iterations: [] })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare models…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Compare models on v2' });
+    const compared = within(dialog).getByRole('group', { name: 'Models to compare' });
+    const main = await within(compared).findByRole('checkbox', {
+      name: 'Main Production Model',
+    });
+    expect(within(compared).getByRole('checkbox', { name: /Cloud model/ })).toBeDisabled();
+    await userEvent.click(main);
+    const compare = within(dialog).getByRole('button', { name: 'Compare' });
+    expect(compare).toBeDisabled();
+    await userEvent.click(main);
+    await userEvent.click(compare);
+    expect(api.startComparison).toHaveBeenCalledWith('letter', {
+      uncached: false,
+      models: ['main', 'test'],
+    });
   });
 
   it('disables Evaluate while a comparison is running, with a reason', async () => {
@@ -210,9 +278,10 @@ describe('EvaluateTab', () => {
       2,
       60_000,
     );
-    const evaluate = await screen.findByRole('button', { name: 'Evaluate v2 on dev' });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate v2 on dev…' });
     expect(evaluate).toBeEnabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Compare models' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Compare models…' }));
+    await confirmDialog('Compare');
     // Busy ("Starting…") first, then blocked by the running comparison.
     await waitFor(() =>
       expect(evaluate).toHaveAttribute('title', 'A model comparison is still running'),
@@ -235,7 +304,8 @@ describe('EvaluateTab', () => {
       startComparison: vi.fn(async () => ({ groupId: group, iterations: running })),
       getComparison,
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Compare models' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare models…' }));
+    await confirmDialog('Compare');
     const table = await screen.findByRole('table', { name: 'Model comparison' });
     await waitFor(() =>
       expect(within(table).getByText('score').closest('tr')).toHaveTextContent('50%'),
@@ -257,7 +327,8 @@ describe('EvaluateTab', () => {
         .mockRejectedValueOnce(new Error('comparison poll failed'))
         .mockResolvedValue({ groupId: group, iterations: done }),
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Compare models' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare models…' }));
+    await confirmDialog('Compare');
     expect(await screen.findByRole('alert')).toHaveTextContent('comparison poll failed');
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
@@ -278,12 +349,40 @@ describe('EvaluateTab', () => {
     confirm.mockRestore();
   });
 
+  it('keeps a threshold being typed when the stored one arrives late', async () => {
+    let arrive!: () => void;
+    const late = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const { api, onGateChanged } = tab({
+      getProject: vi.fn(async () => {
+        await late;
+        return projectView();
+      }),
+      setPublishThreshold: vi.fn(async () => projectView()),
+    });
+    const input = await screen.findByLabelText('Publish threshold (%)');
+    await userEvent.clear(input);
+    await userEvent.type(input, '8');
+    arrive(); // the stored 90% lands mid-edit: it must not overwrite what is being typed
+    await waitFor(() => expect(api.getProject).toHaveBeenCalled());
+    await screen.findByText(/Threshold 90%/);
+    await userEvent.type(input, '0');
+    expect(input).toHaveValue(80);
+    await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
+    expect(api.setPublishThreshold).toHaveBeenCalledWith('letter', 0.8);
+    await waitFor(() => expect(onGateChanged).toHaveBeenCalledTimes(1));
+  });
+
   it('refreshes the page after the threshold is saved', async () => {
     const { api, onGateChanged } = tab({ setPublishThreshold: vi.fn(async () => projectView()) });
     await waitFor(() => expect(api.getPublishGate).toHaveBeenCalled());
     const input = await screen.findByLabelText('Publish threshold (%)');
+    // Edit the stored threshold once it is shown (the late-arrival race has its own test).
+    await waitFor(() => expect(input).toHaveValue(90));
     await userEvent.clear(input);
     await userEvent.type(input, '80');
+    expect(input).toHaveValue(80);
     const calls = vi.mocked(api.getPublishGate).mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
     await waitFor(() => expect(onGateChanged).toHaveBeenCalledTimes(1));
@@ -364,7 +463,7 @@ describe('EvaluateTab', () => {
     await screen.findByText('history unavailable');
     expect(screen.queryByText(/2 of 2 compared/)).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /^Latest dev run/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Evaluate v2 on holdout' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Evaluate v2 on holdout…' })).toBeEnabled();
   });
 
   it.each([
@@ -379,15 +478,15 @@ describe('EvaluateTab', () => {
     tab({ listReferenceRows: rows });
     if (set === 'holdout')
       await userEvent.click(await screen.findByRole('button', { name: 'Holdout' }));
-    const evaluate = await screen.findByRole('button', { name: `Evaluate v2 on ${set}` });
+    const evaluate = await screen.findByRole('button', { name: `Evaluate v2 on ${set}…` });
     await waitFor(() => expect(evaluate).toBeDisabled());
     expect(evaluate).toHaveAttribute('title', reason);
     if (set === 'dev') {
-      const compare = screen.getByRole('button', { name: 'Compare models' });
+      const compare = screen.getByRole('button', { name: 'Compare models…' });
       expect(compare).toBeDisabled();
       expect(compare).toHaveAttribute('title', reason);
     } else {
-      expect(screen.getByRole('button', { name: 'Compare models' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Compare models…' })).toHaveAttribute(
         'title',
         COMPARE_HOLDOUT_REASON,
       );

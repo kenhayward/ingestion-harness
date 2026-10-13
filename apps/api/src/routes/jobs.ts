@@ -3,7 +3,7 @@ import {
   JobDetailSchema,
   JobStatusSchema,
   JobSummarySchema,
-  isOffered,
+  modelRefProblem,
   pagePreviewKey,
   sourceContentType,
   type JobSummary,
@@ -11,7 +11,11 @@ import {
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
-import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
+import {
+  draftOutputsSnapshot,
+  resolveDefinition,
+  runnableModels,
+} from '../templates/definitions.js';
 import { storeFor } from '../storage/stage.js';
 
 const ListQuery = z.object({
@@ -53,7 +57,9 @@ const RetryBody = z.object({
     .min(1)
     .nullable()
     .optional()
-    .describe("A model ref to use, null for the document type's model, absent to keep the job's."),
+    .describe(
+      "A model choice's id (or an offered model ref) to use, null for the document type's models, absent to keep the job's.",
+    ),
 });
 
 const CleanupBody = z.object({
@@ -167,7 +173,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         body: RetryBody,
         response: {
           200: res('The queued job.', JobSummarySchema),
-          400: error('`model must be a model ref or null`, or an unknown or disabled model.'),
+          400: error(
+            '`model must be a model ref or null`, or a model that is no choice or is not offered.',
+          ),
           404: NOT_FOUND,
           409: error('`job not found or not in a retryable state`.'),
         },
@@ -181,10 +189,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({ error: 'model must be a model ref or null' });
       const { model } = body.data;
       if (model) {
-        const known = (await app.deps.repo.listModels()).some(
-          (m) => isOffered(m) && m.ref === model,
-        );
-        if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
+        const { offered, aliases } = await runnableModels(app.deps);
+        const problem = modelRefProblem(model, offered, aliases);
+        if (problem) return reply.code(400).send({ error: problem });
       }
       const current = await app.deps.repo.getJob(req.params.id);
       const job = await app.deps.repo.retryJob(req.params.id, {

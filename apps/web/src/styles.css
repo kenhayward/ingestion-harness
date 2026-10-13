@@ -3005,3 +3005,59 @@ tr.confirming td {
 .choices-section .card-form {
   flex: none;
 }
+
+/* The one model picker (ADR 0010, phase 4c): the select, and the model the pick runs below it. */
+.model-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.model-picker select {
+  max-width: 100%;
+}
+.model-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ih-text-sm);
+}
+.model-hint code {
+  overflow-wrap: anywhere;
+}
+.compare-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.compare-choices legend {
+  width: 100%;
+  padding: 0;
+}
+
+/* The one re-process dialog (ADR 0010, phase 4d): what runs, the model, the caller's fields. */
+.reprocess-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(440px, 100%);
+}
+.reprocess-body > p {
+  margin: 0;
+}
+.reprocess-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reprocess-body .compare-choices label {
+  flex-direction: row;
+  align-items: center;
+}
+.reprocess-fixed {
+  font-weight: 600;
+}

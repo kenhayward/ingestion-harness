@@ -390,7 +390,13 @@ export function ProjectPage({
           )}
           {tab === 'runs' && header('runs')}
           {tab === 'runs' && (
-            <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />
+            <RunsTab
+              api={api}
+              projectId={project.id}
+              dataPolicy={project.dataPolicy}
+              draft={draft}
+              pollMs={pollMs}
+            />
           )}
           {tab === 'template' && header('template')}
           {tab === 'template' &&

@@ -1,8 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
-import { inboxKey, isOffered, JobSummarySchema } from '@ih/shared';
+import { inboxKey, JobSummarySchema, modelRefProblem } from '@ih/shared';
 import { error, md, multipart, res } from '../openapi/zod.js';
-import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
+import {
+  draftOutputsSnapshot,
+  resolveDefinition,
+  runnableModels,
+} from '../templates/definitions.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 
 /**
@@ -34,8 +38,9 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
             latest published one, or the newest spec file).
           - A draft template version can only be uploaded as a test run (\`test=true\`). Test
             runs can be reviewed but are never delivered to the target.
-          - \`model\` overrides the document type's model for every step (a ref listed by
-            \`GET /api/models\` and enabled).
+          - \`model\` overrides the document type's model for every step: a model choice's id
+            from \`GET /api/models/choices\` (\`default\` is the default choice), or an
+            offered \`endpoint/model\` ref from \`GET /api/models\`.
 
           The file's bytes decide what it is, never its name: a PDF (starting \`%PDF-\`) or a
           \`.docx\` (a Word document; not \`.docm\`, \`.dotx\` or \`.doc\`) without tracked
@@ -51,7 +56,8 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
             },
             model: {
               type: 'string',
-              description: "A model ref to use instead of the document type's model.",
+              description:
+                "A model choice's id (or an offered model ref) to use instead of the document type's models.",
             },
             test: {
               type: 'string',
@@ -65,7 +71,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           201: res('The queued job.', JobSummarySchema),
           400: error(
             'A missing `file` part or `specId`, an unknown document type or version, a draft ' +
-              'without `test=true`, or an unknown or disabled model.',
+              'without `test=true`, or a model that is no choice or is not offered.',
           ),
           406: error('The request is not `multipart/form-data`.'),
           413: error('The file is larger than the upload limit.'),
@@ -103,8 +109,10 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
 
       const model = multipartField(file, 'model') || null;
       if (model) {
-        const known = (await repo.listModels()).some((m) => isOffered(m) && m.ref === model);
-        if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
+        // A model choice (or an offered `endpoint/model` ref, for API callers; ADR 0010).
+        const { offered, aliases } = await runnableModels(app.deps);
+        const problem = modelRefProblem(model, offered, aliases);
+        if (problem) return reply.code(400).send({ error: problem });
       }
 
       const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit

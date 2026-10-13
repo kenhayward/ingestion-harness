@@ -1,4 +1,14 @@
-import { choiceNames, isOffered, modelRefProblem, TemplateSchema, type Template } from '@ih/shared';
+import {
+  choiceNames,
+  isOffered,
+  modelRefProblem,
+  pickedChoice,
+  pickerChoices,
+  TemplateSchema,
+  type DataPolicy,
+  type ModelChoice,
+  type Template,
+} from '@ih/shared';
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
@@ -47,14 +57,42 @@ export async function runnableModels(deps: Pick<AppDeps, 'repo' | 'llm'>) {
   };
 }
 
+/** The model choices people may pick (ADR 0010, phase 4c): offered ones, default first. */
+export async function modelChoices(deps: Pick<AppDeps, 'repo' | 'llm'>): Promise<ModelChoice[]> {
+  const [models, choices, settings, endpoints] = await Promise.all([
+    deps.repo.listModels(),
+    deps.llm.listChoices(),
+    deps.llm.getSettings(),
+    deps.llm.listEndpoints(),
+  ]);
+  const offered = new Set(models.filter(isOffered).map((m) => m.ref));
+  return pickerChoices(choices, settings, endpoints, offered);
+}
+
+/** Why a project may not run with a pick (a choice id or `default`), or null when it may. */
+export function choiceProblem(
+  name: string,
+  choices: readonly ModelChoice[],
+  dataPolicy: DataPolicy,
+): string | null {
+  const choice = pickedChoice(name, choices);
+  if (!choice) return `unknown model choice ${name}`;
+  return dataPolicy === 'local' && choice.location === 'external'
+    ? `${choice.label} runs on an external endpoint: this project is local-only`
+    : null;
+}
+
 /**
  * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
  * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
- * database does not define is left to the worker.
+ * database does not define is left to the worker. A draft's steps name model choices (phase
+ * 4c): an `endpoint/model` ref there is an issue too, while published versions keep running
+ * theirs.
  */
 export async function templateIssues(
   deps: Pick<AppDeps, 'repo' | 'llm'>,
   definition: unknown,
+  { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
   const issues = validateTemplate(definition);
   const parsed = TemplateSchema.safeParse(definition);
@@ -62,7 +100,10 @@ export async function templateIssues(
   const { offered, aliases } = await runnableModels(deps);
   const modelIssues = parsed.data.pipeline.flatMap((step, i) => {
     if (step.type !== 'extract') return [];
-    const problem = modelRefProblem(step.model, offered, aliases, { unknownAliases: 'allow' });
+    const problem =
+      draft && step.model.includes('/')
+        ? `pick a model choice instead of the model ${step.model}`
+        : modelRefProblem(step.model, offered, aliases, { unknownAliases: 'allow' });
     return problem
       ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
       : [];

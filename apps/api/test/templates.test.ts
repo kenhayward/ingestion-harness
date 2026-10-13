@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { seedTemplates } from '../src/templates/seed.js';
-import { fakePdf, multipart, testApp } from './helpers.js';
+import { fakePdf, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const repoSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url));
 
@@ -76,41 +76,41 @@ describe('template lifecycle', () => {
     ).toBe(409);
   });
 
-  it('reports a step model that is not offered, and will not publish it', async () => {
-    const { app, repo } = await testApp();
-    repo.models = [
-      {
-        ref: 'local/qwen',
-        provider: 'local',
-        providerKind: 'openai-chat',
-        modelId: 'qwen',
-        displayName: null,
-        enabled: true,
-        discoveredAt: '',
-        curated: true,
-      },
-    ];
+  it('reports a draft step naming a model, or a choice whose model is not offered, and will not publish it', async () => {
+    const ctx = await testApp();
+    const { app, repo, llm } = ctx;
+    seedModelChoices(ctx);
+    llm.seedChoice({ id: 'gone', label: 'Gone', ref: 'ryzen/other' });
     await app.inject(json('POST', '/api/templates', { id: 'letter', name: 'Letter' }));
     const withModel = (model: string) => ({
       ...definition(),
       pipeline: [{ type: 'extract', id: 'head', fields: ['sender'], sections: ['all'], model }],
     });
-    const saved = await app.inject(
-      json('PUT', '/api/templates/letter/versions/1', { definition: withModel('ryzen/other') }),
-    );
-    expect(saved.statusCode).toBe(200);
-    expect(saved.json().issues).toEqual([
+    const issuesFor = async (model: string) =>
+      (
+        await app.inject(
+          json('PUT', '/api/templates/letter/versions/1', { definition: withModel(model) }),
+        )
+      ).json().issues;
+    // A draft names model choices (ADR 0010, phase 4c), even when the model is offered.
+    expect(await issuesFor('local/qwen')).toEqual([
       {
         path: 'pipeline.0.model',
-        message: 'step "head": model ryzen/other is not offered: add it on the Models page',
+        message: 'step "head": pick a model choice instead of the model local/qwen',
       },
     ]);
+    expect(await issuesFor('gone')).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message:
+          'step "head": model choice gone uses ryzen/other, which is not offered: add it on the Models page',
+      },
+    ]);
+    expect(repo.models.some((m) => m.ref === 'ryzen/other')).toBe(false);
     const refused = await app.inject(json('POST', '/api/templates/letter/versions/1/publish', {}));
     expect(refused.statusCode).toBe(400);
     expect(refused.json().issues).toHaveLength(1);
-    await app.inject(
-      json('PUT', '/api/templates/letter/versions/1', { definition: withModel('local/qwen') }),
-    );
+    expect(await issuesFor('fast')).toEqual([]);
     const published = await app.inject(
       json('POST', '/api/templates/letter/versions/1/publish', {}),
     );

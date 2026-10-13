@@ -383,7 +383,12 @@ describe('TemplateEditor', () => {
       runRegression: vi.fn(async () => ({ jobs: [] })),
     });
     await userEvent.click(await tab(/Quality/));
-    await userEvent.click(await screen.findByRole('button', { name: 'Run regression on v2' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Run regression on v2…' }));
+    // Regression measures the template: the dialog shows its own models, fixed.
+    const dialog = screen.getByRole('dialog', { name: 'Run regression on v2' });
+    expect(dialog).toHaveTextContent("The template's own models");
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run regression' }));
     expect(api.runRegression).toHaveBeenCalledWith('letter', 2);
     const row = await screen.findByRole('row', { name: /acme/ });
     expect(row).toHaveTextContent('50%');
@@ -477,8 +482,15 @@ describe('TemplateEditor', () => {
     expect(within(rail).getByRole('button', { name: 'Run test' })).toBeDisabled();
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
     await userEvent.upload(within(rail).getByLabelText('Sample document'), file);
-    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.pdf' }));
-    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
+    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.pdf…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Test v1 on sample.pdf' });
+    await within(dialog).findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(
+      within(dialog).getByRole('combobox', { name: 'Model' }),
+      'New for testing only',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run test' }));
+    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1, 'test');
     expect(await within(rail).findByRole('status')).toHaveTextContent('Test run queued');
   });
 
@@ -489,8 +501,11 @@ describe('TemplateEditor', () => {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     await userEvent.upload(within(rail).getByLabelText('Sample document'), file);
-    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.docx' }));
-    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
+    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.docx…' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Run test' }),
+    );
+    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1, null);
   });
 
   it('does not take a non-PDF as the sample', async () => {
@@ -613,6 +628,28 @@ describe('TemplateEditor tabs and step cards', () => {
     await userEvent.click(screen.getByRole('tab', { name: /^Tables/ }));
     expect(screen.getByText('No tables yet.')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: /^Table/ })).not.toBeInTheDocument();
+  });
+
+  it('picks a step model from the model choices, by label', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(stepHead(1));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    const model = within(step).getByRole('combobox', { name: 'Model' });
+    // No model: the default choice, named.
+    expect(model).toHaveValue('');
+    expect(
+      within(model).getByRole('option', { name: 'Default choice (Main Production Model)' }),
+    ).toBeInTheDocument();
+    await within(model).findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(model, 'New for testing only');
+    expect(stepHead(1)).toHaveTextContent('New for testing only');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      pipeline: [{ id: 'head', model: 'test' }, {}],
+    });
+    await userEvent.selectOptions(model, 'Default choice (Main Production Model)');
+    expect(stepHead(1)).toHaveTextContent('default model');
   });
 
   it('shows steps as collapsed cards with a summary, one open at a time', async () => {

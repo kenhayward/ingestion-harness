@@ -1,10 +1,10 @@
-import type { JobStatus, JobSummary, ModelInfo } from '@ih/shared';
+import type { JobStatus, JobSummary } from '@ih/shared';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { JobList } from '../src/jobs/JobList.js';
-import { fakeApi, job } from './fake-api.js';
+import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
 type Props = ComponentProps<typeof JobList>;
 
@@ -15,8 +15,7 @@ const listElement = (jobs: JobSummary[], o: Partial<Props> = {}) => (
     selectedId={null}
     onSelect={vi.fn()}
     onChanged={vi.fn()}
-    retryModel=""
-    models={[]}
+    models={MODEL_CHOICES}
     specTitles={new Map()}
     now={Date.parse('2026-10-12T12:00:00Z')}
     {...o}
@@ -33,17 +32,6 @@ const menuItems = (name: string) =>
   [...screen.getByRole('group', { name: `Actions for ${name}` }).querySelectorAll('button, a')].map(
     (e) => e.textContent,
   );
-
-const model = (ref: string): ModelInfo => ({
-  ref,
-  provider: ref.split('/')[0]!,
-  providerKind: 'anthropic',
-  modelId: ref.split('/')[1]!,
-  displayName: null,
-  enabled: true,
-  discoveredAt: '',
-  curated: true,
-});
 
 describe('JobList main action', () => {
   it('shows one main action per status', () => {
@@ -64,8 +52,8 @@ describe('JobList main action', () => {
     );
     expect(within(row('run.pdf')).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(
-      within(row('fail.pdf')).getByRole('button', { name: 'Retry with spec default' }),
-    ).toHaveTextContent('Retry');
+      within(row('fail.pdf')).getByRole('button', { name: 'Retry fail.pdf' }),
+    ).toHaveTextContent('Retry…');
     expect(within(row('rej.pdf')).queryByRole('link', { name: /Review|View/ })).toBeNull();
     expect(within(row('rej.pdf')).queryByRole('button', { name: /^(Retry|Cancel)/ })).toBeNull();
   });
@@ -75,9 +63,9 @@ describe('JobList main action', () => {
     ['running', ['Open PDF']],
     ['awaiting_review', ['Open PDF']],
     ['succeeded', ['Re-process…', 'Open PDF', 'Delete']],
-    ['failed', ['Retry with another model…', 'Open PDF', 'Delete']],
-    ['needs_review', ['Retry with another model…', 'Open PDF', 'Delete']],
-    ['cancelled', ['Retry with another model…', 'Open PDF', 'Delete']],
+    ['failed', ['Open PDF', 'Delete']],
+    ['needs_review', ['Open PDF', 'Delete']],
+    ['cancelled', ['Open PDF', 'Delete']],
     ['rejected', ['Open PDF', 'Delete']],
   ])('%s jobs offer %j in the menu', async (status, expected) => {
     renderList([job({ filename: 'a.pdf', status })]);
@@ -108,11 +96,7 @@ describe('JobList main action', () => {
     expect(link).toHaveAttribute('href', '/api/jobs/w/document');
     expect(link).not.toHaveAttribute('target');
     expect(screen.queryByRole('link', { name: 'Open PDF' })).not.toBeInTheDocument();
-    expect(menuItems('r.docx')).toEqual([
-      'Retry with another model…',
-      'Download original (.docx)',
-      'Delete',
-    ]);
+    expect(menuItems('r.docx')).toEqual(['Download original (.docx)', 'Delete']);
   });
 
   it('closes the menu on Escape', async () => {
@@ -235,37 +219,60 @@ describe('JobList confirmations', () => {
     );
   });
 
-  it('retries with the currently selected model', async () => {
+  it("retries in the re-process dialog, with the job's model choice to start with", async () => {
     const api = fakeApi();
-    const j = job({ filename: 'a.pdf', status: 'failed', modelOverride: 'anthropic/old' });
-    renderList([j], { api, retryModel: 'anthropic/new' });
-    await userEvent.click(
-      within(row('a.pdf')).getByRole('button', { name: 'Retry with anthropic/new' }),
+    const onChanged = vi.fn();
+    const j = job({ id: 'a', filename: 'a.pdf', status: 'failed', modelOverride: 'test' });
+    renderList([j], { api, onChanged });
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retry a.pdf' });
+    expect(dialog).toHaveTextContent(
+      'a.pdf runs again from the start, on the latest version of its document type.',
     );
-    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'anthropic/new');
+    const model = within(dialog).getByRole('combobox', { name: 'Model' });
+    expect(model).toHaveValue('test');
+    expect(model).toHaveFocus();
+    expect(api.retryJob).not.toHaveBeenCalled();
+    await userEvent.selectOptions(model, 'Main Production Model (default)');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(api.retryJob).toHaveBeenCalledWith('a', 'main');
+    expect(onChanged).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('retries with the spec default (clearing the override) when no model is selected', async () => {
-    const api = fakeApi();
-    const j = job({ filename: 'a.pdf', status: 'failed', modelOverride: 'anthropic/old' });
-    renderList([j], { api });
-    await userEvent.click(
-      within(row('a.pdf')).getByRole('button', { name: 'Retry with spec default' }),
-    );
-    expect(api.retryJob).toHaveBeenCalledWith(j.id, null);
-  });
-
-  it('retries with another model picked inline', async () => {
+  it("retries with the document type's models (clearing the override)", async () => {
     const api = fakeApi();
     const j = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
-    renderList([j], { api, models: [model('anthropic/other')], retryModel: '' });
-    await openMenu('a.pdf');
-    await userEvent.click(screen.getByRole('button', { name: 'Retry with another model…' }));
-    const pick = screen.getByLabelText('Model for a.pdf');
-    expect(pick).toHaveFocus();
-    await userEvent.selectOptions(pick, 'anthropic/other');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirm retry a.pdf' }));
-    expect(api.retryJob).toHaveBeenCalledWith('a', 'anthropic/other');
+    renderList([j], { api });
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retry a.pdf' });
+    expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(api.retryJob).toHaveBeenCalledWith('a', null);
+  });
+
+  it('cancels the dialog without retrying', async () => {
+    const api = fakeApi();
+    renderList([job({ filename: 'a.pdf', status: 'failed' })], { api });
+    const retry = within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' });
+    await userEvent.click(retry);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.retryJob).not.toHaveBeenCalled();
+    expect(retry).toHaveFocus();
+  });
+
+  it('shows a refused retry in the dialog', async () => {
+    const api = fakeApi({
+      retryJob: vi.fn(async () => {
+        throw new Error('unknown model choice gone');
+      }),
+    });
+    renderList([job({ filename: 'a.pdf', status: 'failed' })], { api });
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('unknown model choice gone');
+    expect(screen.getByRole('dialog', { name: 'Retry a.pdf' })).toBeInTheDocument();
   });
 
   it('moves focus into the confirmation and back to the menu button', async () => {
@@ -284,24 +291,29 @@ describe('JobList confirmations', () => {
     ).toHaveFocus();
   });
 
-  it('re-processes a succeeded job after confirming what it discards', async () => {
+  it('re-processes a succeeded job in the dialog, saying what it discards', async () => {
     const api = fakeApi();
     const onChanged = vi.fn();
     const j = job({ filename: 'a.pdf', status: 'succeeded' });
-    renderList([j], { api, onChanged, retryModel: 'anthropic/new' });
+    renderList([j], { api, onChanged });
     await openMenu('a.pdf');
-    await userEvent.click(
-      within(row('a.pdf')).getByRole('button', { name: 'Re-process with anthropic/new' }),
-    );
-    expect(within(row('a.pdf')).getByText(/Re-process a\.pdf\?/)).toHaveTextContent(
-      'Re-process a.pdf? It is extracted again on the latest template version; earlier review edits are discarded.',
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Re-process a.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Re-process a.pdf' });
+    expect(dialog).toHaveTextContent(
+      'a.pdf is extracted again on the latest template version; earlier review edits are discarded.',
     );
     expect(api.retryJob).not.toHaveBeenCalled();
-    await userEvent.click(
-      within(row('a.pdf')).getByRole('button', { name: 'Confirm re-process a.pdf' }),
+    await userEvent.selectOptions(
+      within(dialog).getByRole('combobox', { name: 'Model' }),
+      'New for testing only',
     );
-    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'anthropic/new');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Re-process' }));
+    expect(api.retryJob).toHaveBeenCalledWith(j.id, 'test');
     expect(onChanged).toHaveBeenCalled();
+    // Focus goes back to the row's menu button (the menu item is gone).
+    expect(
+      within(row('a.pdf')).getByRole('button', { name: 'More actions for a.pdf' }),
+    ).toHaveFocus();
   });
 
   it('keeps an open confirmation when the list refreshes', async () => {

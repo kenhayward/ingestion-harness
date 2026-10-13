@@ -8,12 +8,14 @@ import {
   type RevisePreview,
   type SampleView,
 } from '@ih/shared';
-import { letter, multipart, testApp } from './helpers.js';
+import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
+import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 
 async function project() {
   const ctx = await testApp();
+  seedModelChoices(ctx); // main (the default), fast (local), cloud (external)
   await ctx.app.inject({
     method: 'POST',
     url: '/api/workbench/projects',
@@ -544,6 +546,8 @@ describe('revise preview (RV1)', () => {
 
   it('shows the draft and the limits before any feedback or evaluation', async () => {
     const ctx = await project();
+    // No drafting model set: the preview says so (null) rather than guessing one.
+    (ctx.app.deps.llm as MemoryLlmConfigRepo).seedSettings({ drafting_model: undefined });
     expect(await preview(ctx)).toEqual({
       feedback: [],
       failures: [],

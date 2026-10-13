@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { JobSummary, ModelInfo } from '@ih/shared';
+import type { JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { matchesQuery, statusGroup } from '../shell/derive.js';
 import { useJobs } from '../shell/useJobs.js';
@@ -9,6 +9,7 @@ import { JobDetailPanel } from './JobDetailPanel.js';
 import { JobList } from './JobList.js';
 import { UploadStrip } from './UploadStrip.js';
 import { chipCounts, inChip, type Chip } from './derive.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
 
 const jobsText = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
 
@@ -57,8 +58,6 @@ export function JobsPage({
   pickPending: boolean;
   onPicked: () => void;
 }) {
-  /** The upload strip's Model selection; Retry and Re-process use it too. */
-  const [retryModel, setRetryModel] = useState('');
   const [chip, setChip] = useState<Chip>('all');
   const [mine, setMine] = useState(loadMine);
   const mineJobs = useJobs(api, pollMs, { mine: true, enabled: mine });
@@ -74,17 +73,13 @@ export function JobsPage({
   };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
-  const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
     api.listSpecs().then(
       (specs) => setSpecTitles(new Map(specs.map((s) => [s.id, s.title]))),
       () => {}, // titles are cosmetic: ids are shown instead
-    );
-    api.listModels().then(
-      (list) => setModels(list.filter((m) => m.enabled)),
-      () => setModels([]),
     );
   }, [api]);
 
@@ -124,13 +119,7 @@ export function JobsPage({
           </span>
         )}
       </div>
-      <UploadStrip
-        api={api}
-        onUploaded={refresh}
-        onModelChange={setRetryModel}
-        pickPending={pickPending}
-        onPicked={onPicked}
-      />
+      <UploadStrip api={api} onUploaded={refresh} pickPending={pickPending} onPicked={onPicked} />
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <div className="jobs-layout">
         <section className="jobs-main" aria-label="Job list">
@@ -172,7 +161,6 @@ export function JobsPage({
               selectedId={selected?.id ?? null}
               onSelect={setSelectedId}
               onChanged={refresh}
-              retryModel={retryModel}
               models={models}
               specTitles={specTitles}
               now={now}
@@ -199,7 +187,6 @@ export function JobsPage({
             api={api}
             job={selected}
             onChanged={refresh}
-            retryModel={retryModel}
             models={models}
             specTitles={specTitles}
             now={now}

@@ -37,11 +37,14 @@ describe('App', () => {
     const jobs = await list();
     expect(await jobs.findByText('bad.pdf')).toBeInTheDocument();
     expect(jobs.getByText('schema mismatch')).toBeInTheDocument();
-    const retry = jobs.getAllByRole('button', { name: /^Retry with/ });
+    const retry = jobs.getAllByRole('button', { name: /^Retry / });
     expect(retry).toHaveLength(1);
 
     await userEvent.click(retry[0]!);
-    expect(api.retryJob).toHaveBeenCalledWith('f', null); // no model selected: spec default
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Retry' }),
+    );
+    expect(api.retryJob).toHaveBeenCalledWith('f', null); // the job had no model: its type's
   });
 
   it('surfaces API errors', async () => {
@@ -95,51 +98,17 @@ describe('review routing', () => {
     window.location.hash = '';
   });
 
-  it('retries with the model selected in the upload form', async () => {
+  it("retries with the job's own model choice, not the upload form's", async () => {
     const api = fakeApi({
-      listModels: async () => [
-        {
-          ref: 'anthropic/claude-haiku-5-5',
-          provider: 'anthropic',
-          providerKind: 'anthropic',
-          modelId: 'claude-haiku-5-5',
-          displayName: 'Claude Haiku 5.5',
-          enabled: true,
-          discoveredAt: '',
-          curated: true,
-        },
-      ],
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByRole('option', { name: /Claude Haiku 5.5/ });
-    await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-haiku-5-5');
-    await userEvent.click(
-      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
-    );
-    expect(api.retryJob).toHaveBeenCalledWith('f', 'anthropic/claude-haiku-5-5');
-  });
-
-  it('offers Retry with the remembered model after a reload', async () => {
-    localStorage.setItem('ih.uploadModel', 'anthropic/claude-haiku-5-5');
-    const api = fakeApi({
-      listModels: async () => [
-        {
-          ref: 'anthropic/claude-haiku-5-5',
-          provider: 'anthropic',
-          providerKind: 'anthropic',
-          modelId: 'claude-haiku-5-5',
-          displayName: 'Claude Haiku 5.5',
-          enabled: true,
-          discoveredAt: '',
-          curated: true,
-        },
-      ],
-      listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
-    });
-    render(<App api={api} pollMs={0} />);
-    expect(
-      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
-    ).toBeInTheDocument();
+    await screen.findByRole('option', { name: /New for testing only/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'New for testing only');
+    await userEvent.click(await (await list()).findByRole('button', { name: 'Retry bad.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retry bad.pdf' });
+    expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(api.retryJob).toHaveBeenCalledWith('f', null);
   });
 });

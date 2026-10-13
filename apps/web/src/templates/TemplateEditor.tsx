@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
-import { VALUE_TYPES, type JobSummary, type ModelInfo } from '@ih/shared';
+import { pickedChoice, VALUE_TYPES, type JobSummary, type ModelChoice } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
@@ -19,6 +19,7 @@ import {
   validateDefinition,
   type Definition,
 } from './model.js';
+import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 
 type Path = (string | number)[];
 type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
@@ -79,7 +80,8 @@ export function TemplateEditor({
   const [yamlText, setYamlText] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const models = useModelChoices(api);
+  const modelName = (id: string) => pickedChoice(id, models)?.label ?? id;
   /** The one pipeline step whose card is open (null: all collapsed). */
   const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
@@ -93,7 +95,6 @@ export function TemplateEditor({
 
   useEffect(() => {
     api.getTemplate(templateId, version).then(accept, (err: Error) => setError(err.message));
-    api.listModels().then(setModels, () => setModels([]));
     api.listTemplates().then(
       (items) => setPublishedVersion(items.find((t) => t.id === templateId)?.published ?? null),
       () => setPublishedVersion(null),
@@ -413,12 +414,6 @@ export function TemplateEditor({
           {/* Outside the disabled fieldset: a published version's steps still open (read-only). */}
           {tab === 'pipeline' && (
             <div className="pipeline">
-              <datalist id="model-options">
-                <option value="default" />
-                {models.map((m) => (
-                  <option key={m.ref} value={m.ref} />
-                ))}
-              </datalist>
               {pipeline.map((step, i) => (
                 <StepCard
                   key={i}
@@ -426,6 +421,7 @@ export function TemplateEditor({
                   step={step}
                   open={openStep === i}
                   readOnly={!editable}
+                  modelName={modelName}
                   onToggle={() => setOpenStep(openStep === i ? null : i)}
                   onMove={(delta) => {
                     const to = i + delta;
@@ -447,6 +443,7 @@ export function TemplateEditor({
                       fields={fields.map((f) => f.id)}
                       tables={tables.map((t) => t.id)}
                       sections={sections.map((s) => s.id)}
+                      models={models}
                       set={(key, v) => update(['pipeline', i, key], v)}
                       replace={(next) => update(['pipeline', i], next)}
                     />
@@ -496,11 +493,18 @@ export function TemplateEditor({
   );
 }
 
+/** ` (Main Production Model)`: the default choice's label, when there is one. */
+const defaultLabel = (models: readonly ModelChoice[]) => {
+  const choice = models.find((m) => m.isDefault);
+  return choice ? ` (${choice.label})` : '';
+};
+
 function ExtractStep({
   step,
   fields,
   tables,
   sections,
+  models,
   set,
   replace,
 }: {
@@ -508,6 +512,7 @@ function ExtractStep({
   fields: string[];
   tables: string[];
   sections: string[];
+  models: readonly ModelChoice[];
   set: (key: string, value: unknown) => void;
   replace: (step: Definition) => void;
 }) {
@@ -568,15 +573,17 @@ function ExtractStep({
           selected={step.sections ?? []}
           onToggle={(id, on) => toggle('sections', id, on)}
         />
-        <label>
-          Model
-          <input
-            list="model-options"
-            value={step.model ?? ''}
-            placeholder="default"
-            onChange={(e) => set('model', opt(e.target.value))}
+        <div className="field">
+          <span className="field-label">Model</span>
+          <ModelPicker
+            label="Model"
+            choices={models}
+            // No model, or `default`: the default choice, whichever it is when the step runs.
+            value={step.model === 'default' ? '' : (step.model ?? '')}
+            emptyLabel={`Default choice${defaultLabel(models)}`}
+            onChange={(id) => set('model', id || undefined)}
           />
-        </label>
+        </div>
         <Text
           label="Page images"
           hint="1-based pages sent as images, e.g. 1"

@@ -9,7 +9,6 @@ import type {
   EndpointCreateInput,
   EndpointPatchBody,
   EditRequest,
-  EvaluationModel,
   EvaluationSet,
   FeedbackItem,
   FeedbackTarget,
@@ -25,7 +24,7 @@ import type {
   LlmChoicesView,
   LlmChoiceView,
   LlmEndpointView,
-  ModelInfo,
+  ModelChoice,
   PreparedText,
   ProjectListPage,
   ProjectListQuery,
@@ -281,7 +280,8 @@ export interface Api {
   deleteModelChoice(id: string): Promise<void>;
   setLlmSettings(body: SettingsBody): Promise<LlmChoicesView>;
   listSpecs(): Promise<SpecSummary[]>;
-  listModels(): Promise<ModelInfo[]>;
+  /** The model choices every picker offers, the default first (ADR 0010, phase 4c). */
+  listPickerChoices(): Promise<ModelChoice[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
   listJobs(opts?: { mine?: boolean }): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
@@ -335,7 +335,8 @@ export interface Api {
   importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
   exportUrl(id: string, version: number): string;
   /** Upload a sample against a (draft) version as a test run (never published). */
-  testRun(file: File, id: string, version: number): Promise<JobSummary>;
+  /** `model`: a model choice's id for every step; null or absent: the template's models. */
+  testRun(file: File, id: string, version: number, model?: string | null): Promise<JobSummary>;
   // --- workbench (ADR 0007) ---
   /** One page of the project list; only the params that are set are sent. */
   listProjectPage(
@@ -379,7 +380,8 @@ export interface Api {
   /** `uncached` makes every step call its model (the step cache is not read). */
   startEvaluation(
     projectId: string,
-    model: EvaluationModel | null,
+    /** A model choice's id; null: the template's own models. */
+    model: string | null,
     options?: { uncached?: boolean; set?: EvaluationSet },
   ): Promise<IterationView>;
   /** Queue template runs on unverified holdout samples. */
@@ -395,7 +397,11 @@ export interface Api {
   ): Promise<{ publication: Publication; project: ProjectView }>;
   listPublications(projectId: string): Promise<Publication[]>;
   /** Evaluate the draft on every comparison model at once. */
-  startComparison(projectId: string, options?: { uncached?: boolean }): Promise<ComparisonView>;
+  /** `models`: the choices to compare, in order (absent: every one the project may use). */
+  startComparison(
+    projectId: string,
+    options?: { uncached?: boolean; models?: string[] },
+  ): Promise<ComparisonView>;
   getComparison(projectId: string, groupId: string): Promise<ComparisonView>;
   listIterations(projectId: string): Promise<IterationSummary[]>;
   getIteration(projectId: string, iterationId: string): Promise<IterationView>;
@@ -424,7 +430,8 @@ export interface Api {
   listBriefVersions(projectId: string): Promise<BriefVersionView[]>;
   getBriefVersion(projectId: string, version: number): Promise<Brief>;
   /** Test-run the open draft on every prepared dev sample. */
-  runDevTests(projectId: string): Promise<{ jobs: JobSummary[] }>;
+  /** `model`: a model choice's id for every step; null or absent: the template's models. */
+  runDevTests(projectId: string, model?: string | null): Promise<{ jobs: JobSummary[] }>;
   listTestRuns(projectId: string): Promise<JobSummary[]>;
   /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
   startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
@@ -612,7 +619,10 @@ export function createHttpApi(base = '/api'): Api {
       return () => unauthorizedListeners.delete(listener);
     },
     listSpecs: () => apiFetch(`${base}/specs`).then(json<SpecSummary[]>),
-    listModels: () => apiFetch(`${base}/models`).then(json<ModelInfo[]>),
+    listPickerChoices: () =>
+      apiFetch(`${base}/models/choices`)
+        .then(json<{ choices: ModelChoice[] }>)
+        .then((r) => r.choices),
     listJobs: (opts) =>
       apiFetch(`${base}/jobs${opts?.mine ? '?mine=1' : ''}`).then(json<JobSummary[]>),
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
@@ -737,10 +747,10 @@ export function createHttpApi(base = '/api'): Api {
     listPublications: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/publications`).then(json<Publication[]>),
     startComparison: (id, options) =>
-      post<ComparisonView>(
-        `${base}/workbench/projects/${id}/evaluations/compare`,
-        options?.uncached ? { uncached: true } : {},
-      ),
+      post<ComparisonView>(`${base}/workbench/projects/${id}/evaluations/compare`, {
+        ...(options?.models ? { models: options.models } : {}),
+        ...(options?.uncached ? { uncached: true } : {}),
+      }),
     getComparison: (id, groupId) =>
       apiFetch(`${base}/workbench/projects/${id}/comparisons/${groupId}`).then(
         json<ComparisonView>,
@@ -786,8 +796,11 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/workbench/projects/${id}/briefs`).then(json<BriefVersionView[]>),
     getBriefVersion: (id, version) =>
       apiFetch(`${base}/workbench/projects/${id}/briefs/${version}`).then(json<Brief>),
-    runDevTests: (id) =>
-      post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {}),
+    runDevTests: (id, model) =>
+      post<{ jobs: JobSummary[] }>(
+        `${base}/workbench/projects/${id}/test-runs`,
+        model ? { model } : {},
+      ),
     listTestRuns: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<JobSummary[]>),
     startSegmentation: (id, document) =>
@@ -878,11 +891,12 @@ export function createHttpApi(base = '/api'): Api {
     importTemplate: (yaml, publish) =>
       post<TemplateRecordView>(`${base}/templates/import`, { yaml, publish }),
     exportUrl: (id, version) => `${base}/templates/${id}/versions/${version}/export`,
-    testRun: (file, id, version) => {
+    testRun: (file, id, version, model) => {
       const form = new FormData();
       form.append('specId', id);
       form.append('specVersion', String(version));
       form.append('test', 'true');
+      if (model) form.append('model', model); // fields precede the file
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },

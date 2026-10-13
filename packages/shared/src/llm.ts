@@ -241,3 +241,47 @@ export function modelUses(
     ...(settings.ocrModel ? [{ what: 'the OCR model', ref: settings.ocrModel }] : []),
   ];
 }
+
+/**
+ * A model choice as everyone sees it in the pickers (ADR 0010, phase 4c): by label, with the
+ * model it runs and where that model runs (a local-only project cannot pick an external one).
+ */
+export const ModelChoiceSchema = z.object({
+  /** What templates and jobs store. */
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  /** The model it runs (`endpoint/model-id`). */
+  ref: z.string(),
+  /** The endpoint's location; an endpoint nobody declared is external. */
+  location: z.enum(ENDPOINT_LOCATIONS),
+  /** Used by template steps that name no model. */
+  isDefault: z.boolean(),
+});
+export type ModelChoice = z.infer<typeof ModelChoiceSchema>;
+
+/** The choices people may pick: offered ones only, the default first, then by label. */
+export function pickerChoices(
+  choices: readonly LlmChoiceView[],
+  settings: Pick<LlmSettingsView, 'defaultChoice'>,
+  endpoints: readonly Pick<LlmEndpointView, 'name' | 'location'>[],
+  offered: ReadonlySet<string>,
+): ModelChoice[] {
+  const location = new Map(endpoints.map((e) => [e.name, e.location]));
+  return choices
+    .filter((c) => offered.has(c.ref))
+    .map((c) => ({
+      id: c.id,
+      label: c.label,
+      description: c.description,
+      ref: c.ref,
+      location: location.get(c.ref.slice(0, c.ref.indexOf('/'))) ?? 'external',
+      isDefault: c.id === settings.defaultChoice,
+    }))
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label));
+}
+
+/** The choice a pick names (`default` is the default choice); null for anything else. */
+export function pickedChoice(name: string, choices: readonly ModelChoice[]): ModelChoice | null {
+  return choices.find((c) => (name === 'default' ? c.isDefault : c.id === name)) ?? null;
+}

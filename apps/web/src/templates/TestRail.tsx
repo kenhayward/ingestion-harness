@@ -6,6 +6,8 @@ import { relativeTime } from '../jobs/derive.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { recentTestRuns } from './editor-derive.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 
 /**
  * "Test this draft" (UI handoff §5): run the version on a sample PDF or Word document and see
@@ -41,18 +43,8 @@ export function TestRail({
     setStatus(null);
   };
 
-  const run = async () => {
-    if (!sample) return;
-    setBusy(true);
-    try {
-      const job = await api.testRun(sample, templateId, version);
-      setStatus(`Test run queued: ${job.filename}. Review it when it finishes.`);
-    } catch (err) {
-      setStatus(`Test run failed: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [asking, setAsking] = useState(false);
+  const choices = useModelChoices(api);
 
   return (
     <aside className="test-rail" aria-label="Test this draft">
@@ -90,10 +82,33 @@ export function TestRail({
         type="button"
         className="primary block"
         disabled={!sample || busy}
-        onClick={() => void run()}
+        onClick={() => setAsking(true)}
       >
-        {sample ? `Run test on ${sample.name}` : 'Run test'}
+        {sample ? `Run test on ${sample.name}…` : 'Run test'}
       </button>
+      {asking && sample && (
+        <ReprocessDialog
+          title={`Test v${version} on ${sample.name}`}
+          confirmLabel="Run test"
+          choices={choices}
+          emptyLabel="Template's models"
+          summary={
+            <p>
+              Runs {sample.name} through v{version}: reviewable, never published.
+            </p>
+          }
+          onConfirm={async (model) => {
+            setBusy(true);
+            try {
+              const job = await api.testRun(sample, templateId, version, model);
+              setStatus(`Test run queued: ${job.filename}. Review it when it finishes.`);
+            } finally {
+              setBusy(false);
+            }
+          }}
+          onClose={() => setAsking(false)}
+        />
+      )}
       {status && (
         <p role="status" className="muted">
           {status}
