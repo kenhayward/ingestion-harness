@@ -10805,7 +10805,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase` and `policy` narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase` and `policy`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters.",
+        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase`, `policy` and `ids` (comma-separated, at most 20) narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase`, `policy` and `ids`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters.",
         "parameters": [
           {
             "schema": {

@@ -904,9 +904,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           A page of the Workbench projects (one per document type), each with its stage states,
           phase, next step, holdout score and sample counts. \`q\` matches the name or id;
-          \`phase\` and \`policy\` narrow the list; \`filter\` picks a chip. \`total\` counts
+          \`phase\`, \`policy\` and \`ids\` (comma-separated, at most 20) narrow the list; \`filter\` picks a chip. \`total\` counts
           what every filter leaves, and \`facets\` count each chip ignoring \`filter\` (but
-          honouring \`q\`, \`phase\` and \`policy\`). Sorts: \`activity\` (latest first),
+          honouring \`q\`, \`phase\`, \`policy\` and \`ids\`). Sorts: \`activity\` (latest first),
           \`name\`, \`score\` (lowest first, none last), \`samples\` (fewest first). A page
           past the end has no items. Rows are recomputed only for projects that changed since
           the last request.

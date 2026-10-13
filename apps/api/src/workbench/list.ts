@@ -23,11 +23,32 @@ export const LIST_CACHE_VERSION = 1;
  * before any row is computed and a row is stored under that earlier fingerprint, so a change
  * made during the computation leaves it stale for the next request rather than hiding it. A row
  * computed while a store read failed (`degraded`) answers this request but is not stored.
- * Concurrent requests may compute the same row; the upsert keeps one. A project deleted after
+ * Concurrent callers share one refresh per app. A project deleted after
  * the fingerprints were read is left out. `lastActivityAt` always comes from the fresh
  * fingerprint.
  */
-export async function refreshListCache(app: FastifyInstance): Promise<ProjectListItem[]> {
+export function refreshListCache(app: FastifyInstance): Promise<ProjectListItem[]> {
+  const running = inFlight.get(app);
+  if (running) return running;
+  const started = computeListCache(app).finally(() => {
+    if (inFlight.get(app) === started) inFlight.delete(app);
+  });
+  inFlight.set(app, started);
+  return started;
+}
+
+/**
+ * Fills the cache after a start or deploy. A second pass absorbs rows whose computation wrote
+ * gate/score caches and so moved their own fingerprint.
+ */
+export async function warmListCache(app: FastifyInstance): Promise<void> {
+  await refreshListCache(app);
+  await refreshListCache(app);
+}
+
+const inFlight = new WeakMap<FastifyInstance, Promise<ProjectListItem[]>>();
+
+async function computeListCache(app: FastifyInstance): Promise<ProjectListItem[]> {
   const { workbench } = app.deps;
   const fingerprints = await workbench.projectFingerprints();
   const cache = await workbench.listCache();
