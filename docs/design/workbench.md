@@ -421,6 +421,16 @@ New nav item **Workbench** in the app shell, using the existing tokens and `ui/`
 - **Document types** becomes the catalogue of published types. "Open in workbench" replaces
   draft editing there.
 
+### Project page (redesign)
+
+The project page follows the [Workbench redesign handoff](workbench-redesign/WORKBENCH-HANDOFF.md).
+One call, W2 `GET /api/workbench/projects/:id/overview` (`routes/workbench-overview.ts`), returns
+the project, every tab's state and status text, the Next banner and the publish gate; the page polls
+it while anything runs and refetches it on window focus. On project routes the app nav collapses to
+icons, `ProjectRail` (status icons, legend, a `<select>` below 760 px) and `ProjectHeader` (policy
+pill, Publish vN locked until the gate passes) frame every tab, and Overview, the default tab, shows
+the Next banner and every step's status (the map replaces that list in a later PR).
+
 ## Cross-language contracts touched
 
 | Contract | TypeScript | Python |

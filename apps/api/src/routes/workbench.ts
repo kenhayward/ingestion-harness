@@ -106,14 +106,14 @@ const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).s
 type ProjectParams = { id: string };
 
 /** Route docs (docs/design/api-docs.md). */
-const ProjectIdParams = z.object({
+export const ProjectIdParams = z.object({
   id: z.string().describe('The project id: the id of its document type.'),
 });
 const SampleIdParams = z.object({
   id: z.string().describe('The project id.'),
   sid: z.string().uuid().describe('The sample id.'),
 });
-const PROJECT_NOT_FOUND = error('`project not found`.');
+export const PROJECT_NOT_FOUND = error('`project not found`.');
 const SAMPLE_NOT_FOUND = error('`sample not found`.');
 const DRAFT_NOT_VALID = res(
   'The open draft is not valid: `the draft is not valid`, with `issues`.',
@@ -216,7 +216,7 @@ function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | 
 }
 
 /** Proposal status without reading its body (stage rail; order checks). */
-function statusOf(p: ProposalRecord, job: ProjectJob | null): ProposalStatus {
+export function statusOf(p: ProposalRecord, job: ProjectJob | null): ProposalStatus {
   if (p.decision) return p.decision;
   if (!job || job.status === 'queued' || job.status === 'running') return 'running';
   return job.status === 'succeeded' ? 'ready' : 'failed';
@@ -311,6 +311,21 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         holdoutRuns(record.sha256),
       ),
     })),
+  );
+}
+
+/**
+ * Each sample's state alone, as `sampleViews` derives it, without reading triage from the store
+ * or counting holdout runs (overview counts).
+ */
+export async function sampleStates(app: FastifyInstance, projectId: string) {
+  const [jobs, records] = await Promise.all([
+    app.deps.repo.listProjectJobs(projectId),
+    app.deps.workbench.listSamples(projectId),
+  ]);
+  const prepares = jobs.filter((j) => j.task === 'prepare');
+  return records.map((record) =>
+    stateOf(prepares.find((j) => j.documentId === record.documentId) ?? null),
   );
 }
 
@@ -556,7 +571,7 @@ async function referencesView(
 }
 
 /** All five stages: the four proposal stages, then references (derived separately). */
-async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
+export async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const earlier = await stagesOf(app, projectId);
   return [...earlier, await referencesView(app, projectId, earlier)];
 }
@@ -653,7 +668,7 @@ async function iterationView(
 }
 
 /** A job whose result can still change: the gate does not cache an iteration holding one. */
-const unsettledJob = (status: JobStatus) =>
+export const unsettledJob = (status: JobStatus) =>
   status === 'queued' || status === 'running' || status === 'awaiting_review';
 
 /**
@@ -676,7 +691,7 @@ function gateFingerprint(jobIds: string[], jobs: (JobSummary | null)[]): string 
  * changed. Coverage is always measured against the holdout samples that are ready now.
  * `definition` is the draft the gate was decided for.
  */
-async function gateFor(
+export async function gateFor(
   app: FastifyInstance,
   project: WorkbenchProject,
 ): Promise<GateView & { draft: number | null; definition: Record<string, unknown> | null }> {

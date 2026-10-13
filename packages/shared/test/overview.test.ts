@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   OVERVIEW_STAGES,
+  OVERVIEW_TABS,
+  ProjectOverviewSchema,
   briefSaved,
   nextAction,
+  overviewItems,
+  overviewNext,
   overviewStates,
   phaseOf,
   runsState,
@@ -11,6 +15,7 @@ import {
   type GateView,
   type OverviewInputs,
   type OverviewState,
+  type StatusContext,
   type StageState,
 } from '../src/index.js';
 
@@ -379,6 +384,19 @@ describe('urgency', () => {
       { stage: 'outputs', kind: 'pending' },
     ],
     [
+      'a running step is not overtaken',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'accepted',
+          steps: 'accepted',
+          references: 'running',
+        }),
+      }),
+      null,
+    ],
+    [
       'all done, gate passes',
       inputs({
         evaluation: { running: false },
@@ -405,5 +423,344 @@ describe('runsState', () => {
     [{ total: 3, unfinished: 0, awaitingReview: 0 }, 'accepted'],
   ] as const)('%o → %s', (runs, state) => {
     expect(runsState(runs)).toBe(state);
+  });
+});
+
+const ctx = (over: Partial<StatusContext> = {}, i: OverviewInputs = inputs()): StatusContext => ({
+  inputs: i,
+  briefVersion: 3,
+  runs: { total: 0, unfinished: 0, awaitingReview: 0 },
+  openFeedback: 0,
+  ...over,
+});
+const status = (c: StatusContext, stage: (typeof OVERVIEW_TABS)[number]) =>
+  overviewItems(c).find((x) => x.stage === stage)!;
+
+describe('overviewItems', () => {
+  it('lists the ten stages, then Template and Test runs', () => {
+    expect(overviewItems(ctx()).map((x) => x.stage)).toEqual([...OVERVIEW_TABS]);
+    expect(OVERVIEW_TABS.slice(-2)).toEqual(['template', 'runs']);
+  });
+
+  it.each([
+    [{ total: 0, preparing: 0, failed: 0 }, 'warn', 'No samples yet'],
+    [{ total: 4, preparing: 0, failed: 2 }, 'warn', '2 failed'],
+    [{ total: 4, preparing: 1, failed: 0 }, 'running', 'Preparing 1 of 4'],
+    [{ total: 4, preparing: 0, failed: 0 }, 'accepted', 'Ready'],
+  ] as const)('samples %o', (samples, state, text) => {
+    expect(status(ctx({}, inputs({ samples })), 'samples')).toEqual({
+      stage: 'samples',
+      state,
+      status: text,
+    });
+  });
+
+  it('says which brief version is saved', () => {
+    expect(status(ctx(), 'brief').status).toBe('Saved v3');
+    expect(status(ctx({ briefVersion: null }), 'brief').status).toBe('Saved');
+    expect(status(ctx({ briefVersion: null }, inputs({ briefSaved: false })), 'brief').status).toBe(
+      'Not written yet',
+    );
+  });
+
+  it.each([
+    ['accepted', 'Accepted'],
+    ['skipped', 'Skipped'],
+    ['proposed', 'Needs your decision'],
+    ['running', 'Running'],
+    ['pending', 'Not started'],
+  ] as const)('drafting stage %s → %s', (state, text) => {
+    expect(status(ctx({}, inputs({ stages: drafted({ outputs: state }) })), 'outputs').status).toBe(
+      text,
+    );
+  });
+
+  it('says References are verified', () => {
+    expect(status(ctx(), 'references').status).toBe('Verified');
+  });
+
+  it('names the earlier stage that made a stage stale', () => {
+    const stages = [
+      { stage: 'survey' as const, state: 'accepted' as const, completedAt: '2026-10-13T09:00:00Z' },
+      {
+        stage: 'outputs' as const,
+        state: 'accepted' as const,
+        completedAt: '2026-10-13T11:00:00Z',
+      },
+      { stage: 'sections' as const, state: 'stale' as const, completedAt: '2026-10-13T10:00:00Z' },
+      { stage: 'steps' as const, state: 'pending' as const, completedAt: null },
+    ];
+    expect(status(ctx({}, inputs({ stages })), 'sections').status).toBe(
+      'Stale — Outputs changed after it was accepted',
+    );
+    const unknown = stages.map((s) => (s.stage === 'outputs' ? { ...s, completedAt: null } : s));
+    expect(status(ctx({}, inputs({ stages: unknown })), 'sections').status).toBe(
+      'Stale — an earlier stage changed after it was accepted',
+    );
+  });
+
+  it.each([
+    [inputs(), 'pending', 'Not run on holdout yet'],
+    [inputs({ evaluation: { running: true } }), 'running', 'Running'],
+    [inputs({ gate: gate({ iterationId: 'it1', score: 0.86 }) }), 'warn', 'Holdout 86%, below 90%'],
+    [
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.896 }) }),
+      'warn',
+      'Holdout 89.6%, below 90.0%',
+    ],
+    [
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.95, passes: false }) }),
+      'warn',
+      'Re-run holdout',
+    ],
+    [
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.93, passes: true }) }),
+      'accepted',
+      'Holdout 93% passes',
+    ],
+  ] as const)('evaluate %#', (i, state, text) => {
+    expect(status(ctx({}, i), 'evaluate')).toEqual({ stage: 'evaluate', state, status: text });
+  });
+
+  it.each([
+    [null, 0, 'No feedback'],
+    [null, 3, '3 open'],
+    ['running', 3, 'Running'],
+    ['ready', 3, 'Needs your decision'],
+    ['accepted', 0, 'Applied'],
+  ] as const)('revise %s with %i open', (revise, openFeedback, text) => {
+    expect(status(ctx({ openFeedback }, inputs({ revise })), 'revise').status).toBe(text);
+  });
+
+  it('describes Publish, Template and Test runs', () => {
+    expect(status(ctx(), 'publish')).toEqual({
+      stage: 'publish',
+      state: 'locked',
+      status: 'Locked by the gate',
+    });
+    const ready = inputs({ gate: gate({ iterationId: 'it1', score: 0.93, passes: true }) });
+    expect(status(ctx({}, ready), 'publish').status).toBe('Ready to publish v2');
+    expect(status(ctx(), 'template')).toEqual({
+      stage: 'template',
+      state: 'none',
+      status: 'Draft v2',
+    });
+    expect(status(ctx({ runs: { total: 6, unfinished: 2, awaitingReview: 1 } }), 'runs')).toEqual({
+      stage: 'runs',
+      state: 'running',
+      status: '2 running',
+    });
+    expect(
+      status(ctx({ runs: { total: 6, unfinished: 0, awaitingReview: 1 } }), 'runs').status,
+    ).toBe('1 awaiting review');
+    expect(
+      status(ctx({ runs: { total: 6, unfinished: 0, awaitingReview: 0 } }), 'runs').status,
+    ).toBe('6 finished');
+    expect(status(ctx(), 'runs').status).toBe('No runs yet');
+  });
+
+  it('does not invent a published version', () => {
+    const items = overviewItems(ctx({}, inputs({ draft: null, published: null })));
+    expect(items.find((x) => x.stage === 'publish')!.status).toBe('Not published');
+    expect(items.find((x) => x.stage === 'template')!.status).toBe('Not published');
+  });
+
+  it('shows a fully published type as done', () => {
+    const items = overviewItems(ctx({}, inputs({ draft: null, published: 3 })));
+    expect(items.find((x) => x.stage === 'publish')!.status).toBe('v3 published');
+    expect(items.find((x) => x.stage === 'outputs')).toEqual({
+      stage: 'outputs',
+      state: 'accepted',
+      status: 'Done',
+    });
+    expect(items.find((x) => x.stage === 'template')!.status).toBe('v3 published');
+  });
+});
+
+describe('overviewNext', () => {
+  it.each([
+    ['no draft', inputs({ draft: null }), null],
+    [
+      'stale',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'stale',
+          steps: 'proposed',
+        }),
+      }),
+      {
+        stage: 'sections',
+        title: 'Next: refresh Sections',
+        reason: 'An earlier stage changed after Sections was accepted.',
+      },
+    ],
+    [
+      'proposal',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'accepted',
+          steps: 'proposed',
+        }),
+      }),
+      {
+        stage: 'steps',
+        title: 'Next: decide on Steps',
+        reason: 'A proposal is waiting for your decision.',
+      },
+    ],
+    [
+      'gate below threshold',
+      inputs({
+        gate: gate({
+          iterationId: 'it1',
+          score: 0.5,
+          reason: 'holdout score 50% is below the threshold 90%',
+        }),
+      }),
+      {
+        stage: 'evaluate',
+        title: 'Next: raise the holdout score',
+        reason: 'Holdout score 50% is below the threshold 90%.',
+      },
+    ],
+    [
+      'gate without a usable score',
+      inputs({
+        gate: gate({
+          iterationId: 'it1',
+          score: 0.95,
+          reason: 'holdout evaluation covered 1 of 2 holdout samples',
+        }),
+      }),
+      {
+        stage: 'evaluate',
+        title: 'Next: re-run the holdout evaluation',
+        reason: 'Holdout evaluation covered 1 of 2 holdout samples.',
+      },
+    ],
+    [
+      'no samples',
+      inputs({ samples: { total: 0, preparing: 0, failed: 0 } }),
+      {
+        stage: 'samples',
+        title: 'Next: add sample PDFs',
+        reason: 'Upload 3–8 dev samples and a few holdout samples.',
+      },
+    ],
+    [
+      'failed samples',
+      inputs({ samples: { total: 4, preparing: 0, failed: 2 } }),
+      {
+        stage: 'samples',
+        title: 'Next: fix the failed samples',
+        reason: '2 samples could not be prepared.',
+      },
+    ],
+    [
+      'brief',
+      inputs({ briefSaved: false }),
+      {
+        stage: 'brief',
+        title: 'Next: write the brief',
+        reason: 'Describe the document and what to extract from it.',
+      },
+    ],
+    [
+      'not started',
+      inputs({ stages: drafted({ survey: 'accepted' }) }),
+      { stage: 'outputs', title: 'Next: start Outputs', reason: 'The stages before it are done.' },
+    ],
+    [
+      'falls back to publishing',
+      inputs({
+        gate: gate({
+          iterationId: 'it1',
+          score: 0.93,
+          passes: true,
+          reason: 'holdout score 93% meets the threshold 90%',
+        }),
+      }),
+      {
+        stage: 'publish',
+        title: 'Next: publish v2',
+        reason: 'Holdout score 93% meets the threshold 90%.',
+      },
+    ],
+    [
+      'falls back to a running stage',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'accepted',
+          steps: 'accepted',
+          references: 'running',
+        }),
+      }),
+      {
+        stage: 'references',
+        title: 'Waiting for References',
+        reason: 'The References stage is running; this page updates when it finishes.',
+      },
+    ],
+    [
+      'falls back to samples preparing',
+      inputs({ samples: { total: 2, preparing: 1, failed: 0 } }),
+      {
+        stage: 'samples',
+        title: 'Waiting for Samples',
+        reason: 'Samples are being prepared; this page updates when they finish.',
+      },
+    ],
+    [
+      'stale names the stage that changed',
+      inputs({
+        stages: [
+          { stage: 'survey', state: 'accepted', completedAt: '2026-10-13T09:00:00Z' },
+          { stage: 'outputs', state: 'accepted', completedAt: '2026-10-13T11:00:00Z' },
+          { stage: 'sections', state: 'stale', completedAt: '2026-10-13T10:00:00Z' },
+          { stage: 'steps', state: 'pending', completedAt: null },
+        ],
+      }),
+      {
+        stage: 'sections',
+        title: 'Next: refresh Sections',
+        reason: 'Outputs changed after Sections was accepted.',
+      },
+    ],
+  ] as const)('%s', (_, i, expected) => {
+    expect(overviewNext(i)).toEqual(expected);
+  });
+});
+
+describe('ProjectOverviewSchema', () => {
+  it('accepts an overview built from the functions', () => {
+    const i = inputs();
+    const parsed = ProjectOverviewSchema.safeParse({
+      project: {
+        project: {
+          id: 'letter',
+          name: 'Letter',
+          createdAt: '2026-10-13T00:00:00Z',
+          dataPolicy: 'local',
+          dataPolicyChangedAt: null,
+          dataPolicyChangedBy: null,
+          publishThreshold: 0.9,
+          thresholdSetBy: null,
+          thresholdSetAt: null,
+        },
+        draft: 2,
+        published: 1,
+        brief: null,
+      },
+      stages: overviewItems(ctx({}, i)),
+      next: overviewNext(i),
+      gate: i.gate,
+    });
+    expect(parsed.success).toBe(true);
   });
 });

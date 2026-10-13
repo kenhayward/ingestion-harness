@@ -323,7 +323,7 @@ export const GateViewSchema = z.object({
 });
 export type GateView = z.infer<typeof GateViewSchema>;
 
-const percent = (x: number, digits = 0) =>
+export const percent = (x: number, digits = 0) =>
   digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;
 
 /**

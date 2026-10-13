@@ -390,3 +390,15 @@ describe('http api: feedback', () => {
     ]);
   });
 });
+
+describe('http api: project overview', () => {
+  it('reads a project overview', async () => {
+    const body = { project: { id: 'letter' }, stages: [], next: null, gate: {} };
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, body));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    expect(await api.getProjectOverview('letter')).toEqual(body);
+    const calls = fetchMock.mock.calls.map(([url, init]) => [init?.method ?? 'GET', url]);
+    expect(calls).toEqual([['GET', '/api/workbench/projects/letter/overview']]);
+  });
+});
