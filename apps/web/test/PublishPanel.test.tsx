@@ -44,19 +44,23 @@ describe('PublishPanel', () => {
     expect(onPublished).toHaveBeenCalled();
   });
 
-  it('needs an override reason below the threshold', async () => {
+  it('publishes below the gate with no override reason: evaluation is optional', async () => {
     const { api } = panel({
       getPublishGate: vi.fn(async () =>
-        gateView({ passes: false, reason: 'holdout score 80% is below the threshold 90%' }),
+        gateView({ passes: false, reason: 'no complete holdout evaluation of the current draft' }),
       ),
       publish: vi.fn(async () => ({ publication: publication(), project: projectView() })),
     });
     const button = await screen.findByRole('button', { name: 'Publish v2' });
-    expect(button).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('Override reason'), 'Known bad scan in holdout');
     expect(button).toBeEnabled();
+    expect(screen.queryByLabelText('Override reason')).toBeNull();
+    expect(
+      screen.getByText(
+        'No complete holdout evaluation of the current draft. References and evaluation are optional; you can publish anyway.',
+      ),
+    ).toBeInTheDocument();
     await userEvent.click(button);
-    expect(api.publish).toHaveBeenCalledWith('letter', 'Known bad scan in holdout');
+    expect(api.publish).toHaveBeenCalledWith('letter', undefined);
   });
 
   it('shows who last set the threshold, and when', async () => {
@@ -89,20 +93,15 @@ describe('PublishPanel', () => {
     expect(api.setPublishThreshold).toHaveBeenCalledWith('letter', 0.8);
   });
 
-  it('shows the gate reason when the API refuses, and keeps the override text', async () => {
+  it('shows why the API refused', async () => {
     panel({
       getPublishGate: vi.fn(async () => gateView({ passes: false })),
       publish: vi.fn(async () => {
-        throw new Error('holdout score 80% is below the threshold 90%');
+        throw new Error('the draft is not valid');
       }),
     });
-    await userEvent.type(
-      await screen.findByLabelText('Override reason'),
-      'Known bad scan in holdout',
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Publish v2' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('below the threshold 90%');
-    expect(screen.getByLabelText('Override reason')).toHaveValue('Known bad scan in holdout');
+    await userEvent.click(await screen.findByRole('button', { name: 'Publish v2' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('the draft is not valid');
   });
 
   it('keeps "Published vN" once the draft is gone, with no Publish button', async () => {

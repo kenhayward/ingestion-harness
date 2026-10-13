@@ -1,7 +1,10 @@
 import type { GateView, ProjectView } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 
-/** Project page header (handoff §2): name, versions, data policy and the gated Publish button. */
+/**
+ * Project page header (handoff §2): name, versions, data policy and Publish, which opens the
+ * Template tab. References and evaluation are optional, so the gate never locks it.
+ */
 export function ProjectHeader({
   view,
   gate,
@@ -9,7 +12,7 @@ export function ProjectHeader({
   onTogglePolicy,
 }: {
   view: ProjectView;
-  /** Null while the overview is unknown: Publish is hidden until the gate is known. */
+  /** Null while the overview is unknown: Publish is hidden until then; its reason is the tooltip. */
   gate: GateView | null;
   role: 'admin' | 'user';
   onTogglePolicy: () => void;
@@ -43,14 +46,8 @@ export function ProjectHeader({
           </button>
         )}
         {draft !== null && gate && (
-          <a
-            className={gate.passes ? 'button' : 'button locked'}
-            href={`#/workbench/${project.id}/evaluate`}
-            title={gate.reason}
-          >
-            {!gate.passes && <Icon name="lock" size={14} />}
+          <a className="button" href={`#/workbench/${project.id}/template`} title={gate.reason}>
             Publish v{draft}
-            {!gate.passes && <span className="visually-hidden"> (locked: {gate.reason})</span>}
           </a>
         )}
       </div>

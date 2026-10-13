@@ -157,9 +157,9 @@ describe('overviewStates', () => {
 
   it.each([
     [gate({ score: 0.95, passes: true }), 'ready'],
-    [gate({ score: 0.5 }), 'locked'],
-    [gate(), 'locked'],
-  ] as const)('publish with %o → %s', (g, state) => {
+    [gate({ iterationId: 'it1', score: 0.5 }), 'ready'],
+    [gate(), 'ready'],
+  ] as const)('publish with %o → %s (the gate never locks it)', (g, state) => {
     expect(stateOf(inputs({ gate: g }), 'publish')).toBe(state);
   });
 });
@@ -299,9 +299,22 @@ describe('nextAction', () => {
       { kind: 'running', stage: 'evaluate', label: 'Evaluate running' },
     ],
     [
-      'nothing evaluated yet',
+      'nothing evaluated yet: evaluation is optional',
       inputs(),
-      { kind: 'continue', stage: 'evaluate', label: 'Start Evaluate' },
+      { kind: 'publish', stage: 'publish', label: 'Publish v2' },
+    ],
+    [
+      'no references yet: references are optional',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'accepted',
+          steps: 'accepted',
+          references: 'pending',
+        }),
+      }),
+      { kind: 'publish', stage: 'publish', label: 'Publish v2' },
     ],
     [
       'drafting not started',
@@ -400,6 +413,19 @@ describe('urgency', () => {
       null,
     ],
     [
+      'unverified references are not urgent',
+      inputs({
+        stages: drafted({
+          survey: 'accepted',
+          outputs: 'accepted',
+          sections: 'accepted',
+          steps: 'accepted',
+          references: 'pending',
+        }),
+      }),
+      null,
+    ],
+    [
       'all done, gate passes',
       inputs({
         evaluation: { running: false },
@@ -479,8 +505,18 @@ describe('overviewItems', () => {
     );
   });
 
-  it('says References are verified', () => {
+  it('says References are verified, or optional when not started', () => {
     expect(status(ctx(), 'references').status).toBe('Verified');
+    const none = inputs({
+      stages: drafted({
+        survey: 'accepted',
+        outputs: 'accepted',
+        sections: 'accepted',
+        steps: 'accepted',
+        references: 'pending',
+      }),
+    });
+    expect(status(ctx({}, none), 'references').status).toBe('Optional, not started');
   });
 
   it('names the earlier stage that made a stage stale', () => {
@@ -504,7 +540,7 @@ describe('overviewItems', () => {
   });
 
   it.each([
-    [inputs(), 'pending', 'Not run on holdout yet'],
+    [inputs(), 'pending', 'Optional, not run on holdout yet'],
     [inputs({ evaluation: { running: true } }), 'running', 'Running'],
     [inputs({ gate: gate({ iterationId: 'it1', score: 0.86 }) }), 'warn', 'Holdout 86%, below 90%'],
     [
@@ -543,8 +579,8 @@ describe('overviewItems', () => {
   it('describes Publish, Template and Test runs', () => {
     expect(status(ctx(), 'publish')).toMatchObject({
       stage: 'publish',
-      state: 'locked',
-      status: 'Locked by the gate',
+      state: 'ready',
+      status: 'Ready to publish v2',
     });
     const ready = inputs({ gate: gate({ iterationId: 'it1', score: 0.93, passes: true }) });
     expect(status(ctx({}, ready), 'publish').status).toBe('Ready to publish v2');
@@ -698,6 +734,15 @@ describe('overviewNext', () => {
         stage: 'publish',
         title: 'Next: publish v2',
         reason: 'Holdout score 93% meets the threshold 90%.',
+      },
+    ],
+    [
+      'falls back to publishing without an evaluation',
+      inputs(),
+      {
+        stage: 'publish',
+        title: 'Next: publish v2',
+        reason: 'References and evaluation are optional.',
       },
     ],
     [

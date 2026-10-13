@@ -1024,7 +1024,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** Project settings: the holdout score a draft needs to publish without an override. */
+  /** Project settings: the holdout score at which the (informational) publish gate passes. */
   app.patch<{ Params: ProjectParams }>(
     '/workbench/projects/:id',
     {
@@ -1033,8 +1033,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'updateProject',
         summary: 'Set the publish threshold',
         description: md`
-          Sets the holdout score (0 to 1, default 0.9) a draft needs to publish without an
-          override reason. The change is recorded with the signed-in token's label.
+          Sets the holdout score (0 to 1, default 0.9) at which the publish gate passes. The gate
+          is informational: publishing never needs it. The change is recorded with the signed-in token's label.
         `,
         params: ProjectIdParams,
         body: ThresholdBodySchema,
@@ -1131,7 +1131,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'getPublishGate',
         summary: 'Check the publish gate',
         description: md`
-          Whether the open draft may be published without an override. The newest complete
+          Whether the open draft meets the holdout bar. Informational only: references and
+          evaluation are optional, and publishing never needs the gate. The newest complete
           holdout iteration that evaluated the draft exactly as it is now (version and
           definition), with the template's own models, decides. It passes only when it covered
           every ready holdout sample, compared every sample it evaluated (a job that failed,
@@ -1151,7 +1152,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** Publish the open draft through the holdout gate; below it, only with an override reason. */
+  /** Publish the open draft; the holdout gate is recorded but never blocks. */
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/publish',
     {
@@ -1160,9 +1161,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'publishProject',
         summary: 'Publish the draft through the gate',
         description: md`
-          Publishes the open draft when the publish gate passes. Below the gate it needs an
-          \`overrideReason\` (10 to 1000 characters), which is recorded with the publication.
-          If the draft changes after the gate was decided, nothing is published: check the gate
+          Publishes the open draft when it is valid. References and evaluation are optional: the
+          publish gate is informational only, and its iteration and score (if any) are recorded
+          with the publication. \`overrideReason\` is still accepted but ignored (no override is
+          needed or recorded). If the draft changes after the gate was decided, nothing is published: check the gate
           again. Every publication is logged (\`GET …/publications\`). This is the only way to
           publish a Workbench document type. See
           [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
@@ -1175,15 +1177,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             z.object({ publication: PublicationSchema, project: ProjectViewSchema }),
           ),
           400: res(
-            'Zod issues (an override reason under 10 characters), or `the draft is not valid` ' +
+            'Zod issues (an ignored override reason under 10 characters), or `the draft is not ' +
+              'valid` ' +
               '(with `issues`).',
             z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
           ),
           404: PROJECT_NOT_FOUND,
           409: res(
-            'Below the gate without an override (`{reason}; give an override reason to publish ' +
-              'anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while ' +
-              'publishing; check the gate again`.',
+            '`no open draft to publish`, or `the draft changed while publishing; check the gate ' +
+              'again`.',
             z.object({ error: z.string(), gate: GateViewSchema.optional() }),
           ),
         },
@@ -1199,12 +1201,6 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
       const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-      const { overrideReason } = body.data;
-      if (!gate.passes && !overrideReason) {
-        return reply
-          .code(409)
-          .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
-      }
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
       // re-check, the publish and the publication record share one transaction.
       const outcome = await workbench.publishDraft({
@@ -1217,8 +1213,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           iterationId: gate.iterationId,
           score: gate.score,
           threshold: gate.threshold,
-          // An override is recorded only when it was needed.
-          overrideReason: gate.passes ? null : overrideReason!,
+          // References and evaluation are optional: the gate never blocks, so nothing is overridden.
+          overrideReason: null,
           publishedBy: req.auth?.label ?? null,
         },
       });
@@ -1238,7 +1234,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           iterationId: gate.iterationId,
           score: gate.score,
           threshold: gate.threshold,
-          override: publication.overrideReason !== null,
+          passes: gate.passes,
         },
         'workbench draft published',
       );
@@ -1255,8 +1251,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         summary: "List a project's publications",
         description: md`
           Every version published from the Workbench, newest first: the iteration and score the
-          gate used, the threshold, the override reason when the gate did not pass, and who
-          published it.
+          gate used (null when no holdout evaluation decided it), the threshold, the override
+          reason of publications made while overrides were still needed, and who published it.
         `,
         params: ProjectIdParams,
         response: {

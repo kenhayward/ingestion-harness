@@ -225,7 +225,7 @@ export function OverviewMap({
           ))}
         </svg>
         <span className="map-edge flow" style={{ left: 640, top: 606 }}>
-          publish when the gate passes
+          publish; verifying is optional
         </span>
         <span className="map-edge side" style={{ left: 648, top: 205 }}>
           hand edits change the draft
