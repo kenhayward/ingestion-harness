@@ -67,8 +67,8 @@ export interface OverviewInputs {
   stages: readonly StageView[];
   /** The newest revise proposal's status; null when revise never ran. */
   revise: ProposalStatus | null;
-  /** Evaluations of the open draft (dev or holdout): one is queued or running / one finished. */
-  evaluation: { running: boolean; complete: boolean };
+  /** An evaluation of the open draft (dev or holdout) is queued or running. */
+  evaluation: { running: boolean };
   gate: GateView;
 }
 
@@ -117,10 +117,11 @@ function reviseState(status: ProposalStatus | null): OverviewState {
   return 'pending';
 }
 
-function evaluateState({ running, complete }: OverviewInputs['evaluation'], gate: GateView) {
+function evaluateState({ running }: OverviewInputs['evaluation'], gate: GateView): OverviewState {
   if (gate.passes) return 'accepted';
   if (running) return 'running';
-  return complete ? 'warn' : 'pending';
+  // Only a holdout run of this draft that decided the gate can fail it; a dev-only evaluation is not a failing gate.
+  return gate.iterationId !== null ? 'warn' : 'pending';
 }
 
 /** The ten stages' states; with no open draft every stage is done. */
@@ -178,9 +179,13 @@ export function nextAction(
     return { kind: 'running', stage: running, label: `${OVERVIEW_LABEL[running]} running` };
   }
   const { gate } = inputs;
-  if (gate.score !== null && !gate.passes) {
-    const percent = Math.round(gate.threshold * 100);
-    return { kind: 'below_threshold', stage: 'evaluate', label: `Holdout below ${percent}%` };
+  // A holdout run decided the gate and it fails: below the threshold, or coverage/comparison incomplete.
+  if (gate.iterationId !== null && !gate.passes) {
+    const belowThreshold = gate.score !== null && gate.score < gate.threshold;
+    const label = belowThreshold
+      ? `Holdout below ${Math.round(gate.threshold * 100)}%`
+      : 'Re-run holdout';
+    return { kind: 'below_threshold', stage: 'evaluate', label };
   }
   if (gate.passes) return { kind: 'publish', stage: 'publish', label: `Publish v${inputs.draft}` };
   const todo = firstToDo(entries);

@@ -46,7 +46,7 @@ const inputs = (over: Partial<OverviewInputs> = {}): OverviewInputs => ({
     references: 'accepted',
   }),
   revise: null,
-  evaluation: { running: false, complete: false },
+  evaluation: { running: false },
   gate: gate(),
   ...over,
 });
@@ -126,10 +126,11 @@ describe('overviewStates', () => {
   });
 
   it.each([
-    [{ running: false, complete: false }, gate(), 'pending'],
-    [{ running: true, complete: false }, gate(), 'running'],
-    [{ running: false, complete: true }, gate({ score: 0.86 }), 'warn'],
-    [{ running: true, complete: true }, gate({ score: 0.95, passes: true }), 'accepted'],
+    [{ running: false }, gate(), 'pending'],
+    [{ running: false }, gate({ iterationId: 'it1', score: null }), 'warn'],
+    [{ running: true }, gate(), 'running'],
+    [{ running: false }, gate({ iterationId: 'it1', score: 0.86 }), 'warn'],
+    [{ running: true }, gate({ iterationId: 'it1', score: 0.95, passes: true }), 'accepted'],
   ] as const)('evaluate %o with %o → %s', (evaluation, g, state) => {
     expect(stateOf(inputs({ evaluation, gate: g }), 'evaluate')).toBe(state);
   });
@@ -186,8 +187,8 @@ describe('phaseOf', () => {
     [
       'revise never run does not hold the phase',
       inputs({
-        evaluation: { running: false, complete: true },
-        gate: gate({ score: 0.95, passes: true }),
+        evaluation: { running: false },
+        gate: gate({ iterationId: 'it1', score: 0.95, passes: true }),
       }),
       { phase: 'verify', done: 8 },
     ],
@@ -268,16 +269,26 @@ describe('nextAction', () => {
     ],
     [
       'gate fails',
-      inputs({ evaluation: { running: false, complete: true }, gate: gate({ score: 0.86 }) }),
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.86 }) }),
       { kind: 'below_threshold', stage: 'evaluate', label: 'Holdout below 90%' },
     ],
     [
       'gate passes',
       inputs({
-        evaluation: { running: false, complete: true },
-        gate: gate({ score: 0.93, passes: true }),
+        evaluation: { running: false },
+        gate: gate({ iterationId: 'it1', score: 0.93, passes: true }),
       }),
       { kind: 'publish', stage: 'publish', label: 'Publish v2' },
+    ],
+    [
+      'coverage incomplete after a holdout run',
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.95, passes: false }) }),
+      { kind: 'below_threshold', stage: 'evaluate', label: 'Re-run holdout' },
+    ],
+    [
+      'dev-only evaluation does not fail the gate',
+      inputs(),
+      { kind: 'continue', stage: 'evaluate', label: 'Start Evaluate' },
     ],
     [
       'nothing evaluated yet',
@@ -303,8 +314,8 @@ describe('nextAction', () => {
     });
     const i = inputs({
       stages: done,
-      evaluation: { running: false, complete: true },
-      gate: gate({ score: 0.9, passes: true }),
+      evaluation: { running: false },
+      gate: gate({ iterationId: 'it1', score: 0.9, passes: true }),
     });
     expect(nextAction(i)?.stage).toBe('publish');
   });
@@ -343,8 +354,7 @@ describe('urgency', () => {
       inputs({
         briefSaved: false,
         samples: { total: 3, preparing: 0, failed: 1 },
-        evaluation: { running: false, complete: true },
-        gate: gate({ score: 0.5 }),
+        gate: gate({ iterationId: 'it1', score: 0.5 }),
       }),
       { stage: 'evaluate', kind: 'gate' },
     ],
@@ -371,13 +381,19 @@ describe('urgency', () => {
     [
       'all done, gate passes',
       inputs({
-        evaluation: { running: false, complete: true },
-        gate: gate({ score: 0.95, passes: true }),
+        evaluation: { running: false },
+        gate: gate({ iterationId: 'it1', score: 0.95, passes: true }),
       }),
       null,
     ],
   ] as const)('%s', (_, i, expected) => {
     expect(urgency(i)).toEqual(expected);
+  });
+
+  it('agrees with nextAction on a failing holdout gate', () => {
+    const i = inputs({ gate: gate({ iterationId: 'it1', score: 0.5 }) });
+    expect(urgency(i)).toEqual({ stage: 'evaluate', kind: 'gate' });
+    expect(nextAction(i)?.kind).toBe('below_threshold');
   });
 });
 
