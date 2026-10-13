@@ -164,6 +164,36 @@ describe('ReferencesTab', () => {
     expect(right).toHaveTextContent('Excludes due_date, which no step fills yet');
   });
 
+  it('says No score yet instead of 0 / 0 when nothing counts', async () => {
+    tab({ dev: [referenceRow({ filename: 'a.pdf' })] });
+    const right = (await screen.findByRole('heading', { name: 'Right first time' })).closest(
+      'section',
+    )!;
+    expect(right).toHaveTextContent('No score yet');
+    expect(right).not.toHaveTextContent('0 / 0');
+  });
+
+  it('does not claim every output has a step when the draft has no outputs', async () => {
+    tab(
+      { dev: [saved('a.pdf')] },
+      {
+        getTemplate: vi.fn(async () =>
+          templateView({ ...definition, outputs: { fields: [], tables: [] }, pipeline: [] }),
+        ),
+      },
+    );
+    const right = (await screen.findByRole('heading', { name: 'Right first time' })).closest(
+      'section',
+    )!;
+    await screen.findByText('No outputs in the draft yet');
+    expect(right).not.toHaveTextContent('Every output has a step');
+  });
+
+  it('says how many verified dev references the needs strip counts', async () => {
+    tab({ dev: [saved('a.pdf'), saved('b.pdf'), referenceRow({ filename: 'c.pdf' })] });
+    expect(await screen.findByText(/across 2 verified dev references/)).toBeInTheDocument();
+  });
+
   it('counts per output where the draft model needed you, and links an output without a step to Steps', async () => {
     tab({
       dev: [
@@ -314,6 +344,46 @@ describe('ReferencesTab samples list', () => {
     );
     expect(await screen.findByText('Awaiting review')).toBeInTheDocument();
   });
+
+  it('tells the page when the runs have finished', async () => {
+    const dev = vi
+      .fn()
+      .mockResolvedValueOnce([referenceRow({ run: run('running') })])
+      .mockResolvedValue([referenceRow({ run: run('awaiting_review') })]);
+    const { onChanged } = tab(
+      {},
+      {
+        listReferenceRows: vi.fn(async (_id: string, set?: string) =>
+          set === 'holdout' ? [] : dev(),
+        ),
+      },
+    );
+    await screen.findByText('Awaiting review');
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores a slow response that arrives after a newer one', async () => {
+    let n = 0;
+    let release: (rows: ReferenceRow[]) => void = () => {};
+    const slow = new Promise<ReferenceRow[]>((resolve) => (release = resolve));
+    tab(
+      {},
+      {
+        listReferenceRows: vi.fn(async (_id: string, set?: string) => {
+          if (set === 'holdout') return [];
+          n += 1;
+          if (n === 1) return [referenceRow({ run: run('running') })];
+          if (n === 2) return slow;
+          return [referenceRow({ run: run('awaiting_review') })];
+        }),
+      },
+    );
+    await screen.findByText('Awaiting review');
+    release([referenceRow({ run: run('running') })]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByText('Awaiting review')).toBeInTheDocument();
+    expect(screen.queryByText('Running')).toBeNull();
+  });
 });
 
 describe('ReferencesTab detail panel', () => {
@@ -384,11 +454,90 @@ describe('ReferencesTab detail panel', () => {
     expect(total).toHaveTextContent('CORRECTED');
     expect(due).toHaveTextContent('BY HAND');
     expect(lines).toHaveTextContent('2 rows');
-    expect(within(panel).getByRole('link', { name: 'Open in Review to change' })).toHaveAttribute(
+    expect(within(panel).getByRole('link', { name: 'Open in Review' })).toHaveAttribute(
       'href',
       '#/review/src-1',
     );
     expect(panel).toHaveTextContent('Saving again replaces this reference for v2.');
+    expect(panel).toHaveTextContent(
+      'To change a value, run the sample again and save a new reference.',
+    );
+  });
+
+  it('says an output with no provenance is not verified for this version', async () => {
+    const a = saved('a.pdf');
+    tab(
+      { dev: [a] },
+      {
+        getReferenceDetail: vi.fn(async () =>
+          referenceDetail({
+            sampleId: a.sampleId,
+            filename: 'a.pdf',
+            reference: a.reference!,
+            values: [
+              {
+                id: 'sender',
+                kind: 'field',
+                value: 'x',
+                provenance: 'model',
+                proposed: null,
+                corrections: [],
+              },
+              {
+                id: 'due_date',
+                kind: 'field',
+                value: null,
+                provenance: null,
+                proposed: null,
+                corrections: [],
+              },
+            ],
+            corrections: [],
+          }),
+        ),
+      },
+    );
+    const panel = await screen.findByRole('complementary', { name: 'Reference a.pdf' });
+    const [, sender, due] = within(within(panel).getByRole('table')).getAllByRole('row');
+    expect(sender).not.toHaveTextContent('re-verify');
+    expect(due).toHaveTextContent('Not verified for this version — re-verify');
+    expect(due).not.toHaveTextContent('MODEL ✓');
+  });
+
+  it('shows a placeholder instead of an empty column when no sample has a reference', async () => {
+    tab({ dev: [referenceRow({ filename: 'a.pdf' })] });
+    expect(
+      await screen.findByText('Select a verified sample to see its values'),
+    ).toBeInTheDocument();
+  });
+
+  it('refetches the detail when a sample is saved again', async () => {
+    const sampleId = 'same-sample';
+    const first = referenceRow({
+      sampleId,
+      filename: 'a.pdf',
+      reference: referenceInfo({ id: 'r1' }),
+      run: run('running'),
+    });
+    const second = referenceRow({
+      sampleId,
+      filename: 'a.pdf',
+      reference: referenceInfo({ id: 'r2' }),
+    });
+    const dev = vi.fn().mockResolvedValueOnce([first]).mockResolvedValue([second]);
+    const getReferenceDetail = vi.fn(async () =>
+      referenceDetail({ sampleId, filename: 'a.pdf', reference: first.reference! }),
+    );
+    tab(
+      {},
+      {
+        getReferenceDetail,
+        listReferenceRows: vi.fn(async (_id: string, set?: string) =>
+          set === 'holdout' ? [] : dev(),
+        ),
+      },
+    );
+    await waitFor(() => expect(getReferenceDetail).toHaveBeenCalledTimes(2));
   });
 
   it('switches to a holdout sample with the sealed note', async () => {

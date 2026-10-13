@@ -2,6 +2,8 @@ import { correctionOutput, type JobStatus, type ReferenceRow } from '@ih/shared'
 
 /** Pure helpers of the References tab (handoff §7). */
 
+const outputName = (key: string) => key.replace(/^(field|table):/, '');
+
 export const isActive = (status: JobStatus) => status === 'queued' || status === 'running';
 
 /** A reference that Evaluate can use: present and verified against the current outputs. */
@@ -32,7 +34,7 @@ export function rowStatus(row: ReferenceRow): string {
   if (row.reference) {
     return row.reference.outdated.length === 0
       ? 'Verified'
-      : `Re-verify: ${row.reference.outdated.join(', ')} changed`;
+      : `Re-verify: ${row.reference.outdated.map(outputName).join(', ')} changed`;
   }
   const status = row.run?.status ?? null;
   if (status === null) return 'Not run';
@@ -52,7 +54,7 @@ export const shortDateTime = (iso: string) =>
   });
 
 /** "Re-verified in v4 · 11 Oct 16:55 · was v3", "Carried from v3 · …", "Verified in v4 · …". */
-export function rowLine(row: ReferenceRow, version: number | null): string {
+export function rowLine(row: ReferenceRow): string {
   const r = row.reference;
   if (!r) return 'Not verified yet';
   const at = shortDateTime(r.createdAt);
@@ -60,7 +62,7 @@ export function rowLine(row: ReferenceRow, version: number | null): string {
   const v = r.version ?? null;
   if (v === null) return `Verified · ${at}`;
   if (r.reverified) return `Re-verified in v${v} · ${at} · was v${r.reverified.from}`;
-  return `Verified in v${v ?? version} · ${at}`;
+  return `Verified in v${v} · ${at}`;
 }
 
 /** Outputs the reviewer corrected (entered-by-hand values show in the strip and the panel). */
@@ -99,13 +101,12 @@ export function matchesFilter(row: ReferenceRow, filter: ReferenceFilter): boole
   return !verified(row);
 }
 
-const outputName = (key: string) => key.replace(/^(field|table):/, '');
-
 /** The ready banner: every dev and holdout sample has a verified reference (at least one dev). */
 export function readyBanner(
   dev: readonly ReferenceRow[],
   holdout: readonly ReferenceRow[],
   version: number | null,
+  hasDraft = true,
 ): { ready: boolean; text: string } {
   if (dev.length === 0 || ![...dev, ...holdout].every(verified)) return { ready: false, text: '' };
   const again = [...dev, ...holdout].filter((r) => r.reference!.reverified !== null);
@@ -120,6 +121,6 @@ export function readyBanner(
         }.`;
   return {
     ready: true,
-    text: `${dev.length} dev and ${holdout.length} holdout references match the draft v${version ?? '?'} outputs.${why}`,
+    text: `${dev.length} dev and ${holdout.length} holdout references match the ${hasDraft ? 'draft' : 'published'} v${version ?? '?'} outputs.${why}`,
   };
 }

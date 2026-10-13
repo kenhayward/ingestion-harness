@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   outputNeeds,
   rightFirstTime,
@@ -86,19 +86,22 @@ export function ReferencesTab({
   const [selected, setSelected] = useState<string | null>(null);
   const [samples, setSamples] = useState<SampleView[]>([]);
 
+  const seq = useRef(0);
   const refresh = useCallback(async () => {
+    const mine = ++seq.current;
     try {
       const [devRows, holdout, sampleList] = await Promise.all([
         api.listReferenceRows(projectId),
         api.listReferenceRows(projectId, 'holdout'),
         api.listSamples(projectId).catch(() => [] as SampleView[]),
       ]);
+      if (mine !== seq.current) return;
       setSamples(sampleList);
       setRows(devRows);
       setHoldoutRows(holdout);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      if (mine === seq.current) setError((err as Error).message);
     }
   }, [api, projectId]);
 
@@ -109,6 +112,11 @@ export function ReferencesTab({
   const running = [...(rows ?? []), ...(holdoutRows ?? [])].some(
     (r) => r.run !== null && isActive(r.run.status),
   );
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) onChanged();
+    wasRunning.current = running;
+  }, [running, onChanged]);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => void refresh(), pollMs);
@@ -156,7 +164,7 @@ export function ReferencesTab({
   const holdoutCount = unverifiedCount(holdout);
   const devReason = runReason(hasDraft, busy || running, devCount, 'dev');
   const holdoutReason = runReason(hasDraft, busy || running, holdoutCount, 'holdout');
-  const banner = readyBanner(dev, holdout, version);
+  const banner = readyBanner(dev, holdout, version, hasDraft);
   const right = useMemo(() => rightFirstTime(dev, draftDef), [dev, draftDef]);
   const needs = useMemo(() => outputNeeds(dev, draftDef), [dev, draftDef]);
   const current = selected ?? [...dev, ...holdout].find((r) => r.reference)?.sampleId ?? null;
@@ -216,14 +224,21 @@ export function ReferencesTab({
         />
         <section className="card refs-card">
           <h3>Right first time</h3>
-          <p className="refs-figure">
-            <strong>
-              {right.right} / {right.total}
-            </strong>
-            <span className="muted">
-              {Math.round(percent(right.right, right.total) * 100)}% of dev values
-            </span>
-          </p>
+          {right.total === 0 ? (
+            <p className="refs-figure">
+              <strong>No score yet</strong>
+              <span className="muted">no verified dev values</span>
+            </p>
+          ) : (
+            <p className="refs-figure">
+              <strong>
+                {right.right} / {right.total}
+              </strong>
+              <span className="muted">
+                {Math.round(percent(right.right, right.total) * 100)}% of dev values
+              </span>
+            </p>
+          )}
           <Meter
             label="Right first time"
             value={right.total ? right.right / right.total : null}
@@ -232,7 +247,9 @@ export function ReferencesTab({
           <p className="muted">
             {right.excluded.length
               ? `Excludes ${right.excluded.join(', ')}, which no step fills yet`
-              : 'Every output has a step'}
+              : needs.length === 0
+                ? 'No outputs in the draft yet'
+                : 'Every output has a step'}
           </p>
         </section>
       </div>
@@ -258,7 +275,6 @@ export function ReferencesTab({
             role="dev"
             rows={dev}
             filter={filter}
-            version={version}
             selected={current}
             onSelect={setSelected}
             note="run by the draft model"
@@ -267,7 +283,6 @@ export function ReferencesTab({
             role="holdout"
             rows={holdout}
             filter={filter}
-            version={version}
             selected={current}
             onSelect={setSelected}
             note="run by the live template, sealed from drafting"
@@ -284,14 +299,19 @@ export function ReferencesTab({
           />
           <NotCounted projectId={projectId} samples={samples} />
         </section>
-        {current && (
+        {current ? (
           <ReferenceDetailPanel
+            key={`${current}:${[...dev, ...holdout].find((r) => r.sampleId === current)?.reference?.id ?? ''}`}
             api={api}
             projectId={projectId}
             sampleId={current}
             version={version}
             published={published}
           />
+        ) : (
+          <aside className="card refs-detail refs-detail-empty" aria-label="Reference values">
+            <p className="muted">Select a verified sample to see its values</p>
+          </aside>
         )}
       </div>
       <p className="muted">
@@ -349,7 +369,8 @@ function NeedsStrip({
     <section className="card refs-needs">
       <h3>Where the draft model needed you</h3>
       <p className="muted">
-        Values you changed in Review, per output, across the {samples} dev samples
+        Values you changed in Review, per output, across {samples} verified dev{' '}
+        {samples === 1 ? 'reference' : 'references'}
       </p>
       <ul className="refs-chips">
         {needs.map((n) => {
@@ -383,7 +404,6 @@ function SampleGroup({
   role,
   rows,
   filter,
-  version,
   selected,
   onSelect,
   note,
@@ -392,7 +412,6 @@ function SampleGroup({
   role: 'dev' | 'holdout';
   rows: ReferenceRow[];
   filter: ReferenceFilter;
-  version: number | null;
   selected: string | null;
   onSelect: (id: string) => void;
   note: string;
@@ -431,7 +450,7 @@ function SampleGroup({
                 >
                   <span className="refs-row-name">
                     <code>{r.filename}</code>
-                    <small className="muted">{rowLine(r, version)}</small>
+                    <small className="muted">{rowLine(r)}</small>
                   </span>
                   <span className="refs-tracker" role="img" aria-label={trackerLabel(t)}>
                     {[t.ran, t.reviewed, t.saved].map((done, i) => (
@@ -584,10 +603,16 @@ function ReferenceDetailPanel({
                     : display(v.value)}
                 </td>
                 <td>
-                  {v.provenance && (
+                  {v.provenance ? (
                     <span className={`kind-tag tone-${PROVENANCE_TAG[v.provenance].tone}`}>
                       {PROVENANCE_TAG[v.provenance].text}
                     </span>
+                  ) : (
+                    detail.corrections !== null && (
+                      <span className="kind-tag tone-warn">
+                        Not verified for this version — re-verify
+                      </span>
+                    )
                   )}
                 </td>
               </tr>
@@ -597,9 +622,10 @@ function ReferenceDetailPanel({
       </div>
       {r.sourceJobId && (
         <a className="button" href={`#/review/${r.sourceJobId}`}>
-          Open in Review to change
+          Open in Review
         </a>
       )}
+      <p className="muted">To change a value, run the sample again and save a new reference.</p>
       <p className="muted">
         {holdout
           ? 'Holdout values are only scored, never shown to drafting.'

@@ -48,7 +48,7 @@ describe('tracker and status', () => {
       'outdated',
       saved({ outdated: ['field:due_date'] }),
       [true, true, false],
-      'Re-verify: field:due_date changed',
+      'Re-verify: due_date changed',
     ],
   ])('%s', (_name, row, steps, status) => {
     const t = tracker(row);
@@ -75,7 +75,7 @@ describe('row text', () => {
     ],
     ['unpinned', saved({ version: null }), /^Verified · /],
   ])('%s', (_name, row, expected) => {
-    const line = rowLine(row, 4);
+    const line = rowLine(row);
     if (typeof expected === 'string') expect(line).toBe(expected);
     else expect(line).toMatch(expected);
   });
@@ -159,5 +159,17 @@ describe('filters, counts and the ready banner', () => {
     ],
   ])('%s', (_name, dev, holdout, expected) => {
     expect(readyBanner(dev, holdout, 4)).toEqual(expected);
+  });
+
+  it('says published vN when no draft is open', () => {
+    expect(readyBanner([clean], [], 3, false).text).toBe(
+      '1 dev and 0 holdout references match the published v3 outputs.',
+    );
+  });
+
+  it('names outdated outputs without their field:/table: prefix', () => {
+    expect(rowStatus(saved({ outdated: ['field:vat', 'table:lines'] }))).toBe(
+      'Re-verify: vat, lines changed',
+    );
   });
 });

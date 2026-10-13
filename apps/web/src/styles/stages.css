@@ -2043,10 +2043,12 @@ label.inline.list-select {
   min-width: 1.4em;
   border-radius: 999px;
   background: currentColor;
+  color: var(--ih-surface);
   text-align: center;
 }
-.refs-chip-count {
-  color: var(--ih-surface);
+.refs-card-holdout {
+  border-color: var(--ih-skip-fg);
+  background: var(--ih-skip-bg);
 }
 .refs-chip.tone-ok,
 .refs-legend .tone-ok {
@@ -2116,7 +2118,7 @@ label.inline.list-select {
 .refs-row-main {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(0, 2fr) auto minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(14ch, 2fr) auto minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 4px 12px;
   align-items: center;
   min-width: 0;
@@ -2134,7 +2136,7 @@ label.inline.list-select {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .refs-row-status,
 .refs-row-corrections {
@@ -2164,6 +2166,9 @@ label.inline.list-select {
   max-height: calc(100vh - 32px);
   overflow: auto;
   overflow-wrap: anywhere;
+}
+.refs-detail-empty {
+  text-align: center;
 }
 .refs-detail[data-role='holdout'] {
   border-color: var(--ih-skip-fg);
