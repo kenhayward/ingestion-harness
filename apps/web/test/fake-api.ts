@@ -127,6 +127,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     test: false,
     referenceId: null,
     projectId: null,
+    createdBy: null,
     reviewReasons: null,
     reviewer: null,
     reviewNote: null,

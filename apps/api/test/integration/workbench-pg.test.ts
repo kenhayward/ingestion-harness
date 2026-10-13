@@ -498,6 +498,33 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf((await repo.createRegressionJob(reference, 2)).id)).toBeNull();
   });
 
+  it('stores who queued a job and lists only their jobs', async () => {
+    const projectId = await newProject();
+    const label = `it-user-${randomUUID().slice(0, 8)}`;
+    const mine = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, label);
+    expect(mine.createdBy).toBe(label);
+    const sample = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      createdBy: label,
+    });
+    expect(sample.createdBy).toBe(label);
+    const other = await repo.createDocumentAndJob(doc(projectId), null);
+    expect(other.createdBy).toBeNull();
+    const reference = await repo.createReference({
+      templateId: projectId,
+      name: 'r',
+      documentId: mine.documentId,
+      sourceJobId: mine.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const regression = await repo.createRegressionJob(reference, 2, null, label);
+    expect(regression.createdBy).toBe(label);
+    const listed = await repo.listJobs({ limit: 10, createdBy: label });
+    expect(listed.map((j) => j.id).sort()).toEqual([mine.id, sample.id, regression.id].sort());
+    expect(await repo.listJobs({ limit: 10, createdBy: label, status: 'failed' })).toEqual([]);
+  });
+
   it('refreshes the outputs snapshot on retry, keeping the other params', async () => {
     const projectId = await newProject();
     const job = await repo.createWorkbenchJob(doc(projectId), {

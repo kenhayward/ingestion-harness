@@ -109,6 +109,12 @@ export function JobDetailPanel({
         <dd>{job.attempts}</dd>
         <dt>Created</dt>
         <dd title={new Date(job.createdAt).toLocaleString()}>{relativeTime(job.createdAt, now)}</dd>
+        {job.createdBy !== null && (
+          <>
+            <dt>Queued by</dt>
+            <dd>{job.createdBy}</dd>
+          </>
+        )}
       </dl>
       {error && <p className="error">Couldn't load details: {error}</p>}
       {shown.length > 0 && (

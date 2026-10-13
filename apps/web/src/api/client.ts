@@ -254,7 +254,8 @@ export interface Api {
   deleteS3Consumer(consumerId: string): Promise<void>;
   listSpecs(): Promise<SpecSummary[]>;
   listModels(): Promise<ModelInfo[]>;
-  listJobs(): Promise<JobSummary[]>;
+  /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
+  listJobs(opts?: { mine?: boolean }): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
   /** model: a ref to retry with, or null for the spec default (clears the override). */
   retryJob(id: string, model?: string | null): Promise<JobSummary>;
@@ -551,7 +552,8 @@ export function createHttpApi(base = '/api'): Api {
     },
     listSpecs: () => apiFetch(`${base}/specs`).then(json<SpecSummary[]>),
     listModels: () => apiFetch(`${base}/models`).then(json<ModelInfo[]>),
-    listJobs: () => apiFetch(`${base}/jobs`).then(json<JobSummary[]>),
+    listJobs: (opts) =>
+      apiFetch(`${base}/jobs${opts?.mine ? '?mine=1' : ''}`).then(json<JobSummary[]>),
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
     retryJob: (id, model) =>
       post<JobSummary>(`${base}/jobs/${id}/retry`, model === undefined ? {} : { model }),

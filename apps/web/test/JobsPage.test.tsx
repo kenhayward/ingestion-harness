@@ -1,8 +1,8 @@
 import type { JobSummary } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobsPage } from '../src/jobs/JobsPage.js';
 import { fakeApi, job } from './fake-api.js';
 
@@ -112,5 +112,85 @@ describe('JobsPage', () => {
     page([job({ filename: 'a.pdf', specId: 'inv', specVersion: 3 })], { api });
     const list = screen.getByRole('region', { name: 'Job list' });
     expect(await within(list).findByText('Supplier invoice v3')).toBeInTheDocument();
+  });
+});
+
+describe('JobsPage: My jobs', () => {
+  afterEach(() => localStorage.clear());
+
+  it('shows only my jobs, fetched from the server, with the status chips still applying', async () => {
+    const listJobs = vi.fn(async () => [
+      job({ filename: 'mine-failed.pdf', status: 'failed', createdBy: 'ken' }),
+      job({ filename: 'mine-done.pdf', status: 'succeeded', createdBy: 'ken' }),
+    ]);
+    page(
+      [
+        job({ filename: 'mine-failed.pdf', status: 'failed', createdBy: 'ken' }),
+        job({ filename: 'theirs.pdf', status: 'failed', createdBy: 'ops' }),
+      ],
+      { api: fakeApi({ listJobs }) },
+    );
+    const toggle = screen.getByRole('button', { name: 'My jobs' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(listJobs).not.toHaveBeenCalled();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(listJobs).toHaveBeenCalledWith({ mine: true });
+    const list = screen.getByRole('region', { name: 'Job list' });
+    expect(await within(list).findByText('mine-done.pdf')).toBeInTheDocument();
+    expect(within(list).queryByText('theirs.pdf')).not.toBeInTheDocument();
+    const chips = screen.getByRole('group', { name: 'Filter jobs by status' });
+    expect(within(chips).getByRole('button', { name: 'All 2' })).toBeInTheDocument();
+    await userEvent.click(within(chips).getByRole('button', { name: 'Needs attention 1' }));
+    expect(within(list).getByText('mine-failed.pdf')).toBeInTheDocument();
+    expect(within(list).queryByText('mine-done.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('Showing 1 of 2 jobs')).toBeInTheDocument();
+
+    await userEvent.click(toggle);
+    expect(within(list).getByText('theirs.pdf')).toBeInTheDocument();
+  });
+
+  it('says when none of the jobs are mine', async () => {
+    page([job({ filename: 'theirs.pdf' })], {
+      api: fakeApi({ listJobs: vi.fn(async () => []) }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'My jobs' }));
+    expect(await screen.findByText('You have not queued any jobs yet.')).toBeInTheDocument();
+  });
+
+  it('remembers the toggle', async () => {
+    const listJobs = vi.fn(async () => [job({ filename: 'mine.pdf', createdBy: 'ken' })]);
+    const { unmount } = page([job({ filename: 'theirs.pdf' })], { api: fakeApi({ listJobs }) });
+    await userEvent.click(screen.getByRole('button', { name: 'My jobs' }));
+    unmount();
+    page([job({ filename: 'theirs.pdf' })], { api: fakeApi({ listJobs }) });
+    expect(screen.getByRole('button', { name: 'My jobs' })).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      await within(screen.getByRole('region', { name: 'Job list' })).findByText('mine.pdf'),
+    ).toBeInTheDocument();
+  });
+
+  it('refreshes my jobs, and the shared list, after an action', async () => {
+    const mine = job({ filename: 'mine.pdf', status: 'failed', createdBy: 'ken' });
+    const listJobs = vi.fn(async () => [mine]);
+    const refresh = vi.fn(async () => {});
+    page([], { api: fakeApi({ listJobs }), refresh });
+    await userEvent.click(screen.getByRole('button', { name: 'My jobs' }));
+    await screen.findAllByText('mine.pdf');
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    await userEvent.click(within(panel()).getByRole('button', { name: 'Retry with spec default' }));
+    await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(2));
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('shows who queued the selected job', () => {
+    page([job({ filename: 'a.pdf', createdBy: 'ken' })]);
+    expect(within(panel()).getByText('Queued by')).toBeInTheDocument();
+    expect(within(panel()).getByText('ken')).toBeInTheDocument();
+  });
+
+  it('leaves out Queued by for jobs from before it was recorded', () => {
+    page([job({ filename: 'a.pdf', createdBy: null })]);
+    expect(within(panel()).queryByText('Queued by')).not.toBeInTheDocument();
   });
 });
