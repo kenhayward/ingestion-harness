@@ -328,7 +328,7 @@ describe('JobList confirmations', () => {
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Re-process a.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Re-process a.pdf' });
     expect(dialog).toHaveTextContent(
-      'a.pdf is extracted again on the latest template version; earlier review edits are discarded.',
+      'a.pdf is extracted again on the latest recipe version; earlier review edits are discarded.',
     );
     expect(api.retryJob).not.toHaveBeenCalled();
     await userEvent.selectOptions(

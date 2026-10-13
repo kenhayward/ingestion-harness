@@ -36,13 +36,13 @@ const DraftDocumentSchema = z
 
 const ReviewViewSchema = z.object({
   job: JobDetailSchema,
-  template: TemplateSchema.describe('The template version the job ran with.'),
+  template: TemplateSchema.describe('The recipe version the job ran with.'),
   document: DraftDocumentSchema,
   edits: z.array(ReviewEditSchema).describe('Edits so far, oldest first.'),
 });
 
 const NO_REVIEW = error(
-  '`not found`, `job is not a template document`, `no draft document for this job` or ' +
+  '`not found`, `job did not run a recipe`, `no draft document for this job` or ' +
     '`draft document missing from storage`.',
 );
 const DECIDED = error('`job not found or not awaiting review`.');
@@ -74,7 +74,7 @@ async function loadContext(
   if (!job) return notFound('not found');
   const resolved = await resolveDefinition(app.deps, job.specId, job.specVersion);
   const def = resolved?.ok ? resolved.definition : undefined;
-  if (def?.kind !== 'template') return notFound('job is not a template document');
+  if (def?.kind !== 'template') return notFound('job did not run a recipe');
   const draft = job.outputs.find((o) => o.stage === 'draft' && o.outputId === 'document');
   if (!draft) return notFound('no draft document for this job');
   const body = await app.deps.store.get(draft.bucket, draft.key);
@@ -92,7 +92,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'getReview',
         summary: 'Get a job for review',
         description: md`
-          Everything the review screen needs for a template job: the job, the template version
+          Everything the review screen needs for a recipe job: the job, the recipe version
           it ran with, the draft document (each field's value with the text and page it came
           from, and the table rows) and the edits recorded so far. Available whenever the job
           has a draft document, not only while it awaits review.
@@ -323,7 +323,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
               'not run: `model {ref} is not offered: add it on the Models page`, `alias {name} ' +
               'uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).',
           ),
-          404: error('`not found`, or `job is not a template document`.'),
+          404: error('`not found`, or `job did not run a recipe`.'),
           409: error(
             '`job is {status}, not awaiting_review`, the step has reviewer edits, or the job ' +
               'is no longer awaiting review.',
@@ -345,7 +345,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
       const resolved = await resolveDefinition(app.deps, job.specId, job.specVersion);
       const def = resolved?.ok ? resolved.definition : undefined;
       if (def?.kind !== 'template') {
-        return reply.code(404).send({ error: 'job is not a template document' });
+        return reply.code(404).send({ error: 'job did not run a recipe' });
       }
       const step = def.template.pipeline.find(
         (s) => s.type === 'extract' && s.id === req.params.step,

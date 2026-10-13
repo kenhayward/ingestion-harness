@@ -102,9 +102,7 @@ describe('StagePanel', () => {
   it('needs an open draft', async () => {
     panel({}, { hasDraft: false });
     expect(await screen.findByRole('button', { name: 'Propose outputs' })).toBeDisabled();
-    expect(
-      screen.getByText('Start the next version on the Template tab first.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Start the next version on the Recipe tab first.')).toBeInTheDocument();
   });
 
   it('hides the skip button when the stage cannot be skipped', async () => {
@@ -296,7 +294,7 @@ describe('StagePanel', () => {
   it('links to the Template tab for edits by hand', async () => {
     panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
     expect(
-      await screen.findByRole('link', { name: 'Edit by hand on the Template tab' }),
+      await screen.findByRole('link', { name: 'Edit by hand on the Recipe tab' }),
     ).toHaveAttribute('href', '#/workbench/letter/template');
   });
 

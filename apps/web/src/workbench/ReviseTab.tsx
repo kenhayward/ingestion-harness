@@ -215,7 +215,7 @@ export function ReviseTab({
   const header = failuresHeader(preview);
   const earlier = earlierRevisions(data.proposals, data.feedback);
   const askReason = !preview.draft
-    ? 'Start the next version on the Template tab first'
+    ? 'Start the next version on the Recipe tab first'
     : running
       ? 'A revision is being drafted'
       : !preview.feedback.length

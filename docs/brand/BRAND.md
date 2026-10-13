@@ -16,6 +16,21 @@ The header brand link carries `aria-label="CT Studio — Content Transformation 
 and `title="Content Transformation Studio"` so the full name is available on hover and to
 screen readers.
 
+## Terminology
+
+| Term | Means |
+| --- | --- |
+| **Transformation recipe** (short: **recipe**) | The definition that turns a document of a type into outputs: its outputs (fields and typed tables), layout (sections and anchors), pipeline steps, review policy and default model. Versioned: a draft is editable, a published version is immutable. |
+| **Document type** | The kind of document a recipe reads (e.g. "Analytical Method Validation Report"). Each type has numbered versions of its recipe. |
+
+Use the long form, "transformation recipe", where there is room (first mention, headings,
+docs); use "recipe" afterwards and in tight UI (tabs, buttons, nav). Keep both terms: "document
+type" for the kind of document, "recipe" for its definition.
+
+Code names stay `template`, just as code names stay `ingestion-harness`: API paths
+(`/api/templates/…`), the `templates` table, `template.yaml` files, and the `Template` type in
+`@ih/shared`. Renaming those is a separate, breaking change.
+
 ## The mark
 
 Tile 64×64 viewBox, corner radius 15 (14 at 32 px, 12 at 16 px). Three geometries — always use

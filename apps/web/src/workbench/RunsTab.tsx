@@ -134,7 +134,7 @@ export function RunsTab({
         description={
           draft !== null
             ? `Runs draft v${draft} on prepared dev samples so you can look at the results in Review. Test runs aren't scored (Evaluate compares with references), holdout samples are never used, and runs queue behind production jobs.`
-            : 'Every version is published; start the next version on the Template tab to test-run it.'
+            : 'Every version is published; start the next version on the Recipe tab to test-run it.'
         }
         actions={
           <button

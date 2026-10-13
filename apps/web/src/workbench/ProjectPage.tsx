@@ -29,7 +29,7 @@ const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
   references: 'References',
   evaluate: 'Evaluate',
   revise: 'Revise',
-  template: 'Template',
+  template: 'Recipe',
   runs: 'Test runs',
 };
 
@@ -401,7 +401,7 @@ export function ProjectPage({
           )}
           {tab === 'template' &&
             (draft !== null ? (
-              // The editor owns its tab header ("Template · draft vN", Try on, Export, More).
+              // The editor owns its tab header ("Transformation recipe · draft vN", Try on, Export, More).
               <TemplateEditor
                 key={draft}
                 api={api}

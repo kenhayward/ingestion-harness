@@ -465,7 +465,7 @@ export interface GateCandidate {
   /** Samples compared with their reference / samples the iteration evaluated. */
   completed: number;
   total: number;
-  /** Model override of the iteration; only null (the template's own models) counts. */
+  /** Model override of the iteration; only null (the recipe's own models) counts. */
   model: string | null;
   /** Currently ready holdout samples the iteration evaluated / currently ready holdout samples. */
   covered: number;

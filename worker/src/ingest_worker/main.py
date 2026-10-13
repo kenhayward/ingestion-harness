@@ -63,7 +63,7 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
         if job.task == "rerun":
             loaded = load_definition(job, deps, queue)
             if not isinstance(loaded, LoadedTemplate):
-                raise DocumentError("only template documents can re-run steps")
+                raise DocumentError("only documents run by a recipe can re-run steps")
             rerun = rerun_template_job(job, deps, queue, loaded)
             queue.record_drafts(job, rerun.outputs, deps.buckets.outputs)
             check_cancelled(job, queue)
@@ -135,7 +135,7 @@ def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[Re
     reference) keeps the reviewed document but is never delivered to the target."""
     loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
-        raise DocumentError("only template documents go through review/publish")
+        raise DocumentError("only documents run by a recipe go through review/publish")
     return publish_template_job(job, deps, queue, loaded, deliver=not job.test)
 
 

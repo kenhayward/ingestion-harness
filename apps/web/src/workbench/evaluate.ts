@@ -88,7 +88,7 @@ export function latestOf(
 
 const templateRun = (h: IterationSummary) => h.model === null && h.groupId === null;
 
-/** The Dev meter: the newest complete dev run of `version` with the template's own models. */
+/** The Dev meter: the newest complete dev run of `version` with the recipe's own models. */
 export function devScore(
   history: readonly IterationSummary[],
   version: number | null,
@@ -138,7 +138,7 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
       return [
         {
           ...base,
-          label: `${h.model ?? "Template's models"}${fresh}`,
+          label: `${h.model ?? "Recipe's models"}${fresh}`,
           score: scoreOf(h),
           running: h.status === 'running',
         },
@@ -155,7 +155,7 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
     return [
       {
         ...base,
-        label: `Compare ${DOT} ${group.map((g) => `${g.model ?? 'template'} ${whole(scoreOf(g))}`).join(` ${DOT} `)}${fresh}`,
+        label: `Compare ${DOT} ${group.map((g) => `${g.model ?? 'recipe'} ${whole(scoreOf(g))}`).join(` ${DOT} `)}${fresh}`,
         score: scores.length ? Math.max(...scores) : null,
         running: group.some((g) => g.status === 'running'),
       },
@@ -196,12 +196,12 @@ export function historyBars(
 
 /** The chart's text alternative. */
 export function historySummary(bars: readonly HistoryBar[], threshold: number): string {
-  if (!bars.length) return 'No template-model runs yet';
+  if (!bars.length) return 'No runs with the recipe’s models yet';
   const part = (set: EvaluationSet) => {
     const b = [...bars].reverse().find((x) => x.set === set);
     return b ? `latest ${set} ${pct(b.score)} (v${b.version})` : `no ${set} run`;
   };
-  return `${bars.length} template-model runs; ${part('dev')}; ${part('holdout')}; threshold ${pct(threshold)}`;
+  return `${bars.length} runs with the recipe’s models; ${part('dev')}; ${part('holdout')}; threshold ${pct(threshold)}`;
 }
 
 /** The threshold box: a whole percentage from 0 to 100, as a fraction. */
@@ -235,7 +235,7 @@ export function gateTitle(
   if (draft === null) {
     return published === null
       ? 'Nothing to publish'
-      : `v${published} is live. Start the next version on the Template tab.`;
+      : `v${published} is live. Start the next version on the Recipe tab.`;
   }
   return gate ? `Publish v${draft} — ${gate.reason}` : `Publish v${draft}`;
 }

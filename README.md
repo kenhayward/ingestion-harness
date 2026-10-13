@@ -49,7 +49,7 @@ cd worker && uv run ingest-worker
 ## Adding a document type
 
 The shipped example is `specs/process-validation-protocol/v1/`, developed against the two
-public samples in [docs/samples/](docs/samples/README.md) (a text-layer template and a 60-page
+public samples in [docs/samples/](docs/samples/README.md) (a blank text-layer protocol form and a 60-page
 scanned protocol-cum-report).
 
 1. Copy `specs/process-validation-protocol/v1/` to `specs/<your-id>/v1/`.

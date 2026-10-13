@@ -79,7 +79,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Get a published result',
         description: md`
           One published result: the job, where it was delivered (\`target\` bucket and prefix),
-          its published outputs, and for template jobs the published document read back from the
+          its published outputs, and for recipe jobs the published document read back from the
           target with the definition of its fields and tables. If the document cannot be read,
           \`document\` is null and \`documentError\` says why; the rest is still returned.
         `,

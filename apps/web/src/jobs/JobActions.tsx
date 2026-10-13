@@ -21,7 +21,7 @@ const PROMPTS: Record<InlineAction, (filename: string) => string> = {
 const RUNS: Record<'retry' | 're-process', (filename: string) => string> = {
   retry: (f) => `${f} runs again from the start, on the latest version of its document type.`,
   're-process': (f) =>
-    `${f} is extracted again on the latest template version; earlier review edits are discarded.`,
+    `${f} is extracted again on the latest recipe version; earlier review edits are discarded.`,
 };
 
 const DELETABLE = new Set<JobStatus>(DELETABLE_STATUSES);

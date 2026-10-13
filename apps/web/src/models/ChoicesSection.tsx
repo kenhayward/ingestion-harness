@@ -78,8 +78,8 @@ export function ChoicesSection({
     <section className="choices-section" aria-label="Model choices">
       <h2>Model choices</h2>
       <p className="muted">
-        What people pick, by label, wherever a model is chosen. The default is used by template
-        steps that name no model.
+        What people pick, by label, wherever a model is chosen. The default is used by recipe steps
+        that name no model.
       </p>
       <div className="list-box">
         <table className="choice-list" aria-label="Model choices">

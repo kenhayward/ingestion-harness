@@ -168,7 +168,7 @@ const EVALUATION_REFUSED = {
   400: DRAFT_NOT_VALID,
   404: PROJECT_NOT_FOUND,
   409: error(
-    '`no open draft; start the next version on the Template tab`, or `no verified references ' +
+    '`no open draft; start the next version on the Recipe tab`, or `no verified references ' +
       'for the {set} samples; verify …`.',
   ),
 };
@@ -1034,7 +1034,7 @@ async function evaluationInputs(
   if (draft === null) {
     await reply
       .code(409)
-      .send({ error: 'no open draft; start the next version on the Template tab' });
+      .send({ error: 'no open draft; start the next version on the Recipe tab' });
     return null;
   }
   const record = (await templates.get(projectId, draft))!;
@@ -1322,7 +1322,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Delete an unpublished project',
         description: md`
           Deletes a project whose document type was never published: its samples, brief,
-          proposals, feedback, iterations, jobs and template drafts, then its files (best
+          proposals, feedback, iterations, jobs and recipe drafts, then its files (best
           effort). A document type with a published version keeps its project.
         `,
         params: ProjectIdParams,
@@ -1376,7 +1376,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Whether the open draft meets the holdout bar. Informational only: references and
           evaluation are optional, and publishing never needs the gate. The newest complete
           holdout iteration that evaluated the draft exactly as it is now (version and
-          definition), with the template's own models, decides. It passes only when it covered
+          definition), with the recipe's own models, decides. It passes only when it covered
           every ready holdout sample, compared every sample it evaluated (a job that failed,
           needs review, was cancelled or deleted fails it), and scored at or above the
           project's threshold. \`reason\` says why it passes or fails. Scores are recomputed
@@ -1821,7 +1821,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           came from (\`hand\` saves, applied \`proposal\`s with their \`stage\`, \`restore\`d
           iterations, the draft's \`started\` entry, \`import\`s), a one-line \`summary\` and up to
           four \`diff\` chips. Empty without an open draft, and for drafts started before the log
-          existed. The Template tab's _Changes since vN_ panel.
+          existed. The Recipe tab's _Changes since vN_ panel.
         `,
         params: ProjectIdParams,
         response: {
@@ -1854,7 +1854,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           outputs. Test runs reuse a step's stored output when its full input is unchanged
           (the step cache), so only changed steps call a model. They are never delivered.
           \`model\` overrides every step with a model choice (its id; \`default\` is the
-          default choice); without it the template's own models run. An unknown choice, or an
+          default choice); without it the recipe's own models run. An unknown choice, or an
           external one for a local-only project, is a 400.
         `,
         params: ProjectIdParams,
@@ -1957,7 +1957,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           document: z
             .unknown()
             .optional()
-            .describe("A template's `document` block. Default: the open draft's."),
+            .describe("A recipe's `document` block. Default: the open draft's."),
         }),
         response: {
           202: res('The queued preview.', SegmentationViewSchema),
@@ -2143,7 +2143,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     if (draft === null) {
       return reply
         .code(409)
-        .send({ error: 'no open draft; start the next version on the Template tab' });
+        .send({ error: 'no open draft; start the next version on the Recipe tab' });
     }
     const { definition } = (await templates.get(projectId, draft))!;
     const issues = validateTemplate(definition);
@@ -2392,7 +2392,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Exactly what \`POST …/stages/revise\` would send to the drafting model now (handoff
           RV1): the open \`feedback\` (with ids, which the model's \`answers\` name), the failure
-          diffs of the latest complete dev iteration (the template's own run first, else a
+          diffs of the latest complete dev iteration (the recipe's own run first, else a
           model-comparison member; \`failuresFrom\`) restricted to the current ready dev samples,
           lowest score first and at most \`limits.samples\` (\`failuresTotal\` counts them before
           that cap; each diff keeps at most \`limits.fieldDiffs\` fields and \`limits.rowDiffs\`
@@ -2494,8 +2494,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           ),
           404: PROJECT_NOT_FOUND,
           409: error(
-            `${STAGE_ORDER_CONFLICT}, \`no open draft; start the next version on the Template ` +
-              'tab`, `the project has no template version`, `add feedback before asking for a ' +
+            `${STAGE_ORDER_CONFLICT}, \`no open draft; start the next version on the Recipe ` +
+              'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
               'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
               'already running`.',
@@ -2524,10 +2524,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (changeStage && draft === null) {
         return reply
           .code(409)
-          .send({ error: 'no open draft; start the next version on the Template tab' });
+          .send({ error: 'no open draft; start the next version on the Recipe tab' });
       }
       const record = draft !== null ? await templates.get(projectId, draft) : latest;
-      if (!record) return reply.code(409).send({ error: 'the project has no template version' });
+      if (!record) return reply.code(409).send({ error: 'the project has no recipe version' });
       // Holdout rule (ADR 0007): only dev samples ever reach a drafting model.
       const samples = devSamplesOf(await sampleViews(app, projectId));
       const revision = stage === 'revise' ? await reviseInputs(projectId, samples) : null;
@@ -2679,7 +2679,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'startHoldoutReferenceRuns',
         summary: 'Start reference runs on the holdout samples',
         description: md`
-          Runs the open draft with the template's own models (never the drafting model, which
+          Runs the open draft with the recipe's own models (never the drafting model, which
           must not see holdout) on every ready holdout sample that has no reference and no
           active run, stopping each for review. Verify the values, approve, then save each job
           as a reference: holdout evaluations and the publish gate need them. Not a stage: the
@@ -2691,7 +2691,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           400: DRAFT_NOT_VALID,
           404: PROJECT_NOT_FOUND,
           409: error(
-            '`no open draft; start the next version on the Template tab`, `no prepared holdout ' +
+            '`no open draft; start the next version on the Recipe tab`, `no prepared holdout ' +
               'samples to run`, `every holdout sample already has a reference`, or `reference ' +
               'runs are already running`.',
           ),
@@ -2706,7 +2706,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (draft === null) {
         return reply
           .code(409)
-          .send({ error: 'no open draft; start the next version on the Template tab' });
+          .send({ error: 'no open draft; start the next version on the Recipe tab' });
       }
       const { definition } = (await templates.get(projectId, draft))!;
       const issues = validateTemplate(definition);
@@ -2762,7 +2762,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Run one sample again to re-verify its reference',
         description: md`
           Queues a reference run of one ready sample, verified or not, stopping for review: a dev
-          sample runs the drafting model, a holdout sample the template's own models (drafting
+          sample runs the drafting model, a holdout sample the recipe's own models (drafting
           never sees holdout). Approve the run and save it as the reference to replace the
           current one, which stands until then. Not blocked by the stage order.
         `,
@@ -2772,7 +2772,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           400: DRAFT_NOT_VALID,
           404: error('`project not found` or `sample not found` (unknown or not ready).'),
           409: error(
-            '`no open draft; start the next version on the Template tab` or `a reference run ' +
+            '`no open draft; start the next version on the Recipe tab` or `a reference run ' +
               'of this sample is already running`.',
           ),
         },
@@ -2798,7 +2798,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (draft === null) {
         return reply
           .code(409)
-          .send({ error: 'no open draft; start the next version on the Template tab' });
+          .send({ error: 'no open draft; start the next version on the Recipe tab' });
       }
       const { definition } = (await templates.get(projectId, draft))!;
       const issues = validateTemplate(definition);
@@ -3115,7 +3115,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
           \`model\` overrides every step with a model choice (its id from
           \`GET /api/models/choices\`; \`default\` is the default choice) for exploration; an
-          unknown choice, or an external one for a local-only project, is a 400; only iterations with the template's own models count for the publish
+          unknown choice, or an external one for a local-only project, is a 400; only iterations with the recipe's own models count for the publish
           gate. \`uncached\` makes every step call its model instead of reusing the step cache.
           Holdout scores always compare the models' raw output, never reviewed values.
         `,
@@ -3346,7 +3346,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           200: res('The project.', ProjectViewSchema),
           404: ITERATION_NOT_FOUND,
           409: error(
-            '`no open draft; start the next version on the Template tab`, or `the draft is no ' +
+            '`no open draft; start the next version on the Recipe tab`, or `the draft is no ' +
               'longer open`.',
           ),
         },
@@ -3360,7 +3360,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (draft === null) {
         return reply
           .code(409)
-          .send({ error: 'no open draft; start the next version on the Template tab' });
+          .send({ error: 'no open draft; start the next version on the Recipe tab' });
       }
       const next = pinned(iteration.definition, projectId, draft);
       const current = await templates.get(projectId, draft);

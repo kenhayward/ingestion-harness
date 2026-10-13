@@ -38,7 +38,7 @@ function saveReviewer(name: string): void {
 }
 
 /** GET /jobs/:id/review's error for legacy-spec jobs (only templates have a review document). */
-const NOT_A_TEMPLATE = 'job is not a template document';
+const NOT_A_TEMPLATE = 'job did not run a recipe';
 
 export function ReviewPage({
   api,
@@ -442,7 +442,7 @@ export function ReviewPage({
           }}
         >
           <p>
-            Finished. Save these (reviewed) values as a reference: template changes can then be
+            Finished. Save these (reviewed) values as a reference: recipe changes can then be
             regression-tested against this document.
           </p>
           <label>

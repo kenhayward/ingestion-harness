@@ -12,7 +12,7 @@ import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../u
 /**
  * POST /api/documents (multipart/form-data)
  *   fields (must precede the file part): specId, specVersion?, model?, test?
- *   (draft template versions can only be uploaded as test runs: test=true)
+ *   (draft recipe versions can only be uploaded as test runs: test=true)
  *   file: the PDF or Word document (.docx)
  * Stores the file in the inbox bucket and enqueues a job.
  */
@@ -36,7 +36,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
 
           - \`specId\` names the document type; \`specVersion\` picks a version (default: the
             latest published one, or the newest spec file).
-          - A draft template version can only be uploaded as a test run (\`test=true\`). Test
+          - A draft recipe version can only be uploaded as a test run (\`test=true\`). Test
             runs can be reviewed but are never delivered to the target.
           - \`model\` overrides the document type's model for every step: a model choice's id
             from \`GET /api/models/choices\` (\`default\` is the default choice), or an
@@ -103,7 +103,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
       if (resolved.draft && !test) {
         return reply
           .code(400)
-          .send({ error: 'draft templates can only be test-run (set test=true)' });
+          .send({ error: 'draft recipes can only be test-run (set test=true)' });
       }
       const spec = resolved.definition;
 

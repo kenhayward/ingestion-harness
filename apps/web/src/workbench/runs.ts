@@ -105,7 +105,7 @@ export function batchTitle(batch: RunBatch, now: number): string {
 export function batchSubtitle(batch: RunBatch, choices: readonly ModelChoice[]): string {
   const model =
     batch.modelOverride === null
-      ? "template's models"
+      ? "recipe's models"
       : (choices.find((c) => c.id === batch.modelOverride)?.label ?? batch.modelOverride);
   return [
     plural(batch.runs.length, 'dev sample'),
@@ -226,7 +226,7 @@ export const runLabel = (n: number) => `Run on ${plural(n, 'dev sample')}`;
 /** Why *Run on n dev samples* is disabled; null when it can run. */
 export function runBlockedReason(draft: number | null, selected: number): string | null {
   if (draft === null) {
-    return 'Every version is published: start the next version on the Template tab first';
+    return 'Every version is published: start the next version on the Recipe tab first';
   }
   if (selected === 0) return 'Select at least one prepared dev sample';
   return null;

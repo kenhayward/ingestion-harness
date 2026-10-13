@@ -258,7 +258,7 @@ describe('SectionsTab', () => {
 
   it('asks for a draft when every version is published', () => {
     render(<SectionsTab api={fakeApi()} projectId="letter" draft={null} pollMs={1} />);
-    expect(screen.getByText(/Start the next version on the Template tab/)).toBeInTheDocument();
+    expect(screen.getByText(/Start the next version on the Recipe tab/)).toBeInTheDocument();
   });
 
   it('shows hits per anchor and where it lands in the selected sample', async () => {

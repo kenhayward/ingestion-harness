@@ -246,7 +246,7 @@ describe('export', () => {
     await workbench.createProject('memo', 'Memo');
     const none = await app.inject({ method: 'POST', url: '/api/workbench/projects/memo/export' });
     expect(none.statusCode).toBe(409);
-    expect(none.json().error).toBe('the project has no template version');
+    expect(none.json().error).toBe('the project has no recipe version');
     const unknown = await app.inject({
       method: 'POST',
       url: '/api/workbench/projects/nope/export',
@@ -599,7 +599,7 @@ describe('import', () => {
       'template.yaml that is not a mapping',
       () => bundle({ files: { 'template.yaml': strToU8('- a\n- b\n') } }),
       {},
-      /^template\.yaml is not a template mapping$/,
+      /^template\.yaml is not a recipe mapping$/,
     ],
     ['an invalid id field', () => bundle(), { id: 'Bad Id' }, /^id: /],
     [

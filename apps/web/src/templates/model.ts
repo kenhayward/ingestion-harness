@@ -54,7 +54,7 @@ export function validateDefinition(def: unknown): string[] {
   return result.data.pipeline.flatMap((step) =>
     step.type === 'extract' && step.prompt && !step.prompt.startsWith('builtin/')
       ? [
-          `step "${step.id}": custom prompt files are not supported for database templates; use instructions`,
+          `step "${step.id}": custom prompt files are not supported for recipes stored in the database; use instructions`,
         ]
       : [],
   );

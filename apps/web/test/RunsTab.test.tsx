@@ -142,7 +142,7 @@ describe('RunsTab', () => {
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute(
       'title',
-      'Every version is published: start the next version on the Template tab first',
+      'Every version is published: start the next version on the Recipe tab first',
     );
   });
 

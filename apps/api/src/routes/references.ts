@@ -244,14 +244,14 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
           400: error('`no references yet: save a reviewed job as a reference first`.'),
-          404: error('`template version not found`.'),
+          404: error('`recipe version not found`.'),
         },
       },
     },
     async (req, reply) => {
       const version = Number(req.params.version);
       const record = await app.deps.templates.get(req.params.id, version);
-      if (!record) return reply.code(404).send({ error: 'template version not found' });
+      if (!record) return reply.code(404).send({ error: 'recipe version not found' });
       const references = await versionReferences(app, req.params.id, version);
       if (!references.length) {
         return reply
@@ -330,7 +330,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
               changes: z.array(ChangeSchema),
             }),
           ),
-          404: error('`template version not found`: either version is missing.'),
+          404: error('`recipe version not found`: either version is missing.'),
         },
       },
     },
@@ -339,7 +339,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
         app.deps.templates.get(req.params.id, Number(req.query.from)),
         app.deps.templates.get(req.params.id, Number(req.query.to)),
       ]);
-      if (!from || !to) return reply.code(404).send({ error: 'template version not found' });
+      if (!from || !to) return reply.code(404).send({ error: 'recipe version not found' });
       return {
         from: from.version,
         to: to.version,

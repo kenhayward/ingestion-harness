@@ -93,9 +93,9 @@ describe('OverviewMap', () => {
     }
   });
 
-  it('gives the Template box a soft border', () => {
+  it('gives the Recipe box a soft border', () => {
     render(<OverviewMap projectId="letter" overview={overview} now={now} />);
-    const template = screen.getByRole('link', { name: /^Template: / });
+    const template = screen.getByRole('link', { name: /^Recipe: / });
     expect(template.getAttribute('style')).toContain('border: 1px solid var(--ih-band-bd)');
   });
 
@@ -144,7 +144,7 @@ describe('OverviewStack', () => {
       'Evaluate',
       'Revise',
       'Publish v4',
-      'Template',
+      'Recipe',
       'Test runs',
     ]);
   });

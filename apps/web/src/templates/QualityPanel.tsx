@@ -229,11 +229,11 @@ export function QualityPanel({
               title={`Run regression on v${version}`}
               confirmLabel="Run regression"
               choices={[]}
-              fixedModel="The template's own models"
+              fixedModel="The recipe's own models"
               summary={
                 <p>
                   Runs v{version} on every reference of this document type and scores each run
-                  against it. Regression measures the template, so it always uses its own models.
+                  against it. Regression measures the recipe, so it always uses its own models.
                 </p>
               }
               onConfirm={async () => {

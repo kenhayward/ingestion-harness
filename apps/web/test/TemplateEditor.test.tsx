@@ -258,7 +258,7 @@ describe('TemplateEditor', () => {
   describe('embedded in the workbench', () => {
     it('hides the single-sample test run (the Runs tab replaces it)', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
-      await screen.findByRole('heading', { level: 2, name: 'Template · draft v1' });
+      await screen.findByRole('heading', { level: 2, name: 'Transformation recipe · draft v1' });
       expect(
         screen.queryByRole('complementary', { name: 'Test this draft' }),
       ).not.toBeInTheDocument();
@@ -294,7 +294,7 @@ describe('TemplateEditor', () => {
         await screen.findByText(/Model proposals and your edits change the same draft/),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('heading', { level: 2, name: 'Template · draft v1' }),
+        screen.getByRole('heading', { level: 2, name: 'Transformation recipe · draft v1' }),
       ).toBeInTheDocument();
       expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: /Document types/ })).not.toBeInTheDocument();
@@ -308,7 +308,7 @@ describe('TemplateEditor', () => {
 
     it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, YAML, without Quality', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
-      await screen.findByRole('heading', { level: 2, name: 'Template · draft v1' });
+      await screen.findByRole('heading', { level: 2, name: 'Transformation recipe · draft v1' });
       const tabs = within(screen.getByRole('tablist', { name: 'Template sections' })).getAllByRole(
         'tab',
       );
@@ -686,9 +686,9 @@ describe('TemplateEditor', () => {
   it('edits as YAML', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/YAML/));
-    const editor = screen.getByRole('textbox', { name: 'Template YAML' });
+    const editor = screen.getByRole('textbox', { name: 'Recipe YAML' });
     expect(editor).toHaveTextContent('name: Letter');
-    setYaml('Template YAML', 'id: letter\nversion: 1\nname: Memo');
+    setYaml('Recipe YAML', 'id: letter\nversion: 1\nname: Memo');
     await userEvent.click(screen.getByRole('button', { name: 'Apply YAML' }));
     await userEvent.click(await tab(/General/));
     expect(screen.getByLabelText('Name')).toHaveValue('Memo');
@@ -697,7 +697,7 @@ describe('TemplateEditor', () => {
   it('shows a published version as read-only YAML', async () => {
     setup(view({ ...validDefinition(), version: 1 }, 'published'));
     await userEvent.click(await tab(/YAML/));
-    expect(screen.getByRole('textbox', { name: 'Template YAML' })).toHaveAttribute(
+    expect(screen.getByRole('textbox', { name: 'Recipe YAML' })).toHaveAttribute(
       'aria-readonly',
       'true',
     );
@@ -776,7 +776,7 @@ describe('TemplateEditor', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Run regression on v2…' }));
     // Regression measures the template: the dialog shows its own models, fixed.
     const dialog = screen.getByRole('dialog', { name: 'Run regression on v2' });
-    expect(dialog).toHaveTextContent("The template's own models");
+    expect(dialog).toHaveTextContent("The recipe's own models");
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Run regression' }));
     expect(api.runRegression).toHaveBeenCalledWith('letter', 2);

@@ -268,7 +268,7 @@ describe('evaluations', () => {
     await templates.publish('letter', 1);
     const closed = await evaluate();
     expect(closed.statusCode).toBe(409);
-    expect(closed.json().error).toBe('no open draft; start the next version on the Template tab');
+    expect(closed.json().error).toBe('no open draft; start the next version on the Recipe tab');
   });
 
   it('refuses to restore without an open draft', async () => {
@@ -281,6 +281,6 @@ describe('evaluations', () => {
       url: `/api/workbench/projects/letter/iterations/${it.id}/restore`,
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('no open draft; start the next version on the Template tab');
+    expect(res.json().error).toBe('no open draft; start the next version on the Recipe tab');
   });
 });

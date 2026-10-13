@@ -385,7 +385,7 @@ export interface Api {
   /** `uncached` makes every step call its model (the step cache is not read). */
   startEvaluation(
     projectId: string,
-    /** A model choice's id; null: the template's own models. */
+    /** A model choice's id; null: the recipe's own models. */
     model: string | null,
     options?: { uncached?: boolean; set?: EvaluationSet },
   ): Promise<IterationView>;

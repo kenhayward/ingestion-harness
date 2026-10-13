@@ -104,7 +104,7 @@ describe('ReviseTab', () => {
     [
       { getRevisePreview: vi.fn(async () => revisePreview({ draft: null })) },
       null,
-      'Start the next version on the Template tab first',
+      'Start the next version on the Recipe tab first',
     ],
     [
       { listProposals: vi.fn(async () => [reviseProposal({ status: 'running', body: null })]) },

@@ -253,7 +253,7 @@ export function StagePanel({
   const skip = () =>
     act(async () => {
       await api.skipStage(projectId, stage);
-      setMessage('Stage skipped; write this part by hand on the Template tab.');
+      setMessage('Stage skipped; write this part by hand on the Recipe tab.');
       onSkipped();
     });
 
@@ -365,7 +365,7 @@ export function StagePanel({
           <div className="actions">{actions}</div>
         </>
       )}
-      {!hasDraft && <p className="muted">Start the next version on the Template tab first.</p>}
+      {!hasDraft && <p className="muted">Start the next version on the Recipe tab first.</p>}
       {running && <p className="muted">Drafting…</p>}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}

@@ -350,7 +350,7 @@ export const workbenchOverviewRoutes: FastifyPluginAsync = async (app) => {
         summary: "Get a project's overview",
         description: md`
           Everything the project page shows around its tabs, in one call: the project, each
-          tab's state and status text (the ten stages, then Template and Test runs), the most
+          tab's state and status text (the ten stages, then Recipe and Test runs), the most
           urgent next step, and the publish gate. Poll it while any stage is running.
         `,
         params: ProjectIdParams,

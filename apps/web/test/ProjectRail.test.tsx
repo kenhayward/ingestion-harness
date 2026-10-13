@@ -54,7 +54,7 @@ describe('ProjectRail', () => {
       'Sections: Stale — Outputs changed after it was accepted',
     );
     expect(screen.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('link', { name: 'Template' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Recipe' })).toBeInTheDocument();
     expect(sections.querySelector('svg[data-state="stale"]')).toHaveAttribute(
       'aria-hidden',
       'true',

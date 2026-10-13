@@ -24,7 +24,7 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
 };
 
 export const HOLDOUT_MODEL_REASON =
-  "Holdout runs use the template's own models: only they are measured against the threshold";
+  "Holdout runs use the recipe's own models: only they are measured against the threshold";
 export const COMPARE_HOLDOUT_REASON =
   'Model comparison runs on dev samples only; holdout samples are never compared across models';
 
@@ -74,7 +74,7 @@ export function EvaluateTab({
   const compared = ticked ?? usable.map((c) => c.id);
   /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
   const nameOf = (m: string | null) =>
-    m === null ? 'template' : (choices.find((c) => c.id === m)?.label ?? m);
+    m === null ? "recipe's models" : (choices.find((c) => c.id === m)?.label ?? m);
   const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
@@ -207,7 +207,7 @@ export function EvaluateTab({
   };
   const restore = (id: string) =>
     void act(async () => {
-      if (!window.confirm('Replace the open draft with the template from this iteration?')) return;
+      if (!window.confirm('Replace the open draft with the recipe from this iteration?')) return;
       await api.restoreIteration(projectId, id);
       onRestored();
       void reloadGate();
@@ -245,7 +245,7 @@ export function EvaluateTab({
           Fresh model calls
         </label>
         <span className="muted eval-runbar-note">
-          {holdout ? "Holdout: template's models only" : 'Dev: any model choice, or compare'}
+          {holdout ? "Holdout: recipe's models only" : 'Dev: any model choice, or compare'}
         </span>
         <div className="eval-runbar-actions">
           <button
@@ -274,7 +274,7 @@ export function EvaluateTab({
           choices={choices}
           emptyLabel="Document type's model"
           dataPolicy={dataPolicy}
-          {...(holdout ? { fixedModel: "The template's own models" } : {})}
+          {...(holdout ? { fixedModel: "The recipe's own models" } : {})}
           summary={
             <p>
               Runs v{draft} on every verified {set} reference and scores it

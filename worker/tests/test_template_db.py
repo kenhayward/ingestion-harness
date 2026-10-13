@@ -65,7 +65,7 @@ def test_invalid_database_templates_go_to_review(tmp_path: Path) -> None:
     queue = FakeQueue(jobs=[JOB], templates={("demo", 1): broken})
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
-    assert "template demo v1 is invalid" in reason
+    assert "recipe demo v1 is invalid" in reason
 
 
 def test_custom_prompt_files_are_rejected_for_database_templates(tmp_path: Path) -> None:

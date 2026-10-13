@@ -281,7 +281,7 @@ describe('revise', () => {
     await templates.publish('letter', 1);
     const closed = await start('revise');
     expect(closed.statusCode).toBe(409);
-    expect(closed.json().error).toBe('no open draft; start the next version on the Template tab');
+    expect(closed.json().error).toBe('no open draft; start the next version on the Recipe tab');
   });
 
   it('sends open feedback and dev-only failures from the latest complete evaluation', async () => {
