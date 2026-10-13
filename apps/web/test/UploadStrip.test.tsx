@@ -14,26 +14,14 @@ describe('UploadStrip', () => {
     expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
   });
 
-  it('uploads with the selected spec and model, then notifies the parent', async () => {
-    const api = fakeApi({
-      listModels: async () => [
-        {
-          ref: 'anthropic/claude-opus-5-5',
-          provider: 'anthropic',
-          providerKind: 'anthropic',
-          modelId: 'claude-opus-5-5',
-          displayName: 'Claude Opus 5.5',
-          enabled: true,
-          discoveredAt: '',
-          curated: true,
-        },
-      ],
-    });
+  it('uploads with the selected spec and model choice, then notifies the parent', async () => {
+    const api = fakeApi();
     const onUploaded = vi.fn();
     render(<UploadStrip api={api} onUploaded={onUploaded} />);
 
-    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
-    await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-opus-5-5');
+    await screen.findByRole('option', { name: /New for testing only/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'test');
+    expect(screen.getByText('ryzen/openai/gpt-oss-20b')).toBeInTheDocument();
     const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
     await userEvent.upload(screen.getByLabelText('PDF or Word files'), file);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
@@ -42,7 +30,7 @@ describe('UploadStrip', () => {
       file,
       specId: 'process-validation-protocol',
       specVersion: 1,
-      model: 'anthropic/claude-opus-5-5',
+      model: 'test',
     });
     expect(onUploaded).toHaveBeenCalled();
     const uploads = await screen.findByRole('list', { name: 'Uploads' });
@@ -51,21 +39,12 @@ describe('UploadStrip', () => {
 });
 
 describe('UploadStrip remembers the model', () => {
-  const opus = {
-    ref: 'anthropic/claude-opus-5-5',
-    provider: 'anthropic',
-    providerKind: 'anthropic' as const,
-    modelId: 'claude-opus-5-5',
-    displayName: 'Claude Opus 5.5',
-    enabled: true,
-    discoveredAt: '',
-    curated: true,
-  };
-  const api = () => fakeApi({ listModels: async () => [opus] });
+  const opus = { ref: 'test' }; // the choice "New for testing only"
+  const api = () => fakeApi();
 
-  it('saves the selection, and forgets it for spec default', async () => {
+  it("saves the selection, and forgets it for the document type's models", async () => {
     render(<UploadStrip api={api()} onUploaded={() => {}} />);
-    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await screen.findByRole('option', { name: /New for testing only/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
     expect(localStorage.getItem('ih.uploadModel')).toBe(opus.ref);
     await userEvent.selectOptions(screen.getByLabelText('Model'), '');
@@ -76,7 +55,7 @@ describe('UploadStrip remembers the model', () => {
     localStorage.setItem('ih.uploadModel', opus.ref);
     const onModelChange = vi.fn();
     render(<UploadStrip api={api()} onUploaded={() => {}} onModelChange={onModelChange} />);
-    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await screen.findByRole('option', { name: /New for testing only/ });
     expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
     expect(onModelChange).toHaveBeenCalledWith(opus.ref);
   });
@@ -84,7 +63,7 @@ describe('UploadStrip remembers the model', () => {
   it('keeps it across uploads', async () => {
     const a = api();
     render(<UploadStrip api={a} onUploaded={() => {}} />);
-    await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+    await screen.findByRole('option', { name: /New for testing only/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
     const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
     await userEvent.upload(screen.getByLabelText('PDF or Word files'), file);
@@ -93,16 +72,10 @@ describe('UploadStrip remembers the model', () => {
     expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
   });
 
-  it('falls back to spec default when the saved model is gone or disabled', async () => {
+  it("falls back to the document type's models when the saved choice is gone", async () => {
     localStorage.setItem('ih.uploadModel', 'anthropic/retired');
     const onModelChange = vi.fn();
-    render(
-      <UploadStrip
-        api={fakeApi({ listModels: async () => [{ ...opus, ref: 'local/x', enabled: false }] })}
-        onUploaded={() => {}}
-        onModelChange={onModelChange}
-      />,
-    );
+    render(<UploadStrip api={fakeApi()} onUploaded={() => {}} onModelChange={onModelChange} />);
     await waitFor(() => expect(localStorage.getItem('ih.uploadModel')).toBeNull());
     expect(screen.getByLabelText('Model')).toHaveValue('');
     expect(onModelChange).not.toHaveBeenCalledWith('anthropic/retired');
@@ -117,7 +90,7 @@ describe('UploadStrip remembers the model', () => {
     });
     try {
       render(<UploadStrip api={api()} onUploaded={() => {}} />);
-      await screen.findByRole('option', { name: /Claude Opus 5.5/ });
+      await screen.findByRole('option', { name: /New for testing only/ });
       await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
       expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
     } finally {

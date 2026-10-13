@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  EVALUATION_MODELS,
   comparisonRows,
   type ComparisonView,
   type DataPolicy,
-  type EvaluationModel,
   type EvaluationSet,
   type IterationSummary,
   type IterationView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Segmented, type SegmentedOption } from '../ui/Segmented.js';
 import { AccuracyCard, HistoryCard } from './EvaluateHistory.js';
 import { LatestRun } from './EvaluateLatest.js';
@@ -25,6 +24,7 @@ const POLICY_NOTE: Record<DataPolicy, string> = {
 
 export const HOLDOUT_MODEL_REASON =
   "Holdout runs use the template's own models: only they are measured against the threshold";
+export const COMPARE_FEW_REASON = 'Tick at least two model choices to compare';
 export const COMPARE_HOLDOUT_REASON =
   'Model comparison runs on dev samples only; holdout samples are never compared across models';
 
@@ -65,7 +65,15 @@ export function EvaluateTab({
   onGateChanged?: () => void;
 }) {
   const [set, setSet] = useState<EvaluationSet>('dev');
-  const [model, setModel] = useState<EvaluationModel | ''>('');
+  const choices = useModelChoices(api);
+  const [model, setModel] = useState('');
+  /** The choices ticked for a comparison; null: every one this project may use. */
+  const [ticked, setTicked] = useState<string[] | null>(null);
+  const usable = choices.filter((c) => dataPolicy === 'external' || c.location === 'local');
+  const compared = ticked ?? usable.map((c) => c.id);
+  /** An iteration's model by its choice's label; older names (fast, draft) as they are. */
+  const nameOf = (m: string | null) =>
+    m === null ? 'template' : (choices.find((c) => c.id === m)?.label ?? m);
   const [uncached, setUncached] = useState(false);
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
@@ -180,7 +188,10 @@ export function EvaluateTab({
             : busy
               ? 'Starting…'
               : null;
-  const compareBlocked = draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked;
+  const compareBlocked =
+    draft !== null && holdout
+      ? COMPARE_HOLDOUT_REASON
+      : (evaluateBlocked ?? (compared.length < 2 ? COMPARE_FEW_REASON : null));
 
   const evaluate = () =>
     act(async () => {
@@ -194,7 +205,7 @@ export function EvaluateTab({
     });
   const compare = () =>
     act(async () => {
-      setComparison(await api.startComparison(projectId, { uncached }));
+      setComparison(await api.startComparison(projectId, { uncached, models: compared }));
       onStarted?.();
     });
   const restore = (id: string) =>
@@ -228,22 +239,19 @@ export function EvaluateTab({
       <section className="card eval-runbar" aria-label="Run">
         <h3>Run</h3>
         <Segmented label="Sample set" options={SETS} value={set} onChange={setSet} />
-        <label>
+        <div className="field">
           Model{' '}
-          <select
+          <ModelPicker
+            label="Model"
+            choices={choices}
             value={holdout ? '' : model}
             disabled={holdout}
             title={holdout ? HOLDOUT_MODEL_REASON : undefined}
-            onChange={(e) => setModel(e.target.value as EvaluationModel | '')}
-          >
-            <option value="">Template&apos;s models</option>
-            {EVALUATION_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+            emptyLabel="Template's models"
+            dataPolicy={dataPolicy}
+            onChange={setModel}
+          />
+        </div>
         <label title="Skip the step cache: every step calls its model">
           <input
             type="checkbox"
@@ -255,6 +263,34 @@ export function EvaluateTab({
         <span className="muted eval-runbar-note">
           {holdout ? "Holdout: template's models only" : 'Dev: any model, or compare'}
         </span>
+        {!holdout && choices.length > 0 && (
+          <fieldset className="compare-choices" aria-label="Models to compare">
+            <legend className="muted">Compare (at least two)</legend>
+            {choices.map((c) => {
+              const allowed = usable.includes(c);
+              return (
+                <label key={c.id} title={c.ref}>
+                  <input
+                    type="checkbox"
+                    disabled={!allowed}
+                    checked={allowed && compared.includes(c.id)}
+                    onChange={(e) =>
+                      setTicked(
+                        e.target.checked
+                          ? usable
+                              .map((u) => u.id)
+                              .filter((id) => id === c.id || compared.includes(id))
+                          : compared.filter((id) => id !== c.id),
+                      )
+                    }
+                  />{' '}
+                  {c.label}
+                  {c.location === 'external' ? ' · external' : ''}
+                </label>
+              );
+            })}
+          </fieldset>
+        )}
         <div className="eval-runbar-actions">
           <button
             type="button"
@@ -286,7 +322,7 @@ export function EvaluateTab({
                   <th scope="col">Measure</th>
                   {comparison.iterations.map((i) => (
                     <th scope="col" key={i.id}>
-                      {i.model ?? 'template'}
+                      {nameOf(i.model)}
                       {i.status === 'running' && ' (running)'}
                     </th>
                   ))}

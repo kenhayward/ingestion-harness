@@ -6,12 +6,13 @@ import {
   type IterationView,
   type SampleView,
 } from '@ih/shared';
-import { letter, multipart, testApp } from './helpers.js';
+import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 
 async function project() {
   const ctx = await testApp();
+  seedModelChoices(ctx); // main (the default), fast (local), cloud (external)
   await ctx.app.inject({
     method: 'POST',
     url: '/api/workbench/projects',
@@ -115,7 +116,8 @@ describe('model comparison and uncached evaluations', () => {
     });
     expect(res.statusCode).toBe(201);
     const comparison = res.json() as ComparisonView;
-    expect(comparison.iterations.map((i) => i.model)).toEqual(['default', 'fast', 'draft']);
+    // Every choice the local-only project may use, the default first (the external one is out).
+    expect(comparison.iterations.map((i) => i.model)).toEqual(['main', 'fast']);
     expect(new Set(comparison.iterations.map((i) => i.groupId))).toEqual(
       new Set([comparison.groupId]),
     );
@@ -193,9 +195,8 @@ describe('model comparison and uncached evaluations', () => {
       await app.inject(`/api/workbench/projects/letter/comparisons/${comparison.groupId}`)
     ).json() as ComparisonView;
     expect(view.iterations.map((i) => [i.model, i.status, i.score])).toEqual([
-      ['default', 'complete', 1],
+      ['main', 'complete', 1],
       ['fast', 'complete', null],
-      ['draft', 'complete', 1],
     ]);
   });
 

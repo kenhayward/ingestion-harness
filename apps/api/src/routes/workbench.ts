@@ -10,8 +10,8 @@ import {
   ComparisonViewSchema,
   DRAFT_STAGES,
   DataPolicySchema,
-  EVALUATION_MODELS,
   EVALUATION_SETS,
+  MAX_COMPARED_MODELS,
   DraftResultSchema,
   EMPTY_BRIEF,
   FeedbackBodySchema,
@@ -65,7 +65,6 @@ import {
   type ChangeBody,
   type ComparisonView,
   type DraftStage,
-  type EvaluationModel,
   type EvaluationSet,
   type GateCandidate,
   type FailureDiff,
@@ -111,7 +110,9 @@ import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../rep
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import {
+  choiceProblem,
   draftOutputsSnapshot,
+  modelChoices,
   templateIssues,
   validateTemplate,
 } from '../templates/definitions.js';
@@ -735,13 +736,18 @@ export async function allStages(app: FastifyInstance, projectId: string): Promis
 
 const EvaluateBody = z
   .object({
-    model: z.enum(EVALUATION_MODELS).optional(),
+    model: z.string().min(1).max(80).optional(),
     uncached: z.boolean().optional(),
     set: z.enum(EVALUATION_SETS).optional(),
   })
   .strict();
 const ReferencesQuery = z.object({ set: z.enum(EVALUATION_SETS).optional() });
-const CompareBody = z.object({ uncached: z.boolean().optional() }).strict();
+const CompareBody = z
+  .object({
+    models: z.array(z.string().min(1).max(80)).max(MAX_COMPARED_MODELS).optional(),
+    uncached: z.boolean().optional(),
+  })
+  .strict();
 const IterationParams = z.object({ id: Id, iid: z.string().uuid() });
 const ComparisonParams = z.object({ id: Id, groupId: z.string().uuid() });
 
@@ -1026,7 +1032,7 @@ async function startIteration(
   inputs: EvaluationInputs,
   options: {
     set: EvaluationSet;
-    model: EvaluationModel | null;
+    model: string | null;
     uncached: boolean;
     groupId: string | null;
   },
@@ -1406,6 +1412,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const issues = await templateIssues(
         app.deps,
         (await templates.get(projectId, draft))!.definition,
+        { draft: true },
       );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
@@ -2061,7 +2068,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   ): Promise<{
     feedback: { target: string; targetId: string; sample: string | null; body: string }[];
     failures: FailureDiff[];
-    failuresFrom?: { templateVersion: number; model: EvaluationModel | null };
+    failuresFrom?: { templateVersion: number; model: string | null };
     feedbackIds: string[];
   } | null> {
     const names = new Map(dev.map((s) => [s.sampleId, s.filename]));
@@ -2070,7 +2077,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!open.length) return null;
     let failures: FailureDiff[] = [];
-    let failuresFrom: { templateVersion: number; model: EvaluationModel | null } | undefined;
+    let failuresFrom: { templateVersion: number; model: string | null } | undefined;
     const devRuns = (await workbench.listIterations(projectId)).filter((i) => i.set === 'dev');
     // Stable sort: own runs first, newest first within each group.
     const candidates = [...devRuns].sort(
@@ -2776,8 +2783,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           snapshot of the definition. The scorecard fills in as the jobs finish (poll
           \`GET …/iterations/{iid}\`).
 
-          \`model\` overrides every step with an alias (\`default\`, \`fast\` or \`draft\`)
-          for exploration; only iterations with the template's own models count for the publish
+          \`model\` overrides every step with a model choice (its id from
+          \`GET /api/models/choices\`; \`default\` is the default choice) for exploration; an
+          unknown choice, or an external one for a local-only project, is a 400; only iterations with the template's own models count for the publish
           gate. \`uncached\` makes every step call its model instead of reusing the step cache.
           Holdout scores always compare the models' raw output, never reviewed values.
         `,
@@ -2799,9 +2807,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const set = body.data.set ?? 'dev';
       const inputs = await evaluationInputs(app, req.params.id, reply, set);
       if (!inputs) return reply;
+      const model = body.data.model ?? null;
+      if (model) {
+        const problem = choiceProblem(
+          model,
+          await modelChoices(app.deps),
+          inputs.project.dataPolicy,
+        );
+        if (problem) return reply.code(400).send({ error: problem });
+      }
       const iteration = await startIteration(app, req, inputs, {
         set,
-        model: body.data.model ?? null,
+        model,
         uncached: body.data.uncached ?? false,
         groupId: null,
       });
@@ -2817,8 +2834,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'compareModels',
         summary: 'Compare models on the dev samples',
         description: md`
-          Evaluates the open draft on the dev samples three times, overriding every step with
-          the \`default\`, \`fast\` and \`draft\` aliases, as one comparison group. Read it
+          Evaluates the open draft on the dev samples once per model choice in \`models\` (2
+          to 6 ids, in that order; absent: every choice the project may use, the default
+          first), overriding every step with it, as one comparison group. An unknown choice,
+          an external one for a local-only project or fewer than two choices is a 400. Read it
           with \`GET …/comparisons/{groupId}\`. Comparisons are dev-only: they inform drafting,
           which never sees holdout.
         `,
@@ -2840,9 +2859,22 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       // Model comparison stays dev-only: it informs drafting, which never sees holdout.
       const inputs = await evaluationInputs(app, req.params.id, reply, 'dev');
       if (!inputs) return reply;
+      const { dataPolicy } = inputs.project;
+      const choices = await modelChoices(app.deps);
+      // Named choices in the order given; none named: every choice the project may use.
+      const models = body.data.models
+        ? [...new Set(body.data.models)]
+        : choices.filter((c) => !choiceProblem(c.id, choices, dataPolicy)).map((c) => c.id);
+      for (const model of models) {
+        const problem = choiceProblem(model, choices, dataPolicy);
+        if (problem) return reply.code(400).send({ error: problem });
+      }
+      if (models.length < 2) {
+        return reply.code(400).send({ error: 'compare at least two model choices' });
+      }
       const groupId = randomUUID();
       const records: IterationRecord[] = [];
-      for (const model of EVALUATION_MODELS) {
+      for (const model of models) {
         records.push(
           await startIteration(app, req, inputs, {
             set: 'dev',
@@ -2868,8 +2900,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'getComparison',
         summary: 'Get a model comparison',
         description: md`
-          The comparison group's iterations in the order \`default\`, \`fast\`, \`draft\`,
-          each with its scorecard: the overall score and the accuracy of every field and table
+          The comparison group's iterations in the order they were started (the order the
+          choices were asked for), each with its scorecard: the overall score and the accuracy of every field and table
           column.
         `,
         params: z.object({
@@ -2888,11 +2920,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const { id: projectId, groupId } = params.data;
       const records = await workbench.listGroup(projectId, groupId);
       if (!records.length) return reply.code(404).send({ error: 'comparison not found' });
-      const rank = (r: IterationRecord) => (r.model ? EVALUATION_MODELS.indexOf(r.model) : -1);
-      const sorted = [...records].sort((a, b) => rank(a) - rank(b));
+      // In the order they were started: the order the choices were asked for.
       const view: ComparisonView = {
         groupId,
-        iterations: await Promise.all(sorted.map((r) => iterationView(app, r))),
+        iterations: await Promise.all(records.map((r) => iterationView(app, r))),
       };
       return view;
     },

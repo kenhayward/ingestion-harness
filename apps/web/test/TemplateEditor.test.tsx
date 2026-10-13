@@ -615,6 +615,28 @@ describe('TemplateEditor tabs and step cards', () => {
     expect(screen.queryByRole('group', { name: /^Table/ })).not.toBeInTheDocument();
   });
 
+  it('picks a step model from the model choices, by label', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(stepHead(1));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    const model = within(step).getByRole('combobox', { name: 'Model' });
+    // No model: the default choice, named.
+    expect(model).toHaveValue('');
+    expect(
+      within(model).getByRole('option', { name: 'Default choice (Main Production Model)' }),
+    ).toBeInTheDocument();
+    await within(model).findByRole('option', { name: 'New for testing only' });
+    await userEvent.selectOptions(model, 'New for testing only');
+    expect(stepHead(1)).toHaveTextContent('New for testing only');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      pipeline: [{ id: 'head', model: 'test' }, {}],
+    });
+    await userEvent.selectOptions(model, 'Default choice (Main Production Model)');
+    expect(stepHead(1)).toHaveTextContent('default model');
+  });
+
   it('shows steps as collapsed cards with a summary, one open at a time', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/Pipeline/));

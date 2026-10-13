@@ -66,6 +66,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const targetStore = new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
   const workbench = new MemoryWorkbenchRepo(repo, templates);
+  const llm = new MemoryLlmConfigRepo();
   const app = await buildApp({
     repo,
     store,
@@ -81,7 +82,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
-    llm: new MemoryLlmConfigRepo(),
+    llm,
     llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),
@@ -92,7 +93,37 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     ...overrides,
   });
   installConformance(app);
-  return { app, repo, store, targetStore, templates, workbench };
+  // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
+  const llmRepo = (overrides.llm ?? llm) as MemoryLlmConfigRepo;
+  return { app, repo, store, targetStore, templates, workbench, llm: llmRepo };
+}
+
+/**
+ * Model choices as an admin set them up (ADR 0010): `main` (the default) and `fast` on the
+ * local endpoint, `cloud` on an external one, all three models offered.
+ */
+export function seedModelChoices(ctx: { repo: MemoryRepo; llm: MemoryLlmConfigRepo }) {
+  ctx.llm.seedEnv(
+    { name: 'local', kind: 'openai-chat', baseUrl: 'http://host:1234/v1', location: 'local' },
+    ['qwen', 'small'],
+  );
+  ctx.llm.seedEnv({ name: 'cloud', kind: 'anthropic', baseUrl: null, location: 'external' }, [
+    'claude',
+  ]);
+  ctx.llm.seedChoice({ id: 'main', label: 'Main Production Model', ref: 'local/qwen' });
+  ctx.llm.seedChoice({ id: 'fast', label: 'Fast model', ref: 'local/small' });
+  ctx.llm.seedChoice({ id: 'cloud', label: 'Cloud model', ref: 'cloud/claude' });
+  ctx.llm.seedSettings({ default_choice: 'main', drafting_model: 'local/qwen' });
+  ctx.repo.models = ['local/qwen', 'local/small', 'cloud/claude'].map((ref) => ({
+    ref,
+    provider: ref.slice(0, ref.indexOf('/')),
+    providerKind: 'openai-chat' as const,
+    modelId: ref.slice(ref.indexOf('/') + 1),
+    displayName: null,
+    enabled: true,
+    discoveredAt: '',
+    curated: true,
+  }));
 }
 
 /** An app with token access on (so the auth routes exist), signed-in cookies for both roles. */

@@ -1,8 +1,15 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelInfo } from '@ih/shared';
+import {
+  DELETABLE_STATUSES,
+  pickedChoice,
+  type JobStatus,
+  type JobSummary,
+  type ModelChoice,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { isWordDocument } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
+import { ModelPicker } from '../ui/ModelPicker.js';
 import { menuPosition, primaryAction } from './derive.js';
 
 type Action = 'cancel' | 'delete' | 're-process' | 'retry-model';
@@ -38,8 +45,8 @@ export function JobActions({
   onChanged: () => void;
   /** Model selected in the upload strip ('' = spec default): Retry and Re-process use it. */
   retryModel: string;
-  /** Enabled models for "Retry with another model…". */
-  models: readonly ModelInfo[];
+  /** The model choices "Retry with another model…" offers. */
+  models: readonly ModelChoice[];
   variant: 'row' | 'panel';
 }) {
   const [confirm, setConfirm] = useState<Action | null>(null);
@@ -87,7 +94,9 @@ export function JobActions({
   }, [menuOpen]);
 
   const file = job.filename;
-  const model = retryModel || 'spec default';
+  const model = retryModel
+    ? (pickedChoice(retryModel, models)?.label ?? retryModel)
+    : 'spec default';
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -118,23 +127,16 @@ export function JobActions({
   if (confirm === 'retry-model') {
     return (
       <div className="inline-confirm">
-        <select
-          ref={(el) => {
+        <ModelPicker
+          selectRef={(el) => {
             confirmRef.current = el;
           }}
-          aria-label={`Model for ${file}`}
+          label={`Model for ${file}`}
+          choices={models}
           value={picked}
-          onChange={(e) => setPicked(e.target.value)}
-        >
-          <option value="">Spec default</option>
-          {models
-            .filter((m) => m.enabled)
-            .map((m) => (
-              <option key={m.ref} value={m.ref}>
-                {m.ref}
-              </option>
-            ))}
-        </select>
+          onChange={setPicked}
+          emptyLabel="Spec default"
+        />
         <button
           type="button"
           className="primary"

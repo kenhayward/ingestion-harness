@@ -5,6 +5,7 @@ import type {
   PublishGateView,
   IterationView,
   JobSummary,
+  ModelChoice,
   ProjectListItem,
   ProjectListPage,
   ProjectOverview,
@@ -24,6 +25,34 @@ import {
   type CleanupRequest,
   type TemplateRecordView,
 } from '../src/api/client.js';
+
+/** Model choices as an admin set them up: the default, an external one, a test one. */
+export const MODEL_CHOICES: ModelChoice[] = [
+  {
+    id: 'main',
+    label: 'Main Production Model',
+    description: 'What production uses',
+    ref: 'local/qwen',
+    location: 'local',
+    isDefault: true,
+  },
+  {
+    id: 'cloud',
+    label: 'Cloud model',
+    description: '',
+    ref: 'cloud/claude',
+    location: 'external',
+    isDefault: false,
+  },
+  {
+    id: 'test',
+    label: 'New for testing only',
+    description: '',
+    ref: 'ryzen/openai/gpt-oss-20b',
+    location: 'local',
+    isDefault: false,
+  },
+];
 
 export function referenceRow(overrides: Partial<ReferenceRow> = {}): ReferenceRow {
   return {
@@ -246,7 +275,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listSpecs: vi.fn(async () => [
       { id: 'process-validation-protocol', version: 1, title: 'Process Validation Protocol' },
     ]),
-    listModels: vi.fn(async () => []),
+    listPickerChoices: vi.fn(async () => MODEL_CHOICES),
     listJobs: vi.fn(async () => []),
     getJob: vi.fn(async (id: string) => ({ ...job({ id }), outputs: [] })),
     retryJob: vi.fn(async () => job()),

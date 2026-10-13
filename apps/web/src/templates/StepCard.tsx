@@ -14,6 +14,7 @@ export function StepCard({
   onToggle,
   onMove,
   onRemove,
+  modelName,
   children,
 }: {
   /** 0-based position. */
@@ -25,6 +26,8 @@ export function StepCard({
   onToggle: () => void;
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
+  /** A model choice's label from its id, for the summary. */
+  modelName?: (id: string) => string;
   children: ReactNode;
 }) {
   const n = index + 1;
@@ -39,7 +42,7 @@ export function StepCard({
             {kind}
           </span>{' '}
           <span className="mono step-id">{id}</span>{' '}
-          <span className="step-summary muted">{stepSummary(step)}</span>
+          <span className="step-summary muted">{stepSummary(step, modelName)}</span>
         </button>
         <fieldset className="step-tools" disabled={readOnly}>
           <button

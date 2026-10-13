@@ -95,51 +95,27 @@ describe('review routing', () => {
     window.location.hash = '';
   });
 
-  it('retries with the model selected in the upload form', async () => {
+  it('retries with the model choice selected in the upload form', async () => {
     const api = fakeApi({
-      listModels: async () => [
-        {
-          ref: 'anthropic/claude-haiku-5-5',
-          provider: 'anthropic',
-          providerKind: 'anthropic',
-          modelId: 'claude-haiku-5-5',
-          displayName: 'Claude Haiku 5.5',
-          enabled: true,
-          discoveredAt: '',
-          curated: true,
-        },
-      ],
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByRole('option', { name: /Claude Haiku 5.5/ });
-    await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-haiku-5-5');
+    await screen.findByRole('option', { name: /New for testing only/ });
+    await userEvent.selectOptions(screen.getByLabelText('Model'), 'New for testing only');
     await userEvent.click(
-      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+      await (await list()).findByRole('button', { name: 'Retry with New for testing only' }),
     );
-    expect(api.retryJob).toHaveBeenCalledWith('f', 'anthropic/claude-haiku-5-5');
+    expect(api.retryJob).toHaveBeenCalledWith('f', 'test');
   });
 
   it('offers Retry with the remembered model after a reload', async () => {
-    localStorage.setItem('ih.uploadModel', 'anthropic/claude-haiku-5-5');
+    localStorage.setItem('ih.uploadModel', 'test');
     const api = fakeApi({
-      listModels: async () => [
-        {
-          ref: 'anthropic/claude-haiku-5-5',
-          provider: 'anthropic',
-          providerKind: 'anthropic',
-          modelId: 'claude-haiku-5-5',
-          displayName: 'Claude Haiku 5.5',
-          enabled: true,
-          discoveredAt: '',
-          curated: true,
-        },
-      ],
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
     expect(
-      await (await list()).findByRole('button', { name: 'Retry with anthropic/claude-haiku-5-5' }),
+      await (await list()).findByRole('button', { name: 'Retry with New for testing only' }),
     ).toBeInTheDocument();
   });
 });

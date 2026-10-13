@@ -25,15 +25,22 @@ export function tabCounts(def: {
   };
 }
 
-/** One line describing a pipeline step on its collapsed card. */
-export function stepSummary(step: Record<string, unknown>): string {
+/**
+ * One line describing a pipeline step on its collapsed card; `modelName` turns a model choice's
+ * id into its label.
+ */
+export function stepSummary(
+  step: Record<string, unknown>,
+  modelName: (id: string) => string = (id) => id,
+): string {
   if (step.type === 'check') {
     const values = text(step.values).trim();
     const reference = text(step.reference).trim();
     return values && reference ? `${values} vs ${reference}` : 'not set up yet';
   }
   if (step.type !== 'extract') return '';
-  const model = text(step.model) || 'default model';
+  const named = text(step.model);
+  const model = named && named !== 'default' ? modelName(named) : 'default model';
   if (typeof step.table === 'string') {
     const chunk = typeof step.chunkPages === 'number' ? [`${step.chunkPages} pages per call`] : [];
     return [`Table ${step.table}`, ...chunk, model].join(' · ');

@@ -2068,7 +2068,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft template version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step (a ref listed by\n  `GET /api/models` and enabled).\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
+        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft template version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2086,7 +2086,7 @@
                   },
                   "model": {
                     "type": "string",
-                    "description": "A model ref to use instead of the document type's model."
+                    "description": "A model choice's id (or an offered model ref) to use instead of the document type's models."
                   },
                   "test": {
                     "type": "string",
@@ -2274,7 +2274,7 @@
             }
           },
           "400": {
-            "description": "A missing `file` part or `specId`, an unknown document type or version, a draft without `test=true`, or an unknown or disabled model.",
+            "description": "A missing `file` part or `specId`, an unknown document type or version, a draft without `test=true`, or a model that is no choice or is not offered.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2300,7 +2300,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "A missing `file` part or `specId`, an unknown document type or version, a draft without `test=true`, or an unknown or disabled model."
+                  "description": "A missing `file` part or `specId`, an unknown document type or version, a draft without `test=true`, or a model that is no choice or is not offered."
                 }
               }
             }
@@ -3162,7 +3162,7 @@
                         "type": "null"
                       }
                     ],
-                    "description": "A model ref to use, null for the document type's model, absent to keep the job's."
+                    "description": "A model choice's id (or an offered model ref) to use, null for the document type's models, absent to keep the job's."
                   }
                 },
                 "additionalProperties": true
@@ -3346,7 +3346,7 @@
             }
           },
           "400": {
-            "description": "`model must be a model ref or null`, or an unknown or disabled model.",
+            "description": "`model must be a model ref or null`, or a model that is no choice or is not offered.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3372,7 +3372,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`model must be a model ref or null`, or an unknown or disabled model."
+                  "description": "`model must be a model ref or null`, or a model that is no choice or is not offered."
                 }
               }
             }
@@ -4412,6 +4412,96 @@
                     "additionalProperties": true
                   },
                   "description": "The models."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/choices": {
+      "get": {
+        "operationId": "listModelChoicesToPick",
+        "summary": "List the model choices people pick",
+        "tags": [
+          "Models"
+        ],
+        "description": "The labelled model choices an admin set up on the Models page\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, template steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
+        "responses": {
+          "200": {
+            "description": "The choices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "location": {
+                            "type": "string",
+                            "enum": [
+                              "local",
+                              "external"
+                            ]
+                          },
+                          "isDefault": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "description",
+                          "ref",
+                          "location",
+                          "isDefault"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "choices"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choices."
                 }
               }
             }
@@ -21929,7 +22019,7 @@
         "tags": [
           "Evaluation, iterations & comparisons"
         ],
-        "description": "Runs the open draft on every sample of the set (`dev` by default, or `holdout`)\nthat has a verified reference, one test job each, and records an iteration with a\nsnapshot of the definition. The scorecard fills in as the jobs finish (poll\n`GET …/iterations/{iid}`).\n\n`model` overrides every step with an alias (`default`, `fast` or `draft`)\nfor exploration; only iterations with the template's own models count for the publish\ngate. `uncached` makes every step call its model instead of reusing the step cache.\nHoldout scores always compare the models' raw output, never reviewed values.",
+        "description": "Runs the open draft on every sample of the set (`dev` by default, or `holdout`)\nthat has a verified reference, one test job each, and records an iteration with a\nsnapshot of the definition. The scorecard fills in as the jobs finish (poll\n`GET …/iterations/{iid}`).\n\n`model` overrides every step with a model choice (its id from\n`GET /api/models/choices`; `default` is the default choice) for exploration; an\nunknown choice, or an external one for a local-only project, is a 400; only iterations with the template's own models count for the publish\ngate. `uncached` makes every step call its model instead of reusing the step cache.\nHoldout scores always compare the models' raw output, never reviewed values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21939,11 +22029,8 @@
                 "properties": {
                   "model": {
                     "type": "string",
-                    "enum": [
-                      "default",
-                      "fast",
-                      "draft"
-                    ]
+                    "minLength": 1,
+                    "maxLength": 80
                   },
                   "uncached": {
                     "type": "boolean"
@@ -22008,18 +22095,9 @@
                       ]
                     },
                     "model": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "default",
-                            "fast",
-                            "draft"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
+                      "type": [
+                        "string",
+                        "null"
                       ]
                     },
                     "groupId": {
@@ -22493,7 +22571,7 @@
         "tags": [
           "Evaluation, iterations & comparisons"
         ],
-        "description": "Evaluates the open draft on the dev samples three times, overriding every step with\nthe `default`, `fast` and `draft` aliases, as one comparison group. Read it\nwith `GET …/comparisons/{groupId}`. Comparisons are dev-only: they inform drafting,\nwhich never sees holdout.",
+        "description": "Evaluates the open draft on the dev samples once per model choice in `models` (2\nto 6 ids, in that order; absent: every choice the project may use, the default\nfirst), overriding every step with it, as one comparison group. An unknown choice,\nan external one for a local-only project or fewer than two choices is a 400. Read it\nwith `GET …/comparisons/{groupId}`. Comparisons are dev-only: they inform drafting,\nwhich never sees holdout.",
         "requestBody": {
           "required": true,
           "content": {
@@ -22501,6 +22579,15 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "maxItems": 6
+                  },
                   "uncached": {
                     "type": "boolean"
                   }
@@ -22566,18 +22653,9 @@
                             ]
                           },
                           "model": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "enum": [
-                                  "default",
-                                  "fast",
-                                  "draft"
-                                ]
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "groupId": {
@@ -23059,7 +23137,7 @@
         "tags": [
           "Evaluation, iterations & comparisons"
         ],
-        "description": "The comparison group's iterations in the order `default`, `fast`, `draft`,\neach with its scorecard: the overall score and the accuracy of every field and table\ncolumn.",
+        "description": "The comparison group's iterations in the order they were started (the order the\nchoices were asked for), each with its scorecard: the overall score and the accuracy of every field and table\ncolumn.",
         "parameters": [
           {
             "schema": {
@@ -23126,18 +23204,9 @@
                             ]
                           },
                           "model": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "enum": [
-                                  "default",
-                                  "fast",
-                                  "draft"
-                                ]
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "groupId": {
@@ -23618,18 +23687,9 @@
                         ]
                       },
                       "model": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "default",
-                              "fast",
-                              "draft"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
+                        "type": [
+                          "string",
+                          "null"
                         ]
                       },
                       "groupId": {
@@ -23813,18 +23873,9 @@
                       ]
                     },
                     "model": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "default",
-                            "fast",
-                            "draft"
-                          ]
-                        },
-                        {
-                          "type": "null"
-                        }
+                      "type": [
+                        "string",
+                        "null"
                       ]
                     },
                     "groupId": {

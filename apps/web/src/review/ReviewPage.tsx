@@ -9,6 +9,7 @@ import { display, effectiveView } from './effective.js';
 import { PageViewer } from './PageViewer.js';
 import { flaggedTargets, targetKey } from './queue.js';
 import { ReviewHeader } from './ReviewHeader.js';
+import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -63,8 +64,8 @@ export function ReviewPage({
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [cursor, setCursor] = useState(-1);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
-  /** The models a re-run may use: those offered in the pickers (ADR 0010). */
-  const [models, setModels] = useState<string[]>([]);
+  /** The model choices a re-run may use (ADR 0010). */
+  const models = useModelChoices(api);
   const [rerun, setRerun] = useState<{
     step: string;
     model: string;
@@ -88,10 +89,6 @@ export function ReviewPage({
   useEffect(() => {
     if (tab !== 'steps') return;
     api.getStepRuns(jobId).then(setStepRuns, () => setStepRuns([]));
-    api.listModels().then(
-      (list) => setModels(list.filter((m) => m.enabled).map((m) => m.ref)),
-      () => setModels([]),
-    );
   }, [api, jobId, tab]);
 
   const view = useMemo(() => (data ? effectiveView(data) : null), [data]);
@@ -361,20 +358,16 @@ export function ReviewPage({
                     Re-run <code>{rerun.step}</code>: only this step calls the model again (OCR is
                     reused), its values are replaced and the checks re-run.
                   </p>
-                  <label>
+                  <div className="field">
                     Model for re-run
-                    <select
+                    <ModelPicker
+                      label="Model for re-run"
+                      choices={models}
                       value={rerun.model}
-                      onChange={(e) => setRerun({ ...rerun, model: e.target.value })}
-                    >
-                      <option value="">Step default</option>
-                      {models.map((ref) => (
-                        <option key={ref} value={ref}>
-                          {ref}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      emptyLabel="Step default"
+                      onChange={(model) => setRerun({ ...rerun, model })}
+                    />
+                  </div>
                   <label>
                     Guidance for re-run
                     <textarea

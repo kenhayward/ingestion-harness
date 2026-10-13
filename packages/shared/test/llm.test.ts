@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelRefProblem, resolveAlias } from '../src/index.js';
+import { modelRefProblem, pickedChoice, pickerChoices, resolveAlias } from '../src/index.js';
 
 const offered = new Set(['local/qwen', 'ryzen/openai/gpt-oss-20b']);
 const aliases = {
@@ -43,5 +43,56 @@ describe('modelRefProblem (only configured models run)', () => {
     expect(modelRefProblem('local/x', offered, {}, { unknownAliases: 'allow' })).toBe(
       'model local/x is not offered: add it on the Models page',
     );
+  });
+});
+
+describe('pickerChoices (what people pick, by label)', () => {
+  const choice = (id: string, label: string, ref: string) => ({
+    id,
+    label,
+    description: '',
+    ref,
+    source: 'env' as const,
+    editedAt: null,
+    updatedBy: null,
+  });
+  const endpoints = [
+    { name: 'local', location: 'local' as const },
+    { name: 'ryzen', location: 'external' as const },
+  ];
+
+  it('lists offered choices with their location, the default first, then by label', () => {
+    const picks = pickerChoices(
+      [
+        choice('zeta', 'Zeta', 'local/qwen'),
+        choice('test', 'New for testing only', 'ryzen/openai/gpt-oss-20b'),
+        choice('main', 'Main Production Model', 'local/qwen'),
+        choice('gone', 'Gone', 'local/withdrawn'),
+        choice('nowhere', 'Nowhere', 'cloud/x'),
+      ],
+      { defaultChoice: 'zeta' },
+      endpoints,
+      new Set(['local/qwen', 'ryzen/openai/gpt-oss-20b', 'cloud/x']),
+    );
+    expect(picks.map((c) => [c.id, c.location, c.isDefault])).toEqual([
+      ['zeta', 'local', true],
+      ['main', 'local', false],
+      ['test', 'external', false],
+      // An endpoint nobody declared is external (the worker's rule too).
+      ['nowhere', 'external', false],
+    ]);
+  });
+
+  it('finds the choice a pick names, `default` included', () => {
+    const picks = pickerChoices(
+      [choice('main', 'Main', 'local/qwen')],
+      { defaultChoice: 'main' },
+      endpoints,
+      new Set(['local/qwen']),
+    );
+    expect(pickedChoice('default', picks)?.id).toBe('main');
+    expect(pickedChoice('main', picks)?.label).toBe('Main');
+    expect(pickedChoice('local/qwen', picks)).toBeNull();
+    expect(pickedChoice('nope', picks)).toBeNull();
   });
 });
