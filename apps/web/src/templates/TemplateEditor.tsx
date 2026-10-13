@@ -143,7 +143,7 @@ export function TemplateEditor({
     );
   }, [api, templateId, version]);
 
-  /** The open step on the Template tab's Pipeline (clamped to the list when rendered). */
+  /** The open step on the Recipe tab's Pipeline (clamped to the list when rendered). */
   const [selectedStep, setSelectedStep] = useState(0);
   /** Bumped when the draft is replaced wholesale, so open step forms drop their local text. */
   const [replaced, setReplaced] = useState(0);
@@ -170,7 +170,10 @@ export function TemplateEditor({
     const body = error ? <p role="alert">{error}</p> : <p>Loading…</p>;
     return embedded ? (
       <section className="template-editor template-embedded">
-        <TabHeader title={`Template · draft v${version}`} item={embedded.item ?? null} />
+        <TabHeader
+          title={`Transformation recipe · draft v${version}`}
+          item={embedded.item ?? null}
+        />
         {body}
       </section>
     ) : (
@@ -577,7 +580,7 @@ export function TemplateEditor({
             {tab === 'yaml' && (
               <div className="yaml">
                 <YamlEditor
-                  label="Template YAML"
+                  label="Recipe YAML"
                   value={yamlText}
                   onChange={setYamlText}
                   readOnly={!editable}

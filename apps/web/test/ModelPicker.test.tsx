@@ -15,12 +15,12 @@ describe('ModelPicker', () => {
         choices={CHOICES}
         value=""
         onChange={onChange}
-        emptyLabel="Template's models"
+        emptyLabel="Recipe's models"
       />,
     );
     const select = screen.getByRole('combobox', { name: 'Model' });
     expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
-      "Template's models",
+      "Recipe's models",
       'Main Production Model (default)',
       'Cloud model · external',
       'New for testing only',
@@ -34,7 +34,7 @@ describe('ModelPicker', () => {
         choices={CHOICES}
         value="cloud"
         onChange={onChange}
-        emptyLabel="Template's models"
+        emptyLabel="Recipe's models"
       />,
     );
     expect(screen.getByText('cloud/claude')).toBeInTheDocument();

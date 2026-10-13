@@ -112,7 +112,7 @@ describe('EvaluateTab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Evaluate v2 on holdout…' }));
     const dialog = screen.getByRole('dialog', { name: 'Evaluate v2 on holdout' });
     expect(within(dialog).queryByRole('combobox')).toBeNull();
-    expect(dialog).toHaveTextContent("The template's own models");
+    expect(dialog).toHaveTextContent("The recipe's own models");
     expect(dialog).toHaveTextContent(HOLDOUT_MODEL_REASON);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Evaluate' }));
     expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {

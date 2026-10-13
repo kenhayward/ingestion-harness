@@ -306,7 +306,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'List model choices and pipeline settings',
           md`
             **Admin token required.** The labelled model choices people pick (each pointing at
-            an offered model) and the pipeline settings: the default choice (used by template
+            an offered model) and the pipeline settings: the default choice (used by recipe
             steps that name none), the drafting model and the OCR model. See [ADR 0010](${ADR}).`,
         ),
         response: { 200: res('The choices and settings.', LlmChoicesViewSchema), 403: ADMINS_ONLY },
@@ -324,7 +324,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'Add a model choice',
           md`
             **Admin token required.** A labelled choice ("Main Production Model") pointing at an
-            offered model. Its \`id\`, what templates and jobs store, is made from the label
+            offered model. Its \`id\`, what recipes and jobs store, is made from the label
             when left out (\`main-production-model\`, with a suffix if taken).
           `,
         ),
@@ -366,7 +366,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'Change a model choice',
           md`
             **Admin token required.** Renames it, changes its description or points it at
-            another offered model. Templates and jobs keep naming it by id, so a rename changes
+            another offered model. Recipes and jobs keep naming it by id, so a rename changes
             nothing they do; a new model applies to every job queued from then on.
           `,
         ),
@@ -401,7 +401,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'deleteModelChoice',
           'Remove a model choice',
           md`
-            **Admin token required.** Refused while it is the default choice, while a template
+            **Admin token required.** Refused while it is the default choice, while a recipe
             step (any version) names it, or while an unfinished job (queued, running or
             awaiting review) uses it.
           `,
@@ -413,7 +413,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           404: error('`model choice not found`.'),
           409: error(
             '`{label} is the default choice: make another choice the default first`, ' +
-              '`{label} is used by {template} v{n} (step {id})`, or ' +
+              '`{label} is used by {recipe} v{n} (step {id})`, or ' +
               '`{label} is used by {n} unfinished job(s)`.',
           ),
         },
@@ -461,7 +461,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'setLlmSettings',
           'Set the default choice and the pipeline models',
           md`
-            **Admin token required.** The default choice (used by template steps that name
+            **Admin token required.** The default choice (used by recipe steps that name
             none), the drafting model (the Workbench's proposal stages and dev reference runs)
             and the OCR model (the OCR stage only). Both models must be offered. The edit wins
             over \`.env\`.

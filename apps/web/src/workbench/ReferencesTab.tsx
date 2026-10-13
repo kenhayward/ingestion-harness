@@ -224,7 +224,7 @@ export function ReferencesTab({
           of={holdout.length}
           version={version}
           tone="skip"
-          note="Extracted by the template’s own models — never seen by drafting"
+          note="Extracted by the recipe’s own models — never seen by drafting"
         />
         <section className="card refs-card">
           <h3>Right first time</h3>
@@ -289,7 +289,7 @@ export function ReferencesTab({
             filter={filter}
             selected={current}
             onSelect={setSelected}
-            note="run by the live template, sealed from drafting"
+            note="run by the live recipe, sealed from drafting"
             action={
               <button
                 type="button"
@@ -297,7 +297,7 @@ export function ReferencesTab({
                 title={holdoutReason ?? undefined}
                 onClick={() => setAsking('holdout')}
               >
-                Run the template on {holdoutCount} unverified…
+                Run the recipe on {holdoutCount} unverified…
               </button>
             }
           />
@@ -335,7 +335,7 @@ export function ReferencesTab({
       <p className="muted">
         References carry over to the next version. Only those whose outputs change type, enum values
         or columns need verifying again; renaming or describing an output does not. Holdout samples
-        are extracted by the live template’s own models and are never sent to the draft model.
+        are extracted by the live recipe’s own models and are never sent to the draft model.
       </p>
       {asking && (
         <ReprocessDialog
@@ -346,12 +346,12 @@ export function ReferencesTab({
           }
           confirmLabel="Run"
           choices={[]}
-          fixedModel={asking === 'dev' ? 'The drafting model' : "The template's own models"}
+          fixedModel={asking === 'dev' ? 'The drafting model' : "The recipe's own models"}
           summary={
             <p>
               {asking === 'dev'
                 ? 'The drafting model proposes values for each unverified dev sample. Each run stops for review: correct the values, approve, then save it as the reference.'
-                : 'The template runs on each unverified holdout sample with its own models (drafting never sees holdout). Each run stops for review: correct, approve, then save it as the reference.'}
+                : 'The recipe runs on each unverified holdout sample with its own models (drafting never sees holdout). Each run stops for review: correct, approve, then save it as the reference.'}
             </p>
           }
           onConfirm={() => startRuns(asking)}
@@ -546,7 +546,7 @@ function runText(detail: ReferenceDetail, published: number | null) {
     run.modelOverride === 'draft'
       ? `the draft model${models}`
       : run.modelOverride === null
-        ? `the live template${published === null ? '' : ` v${published}`}${models}`
+        ? `the live recipe${published === null ? '' : ` v${published}`}${models}`
         : `${run.modelOverride}${models}`;
   const changed =
     detail.corrections === null
@@ -691,7 +691,7 @@ function ReferenceDetailPanel({
           title={`Re-verify ${detail.filename}`}
           confirmLabel="Run"
           choices={[]}
-          fixedModel={holdout ? "The template's own models" : 'The drafting model'}
+          fixedModel={holdout ? "The recipe's own models" : 'The drafting model'}
           summary={
             <p>
               The sample runs again and stops for review: correct the values, approve, then save it

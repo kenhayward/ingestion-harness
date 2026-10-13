@@ -81,7 +81,7 @@ describe('HistoryCard', () => {
     card();
     expect(
       screen.getByRole('img', {
-        name: '3 template-model runs; latest dev 91% (v2); latest holdout 88% (v2); threshold 90%',
+        name: '3 runs with the recipe’s models; latest dev 91% (v2); latest holdout 88% (v2); threshold 90%',
       }),
     ).toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe('HistoryCard', () => {
     expect(rows[0]).toHaveTextContent('HOLDOUT');
     expect(rows[0]).toHaveTextContent('88%');
     expect(rows[1]).toHaveTextContent('Compare · default 75 · fast 50');
-    expect(rows[2]).toHaveTextContent("Template's models · fresh");
+    expect(rows[2]).toHaveTextContent("Recipe's models · fresh");
     expect(rows[3]).toHaveTextContent('v1');
     const restore = within(rows[0]!).getByRole('button', { name: /^Restore v2 holdout run of / });
     expect(restore).toHaveAttribute('title', 'Replaces the open draft');

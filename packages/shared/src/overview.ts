@@ -254,7 +254,7 @@ export type OverviewTab = (typeof OVERVIEW_TABS)[number];
 
 export const OVERVIEW_TAB_LABEL: Record<OverviewTab, string> = {
   ...OVERVIEW_LABEL,
-  template: 'Template',
+  template: 'Recipe',
   runs: 'Test runs',
 };
 

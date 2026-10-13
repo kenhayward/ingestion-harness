@@ -139,7 +139,7 @@ export function SectionsTab({
   }, [result]);
 
   if (draft === null) {
-    return <p className="muted">Start the next version on the Template tab to edit anchors.</p>;
+    return <p className="muted">Start the next version on the Recipe tab to edit anchors.</p>;
   }
   if (rows === null) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
 

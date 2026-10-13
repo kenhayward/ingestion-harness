@@ -50,7 +50,7 @@ export const modelRoutes: FastifyPluginAsync = async (app) => {
           as every model picker shows them: the default first, then by label. Each names the
           model it runs and where that runs (\`location\`; a local-only project cannot use an
           external one). Only choices whose model is offered are listed. Uploads, retries, step
-          re-runs, template steps and Workbench evaluations name a choice by its \`id\`
+          re-runs, recipe steps and Workbench evaluations name a choice by its \`id\`
           (\`default\` is the default choice).
         `,
         response: {

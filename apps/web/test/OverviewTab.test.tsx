@@ -70,11 +70,11 @@ describe('OverviewTab', () => {
     );
   });
 
-  it('gives the Template box its title and status but no status icon', () => {
+  it('gives the Recipe box its title and status but no status icon', () => {
     render(<OverviewTab projectId="letter" overview={projectOverview()} />);
     const map = screen.getByRole('region', { name: 'Process map' });
-    const box = within(map).getByRole('link', { name: /^Template:/ });
-    expect(box).toHaveTextContent('Template');
+    const box = within(map).getByRole('link', { name: /^Recipe:/ });
+    expect(box).toHaveTextContent('Recipe');
     expect(box).toHaveTextContent('Draft v1');
     expect(box.querySelector('svg.stage-icon')).toBeNull();
   });

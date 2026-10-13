@@ -113,7 +113,7 @@ describe('ReferencesTab', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('1 run queued');
   });
 
-  it("re-verifies a holdout sample with the template's own models", async () => {
+  it("re-verifies a holdout sample with the recipe's own models", async () => {
     const h = saved('inv-0033.pdf');
     const getReferenceDetail = vi.fn(async () =>
       referenceDetail({
@@ -127,7 +127,7 @@ describe('ReferencesTab', () => {
     const panel = await screen.findByRole('complementary', { name: 'Reference inv-0033.pdf' });
     await userEvent.click(within(panel).getByRole('button', { name: 'Re-verify…' }));
     expect(screen.getByRole('dialog', { name: 'Re-verify inv-0033.pdf' })).toHaveTextContent(
-      "The template's own models",
+      "The recipe's own models",
     );
   });
 
@@ -225,7 +225,7 @@ describe('ReferencesTab', () => {
     const holdout = screen.getByRole('heading', { name: 'Holdout references' }).closest('section')!;
     expect(holdout).toHaveTextContent('1 / 2verified for v2');
     expect(holdout).toHaveTextContent(
-      'Extracted by the template’s own models — never seen by drafting',
+      'Extracted by the recipe’s own models — never seen by drafting',
     );
     const right = screen.getByRole('heading', { name: 'Right first time' }).closest('section')!;
     expect(right).toHaveTextContent('3 / 475% of dev values');
@@ -325,7 +325,7 @@ describe('ReferencesTab samples list', () => {
     const holdout = within(list).getByRole('group', { name: 'Holdout samples' });
     expect(holdout).toHaveTextContent('HOLDOUT');
     expect(holdout).toHaveTextContent(
-      '1 of 1 verified · run by the live template, sealed from drafting',
+      '1 of 1 verified · run by the live recipe, sealed from drafting',
     );
     expect(holdout).toHaveTextContent(/Carried from v1 · /);
   });
@@ -360,10 +360,10 @@ describe('ReferencesTab samples list', () => {
     );
     const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
     await userEvent.click(
-      within(holdout).getByRole('button', { name: 'Run the template on 1 unverified…' }),
+      within(holdout).getByRole('button', { name: 'Run the recipe on 1 unverified…' }),
     );
     const dialog = screen.getByRole('dialog', { name: 'Reference runs on 1 holdout sample' });
-    expect(dialog).toHaveTextContent("The template's own models");
+    expect(dialog).toHaveTextContent("The recipe's own models");
     await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
     expect(api.startHoldoutReferenceRuns).toHaveBeenCalledWith('letter');
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
@@ -373,7 +373,7 @@ describe('ReferencesTab samples list', () => {
     tab({ holdout: [saved('h.pdf')] });
     const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
     const button = within(holdout).getByRole('button', {
-      name: 'Run the template on 0 unverified…',
+      name: 'Run the recipe on 0 unverified…',
     });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'Every holdout sample has a verified reference');
@@ -658,7 +658,7 @@ describe('ReferencesTab detail panel', () => {
     await userEvent.click(await screen.findByRole('button', { name: /inv-0033\.pdf/ }));
     const panel = await screen.findByRole('complementary', { name: 'Reference inv-0033.pdf' });
     expect(panel).toHaveAttribute('data-role', 'holdout');
-    expect(panel).toHaveTextContent('Run by the live template v1');
+    expect(panel).toHaveTextContent('Run by the live recipe v1');
     expect(panel).toHaveTextContent('Holdout values are only scored, never shown to drafting.');
   });
 

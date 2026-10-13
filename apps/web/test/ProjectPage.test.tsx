@@ -50,7 +50,7 @@ const TAB_TITLES = [
   ['references', 'References'],
   ['evaluate', 'Evaluate'],
   ['revise', 'Revise'],
-  ['template', 'Template · draft v1'],
+  ['template', 'Transformation recipe · draft v1'],
   ['runs', 'Test runs'],
 ] as const;
 

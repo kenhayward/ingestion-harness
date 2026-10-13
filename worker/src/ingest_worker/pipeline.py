@@ -258,7 +258,7 @@ def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any
     raw = queue.load_template(job.spec_id, job.spec_version)
     if raw is None:
         return deps.specs.get(job.spec_id, job.spec_version)
-    name = f"template {job.spec_id} v{job.spec_version}"
+    name = f"recipe {job.spec_id} v{job.spec_version}"
     try:
         template = Template.model_validate(raw)
     except ValidationError as exc:
@@ -268,7 +268,7 @@ def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any
     ]
     if custom:
         raise DocumentError(
-            f"{name}: custom prompt files are not supported for database templates "
+            f"{name}: custom prompt files are not supported for recipes stored in the database "
             f"(steps {', '.join(custom)}); use instructions"
         )
     return LoadedTemplate(template, None)

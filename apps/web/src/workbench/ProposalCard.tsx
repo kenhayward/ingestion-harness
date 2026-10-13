@@ -220,7 +220,7 @@ export function ProposalCard({
         </button>
         {footerNote && <span className="muted proposal-footer-note">{footerNote}</span>}
         <a className="proposal-edit" href={`#/workbench/${projectId}/template`}>
-          Edit by hand on the Template tab
+          Edit by hand on the Recipe tab
         </a>
       </footer>
     </section>

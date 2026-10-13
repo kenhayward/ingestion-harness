@@ -23,7 +23,7 @@ describe('LatestRun', () => {
   it('heads the run with its set, version, model, compared count and cache reuse', () => {
     latest(iterationView({ cache: { reused: 5, total: 8 } }));
     expect(
-      screen.getByRole('heading', { name: "Latest dev run · v2 · template's models" }),
+      screen.getByRole('heading', { name: "Latest dev run · v2 · recipe's models" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/2 of 2 compared · 5 of 8 steps reused from the cache/),

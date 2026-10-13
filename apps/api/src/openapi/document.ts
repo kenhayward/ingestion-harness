@@ -28,13 +28,14 @@ export const TAGS = {
     Document definitions loaded from the repository's \`specs/\` folder (legacy \`spec.yaml\` and
     \`template.yaml\`). Versions are immutable once published.
   `,
-  Templates: md`
-    Document types kept in the database: drafts are editable, published versions are immutable.
-    Templates import and export as YAML. See
+  Recipes: md`
+    Transformation recipes: each document type's definition (outputs, sections, pipeline steps,
+    review policy, default model), kept in the database. Drafts are editable, published versions
+    are immutable. Recipes import and export as YAML. See
     [ADR 0003](${REPO}/docs/adr/0003-versioned-document-specs.md).`,
   'References & regression': md`
     References are verified output values for a sample PDF. Regression runs process the
-    references' PDFs with a template version and score the outputs against them; metrics
+    references' PDFs with a recipe version and score the outputs against them; metrics
     summarise a document type's runs.
   `,
   Models: md`
@@ -43,7 +44,7 @@ export const TAGS = {
   `,
   'Projects & data policy': md`
     The Workbench builds a document type from sample PDFs, one project per type (the project id
-    is the template id). A project's data policy decides whether its documents may be sent to
+    is the recipe id). A project's data policy decides whether its documents may be sent to
     external model providers (\`external\`) or only to local ones (\`local\`). See
     [ADR 0007](${REPO}/docs/adr/0007-workbench.md) and the
     [Workbench design](${REPO}/docs/design/workbench.md).`,
@@ -53,7 +54,7 @@ export const TAGS = {
     needed). The brief describes what the document type must extract.
   `,
   'Drafting stages & proposals': md`
-    A drafting model proposes the template in stages (survey, outputs, sections, steps), each a
+    A drafting model proposes the recipe in stages (survey, outputs, sections, steps), each a
     set of typed changes the user accepts in full or in part. Anchor previews check section
     anchors against the dev samples.
   `,
@@ -98,7 +99,7 @@ export type Tag = keyof typeof TAGS;
 
 export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   { name: 'Pipeline', tags: ['Documents', 'Jobs', 'Review & steps', 'Results'] },
-  { name: 'Configuration', tags: ['Specs', 'Templates', 'References & regression', 'Models'] },
+  { name: 'Configuration', tags: ['Specs', 'Recipes', 'References & regression', 'Models'] },
   {
     name: 'Workbench',
     tags: [

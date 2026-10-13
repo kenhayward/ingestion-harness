@@ -180,7 +180,7 @@ describe('TemplatesPage dialogs', () => {
     const { api, onNavigate } = setup({ listTemplates: vi.fn(async () => []) });
     await userEvent.click(screen.getByRole('button', { name: 'Import YAML' }));
     const dialog = screen.getByRole('dialog', { name: 'Import YAML' });
-    await userEvent.type(within(dialog).getByLabelText('Template YAML'), 'id: memo');
+    await userEvent.type(within(dialog).getByLabelText('Recipe YAML'), 'id: memo');
     await userEvent.click(within(dialog).getByLabelText('Publish if valid'));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
     expect(api.importTemplate).toHaveBeenCalledWith('id: memo', true);

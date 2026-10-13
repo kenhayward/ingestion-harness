@@ -49,7 +49,9 @@ export function EmbeddedHeader({
   const draft = status === 'draft';
   return (
     <TabHeader
-      title={draft ? `Template · draft v${version}` : `Template · v${version}`}
+      title={
+        draft ? `Transformation recipe · draft v${version}` : `Transformation recipe · v${version}`
+      }
       item={item}
       description={EMBEDDED_NOTE}
       actions={

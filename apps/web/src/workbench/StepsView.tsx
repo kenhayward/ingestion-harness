@@ -183,8 +183,7 @@ export function StepsView({
         {coverage.uncovered.length > 0 && (
           <p className="muted">
             Propose again, or{' '}
-            <a href={`#/workbench/${projectId}/template`}>add a step by hand on the Template tab</a>
-            .
+            <a href={`#/workbench/${projectId}/template`}>add a step by hand on the Recipe tab</a>.
           </p>
         )}
       </section>

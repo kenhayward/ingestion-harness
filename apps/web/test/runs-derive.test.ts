@@ -110,7 +110,7 @@ describe('batch header', () => {
   it('says how many samples, who started it and which models ran', () => {
     const choices = [{ id: 'fast', label: 'Fast model' }] as ModelChoice[];
     expect(batchSubtitle(batch([testRunView(), testRunView()]), choices)).toBe(
-      "2 dev samples · started by ken · template's models",
+      "2 dev samples · started by ken · recipe's models",
     );
     expect(
       batchSubtitle(batch([testRunView()], { createdBy: null, modelOverride: 'fast' }), choices),
@@ -264,7 +264,7 @@ describe('samples and the run button', () => {
     expect(runLabel(6)).toBe('Run on 6 dev samples');
     expect(runLabel(1)).toBe('Run on 1 dev sample');
     expect(runBlockedReason(null, 3)).toBe(
-      'Every version is published: start the next version on the Template tab first',
+      'Every version is published: start the next version on the Recipe tab first',
     );
     expect(runBlockedReason(4, 0)).toBe('Select at least one prepared dev sample');
     expect(runBlockedReason(4, 2)).toBeNull();

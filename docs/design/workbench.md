@@ -4,14 +4,14 @@
 
 The Workbench is a new top-level page for building a document type from a handful of sample
 PDFs. The user uploads samples, the harness prepares and segments their text, the user describes
-what they need, and a drafting model proposes the template in reviewable stages. The draft is then
+what they need, and a drafting model proposes the document type's transformation recipe in reviewable stages. The draft is then
 scored against verified reference values on dev samples and on held-out samples until it is good
 enough to publish. The same project is reopened to build the next version when a new layout turns
 up.
 
 It is mostly an orchestration layer over existing parts:
 
-- draft templates and the `TemplateEditor`;
+- draft recipes (the `templates` table) and the `TemplateEditor`;
 - test runs (`jobs.test`);
 - references and regression (`template_references`, `apps/api/src/regression/compare.ts`);
 - step re-runs (`step_runs`, the `rerun` task);
@@ -42,19 +42,19 @@ secondary path for edge cases, built from the same context assembly the drafting
 
 | Concept | Meaning |
 | --- | --- |
-| **Project** | One per document type, long-lived. It owns the samples, the brief, the stage state, the iteration history and the current draft template version. |
+| **Project** | One per document type, long-lived. It owns the samples, the brief, the stage state, the iteration history and the current draft recipe version. |
 | **Sample** | A PDF in the project, stored as an ordinary `documents` row, with a role `dev` or `holdout` and a triage summary. |
 | **Prepared text** | Per sample: page text after extraction and OCR, before copy selection and segmentation. Stored once per PDF sha256. |
 | **Segmentation** | Copy selection plus section anchors applied to the prepared text. Cheap and deterministic, and run on every anchor edit. |
 | **Brief** | The user's product knowledge (structured form, versioned). |
 | **Stage** | One drafting step: `survey` → `outputs` → `sections` → `steps` → `references`. Each produces a **proposal**. |
 | **Proposal** | A model's suggested change to the draft (or survey notes), shown as a diff and accepted or rejected per change. |
-| **Iteration** | A snapshot: the template definition, the brief version, the evaluation scores and the user's feedback. Iterations can be reverted or branched from. |
+| **Iteration** | A snapshot: the recipe definition, the brief version, the evaluation scores and the user's feedback. Iterations can be reverted or branched from. |
 | **Reference** | Verified expected values for one sample (`template_references`). Model-proposed values count only after a human verifies them. |
 
 ## User journey
 
-1. **Create project:** name and id (the future template id), data policy (default *local only*).
+1. **Create project:** name and id (the future document type id), data policy (default *local only*).
 2. **Samples:** upload 3–8 PDFs. The harness checks for duplicates, triages each sample (page
    count, text layer or scanned, copies), and suggests a dev/holdout split with the hardest
    samples in the holdout. A `prepare` task runs per sample.
@@ -96,8 +96,8 @@ A structured form, versioned. Every proposal records the brief version it used.
 - **Rules:** for example "placeholders are null", "use the executed copy", "dates are DMY".
 - **Answers:** questions from the survey stage and the user's answers.
 
-Parts of the brief feed the template's `preamble` and field `description`s, so the published
-template documents itself.
+Parts of the brief feed the recipe's `preamble` and field `description`s, so the published
+recipe documents itself.
 
 ## Data model (sketch)
 
@@ -151,7 +151,7 @@ jobs (changed)
   params jsonb  -- task parameters (stage, sample ids, proposal id ...)
 ```
 
-`documents.spec_id` / `spec_version` on sample documents point at the project's draft template.
+`documents.spec_id` / `spec_version` on sample documents point at the project's draft recipe.
 
 ## Worker tasks
 
@@ -169,8 +169,8 @@ All LLM and PDF work stays in the worker. The API only enqueues and reads result
 keeps calling the composed function, so production behaviour is unchanged.
 
 Drafting tasks reuse the extraction loop's pattern. The model emits JSON fragments (not the whole
-template under a constrained schema, because the template's rules live outside JSON Schema).
-These are validated with the Pydantic template model plus the cross-reference rules, and the
+recipe under a constrained schema, because the recipe's rules live outside JSON Schema).
+These are validated with the Pydantic recipe model (`Template`) plus the cross-reference rules, and the
 errors are fed back. The `sections` stage also runs the segmenter on every dev sample and feeds
 back misses. Prompts and responses go to the runs bucket like extraction does.
 
@@ -178,11 +178,11 @@ back misses. Prompts and responses go to the runs bucket like extraction does.
 
 One function builds the drafting context for every stage, for `revise`, and for the export bundle:
 
-- **Format reference:** JSON Schema generated from the template model, the cross-reference rules in
+- **Format reference:** JSON Schema generated from the recipe model, the cross-reference rules in
   prose, a rendered example of the built-in extraction prompt, and the runtime model's limits
-  (from the alias the template will run on).
-- **Worked example:** a published template plus excerpts of its sample text (configurable; the
-  Process Validation Protocol v3 template by default).
+  (from the alias the recipe will run on).
+- **Worked example:** a published recipe plus excerpts of its sample text (configurable; the
+  Process Validation Protocol v3 recipe by default).
 - **The brief** (current version).
 - **Dev samples only:** prepared text with page markers, triage metadata, and selected page images
   where the text loses information (scans, headers OCR drops).
@@ -195,14 +195,14 @@ enforced here, in one place, and covered by tests.
 
 The export bundle is a deterministic zip of the project's drafting material, for drafting elsewhere
 or for importing into another deployment. Layout: `manifest.json` (format, version, project,
-template and brief versions, samples, stages, `completedStages`), `README.md`, `context.md`,
-`brief.json`, `survey.json` (the accepted survey, when there is one), `template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
+recipe and brief versions, samples, stages, `completedStages`), `README.md`, `context.md`,
+`brief.json`, `survey.json` (the accepted survey, when there is one), the recipe (`template.yaml`), `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
 
 - **Dev only.** Holdout samples are refused at export; only dev samples are included, and
   `context.md` is exactly `build_context`, so it carries the same dev-only guarantee as drafting.
 - **Local-only projects** export and download only with the admin token.
 - **One export per project:** a new export replaces the previous export job and its zip.
-- **Import** creates a `local` project with template draft v1, the brief and the dev samples, which
+- **Import** creates a `local` project with recipe draft v1, the brief and the dev samples, which
   are re-prepared (each queues a `prepare` job). It validates the whole bundle before writing
   anything and refuses an id that already exists (import under another id). A failure after the
   project exists names it; delete the project and import again.
@@ -225,13 +225,13 @@ template and brief versions, samples, stages, `completedStages`), `README.md`, `
 ### Deleting a project
 
 `DELETE /projects/:id` deletes a project whose document type was never published (a published
-type keeps its project: 409). One transaction first locks the type's template rows and refuses if
+type keeps its project: 409). One transaction first locks the type's recipe rows (`templates`) and refuses if
 any is published, then locks the project (the order `publishDraft` uses, so a publish and a delete
 racing each other cannot deadlock: one wins cleanly). It removes the project's jobs (with their
-events, outputs, step runs and proposals), the type's project-less test jobs (Templates-page test
-uploads and regression runs of the never-published type), feedback, iterations, publications,
+events, outputs, step runs and proposals), the type's project-less test jobs (test uploads on the
+Document types page and regression runs of the never-published type), feedback, iterations, publications,
 stage skips, briefs and samples, the type's references, every document of the type that no other
-job, reference or sample uses, and the template's draft rows.
+job, reference or sample uses, and the recipe's draft rows.
 
 Jobs are deleted whatever their status, queued and running ones included. This is an exception to
 ADR 0005 (which refuses to delete an active job), like segment preview and export replacement: a
@@ -288,7 +288,7 @@ Rules:
 - a drill-down: the actual value against the expected value, evidence and page image, and the
   step and section that produced it;
 - model comparison: the same iteration on `default`, `fast` and `draft`, to separate a weak
-  template from a model at its limit.
+  recipe from a model at its limit.
 
 ### Holdout
 
@@ -297,15 +297,15 @@ Rules:
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
 - The publish gate uses the holdout score against `publish_threshold`, and is informational:
   References and Evaluate are optional, any valid draft publishes (from the Publish panel or the
-  Template tab), and no override is needed or recorded. The publication records the gate's
+  Recipe tab), and no override is needed or recorded. The publication records the gate's
   iteration and score (null without a holdout run).
 - The threshold records who last set it and when (`threshold_set_by`, the token label, and
   `threshold_set_at`; migration 0020).
 - Publishing re-checks that the draft is still the one the gate was decided for, publishes the
-  template and records the publication in one transaction (`WorkbenchRepo.publishDraft`), so a
-  publication is never logged without its template being published, or the reverse.
+  recipe and records the publication in one transaction (`WorkbenchRepo.publishDraft`), so a
+  publication is never logged without its recipe being published, or the reverse.
 - Only an honest holdout run counts: the newest complete holdout iteration of the current draft
-  that ran the template's own models (iterations with a model override are for exploration and
+  that ran the recipe's own models (iterations with a model override are for exploration and
   never count), covered every ready holdout sample, and compared every sample it evaluated (a
   job that failed, needs review, was cancelled or deleted fails the gate). Its score is computed
   from the raw model output, so review edits on a holdout job cannot raise it, and cached under a
@@ -316,14 +316,14 @@ Rules:
 
 ### References across versions
 
-References belong to a template version when used for regression. Moving the project to
+References belong to a recipe version when used for regression. Moving the project to
 v(N+1) keeps vN's references pinned to vN. Samples added for v(N+1) don't change vN's regression
 results. Accepted references are copied forward as the starting set for the new version, and
 re-verified only where outputs changed.
 
 How it works (migration 0018):
 
-- A Workbench reference is pinned to a template version (`template_version`) together with the
+- A Workbench reference is pinned to a recipe version (`template_version`) together with the
   outputs it was verified against (`verified_outputs`). Opening the next draft copies the
   previous version's references forward (`copied_from`); this runs on every reference read while
   a draft is open and is idempotent.
@@ -336,7 +336,7 @@ How it works (migration 0018):
 - The verified outputs are those the run was checked against, not the draft at save time.
   Every test run of a draft snapshots the draft's outputs into `params.outputs`: reference runs
   (dev and holdout), dev test runs, evaluations (dev and holdout), model comparisons, regression
-  runs of a draft version and Templates test uploads (`draftOutputsSnapshot`). "Save as
+  runs of a draft version and test uploads on the Document types page (`draftOutputsSnapshot`). "Save as
   reference" uses that snapshot, so a later draft edit (say, to the steps) does not block the
   save. Retrying a draft test run refreshes the snapshot to the current draft; a step re-run
   keeps it (a stale snapshot only makes a saved reference outdated). Without one (jobs created before the snapshot), it uses the published version's outputs,
@@ -356,7 +356,7 @@ How it works (migration 0018):
   whose references were all deleted passes on nothing, and the version before it is not
   resurrected.
 - Two saves of the same PDF at the same version serialize on an advisory transaction lock
-  (template, version, sha256), so only one stays live.
+  (document type, version, sha256), so only one stays live.
 - Other document types keep unpinned references that apply to every version.
 - Workbench references saved before 5b stay unpinned (every version, never carried), so
   nothing disappears from an open draft. Migration 0018 fills their `verified_outputs` from their
@@ -396,8 +396,8 @@ GET               /projects/:id/export            bundle (zip)
 POST              /projects/import                bundle → project
 ```
 
-Accepting a proposal applies its changes to the draft template through the same validation as the
-template editor. It is rejected if the draft has changed since the proposal's
+Accepting a proposal applies its changes to the draft recipe through the same validation as the
+recipe editor (`TemplateEditor`). It is rejected if the draft has changed since the proposal's
 `base_template_hash` in a way that conflicts with it.
 
 ## UI
@@ -430,7 +430,7 @@ One call, W2 `GET /api/workbench/projects/:id/overview` (`routes/workbench-overv
 the project, every tab's state and status text, the Next banner and the publish gate; the page polls
 it while anything runs and refetches it on window focus. On project routes the app nav collapses to
 icons, `ProjectRail` (status icons, legend, a `<select>` below 760 px) and `ProjectHeader` (policy
-pill, Publish vN linking to the Template tab, never locked) frame every tab, and Overview, the default tab, shows
+pill, Publish vN linking to the Recipe tab, never locked) frame every tab, and Overview, the default tab, shows
 the Next banner and the process map (`OverviewMap`, a fixed 1020×640 canvas of phase panels and
 connectors; `OverviewStack` below 760 px, with the caption). Each overview item carries two `metrics`
 per tab (`boxMetrics` in `packages/shared/src/overview.ts` over the `MetricFacts` that `gatherFacts`

@@ -34,7 +34,7 @@ export function validateTemplate(definition: unknown): TemplateIssue[] {
       ? [
           {
             path: `pipeline.${i}.prompt`,
-            message: `step "${step.id}": custom prompt files are not supported for database templates; use instructions`,
+            message: `step "${step.id}": custom prompt files are not supported for recipes stored in the database; use instructions`,
           },
         ]
       : [],

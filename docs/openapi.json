@@ -1094,7 +1094,7 @@
         "tags": [
           "Specs"
         ],
-        "description": "Every version a document can be uploaded with: published database templates, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run.",
+        "description": "Every version a document can be uploaded with: published database recipes, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run.",
         "responses": {
           "200": {
             "description": "The document type versions.",
@@ -1174,7 +1174,7 @@
         "tags": [
           "Specs"
         ],
-        "description": "The parsed definition of a document type version: a legacy spec (`kind: spec`) or a\ntemplate (`kind: template`). Without `version`, the latest published version (a\ndatabase template first, then the newest file). A `version` may name a draft.",
+        "description": "The parsed definition of a document type version: a legacy spec (`kind: spec`) or a\nrecipe (`kind: template`). Without `version`, the latest published version (a\ndatabase recipe first, then the newest file). A `version` may name a draft.",
         "parameters": [
           {
             "schema": {
@@ -2075,7 +2075,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft template version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
+        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft recipe version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4632,7 +4632,7 @@
         "tags": [
           "Models"
         ],
-        "description": "The labelled model choices an admin set up on the Models page\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, template steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
+        "description": "The labelled model choices an admin set up on the Models page\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, recipe steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
         "responses": {
           "200": {
             "description": "The choices.",
@@ -4722,7 +4722,7 @@
         "tags": [
           "Review & steps"
         ],
-        "description": "Everything the review screen needs for a template job: the job, the template version\nit ran with, the draft document (each field's value with the text and page it came\nfrom, and the table rows) and the edits recorded so far. Available whenever the job\nhas a draft document, not only while it awaits review.",
+        "description": "Everything the review screen needs for a recipe job: the job, the recipe version\nit ran with, the draft document (each field's value with the text and page it came\nfrom, and the table rows) and the edits recorded so far. Available whenever the job\nhas a draft document, not only while it awaits review.",
         "parameters": [
           {
             "schema": {
@@ -5370,7 +5370,7 @@
                         "pipeline"
                       ],
                       "additionalProperties": false,
-                      "description": "The template version the job ran with."
+                      "description": "The recipe version the job ran with."
                     },
                     "document": {
                       "type": "object",
@@ -5527,7 +5527,7 @@
             }
           },
           "404": {
-            "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`.",
+            "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5553,7 +5553,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`."
+                  "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`."
                 }
               }
             }
@@ -5770,7 +5770,7 @@
             }
           },
           "404": {
-            "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`.",
+            "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5796,7 +5796,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`."
+                  "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`."
                 }
               }
             }
@@ -6999,7 +6999,7 @@
             }
           },
           "404": {
-            "description": "`not found`, or `job is not a template document`.",
+            "description": "`not found`, or `job did not run a recipe`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7025,7 +7025,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`not found`, or `job is not a template document`."
+                  "description": "`not found`, or `job did not run a recipe`."
                 }
               }
             }
@@ -7070,7 +7070,7 @@
         "operationId": "listTemplates",
         "summary": "List document types",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).",
         "responses": {
@@ -7263,7 +7263,7 @@
         "operationId": "createTemplate",
         "summary": "Create a document type",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "Creates a document type as a v1 draft skeleton, to fill in with the editor (or\n`PUT` a definition). The skeleton is not valid yet, so `issues` lists what is\nmissing.",
         "requestBody": {
@@ -7469,11 +7469,11 @@
     "/api/templates/{id}/versions/{version}": {
       "get": {
         "operationId": "getTemplateVersion",
-        "summary": "Get a template version",
+        "summary": "Get a recipe version",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
-        "description": "A version of a document type as stored (a draft may be work in progress), with the\nvalidation issues of its definition.",
+        "description": "A recipe version of a document type as stored (a draft may be work in progress), with\nthe validation issues of its definition.",
         "parameters": [
           {
             "schema": {
@@ -7602,7 +7602,7 @@
             }
           },
           "404": {
-            "description": "`template not found`.",
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7628,7 +7628,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template not found`."
+                  "description": "`recipe not found`."
                 }
               }
             }
@@ -7639,7 +7639,7 @@
         "operationId": "saveDraft",
         "summary": "Save a draft",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "Replaces a draft's definition. Invalid definitions are saved too, so work in progress\nis never lost; `issues` says what still needs fixing before it can be published.\nThe definition's `id` and `version` are pinned to the URL's. Published versions\nare immutable. Each save that changes the definition is recorded in the draft's change\nlog (`GET /api/workbench/projects/{id}/draft/changes`).",
         "requestBody": {
@@ -7828,7 +7828,7 @@
             }
           },
           "404": {
-            "description": "`template not found`.",
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7854,7 +7854,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template not found`."
+                  "description": "`recipe not found`."
                 }
               }
             }
@@ -7897,7 +7897,7 @@
         "operationId": "deleteDraft",
         "summary": "Delete a draft",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "Deletes a draft version. Published versions cannot be deleted: jobs and references\nrecord the version they ran with.",
         "parameters": [
@@ -7986,7 +7986,7 @@
         "operationId": "publishTemplate",
         "summary": "Publish a draft",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here.",
         "parameters": [
@@ -8095,7 +8095,7 @@
             }
           },
           "400": {
-            "description": "The definition is not valid: `template is not valid`, with `issues`.",
+            "description": "The definition is not valid: `recipe is not valid`, with `issues`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8130,7 +8130,7 @@
                     "issues"
                   ],
                   "additionalProperties": true,
-                  "description": "The definition is not valid: `template is not valid`, with `issues`."
+                  "description": "The definition is not valid: `recipe is not valid`, with `issues`."
                 }
               }
             }
@@ -8158,7 +8158,7 @@
             }
           },
           "404": {
-            "description": "`template not found`.",
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8184,7 +8184,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template not found`."
+                  "description": "`recipe not found`."
                 }
               }
             }
@@ -8229,7 +8229,7 @@
         "operationId": "createDraft",
         "summary": "Start a new draft version",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "Opens the next version as a draft, copied from `from` (default: the latest\nversion). A document type has at most one draft at a time.",
         "requestBody": {
@@ -8401,7 +8401,7 @@
             }
           },
           "404": {
-            "description": "`template not found`.",
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8427,7 +8427,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template not found`."
+                  "description": "`recipe not found`."
                 }
               }
             }
@@ -8472,7 +8472,7 @@
         "operationId": "exportTemplate",
         "summary": "Export a version as YAML",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
         "description": "The version's definition as a YAML file (`{id}-v{version}.yaml`), in the format\n`POST /api/templates/import` and the repository's `specs/*/template.yaml` use.",
         "parameters": [
@@ -8530,7 +8530,7 @@
             }
           },
           "404": {
-            "description": "`template not found`.",
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8556,7 +8556,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template not found`."
+                  "description": "`recipe not found`."
                 }
               }
             }
@@ -8569,9 +8569,9 @@
         "operationId": "importTemplate",
         "summary": "Import a definition as a new version",
         "tags": [
-          "Templates"
+          "Recipes"
         ],
-        "description": "Creates the version named by the definition's `id` and `version` (a new document\ntype, or a new version of one): a draft, or published when `publish` is true and the\ndefinition is valid. A draft may be imported invalid and fixed in the editor. A\nWorkbench document type can be imported as a draft but not published. See the\n[template format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).",
+        "description": "Creates the version named by the definition's `id` and `version` (a new document\ntype, or a new version of one): a draft, or published when `publish` is true and the\ndefinition is valid. A draft may be imported invalid and fixed in the editor. A\nWorkbench document type can be imported as a draft but not published. See the\n[recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -8683,7 +8683,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `template is not valid` (with `issues`) when publishing.",
+            "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `recipe is not valid` (with `issues`) when publishing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8712,7 +8712,7 @@
                     }
                   },
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `template is not valid` (with `issues`) when publishing."
+                  "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `recipe is not valid` (with `issues`) when publishing."
                 }
               }
             }
@@ -9611,7 +9611,7 @@
             }
           },
           "404": {
-            "description": "`template version not found`.",
+            "description": "`recipe version not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9637,7 +9637,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template version not found`."
+                  "description": "`recipe version not found`."
                 }
               }
             }
@@ -10067,7 +10067,7 @@
             }
           },
           "404": {
-            "description": "`template version not found`: either version is missing.",
+            "description": "`recipe version not found`: either version is missing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10093,7 +10093,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`template version not found`: either version is missing."
+                  "description": "`recipe version not found`: either version is missing."
                 }
               }
             }
@@ -10533,7 +10533,7 @@
         "tags": [
           "Results"
         ],
-        "description": "One published result: the job, where it was delivered (`target` bucket and prefix),\nits published outputs, and for template jobs the published document read back from the\ntarget with the definition of its fields and tables. If the document cannot be read,\n`document` is null and `documentError` says why; the rest is still returned.",
+        "description": "One published result: the job, where it was delivered (`target` bucket and prefix),\nits published outputs, and for recipe jobs the published document read back from the\ntarget with the definition of its fields and tables. If the document cannot be read,\n`document` is null and `documentError` says why; the rest is still returned.",
         "parameters": [
           {
             "schema": {
@@ -12734,7 +12734,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "Deletes a project whose document type was never published: its samples, brief,\nproposals, feedback, iterations, jobs and template drafts, then its files (best\neffort). A document type with a published version keeps its project.",
+        "description": "Deletes a project whose document type was never published: its samples, brief,\nproposals, feedback, iterations, jobs and recipe drafts, then its files (best\neffort). A document type with a published version keeps its project.",
         "parameters": [
           {
             "schema": {
@@ -12846,7 +12846,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Whether the open draft meets the holdout bar. Informational only: references and\nevaluation are optional, and publishing never needs the gate. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.\n\n`hints` (handoff EV1) are the deciding iteration's fields and `table.column`s\nbelow the threshold, worst first, at most 5: `no_step` when no step of the draft\nfills the output (fix on the Steps tab, `stage: steps`), else `low_accuracy`\n(`stage: revise`). Empty without a deciding iteration. The overview's `gate`\ncarries no hints.",
+        "description": "Whether the open draft meets the holdout bar. Informational only: references and\nevaluation are optional, and publishing never needs the gate. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the recipe's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.\n\n`hints` (handoff EV1) are the deciding iteration's fields and `table.column`s\nbelow the threshold, worst first, at most 5: `no_step` when no step of the draft\nfills the output (fix on the Steps tab, `stage: steps`), else `low_accuracy`\n(`stage: revise`). Empty without a deciding iteration. The overview's `gate`\ncarries no hints.",
         "parameters": [
           {
             "schema": {
@@ -15570,7 +15570,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "The open draft's change log, newest first: every write to its definition with where it\ncame from (`hand` saves, applied `proposal`s with their `stage`, `restore`d\niterations, the draft's `started` entry, `import`s), a one-line `summary` and up to\nfour `diff` chips. Empty without an open draft, and for drafts started before the log\nexisted. The Template tab's _Changes since vN_ panel.",
+        "description": "The open draft's change log, newest first: every write to its definition with where it\ncame from (`hand` saves, applied `proposal`s with their `stage`, `restore`d\niterations, the draft's `started` entry, `import`s), a one-line `summary` and up to\nfour `diff` chips. Empty without an open draft, and for drafts started before the log\nexisted. The Recipe tab's _Changes since vN_ panel.",
         "parameters": [
           {
             "schema": {
@@ -15735,7 +15735,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "Queues a test job of the open draft for every ready dev sample, or for the ready dev\nsamples in `sampleIds` (holdout samples are never used). The jobs of one call share\na `batchId` (the Test runs tab's batches). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
+        "description": "Queues a test job of the open draft for every ready dev sample, or for the ready dev\nsamples in `sampleIds` (holdout samples are never used). The jobs of one call share\na `batchId` (the Test runs tab's batches). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the recipe's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
         "requestBody": {
           "required": true,
           "content": {
@@ -16417,7 +16417,7 @@
                 "type": "object",
                 "properties": {
                   "document": {
-                    "description": "A template's `document` block. Default: the open draft's."
+                    "description": "A recipe's `document` block. Default: the open draft's."
                   }
                 },
                 "additionalProperties": true
@@ -17868,7 +17868,7 @@
         "tags": [
           "Feedback & revise"
         ],
-        "description": "Exactly what `POST …/stages/revise` would send to the drafting model now (handoff\nRV1): the open `feedback` (with ids, which the model's `answers` name), the failure\ndiffs of the latest complete dev iteration (the template's own run first, else a\nmodel-comparison member; `failuresFrom`) restricted to the current ready dev samples,\nlowest score first and at most `limits.samples` (`failuresTotal` counts them before\nthat cap; each diff keeps at most `limits.fieldDiffs` fields and `limits.rowDiffs`\nchanged rows per table), the open `draft`, the dev sample files whose text goes along\n(`samples`), and the drafting `model` setting (null when unset).\n\n`notSent` is what the holdout rule keeps out of every model call: the ready holdout\nsamples and the newest holdout iteration (its score is shown here, never sent). A\nrevision needs open feedback and an open draft; the preview is available without them.",
+        "description": "Exactly what `POST …/stages/revise` would send to the drafting model now (handoff\nRV1): the open `feedback` (with ids, which the model's `answers` name), the failure\ndiffs of the latest complete dev iteration (the recipe's own run first, else a\nmodel-comparison member; `failuresFrom`) restricted to the current ready dev samples,\nlowest score first and at most `limits.samples` (`failuresTotal` counts them before\nthat cap; each diff keeps at most `limits.fieldDiffs` fields and `limits.rowDiffs`\nchanged rows per table), the open `draft`, the dev sample files whose text goes along\n(`samples`), and the drafting `model` setting (null when unset).\n\n`notSent` is what the holdout rule keeps out of every model call: the ready holdout\nsamples and the newest holdout iteration (its score is shown here, never sent). A\nrevision needs open feedback and an open draft; the preview is available without them.",
         "parameters": [
           {
             "schema": {
@@ -19475,7 +19475,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Template tab`, `the project has no template version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19501,7 +19501,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Template tab`, `the project has no template version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`."
                 }
               }
             }
@@ -20371,7 +20371,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Runs the open draft with the template's own models (never the drafting model, which\nmust not see holdout) on every ready holdout sample that has no reference and no\nactive run, stopping each for review. Verify the values, approve, then save each job\nas a reference: holdout evaluations and the publish gate need them. Not a stage: the\nstage order does not apply.",
+        "description": "Runs the open draft with the recipe's own models (never the drafting model, which\nmust not see holdout) on every ready holdout sample that has no reference and no\nactive run, stopping each for review. Verify the values, approve, then save each job\nas a reference: holdout evaluations and the publish gate need them. Not a stage: the\nstage order does not apply.",
         "parameters": [
           {
             "schema": {
@@ -20674,7 +20674,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Template tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20700,7 +20700,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Template tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
                 }
               }
             }
@@ -20715,7 +20715,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Queues a reference run of one ready sample, verified or not, stopping for review: a dev\nsample runs the drafting model, a holdout sample the template's own models (drafting\nnever sees holdout). Approve the run and save it as the reference to replace the\ncurrent one, which stands until then. Not blocked by the stage order.",
+        "description": "Queues a reference run of one ready sample, verified or not, stopping for review: a dev\nsample runs the drafting model, a holdout sample the recipe's own models (drafting\nnever sees holdout). Approve the run and save it as the reference to replace the\ncurrent one, which stands until then. Not blocked by the stage order.",
         "parameters": [
           {
             "schema": {
@@ -21028,7 +21028,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Template tab` or `a reference run of this sample is already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21054,7 +21054,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Template tab` or `a reference run of this sample is already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`."
                 }
               }
             }
@@ -23576,7 +23576,7 @@
         "tags": [
           "Evaluation, iterations & comparisons"
         ],
-        "description": "Runs the open draft on every sample of the set (`dev` by default, or `holdout`)\nthat has a verified reference, one test job each, and records an iteration with a\nsnapshot of the definition. The scorecard fills in as the jobs finish (poll\n`GET …/iterations/{iid}`).\n\n`model` overrides every step with a model choice (its id from\n`GET /api/models/choices`; `default` is the default choice) for exploration; an\nunknown choice, or an external one for a local-only project, is a 400; only iterations with the template's own models count for the publish\ngate. `uncached` makes every step call its model instead of reusing the step cache.\nHoldout scores always compare the models' raw output, never reviewed values.",
+        "description": "Runs the open draft on every sample of the set (`dev` by default, or `holdout`)\nthat has a verified reference, one test job each, and records an iteration with a\nsnapshot of the definition. The scorecard fills in as the jobs finish (poll\n`GET …/iterations/{iid}`).\n\n`model` overrides every step with a model choice (its id from\n`GET /api/models/choices`; `default` is the default choice) for exploration; an\nunknown choice, or an external one for a local-only project, is a 400; only iterations with the recipe's own models count for the publish\ngate. `uncached` makes every step call its model instead of reusing the step cache.\nHoldout scores always compare the models' raw output, never reviewed values.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24087,7 +24087,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24113,7 +24113,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
                 }
               }
             }
@@ -24653,7 +24653,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24679,7 +24679,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Template tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
                 }
               }
             }
@@ -26111,7 +26111,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Template tab`, or `the draft is no longer open`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `the draft is no longer open`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26137,7 +26137,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Template tab`, or `the draft is no longer open`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `the draft is no longer open`."
                 }
               }
             }
@@ -26152,7 +26152,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Creates a project from an exported bundle: a v1 draft of its template, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, template, brief,\nevery sample file and its sha256: a PDF, or a Word document without tracked changes,\nas an upload) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
+        "description": "Creates a project from an exported bundle: a v1 draft of its transformation recipe, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, recipe, brief,\nevery sample file and its sha256: a PDF, or a Word document without tracked changes,\nas an upload) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -26361,7 +26361,7 @@
             }
           },
           "400": {
-            "description": "`bundle file part is required`, `bundle is too large`, or what is wrong with the bundle (manifest, template, brief, a sample, or the id).",
+            "description": "`bundle file part is required`, `bundle is too large`, or what is wrong with the bundle (manifest, recipe, brief, a sample, or the id).",
             "content": {
               "application/json": {
                 "schema": {
@@ -26387,7 +26387,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`bundle file part is required`, `bundle is too large`, or what is wrong with the bundle (manifest, template, brief, a sample, or the id)."
+                  "description": "`bundle file part is required`, `bundle is too large`, or what is wrong with the bundle (manifest, recipe, brief, a sample, or the id)."
                 }
               }
             }
@@ -26520,7 +26520,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft template, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev samples as uploaded\n(PDFs, or Word documents as `.docx`). Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
+        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft recipe, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev samples as uploaded\n(PDFs, or Word documents as `.docx`). Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
         "parameters": [
           {
             "schema": {
@@ -26703,7 +26703,7 @@
             }
           },
           "409": {
-            "description": "`the project has no template version`, or `no prepared dev samples`.",
+            "description": "`the project has no recipe version`, or `no prepared dev samples`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26729,7 +26729,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`the project has no template version`, or `no prepared dev samples`."
+                  "description": "`the project has no recipe version`, or `no prepared dev samples`."
                 }
               }
             }
@@ -27069,7 +27069,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "Everything the project page shows around its tabs, in one call: the project, each\ntab's state and status text (the ten stages, then Template and Test runs), the most\nurgent next step, and the publish gate. Poll it while any stage is running.",
+        "description": "Everything the project page shows around its tabs, in one call: the project, each\ntab's state and status text (the ten stages, then Recipe and Test runs), the most\nurgent next step, and the publish gate. Poll it while any stage is running.",
         "parameters": [
           {
             "schema": {
@@ -30371,7 +30371,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admin token required.** The labelled model choices people pick (each pointing at\nan offered model) and the pipeline settings: the default choice (used by template\nsteps that name none), the drafting model and the OCR model. See [ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md).",
+        "description": "**Admin token required.** The labelled model choices people pick (each pointing at\nan offered model) and the pipeline settings: the default choice (used by recipe\nsteps that name none), the drafting model and the OCR model. See [ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md).",
         "x-admin": true,
         "responses": {
           "200": {
@@ -30532,7 +30532,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admin token required.** A labelled choice (\"Main Production Model\") pointing at an\noffered model. Its `id`, what templates and jobs store, is made from the label\nwhen left out (`main-production-model`, with a suffix if taken).",
+        "description": "**Admin token required.** A labelled choice (\"Main Production Model\") pointing at an\noffered model. Its `id`, what recipes and jobs store, is made from the label\nwhen left out (`main-production-model`, with a suffix if taken).",
         "requestBody": {
           "required": true,
           "content": {
@@ -30754,7 +30754,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admin token required.** Renames it, changes its description or points it at\nanother offered model. Templates and jobs keep naming it by id, so a rename changes\nnothing they do; a new model applies to every job queued from then on.",
+        "description": "**Admin token required.** Renames it, changes its description or points it at\nanother offered model. Recipes and jobs keep naming it by id, so a rename changes\nnothing they do; a new model applies to every job queued from then on.",
         "requestBody": {
           "required": true,
           "content": {
@@ -31007,7 +31007,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admin token required.** Refused while it is the default choice, while a template\nstep (any version) names it, or while an unfinished job (queued, running or\nawaiting review) uses it.",
+        "description": "**Admin token required.** Refused while it is the default choice, while a recipe\nstep (any version) names it, or while an unfinished job (queued, running or\nawaiting review) uses it.",
         "parameters": [
           {
             "schema": {
@@ -31111,7 +31111,7 @@
             }
           },
           "409": {
-            "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {template} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`.",
+            "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {recipe} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31137,7 +31137,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {template} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`."
+                  "description": "`{label} is the default choice: make another choice the default first`, `{label} is used by {recipe} v{n} (step {id})`, or `{label} is used by {n} unfinished job(s)`."
                 }
               }
             }
@@ -31152,7 +31152,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admin token required.** The default choice (used by template steps that name\nnone), the drafting model (the Workbench's proposal stages and dev reference runs)\nand the OCR model (the OCR stage only). Both models must be offered. The edit wins\nover `.env`.",
+        "description": "**Admin token required.** The default choice (used by recipe steps that name\nnone), the drafting model (the Workbench's proposal stages and dev reference runs)\nand the OCR model (the OCR stage only). Both models must be offered. The edit wins\nover `.env`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -31432,12 +31432,12 @@
       "description": "Document definitions loaded from the repository's `specs/` folder (legacy `spec.yaml` and\n`template.yaml`). Versions are immutable once published."
     },
     {
-      "name": "Templates",
-      "description": "Document types kept in the database: drafts are editable, published versions are immutable.\nTemplates import and export as YAML. See\n[ADR 0003](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md)."
+      "name": "Recipes",
+      "description": "Transformation recipes: each document type's definition (outputs, sections, pipeline steps,\nreview policy, default model), kept in the database. Drafts are editable, published versions\nare immutable. Recipes import and export as YAML. See\n[ADR 0003](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md)."
     },
     {
       "name": "References & regression",
-      "description": "References are verified output values for a sample PDF. Regression runs process the\nreferences' PDFs with a template version and score the outputs against them; metrics\nsummarise a document type's runs."
+      "description": "References are verified output values for a sample PDF. Regression runs process the\nreferences' PDFs with a recipe version and score the outputs against them; metrics\nsummarise a document type's runs."
     },
     {
       "name": "Models",
@@ -31445,7 +31445,7 @@
     },
     {
       "name": "Projects & data policy",
-      "description": "The Workbench builds a document type from sample PDFs, one project per type (the project id\nis the template id). A project's data policy decides whether its documents may be sent to\nexternal model providers (`external`) or only to local ones (`local`). See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md) and the\n[Workbench design](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md)."
+      "description": "The Workbench builds a document type from sample PDFs, one project per type (the project id\nis the recipe id). A project's data policy decides whether its documents may be sent to\nexternal model providers (`external`) or only to local ones (`local`). See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md) and the\n[Workbench design](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md)."
     },
     {
       "name": "Samples & brief",
@@ -31453,7 +31453,7 @@
     },
     {
       "name": "Drafting stages & proposals",
-      "description": "A drafting model proposes the template in stages (survey, outputs, sections, steps), each a\nset of typed changes the user accepts in full or in part. Anchor previews check section\nanchors against the dev samples."
+      "description": "A drafting model proposes the recipe in stages (survey, outputs, sections, steps), each a\nset of typed changes the user accepts in full or in part. Anchor previews check section\nanchors against the dev samples."
     },
     {
       "name": "Test runs",
@@ -31506,7 +31506,7 @@
       "name": "Configuration",
       "tags": [
         "Specs",
-        "Templates",
+        "Recipes",
         "References & regression",
         "Models"
       ]

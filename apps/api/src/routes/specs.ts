@@ -30,7 +30,7 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listSpecs',
         summary: 'List the document types available for upload',
         description: md`
-          Every version a document can be uploaded with: published database templates, and the
+          Every version a document can be uploaded with: published database recipes, and the
           definitions in the repository's \`specs/\` folder (legacy \`spec.yaml\`, and
           \`template.yaml\` files not yet seeded into the database), sorted by id and version.
           Drafts are not listed; they can only be test-run.
@@ -50,8 +50,8 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Get a document type definition',
         description: md`
           The parsed definition of a document type version: a legacy spec (\`kind: spec\`) or a
-          template (\`kind: template\`). Without \`version\`, the latest published version (a
-          database template first, then the newest file). A \`version\` may name a draft.
+          recipe (\`kind: template\`). Without \`version\`, the latest published version (a
+          database recipe first, then the newest file). A \`version\` may name a draft.
         `,
         params: z.object({ id: z.string().describe('The document type id.') }),
         querystring: z.object({

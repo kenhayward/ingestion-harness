@@ -114,6 +114,6 @@ export function stepFigures(m: StepMetric | undefined) {
 /** `here`: shown beside the step's own form (the Template tab), not on the Steps tab. */
 export function retryWarning(m: StepMetric | undefined, here = false): string | null {
   if (!m || m.runs === 0 || m.avgAttempts < RETRY_WARN_ATTEMPTS) return null;
-  const where = here ? 'below' : 'on the Template tab';
+  const where = here ? 'below' : 'on the Recipe tab';
   return `Needs a retry on many runs (${m.avgAttempts.toFixed(1)} attempts on average): the first answer often fails the checks. Narrow the sections it reads or add instructions ${where}.`;
 }

@@ -65,7 +65,7 @@ export function ReviseFeedback({
   const sampleName = (id: string) => samples.find((s) => s.id === id)?.filename ?? null;
   const addReason =
     definition === null
-      ? 'Start the next version on the Template tab first'
+      ? 'Start the next version on the Recipe tab first'
       : !targetId
         ? `The draft has no ${target}s yet`
         : !body.trim()

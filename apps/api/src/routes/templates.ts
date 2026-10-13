@@ -94,9 +94,9 @@ const TemplateTypeSchema = z.object({
     .describe('Of the version shown: the open draft, else the latest published version.'),
 });
 
-const NOT_FOUND = error('`template not found`.');
+const NOT_FOUND = error('`recipe not found`.');
 const NOT_VALID = res(
-  'The definition is not valid: `template is not valid`, with `issues`.',
+  'The definition is not valid: `recipe is not valid`, with `issues`.',
   z.object({ error: z.string(), issues: z.array(TemplateIssueSchema) }),
 );
 
@@ -161,14 +161,14 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   const withIssues = issuesOf(app);
   const repo = () => app.deps.templates;
   const versionOf = (p: Params) => Number(p.version);
-  const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'template not found' });
+  const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'recipe not found' });
 
   /** One entry per document type: name, latest published version, open draft. */
   app.get(
     '/templates',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'listTemplates',
         summary: 'List document types',
         description: md`
@@ -216,7 +216,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'createTemplate',
         summary: 'Create a document type',
         description: md`
@@ -253,12 +253,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'getTemplateVersion',
-        summary: 'Get a template version',
+        summary: 'Get a recipe version',
         description: md`
-          A version of a document type as stored (a draft may be work in progress), with the
-          validation issues of its definition.
+          A recipe version of a document type as stored (a draft may be work in progress), with
+          the validation issues of its definition.
         `,
         params: VersionParams,
         response: { 200: res('The version.', RecordView), 404: NOT_FOUND },
@@ -275,7 +275,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'saveDraft',
         summary: 'Save a draft',
         description: md`
@@ -329,7 +329,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version/publish',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'publishTemplate',
         summary: 'Publish a draft',
         description: md`
@@ -362,7 +362,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({ error: `${id} v${version} is already published` });
       }
       const issues = await templateIssues(app.deps, existing.definition, { draft: true });
-      if (issues.length) return reply.code(400).send({ error: 'template is not valid', issues });
+      if (issues.length) return reply.code(400).send({ error: 'recipe is not valid', issues });
       return await withIssues((await repo().publish(id, version))!);
     },
   );
@@ -372,7 +372,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/drafts',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'createDraft',
         summary: 'Start a new draft version',
         description: md`
@@ -410,7 +410,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'deleteDraft',
         summary: 'Delete a draft',
         description: md`
@@ -436,7 +436,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/:id/versions/:version/export',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'exportTemplate',
         summary: 'Export a version as YAML',
         description: md`
@@ -465,7 +465,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     '/templates/import',
     {
       schema: {
-        tags: ['Templates'],
+        tags: ['Recipes'],
         operationId: 'importTemplate',
         summary: 'Import a definition as a new version',
         description: md`
@@ -473,14 +473,14 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           type, or a new version of one): a draft, or published when \`publish\` is true and the
           definition is valid. A draft may be imported invalid and fixed in the editor. A
           Workbench document type can be imported as a draft but not published. See the
-          [template format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).
+          [recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).
         `,
         body: ImportBody,
         response: {
           201: res('The imported version.', RecordView),
           400: res(
             'Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id ' +
-              'and version`, or `template is not valid` (with `issues`) when publishing.',
+              'and version`, or `recipe is not valid` (with `issues`) when publishing.',
             z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
           ),
           409: error(
@@ -514,7 +514,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       // Imported as a draft, it is checked as one; published, it keeps any legacy model refs.
       const issues = await templateIssues(app.deps, definition, { draft: !body.data.publish });
       if (body.data.publish && issues.length) {
-        return reply.code(400).send({ error: 'template is not valid', issues });
+        return reply.code(400).send({ error: 'recipe is not valid', issues });
       }
       try {
         const record = await repo().create(

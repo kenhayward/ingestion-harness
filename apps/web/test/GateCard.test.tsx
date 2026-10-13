@@ -98,7 +98,7 @@ describe('GateCard', () => {
     expect(screen.getByText('PUBLISHED')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
-        name: 'v2 is live. Start the next version on the Template tab.',
+        name: 'v2 is live. Start the next version on the Recipe tab.',
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('img')).toBeNull();

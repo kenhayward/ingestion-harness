@@ -136,8 +136,8 @@ describe('historyRows', () => {
     ]);
     expect(rows.map((r) => [r.label, r.score, r.id, r.running, r.set])).toEqual([
       ['Compare · default 91 · fast 84 · draft 89', 0.91, 'x3', false, 'dev'],
-      ["Template's models · fresh", 0.86, 't', false, 'dev'],
-      ["Template's models", null, 'r', true, 'holdout'],
+      ["Recipe's models · fresh", 0.86, 't', false, 'dev'],
+      ["Recipe's models", null, 'r', true, 'holdout'],
     ]);
   });
 });
@@ -162,12 +162,12 @@ describe('historyBars / historySummary', () => {
   });
   it('summarises the chart in words', () => {
     expect(historySummary(historyBars(list, 4), 0.9)).toBe(
-      '3 template-model runs; latest dev 91% (v4); latest holdout 88% (v4); threshold 90%',
+      '3 runs with the recipe’s models; latest dev 91% (v4); latest holdout 88% (v4); threshold 90%',
     );
     expect(historySummary(historyBars(list.slice(4), 4), 0.9)).toBe(
-      '2 template-model runs; latest dev 91% (v4); no holdout run; threshold 90%',
+      '2 runs with the recipe’s models; latest dev 91% (v4); no holdout run; threshold 90%',
     );
-    expect(historySummary([], 0.9)).toBe('No template-model runs yet');
+    expect(historySummary([], 0.9)).toBe('No runs with the recipe’s models yet');
   });
 });
 
@@ -217,9 +217,7 @@ describe('gateTag / gateTitle', () => {
       'Publish v4 — holdout score 88% is below the threshold 90%',
     );
     expect(gateTitle(null, 4, 3)).toBe('Publish v4');
-    expect(gateTitle(null, null, 3)).toBe(
-      'v3 is live. Start the next version on the Template tab.',
-    );
+    expect(gateTitle(null, null, 3)).toBe('v3 is live. Start the next version on the Recipe tab.');
     expect(gateTitle(null, null, null)).toBe('Nothing to publish');
   });
 });

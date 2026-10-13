@@ -173,7 +173,7 @@ function ImportDialog({
     >
       <form id={formId} className="dialog-form" onSubmit={submit} aria-label="Import YAML">
         <label>
-          Template YAML
+          Recipe YAML
           <textarea
             className="mono"
             rows={10}

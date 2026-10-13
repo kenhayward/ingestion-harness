@@ -212,7 +212,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     if (!manifest.ok) return answer(400, { error: manifest.error });
     const definition = templateEntry(files);
     if (!definition) {
-      return answer(400, { error: 'template.yaml is not a template mapping' });
+      return answer(400, { error: 'template.yaml is not a recipe mapping' });
     }
     let brief: BriefBody | null = null; // a bundle without a brief saves none
     if (files.has('brief.json')) {
@@ -311,10 +311,10 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Import a bundle as a new project',
         consumes: ['multipart/form-data'],
         description: md`
-          Creates a project from an exported bundle: a v1 draft of its template, a \`local\`
+          Creates a project from an exported bundle: a v1 draft of its transformation recipe, a \`local\`
           project, its brief, its accepted survey and completed stages, and its dev samples
           (prepared again). Send the optional \`id\` and \`name\` fields **before** the
-          \`bundle\` file; blank means the bundle's own. Everything (manifest, template, brief,
+          \`bundle\` file; blank means the bundle's own. Everything (manifest, recipe, brief,
           every sample file and its sha256: a PDF, or a Word document without tracked changes,
           as an upload) is checked before anything is written. The zip and what it
           inflates to are capped at 12 samples at the upload limit plus 8 MiB. See the
@@ -336,7 +336,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           201: res('The new project.', ProjectViewSchema),
           400: error(
             '`bundle file part is required`, `bundle is too large`, or what is wrong with the ' +
-              'bundle (manifest, template, brief, a sample, or the id).',
+              'bundle (manifest, recipe, brief, a sample, or the id).',
           ),
           406: error('The request is not `multipart/form-data`.'),
           409: error('The id is taken: import under another id.'),
@@ -379,7 +379,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Export the project as a bundle',
         description: md`
           Queues an export job that builds the project's bundle: a zip with a manifest, the
-          brief, the draft template, the accepted survey and completed stages, the drafting
+          brief, the draft recipe, the accepted survey and completed stages, the drafting
           context (the same text a drafting model sees) and the ready dev samples as uploaded
           (PDFs, or Word documents as \`.docx\`). Holdout
           samples never leave. A new export replaces the previous one. Poll
@@ -391,7 +391,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           202: res('The queued export.', ExportViewSchema),
           403: LOCAL_ONLY,
           404: PROJECT_NOT_FOUND,
-          409: error('`the project has no template version`, or `no prepared dev samples`.'),
+          409: error('`the project has no recipe version`, or `no prepared dev samples`.'),
         },
       },
     },
@@ -405,7 +405,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       }
       const { draft, latest } = await versionsOf(templates, id);
       const record = draft !== null ? await templates.get(id, draft) : latest;
-      if (!record) return reply.code(409).send({ error: 'the project has no template version' });
+      if (!record) return reply.code(409).send({ error: 'the project has no recipe version' });
       // Holdout rule (ADR 0007): only dev samples leave, as in drafting.
       const samples = (await sampleViews(app, id))
         .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')

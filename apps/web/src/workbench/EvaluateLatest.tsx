@@ -147,7 +147,7 @@ export function LatestRun({
       <header className="eval-latest-head">
         <h3>
           Latest {iteration.set} run {DOT} v{iteration.templateVersion} {DOT}{' '}
-          {iteration.model ?? "template's models"}
+          {iteration.model ?? "recipe's models"}
           {iteration.uncached && ` ${DOT} fresh`}
         </h3>
         <p className="muted">

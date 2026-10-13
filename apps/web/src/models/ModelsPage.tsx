@@ -220,7 +220,7 @@ function EndpointCard({
       </header>
       {confirmRemove && (
         <p className="confirm-text">
-          Remove {e.name}? Jobs and templates naming its models will stop resolving.{' '}
+          Remove {e.name}? Jobs and transformation recipes naming its models will stop resolving.{' '}
           <button
             type="button"
             className="danger"

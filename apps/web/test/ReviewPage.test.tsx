@@ -389,7 +389,7 @@ describe('ReviewPage', () => {
   it('explains that legacy-spec documents have no review view and links to their results', async () => {
     setup({
       getReview: vi.fn(async () => {
-        throw new Error('job is not a template document');
+        throw new Error('job did not run a recipe');
       }),
     });
     expect(await screen.findByText(/This document type has no review view/)).toBeInTheDocument();
