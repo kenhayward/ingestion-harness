@@ -19,103 +19,1015 @@
   "paths": {
     "/api/auth/login": {
       "post": {
+        "operationId": "login",
+        "summary": "Sign in with an access token",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "Opens a session for an active access token and sets the `ih_session` cookie\n(HttpOnly, SameSite=Strict, Secure when the request came over HTTPS). The cookie lasts\nuntil the token expires (at most 400 days, the browser limit; tokens that never expire\nget the maximum), but the server ends a session after 7 days without use.\n\nA wrong, expired or revoked token, or a missing one, is a `401`. After 10 failed\nattempts in 15 minutes a client (an IP address, or an IPv6 /64) gets `429` until older\nfailures age out; other clients are unaffected.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The access token: `ih_` and 43 more characters."
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "security": [],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Signed in; the session cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "user"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the token expires; null = never."
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "label",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Signed in; the session cookie is set."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid or expired token`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`invalid or expired token`."
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`too many attempts, try again later`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`too many attempts, try again later`."
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/logout": {
       "post": {
+        "operationId": "logout",
+        "summary": "Sign out",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "Ends the current session and clears the `ih_session` cookie. Other sessions opened\nwith the same token stay signed in (revoke the token to end them all). Answers `204`\neven when there is no session.",
         "security": [],
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "204": {
+            "description": "Signed out."
           }
         }
       }
     },
     "/api/auth/me": {
       "get": {
+        "operationId": "me",
+        "summary": "Get the signed-in token",
+        "tags": [
+          "Auth & sessions"
+        ],
+        "description": "The role, label and expiry of the token the current session was opened with. The web\napp calls this on load to choose between the sign-in page and the app, and to show the\nadmin pages only to admins.",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "The signed-in token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "user"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the token expires; null = never."
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "label",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The signed-in token."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/tokens": {
       "get": {
+        "operationId": "listTokens",
+        "summary": "List access tokens",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Every access token, newest first, with its status:\n`active`, `expired`, `revoked`, or `current-admin` for the admin token of the\nrunning API. Plaintext tokens are never stored, so they are not listed.",
+        "x-admin": true,
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "The tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "admin",
+                          "user"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "expiresAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "revokedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "lastUsedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "expired",
+                          "revoked",
+                          "current-admin"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "role",
+                      "createdAt",
+                      "expiresAt",
+                      "revokedAt",
+                      "lastUsedAt",
+                      "status"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The tokens."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
           }
         }
       },
       "post": {
+        "operationId": "createToken",
+        "summary": "Issue a user access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Issues a new user token. The plaintext `token` is in this\nresponse only: give it to the person who will sign in with it. `expiresInDays` is\n1, 7, 30, 90 or 365, or `null` for a token that never expires.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Who or what the token is for, e.g. \"Ken – laptop\"."
+                  },
+                  "expiresInDays": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          7
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          30
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          90
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          365
+                        ]
+                      },
+                      {
+                        "enum": [
+                          "null"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "expiresInDays"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "The new token and its record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "The plaintext token. Shown only in this response."
+                    },
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "user"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "current-admin"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "role",
+                        "createdAt",
+                        "expiresAt",
+                        "revokedAt",
+                        "lastUsedAt",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "record"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The new token and its record."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/tokens/{id}/revoke": {
       "post": {
+        "operationId": "revokeToken",
+        "summary": "Revoke an access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Revokes a user token and ends every session opened with it.\nThe token stays in the list as `revoked`, so its history is kept; delete it to remove\nit. The admin token cannot be revoked (it rotates on every API start).",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             },
             "in": "path",
             "name": "id",
-            "required": true
+            "required": true,
+            "description": "The token id."
           }
         ],
+        "x-admin": true,
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "204": {
+            "description": "Revoked; its sessions are ended."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: no token with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`not found`: no token with this id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin token rotates on restart and cannot be revoked or deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`the admin token rotates on restart and cannot be revoked or deleted`."
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/tokens/{id}": {
       "delete": {
+        "operationId": "deleteToken",
+        "summary": "Delete an access token",
+        "tags": [
+          "Access tokens"
+        ],
+        "description": "**Admin token required.** Deletes a user token and its sessions. Unlike revoking, the\ntoken disappears from the list. The admin token cannot be deleted (it rotates on every\nAPI start).",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             },
             "in": "path",
             "name": "id",
-            "required": true
+            "required": true,
+            "description": "The token id."
           }
         ],
+        "x-admin": true,
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "204": {
+            "description": "Deleted, with its sessions."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: no token with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`not found`: no token with this id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin token rotates on restart and cannot be revoked or deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false,
+                  "description": "`the admin token rotates on restart and cannot be revoked or deleted`."
+                }
+              }
+            }
           }
         }
       }
     },
     "/healthz": {
       "get": {
+        "operationId": "liveness",
+        "summary": "Check the API process is running",
+        "tags": [
+          "Health"
+        ],
+        "description": "Liveness check: answers as long as the API process can serve requests. It checks no\ndependencies, so a database or storage outage does not make it fail (use `/readyz`\nfor that). Behind the app's nginx, `/healthz` is answered by nginx itself.",
         "security": [],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "The process is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The process is up."
+                }
+              }
+            }
           }
         }
       }
     },
     "/readyz": {
       "get": {
+        "operationId": "readiness",
+        "summary": "Check the API can reach its database and storage",
+        "tags": [
+          "Health"
+        ],
+        "description": "Readiness check: pings Postgres (`db`) and the inbox bucket in object storage\n(`storage`). Answers `200` with `status: ok` when both respond, otherwise `503`\nwith `status: degraded` and the failed check's error message.",
         "security": [],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Postgres and storage are reachable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Each dependency's result: `ok`, or the error message of the failed check."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "checks"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Postgres and storage are reachable."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "At least one dependency failed its check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Each dependency's result: `ok`, or the error message of the failed check."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "checks"
+                  ],
+                  "additionalProperties": false,
+                  "description": "At least one dependency failed its check."
+                }
+              }
+            }
           }
         }
       }

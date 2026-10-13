@@ -1,4 +1,5 @@
 import SwaggerParser from '@apidevtools/swagger-parser';
+import type { FastifyReply } from 'fastify';
 import type { OpenAPIV3_1 } from 'openapi-types';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -87,15 +88,12 @@ describe('md', () => {
  */
 const UNDOCUMENTED = new Set([
   'DELETE /api/access/s3-keys/{id}',
-  'DELETE /api/auth/tokens/{id}',
   'DELETE /api/jobs/{id}',
   'DELETE /api/templates/{id}/references/{ref}',
   'DELETE /api/templates/{id}/versions/{version}',
   'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'DELETE /api/workbench/projects/{id}/samples/{sid}',
   'GET /api/access/s3-keys',
-  'GET /api/auth/me',
-  'GET /api/auth/tokens',
   'GET /api/jobs',
   'GET /api/jobs/{id}',
   'GET /api/jobs/{id}/document',
@@ -133,17 +131,11 @@ const UNDOCUMENTED = new Set([
   'GET /api/workbench/projects/{id}/segmentations/{jobId}',
   'GET /api/workbench/projects/{id}/stages',
   'GET /api/workbench/projects/{id}/test-runs',
-  'GET /healthz',
-  'GET /readyz',
   'PATCH /api/workbench/projects/{id}',
   'PATCH /api/workbench/projects/{id}/samples/{sid}',
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/auth/login',
-  'POST /api/auth/logout',
-  'POST /api/auth/tokens',
-  'POST /api/auth/tokens/{id}/revoke',
   'POST /api/documents',
   'POST /api/jobs/cleanup',
   'POST /api/jobs/{id}/approve',
@@ -223,7 +215,9 @@ describe('docs sweep', () => {
     const doc = (await app.inject('/api/docs/openapi.json')).json<Doc>();
     const wrong: string[] = [];
     for (const { key, path, method, op } of operations(doc)) {
-      if (UNDOCUMENTED.has(key) || !path.startsWith('/api/')) continue;
+      // Public routes are never admin-only (and logout would end the user's session).
+      const isPublic = op.security?.length === 0;
+      if (UNDOCUMENTED.has(key) || !path.startsWith('/api/') || isPublic) continue;
       const reply = await app.inject({
         method: method.toUpperCase() as 'GET',
         url: path.replace(/\{[A-Za-z]+\}/g, '00000000-0000-4000-8000-000000000000'),
@@ -252,7 +246,7 @@ describe('response conformance', () => {
       { schema: { response: { 200: res('A thing', z.object({ id: z.string() })) } } },
       async (req, reply) => {
         const { mode } = req.params as { mode: string };
-        if (mode === 'teapot') return reply.code(418).send({ error: 'teapot' });
+        if (mode === 'teapot') return (reply as FastifyReply).code(418).send({ error: 'teapot' });
         return mode === 'bad' ? { nope: 1 } : { id: 'x' };
       },
     );

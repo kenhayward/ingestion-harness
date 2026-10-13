@@ -1,4 +1,4 @@
-import Ajv, { type ValidateFunction } from 'ajv';
+import { Ajv, type ValidateFunction } from 'ajv';
 import type { FastifyInstance } from 'fastify';
 import type { OpenAPIV3_1 } from 'openapi-types';
 
@@ -47,11 +47,8 @@ export function installConformance(app: FastifyInstance): void {
     if (!schema || !type.includes('application/json') || typeof payload !== 'string') {
       return payload;
     }
-    let validate = validators.get(schema);
-    if (!validate) {
-      validate = ajv.compile(schema);
-      validators.set(schema, validate);
-    }
+    const validate = validators.get(schema) ?? ajv.compile(schema);
+    validators.set(schema, validate);
     if (!validate(JSON.parse(payload))) {
       violations.push(`${where}: ${ajv.errorsText(validate.errors)}`);
     }

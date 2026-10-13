@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { describe, expect, it } from 'vitest';
-import { MemoryAccessRepo } from '../src/access/repo.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { z } from 'zod';
+import { MemoryAccessRepo, type AccessToken } from '../src/access/repo.js';
+import { AccessTokenSchema } from '../src/access/routes.js';
 import { testApp } from './helpers.js';
 
 async function setup() {
@@ -233,4 +235,10 @@ describe('token access path handling', () => {
       expect([401, 404]).toContain(res.statusCode);
     },
   );
+});
+
+describe('access token docs', () => {
+  it('describe the AccessToken type exactly', () => {
+    expectTypeOf<z.infer<typeof AccessTokenSchema>>().toEqualTypeOf<AccessToken>();
+  });
 });

@@ -5,6 +5,10 @@ import { OPENAPI } from './document.js';
 import { DOCS_PREFIX, transform } from './zod.js';
 
 declare module 'fastify' {
+  interface FastifySchema {
+    /** Admin token required (docs only; the route's own check enforces it). */
+    'x-admin'?: boolean;
+  }
   interface FastifyContextConfig {
     /** Served without a session (the access hook reads this on the matched route). */
     public?: boolean;
