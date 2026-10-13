@@ -204,28 +204,40 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     if (typeof samples === 'string') return reply.code(400).send({ error: samples });
 
     // Only now write: the draft, the project, the brief, then the samples.
-    let project: WorkbenchProject;
     try {
       await templates.create(projectId, 1, pinned(definition, projectId, 1), 'draft');
-      project = await workbench.createProject(projectId, name);
     } catch (err) {
       // Another import or project creation took the id after the check above.
-      if (err instanceof TemplateConflictError || err instanceof WorkbenchConflictError) {
-        return reply.code(409).send(taken);
-      }
+      if (err instanceof TemplateConflictError) return reply.code(409).send(taken);
       throw err;
     }
-    if (brief) await workbench.saveBrief(projectId, brief);
-    for (const sample of samples) {
-      const added = await addSampleFile(app, project, { ...sample, role: 'dev' });
-      if ('error' in added) {
-        // Unexpected after validation; the created project is left for the user to inspect.
-        req.log.error(
-          { projectId, filename: sample.filename, error: added.error },
-          'bundle import failed',
-        );
-        return reply.code(500).send({ error: `sample ${sample.filename}: ${added.error}` });
+    let project: WorkbenchProject;
+    try {
+      project = await workbench.createProject(projectId, name);
+    } catch (err) {
+      await templates.deleteDraft(projectId, 1); // leave no draft without its project
+      if (err instanceof WorkbenchConflictError) return reply.code(409).send(taken);
+      throw err;
+    }
+    // The project exists from here on; it cannot be deleted, so a failure names it.
+    const failed = (detail: Record<string, unknown>) => {
+      req.log.error({ projectId, ...detail }, 'bundle import failed');
+      return reply.code(500).send({
+        error: `import failed after creating project ${projectId}; delete is not available, so import again under another id`,
+      });
+    };
+    try {
+      // A bundle exported without a saved brief carries the empty one: save none.
+      if (brief && manifest.value.briefVersion !== null) {
+        await workbench.saveBrief(projectId, brief);
       }
+      for (const sample of samples) {
+        const added = await addSampleFile(app, project, { ...sample, role: 'dev' });
+        // Unexpected after validation.
+        if ('error' in added) return failed({ filename: sample.filename, error: added.error });
+      }
+    } catch (err) {
+      return failed({ err });
     }
     req.log.info({ projectId, samples: samples.length }, 'bundle imported');
     return reply.code(201).send(await projectView(app, project));

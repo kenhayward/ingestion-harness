@@ -583,6 +583,69 @@ describe('import', () => {
     expect((res.json() as ProjectView).project).toMatchObject({ id: 'memo', name: 'Memo' });
   });
 
+  it('deletes the v1 draft when creating the project fails', async () => {
+    const { app, templates, workbench } = await testApp();
+    vi.spyOn(workbench, 'createProject').mockRejectedValueOnce(new Error('database down'));
+    const deleteDraft = vi.spyOn(templates, 'deleteDraft');
+    const res = await importBundle(app, bundle());
+    expect(res.statusCode).toBe(500);
+    expect(deleteDraft).toHaveBeenCalledWith('memo', 1);
+    expect(await templates.get('memo', 1)).toBeNull();
+  });
+
+  it('deletes the v1 draft when the project id is taken concurrently', async () => {
+    const { app, templates, workbench } = await testApp();
+    vi.spyOn(workbench, 'createProject').mockRejectedValueOnce(
+      new WorkbenchConflictError('taken'),
+    );
+    const res = await importBundle(app, bundle());
+    expect(res.statusCode).toBe(409);
+    expect(await templates.get('memo', 1)).toBeNull();
+  });
+
+  it.each(['brief', 'sample'])(
+    'answers 500 naming the created project when saving the %s fails',
+    async (kind) => {
+      const { app, workbench } = await testApp();
+      if (kind === 'brief') {
+        vi.spyOn(workbench, 'saveBrief').mockRejectedValueOnce(new Error('database down'));
+      } else {
+        vi.spyOn(workbench, 'addSample').mockRejectedValueOnce(new Error('database down'));
+      }
+      const res = await importBundle(app, bundle());
+      expect(res.statusCode).toBe(500);
+      expect(res.json().error).toBe(
+        'import failed after creating project memo; delete is not available, so import again under another id',
+      );
+    },
+  );
+
+  it('saves no brief when the manifest has no brief version', async () => {
+    const { app, workbench } = await testApp();
+    const saveBrief = vi.spyOn(workbench, 'saveBrief');
+    const res = await importBundle(app, bundle({ manifest: { briefVersion: null } }));
+    expect(res.statusCode).toBe(201);
+    expect(saveBrief).not.toHaveBeenCalled();
+    expect((res.json() as ProjectView).brief).toBeNull();
+  });
+
+  it('imports a bundle with a stored (uncompressed) entry and a directory entry', async () => {
+    const { app } = await testApp();
+    const files = bundleFiles();
+    const zip = zipSync({
+      ...Object.fromEntries(
+        Object.entries(files).map(([name, data]) => [name, [data, { level: 0 }] as const]),
+      ),
+      'samples/': new Uint8Array(0),
+    });
+    const res = await importBundle(app, Buffer.from(zip));
+    expect(res.statusCode).toBe(201);
+    const samples = (
+      await app.inject('/api/workbench/projects/memo/samples')
+    ).json() as SampleView[];
+    expect(samples).toHaveLength(1);
+  });
+
   it.each(['template', 'project'])(
     'answers 409 when the %s is created concurrently',
     async (kind) => {
