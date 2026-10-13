@@ -58,6 +58,11 @@ def drafting_key(project_id: str, job_id: str) -> str:
     return f"drafting/{project_id}/{job_id}.json"
 
 
+def export_key(project_id: str, job_id: str) -> str:
+    """A project's exported drafting bundle (runs bucket, export task)."""
+    return f"exports/{project_id}/{job_id}.zip"
+
+
 def step_cache_object_key(key: str) -> str:
     """A cached extract step's output, keyed by its full input (workbench, runs bucket)."""
     return f"step-cache/{key}.json"

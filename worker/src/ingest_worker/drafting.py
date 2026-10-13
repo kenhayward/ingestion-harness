@@ -204,6 +204,9 @@ class DraftParamSample(BaseModel):
     filename: str
     sha256: str
     role: str
+    #: Where the sample's PDF lives (export jobs only; draft jobs never read the PDF).
+    bucket: str | None = None
+    object_key: str | None = Field(default=None, alias="objectKey")
 
 
 class FailuresFrom(BaseModel):
@@ -234,7 +237,8 @@ class DraftParams(BaseModel):
     failures_from: FailuresFrom | None = Field(default=None, alias="failuresFrom")
 
 
-def _pages(deps: PipelineDeps, sha256: str) -> list[str]:
+def prepared_pages(deps: PipelineDeps, sha256: str) -> list[str]:
+    """A prepared sample's page text (DocumentError when it was never prepared)."""
     raw = deps.store.get_optional(deps.buckets.runs, prepared_text_key(sha256))
     if raw is None:
         raise DocumentError(f"prepared text for {sha256} is missing")
@@ -267,7 +271,9 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     model_ref = f"{provider.name}/{model_id}"
 
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
-    samples = [DraftSample(s.sample_id, s.filename, s.role, _pages(deps, s.sha256)) for s in sent]
+    samples = [
+        DraftSample(s.sample_id, s.filename, s.role, prepared_pages(deps, s.sha256)) for s in sent
+    ]
     # Defence in depth for the holdout rule: the API already filters, the worker re-checks.
     names = {s.filename for s in params.samples if s.role == "dev"}
     dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
