@@ -163,8 +163,6 @@ const UNDOCUMENTED = new Set([
   'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'GET /api/access/s3-keys',
   'GET /api/workbench/projects/{id}/comparisons/{groupId}',
-  'GET /api/workbench/projects/{id}/exports',
-  'GET /api/workbench/projects/{id}/exports/{jobId}/bundle',
   'GET /api/workbench/projects/{id}/feedback',
   'GET /api/workbench/projects/{id}/iterations',
   'GET /api/workbench/projects/{id}/iterations/{iid}',
@@ -174,14 +172,11 @@ const UNDOCUMENTED = new Set([
   'GET /api/workbench/projects/{id}/references',
   'GET /api/workbench/projects/{id}/segmentations/{jobId}',
   'GET /api/workbench/projects/{id}/stages',
-  'GET /api/workbench/projects/{id}/test-runs',
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/workbench/projects/import',
   'POST /api/workbench/projects/{id}/evaluations',
   'POST /api/workbench/projects/{id}/evaluations/compare',
-  'POST /api/workbench/projects/{id}/export',
   'POST /api/workbench/projects/{id}/feedback',
   'POST /api/workbench/projects/{id}/holdout/reference-runs',
   'POST /api/workbench/projects/{id}/iterations/{iid}/restore',
@@ -190,7 +185,6 @@ const UNDOCUMENTED = new Set([
   'POST /api/workbench/projects/{id}/segmentations',
   'POST /api/workbench/projects/{id}/stages/{stage}',
   'POST /api/workbench/projects/{id}/stages/{stage}/skip',
-  'POST /api/workbench/projects/{id}/test-runs',
 ]);
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;

@@ -13,6 +13,7 @@ import {
   EMPTY_BRIEF,
   FeedbackBodySchema,
   MAX_SAMPLES,
+  JobSummarySchema,
   PreparedTextSchema,
   ProjectSummarySchema,
   ProjectViewSchema,
@@ -104,6 +105,13 @@ const SampleIdParams = z.object({
 });
 const PROJECT_NOT_FOUND = error('`project not found`.');
 const SAMPLE_NOT_FOUND = error('`sample not found`.');
+const DRAFT_NOT_VALID = res(
+  'The open draft is not valid: `the draft is not valid`, with `issues`.',
+  z.object({
+    error: z.string(),
+    issues: z.array(z.object({ path: z.string(), message: z.string() })),
+  }),
+);
 const WORKBENCH_DOCS =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
 
@@ -1340,32 +1348,60 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /** Test-run the open draft on every prepared dev sample (holdout samples are not used). */
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
-    const projectId = req.params.id;
-    const project = await workbench.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    const { draft } = await versionsOf(templates, projectId);
-    if (draft === null) {
-      return reply.code(409).send({ error: 'no open draft to test; start the next version first' });
-    }
-    const { definition } = (await templates.get(projectId, draft))!;
-    const issues = validateTemplate(definition);
-    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const ready = (await sampleViews(app, projectId)).filter(
-      (s) => s.view.role === 'dev' && s.view.state === 'ready',
-    );
-    if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
-    const jobs = await Promise.all(
-      ready.map(({ record }) =>
-        app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
-          projectId,
-          task: 'process',
-          params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
-        }),
-      ),
-    );
-    return reply.code(201).send({ jobs });
-  });
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/test-runs',
+    {
+      schema: {
+        tags: ['Test runs'],
+        operationId: 'startTestRuns',
+        summary: 'Test-run the draft on the dev samples',
+        description: md`
+          Queues a test job of the open draft for every ready dev sample (holdout samples are
+          never used). Jobs carry the project's data policy and a snapshot of the draft's
+          outputs. Test runs reuse a step's stored output when its full input is unchanged
+          (the step cache), so only changed steps call a model. They are never delivered.
+        `,
+        params: ProjectIdParams,
+        response: {
+          201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
+          400: DRAFT_NOT_VALID,
+          404: PROJECT_NOT_FOUND,
+          409: error(
+            '`no open draft to test; start the next version first`, or `no prepared dev ' +
+              'samples to run`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft to test; start the next version first' });
+      }
+      const { definition } = (await templates.get(projectId, draft))!;
+      const issues = validateTemplate(definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const ready = (await sampleViews(app, projectId)).filter(
+        (s) => s.view.role === 'dev' && s.view.state === 'ready',
+      );
+      if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+      const jobs = await Promise.all(
+        ready.map(({ record }) =>
+          app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
+            projectId,
+            task: 'process',
+            params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
+          }),
+        ),
+      );
+      return reply.code(201).send({ jobs });
+    },
+  );
 
   /** Preview anchors over every prepared sample (worker task `segment`; ADR 0007). */
   app.post<{ Params: ProjectParams }>(
@@ -1426,12 +1462,30 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  app.get<{ Params: ProjectParams }>('/workbench/projects/:id/test-runs', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    return (await app.deps.repo.listProjectJobs(req.params.id)).filter((j) => j.task !== 'prepare');
-  });
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/test-runs',
+    {
+      schema: {
+        tags: ['Test runs'],
+        operationId: 'listTestRuns',
+        summary: "List a project's jobs",
+        description: md`
+          The project's jobs except sample preparation: test runs, reference runs and
+          evaluation jobs, newest first. Open one with \`GET /api/jobs/{id}/review\`.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The jobs.', z.array(JobSummarySchema)), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return (await app.deps.repo.listProjectJobs(req.params.id)).filter(
+        (j) => j.task !== 'prepare',
+      );
+    },
+  );
 
   app.put<{ Params: ProjectParams }>(
     '/workbench/projects/:id/data-policy',

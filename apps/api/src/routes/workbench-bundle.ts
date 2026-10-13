@@ -5,13 +5,15 @@ import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { MultipartFile } from '@fastify/multipart';
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   BriefBodySchema,
   BundleManifestSchema,
   EMPTY_BRIEF,
+  ExportViewSchema,
   MAX_SAMPLES,
+  ProjectViewSchema,
   STAGE_ORDER,
   SurveyBodySchema,
   draftingKey,
@@ -37,6 +39,7 @@ import {
   type ReadBundle,
 } from '../workbench/bundle-import.js';
 import { WorkbenchConflictError } from '../workbench/repo.js';
+import { binary, error, md, res } from '../openapi/zod.js';
 import { multipartField } from '../uploads.js';
 import {
   Id as ProjectId,
@@ -61,6 +64,15 @@ const ExportedVersion = z.object({ draft: z.object({ version: z.number().int() }
 /** The samples the export carried. */
 const ExportedSamples = z.object({ samples: z.array(z.object({ sampleId: z.string() })) });
 const SAMPLES_CHANGED = 'a sample changed since this export; export again';
+
+/** Route docs (docs/design/api-docs.md). */
+const ProjectIdParams = z.object({ id: z.string().describe('The project id.') });
+const PROJECT_NOT_FOUND = error('`project not found`.');
+const LOCAL_ONLY = error(
+  '`exporting a local-only project needs the admin token`: the bundle carries the samples.',
+);
+const BUNDLE_DOCS =
+  'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
 
 const MAX_BUNDLE_ENTRIES = MAX_SAMPLES + 32;
 /** Bytes read from the saved zip per step. */
@@ -263,80 +275,193 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
    * Import a bundle as a new project (multipart: optional `id` and `name` fields, then the zip).
    * Everything is checked before anything is written.
    */
-  app.post('/workbench/projects/import', async (req, reply) => {
-    // One limit for the zip and for what it inflates to: every PDF at the upload limit, plus text.
-    const limit = app.deps.maxUploadBytes * MAX_SAMPLES + BUNDLE_TEXT_ALLOWANCE;
-    const file = await req.file({ limits: { fileSize: limit } });
-    if (!file) return reply.code(400).send({ error: 'bundle file part is required' });
-    const idField = multipartField(file, 'id')?.trim() || undefined; // blank = absent
-    const nameField = multipartField(file, 'name')?.trim() || undefined;
-    const dir = await mkdtemp(join(tmpdir(), 'ih-import-'));
-    let out: Answer;
-    try {
-      const bundle = await readUpload(file, dir, limit);
-      out =
-        bundle instanceof BundleError
-          ? answer(400, { error: bundle.message })
-          : await createFromBundle(req, { bundle, idField, nameField });
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-    // Answered only once the temp files are gone.
-    return reply.code(out.code).send(out.body);
-  });
+  app.post(
+    '/workbench/projects/import',
+    {
+      schema: {
+        tags: ['Bundles'],
+        operationId: 'importBundle',
+        summary: 'Import a bundle as a new project',
+        consumes: ['multipart/form-data'],
+        description: md`
+          Creates a project from an exported bundle: a v1 draft of its template, a \`local\`
+          project, its brief, its accepted survey and completed stages, and its dev samples
+          (prepared again). Send the optional \`id\` and \`name\` fields **before** the
+          \`bundle\` file; blank means the bundle's own. Everything (manifest, template, brief,
+          every PDF and its sha256) is checked before anything is written. The zip and what it
+          inflates to are capped at 12 samples at the upload limit plus 8 MiB. See the
+          [bundle layout](${BUNDLE_DOCS}).`,
+        body: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: "The new project's id. Default: the bundle's." },
+            name: { type: 'string', description: "The new project's name. Default: the bundle's." },
+            bundle: {
+              type: 'string',
+              format: 'binary',
+              description: 'The bundle zip. Send it last.',
+            },
+          },
+          required: ['bundle'],
+        },
+        response: {
+          201: res('The new project.', ProjectViewSchema),
+          400: error(
+            '`bundle file part is required`, `bundle is too large`, or what is wrong with the ' +
+              'bundle (manifest, template, brief, a sample, or the id).',
+          ),
+          406: error('The request is not `multipart/form-data`.'),
+          409: error('The id is taken: import under another id.'),
+          500: error(
+            '`import failed after creating project {id}; delete the project and import again`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      // One limit for the zip and for what it inflates to: every PDF at the upload limit, plus text.
+      const limit = app.deps.maxUploadBytes * MAX_SAMPLES + BUNDLE_TEXT_ALLOWANCE;
+      const file = await req.file({ limits: { fileSize: limit } });
+      if (!file) return reply.code(400).send({ error: 'bundle file part is required' });
+      const idField = multipartField(file, 'id')?.trim() || undefined; // blank = absent
+      const nameField = multipartField(file, 'name')?.trim() || undefined;
+      const dir = await mkdtemp(join(tmpdir(), 'ih-import-'));
+      let out: Answer;
+      try {
+        const bundle = await readUpload(file, dir, limit);
+        out =
+          bundle instanceof BundleError
+            ? answer(400, { error: bundle.message })
+            : await createFromBundle(req, { bundle, idField, nameField });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+      // Answered only once the temp files are gone. (FastifyReply: the code is computed, not one
+      // of the documented literals.)
+      return (reply as FastifyReply).code(out.code).send(out.body);
+    },
+  );
 
-  app.post<{ Params: { id: string } }>('/workbench/projects/:id/export', async (req, reply) => {
-    const { id } = req.params;
-    const project = await workbench.getProject(id);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    // The bundle carries sample PDFs and text out of the harness: like allowing external models.
-    if (project.dataPolicy === 'local' && !isAdmin(app, req)) {
-      return reply.code(403).send({ error: LOCAL_EXPORT });
-    }
-    const { draft, latest } = await versionsOf(templates, id);
-    const record = draft !== null ? await templates.get(id, draft) : latest;
-    if (!record) return reply.code(409).send({ error: 'the project has no template version' });
-    // Holdout rule (ADR 0007): only dev samples leave, as in drafting.
-    const samples = (await sampleViews(app, id))
-      .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
-      .map((s) => ({
-        sampleId: s.record.id,
-        filename: s.record.filename,
-        sha256: s.record.sha256,
-        role: 'dev' as const,
-        bucket: s.record.bucket,
-        objectKey: s.record.objectKey,
-      }));
-    if (!samples.length) return reply.code(409).send({ error: 'no prepared dev samples' });
-    const brief = await workbench.latestBrief(id);
-    const completedStages = (await stagesOf(app, id))
-      .filter((s) => s.state === 'accepted' || s.state === 'skipped')
-      .map((s) => s.stage);
-    const { job, removed } = await repo.createExportJob(id, {
-      stage: 'export',
-      dataPolicy: project.dataPolicy,
-      projectName: project.name,
-      briefVersion: brief?.version ?? null,
-      brief: brief?.body ?? EMPTY_BRIEF,
-      draft: record.definition,
-      survey: await acceptedSurvey(app, id),
-      completedStages,
-      samples,
-    });
-    for (const removedId of removed) await store.delete(buckets.runs, exportKey(id, removedId));
-    req.log.info({ projectId: id, jobId: job.id, samples: samples.length }, 'bundle export queued');
-    return reply.code(202).send(exportView(job));
-  });
+  app.post<{ Params: { id: string } }>(
+    '/workbench/projects/:id/export',
+    {
+      schema: {
+        tags: ['Bundles'],
+        operationId: 'exportBundle',
+        summary: 'Export the project as a bundle',
+        description: md`
+          Queues an export job that builds the project's bundle: a zip with a manifest, the
+          brief, the draft template, the accepted survey and completed stages, the drafting
+          context (the same text a drafting model sees) and the ready dev sample PDFs. Holdout
+          samples never leave. A new export replaces the previous one. Poll
+          \`GET …/exports\`, then download the zip. Exporting a \`local\` project needs the
+          admin token, since the bundle takes the samples out of the harness.
+        `,
+        params: ProjectIdParams,
+        response: {
+          202: res('The queued export.', ExportViewSchema),
+          403: LOCAL_ONLY,
+          404: PROJECT_NOT_FOUND,
+          409: error('`the project has no template version`, or `no prepared dev samples`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+      const project = await workbench.getProject(id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      // The bundle carries sample PDFs and text out of the harness: like allowing external models.
+      if (project.dataPolicy === 'local' && !isAdmin(app, req)) {
+        return reply.code(403).send({ error: LOCAL_EXPORT });
+      }
+      const { draft, latest } = await versionsOf(templates, id);
+      const record = draft !== null ? await templates.get(id, draft) : latest;
+      if (!record) return reply.code(409).send({ error: 'the project has no template version' });
+      // Holdout rule (ADR 0007): only dev samples leave, as in drafting.
+      const samples = (await sampleViews(app, id))
+        .filter((s) => s.view.role === 'dev' && s.view.state === 'ready')
+        .map((s) => ({
+          sampleId: s.record.id,
+          filename: s.record.filename,
+          sha256: s.record.sha256,
+          role: 'dev' as const,
+          bucket: s.record.bucket,
+          objectKey: s.record.objectKey,
+        }));
+      if (!samples.length) return reply.code(409).send({ error: 'no prepared dev samples' });
+      const brief = await workbench.latestBrief(id);
+      const completedStages = (await stagesOf(app, id))
+        .filter((s) => s.state === 'accepted' || s.state === 'skipped')
+        .map((s) => s.stage);
+      const { job, removed } = await repo.createExportJob(id, {
+        stage: 'export',
+        dataPolicy: project.dataPolicy,
+        projectName: project.name,
+        briefVersion: brief?.version ?? null,
+        brief: brief?.body ?? EMPTY_BRIEF,
+        draft: record.definition,
+        survey: await acceptedSurvey(app, id),
+        completedStages,
+        samples,
+      });
+      for (const removedId of removed) await store.delete(buckets.runs, exportKey(id, removedId));
+      req.log.info(
+        { projectId: id, jobId: job.id, samples: samples.length },
+        'bundle export queued',
+      );
+      return reply.code(202).send(exportView(job));
+    },
+  );
 
-  app.get<{ Params: { id: string } }>('/workbench/projects/:id/exports', async (req, reply) => {
-    if (!(await workbench.getProject(req.params.id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    return (await repo.listExportJobs(req.params.id)).map(exportView);
-  });
+  app.get<{ Params: { id: string } }>(
+    '/workbench/projects/:id/exports',
+    {
+      schema: {
+        tags: ['Bundles'],
+        operationId: 'listExports',
+        summary: "List a project's exports",
+        description: md`
+          The project's export jobs, newest first (at most one: a new export replaces the old).
+          Download a \`succeeded\` one with \`GET …/exports/{jobId}/bundle\`.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The exports.', z.array(ExportViewSchema)), 404: PROJECT_NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return (await repo.listExportJobs(req.params.id)).map(exportView);
+    },
+  );
 
   app.get<{ Params: { id: string; jobId: string } }>(
     '/workbench/projects/:id/exports/:jobId/bundle',
+    {
+      schema: {
+        tags: ['Bundles'],
+        operationId: 'downloadBundle',
+        summary: 'Download an exported bundle',
+        description: md`
+          The bundle zip of a finished export. Refused when a sample the export carried has
+          since been removed or made holdout (export again), and, for a \`local\` project,
+          without the admin token.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          jobId: z.string().uuid().describe('The export job id.'),
+        }),
+        response: {
+          200: binary('The bundle zip.', 'application/zip'),
+          403: LOCAL_ONLY,
+          404: error('`project not found`, `export not found` or `bundle not found`.'),
+          409: error(
+            '`the export has not finished`, or `a sample changed since this export; export again`.',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       const params = JobParams.safeParse(req.params);
       if (!params.success) return reply.code(404).send({ error: 'export not found' });
