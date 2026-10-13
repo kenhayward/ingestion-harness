@@ -227,6 +227,14 @@ describe('TemplateEditor', () => {
     expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
   });
 
+  it('has no Checks or Changes panels on the Templates page', async () => {
+    setup(view({ ...validDefinition(), version: 1 }));
+    await screen.findByRole('heading', { level: 1, name: 'Letter' });
+    expect(screen.queryByRole('region', { name: 'Checks' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /^Changes/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /needs attention/ })).not.toBeInTheDocument();
+  });
+
   describe('embedded in the workbench', () => {
     it('hides the single-sample test run (the Runs tab replaces it)', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
@@ -472,6 +480,67 @@ describe('TemplateEditor', () => {
       await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
       expect(api.deleteDraft).toHaveBeenCalledWith('letter', 1);
       expect(onNavigate).not.toHaveBeenCalled();
+    });
+
+    it('marks the sub-tabs a check fails on and lists the checks, stale stages included', async () => {
+      const definition = {
+        ...validDefinition(),
+        version: 1,
+        outputs: {
+          ...validDefinition().outputs,
+          fields: [
+            { id: 'sender', type: 'text' },
+            { id: 'due_date', type: 'date' },
+          ],
+        },
+      };
+      setup(
+        view(definition),
+        {},
+        {
+          onChanged: vi.fn(),
+          stages: [
+            {
+              stage: 'sections',
+              state: 'stale',
+              status: 'Stale — Outputs changed after it was accepted',
+              metrics: [],
+            },
+          ],
+        },
+      );
+      const checks = await screen.findByRole('region', { name: 'Checks' });
+      expect(within(checks).getByText(/due_date is not filled by any step\./)).toBeInTheDocument();
+      expect(within(checks).getByRole('link', { name: 'Review in Sections' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/sections',
+      );
+      expect(screen.getByRole('tab', { name: /^Pipeline.*needs attention/ })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /^Outputs.*needs attention/ })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: /^Sections/ })).not.toHaveAccessibleName(
+        /needs attention/,
+      );
+    });
+
+    it('opens the sub-tab a validation issue names', async () => {
+      setup(view({ ...skeleton }), {}, { onChanged: vi.fn() });
+      await userEvent.click(await tab(/^General/));
+      const checks = screen.getByRole('region', { name: 'Checks' });
+      await userEvent.click(within(checks).getAllByRole('button', { name: 'Open Pipeline' })[0]!);
+      expect(screen.getByRole('tab', { name: /^Pipeline/ })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+    });
+
+    it('reloads the change log after a save', async () => {
+      const { api } = setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      await screen.findByRole('region', { name: 'Changes in draft v1' });
+      await waitFor(() => expect(api.listDraftChanges).toHaveBeenCalledTimes(1));
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+      await waitFor(() => expect(api.listDraftChanges).toHaveBeenCalledTimes(2));
     });
   });
 

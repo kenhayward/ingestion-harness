@@ -3000,3 +3000,74 @@ label.inline.list-select {
     width: 100%;
   }
 }
+
+/* Template tab: Checks and Changes since vN (handoff §10) */
+.template-side {
+  flex: 1 1 280px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+.checks-panel {
+  border-left: 4px solid var(--ih-ok-fg);
+}
+.checks-panel[data-tone='warn'] {
+  border-left-color: var(--ih-warn-fg);
+}
+.checks-list,
+.changes-list,
+.diff-chips,
+.full-diff {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.checks-list li {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+}
+.check-dot,
+.tab-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--ih-ok-fg);
+}
+.checks-list li[data-tone='warn'] .check-dot {
+  background: var(--ih-warn-fg);
+}
+.checks-list li[data-tone='alert'] .check-dot {
+  background: var(--ih-alert-fg);
+}
+.checks-list li[data-tone='danger'] .check-dot {
+  background: var(--ih-danger-fg);
+}
+.tab-dot {
+  display: inline-block;
+  margin: 0 0 0 6px;
+  background: var(--ih-warn-fg);
+}
+.changes-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.changes-list li {
+  padding: 8px 0;
+  border-top: 1px solid var(--ih-border);
+}
+.changes-list p {
+  margin: 4px 0;
+}
+.diff-chips code {
+  overflow-wrap: anywhere;
+}

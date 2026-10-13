@@ -13,7 +13,10 @@ import { Icon } from '../ui/Icon.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
 import { TabHeader } from '../workbench/TabHeader.js';
 import { EditorHeader } from './EditorHeader.js';
+import { ChecksPanel } from './ChecksPanel.js';
+import { DraftChangesPanel } from './DraftChangesPanel.js';
 import { EmbeddedHeader } from './EmbeddedHeader.js';
+import { attentionTabs, issueText, templateChecks, type SubTab } from './checks.js';
 import { publishBlocker, tabCounts, unsavedText } from './editor-derive.js';
 import { PipelineEditor } from './PipelineEditor.js';
 import type { StepMetric } from '../workbench/steps.js';
@@ -113,6 +116,8 @@ export function TemplateEditor({
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   /** A save refused with 409 (written elsewhere meanwhile, or published): offer a reload. */
   const [conflict, setConflict] = useState(false);
+  /** Counts saves, so the change log reloads after each. */
+  const [saves, setSaves] = useState(0);
   const savedDef = useMemo<Definition>(
     () => (saved ? (JSON.parse(saved) as Definition) : {}),
     [saved],
@@ -188,6 +193,7 @@ export function TemplateEditor({
     try {
       accept(await api.saveTemplate(templateId, version, def, record.updatedAt || undefined));
       setMessage('Draft saved.');
+      setSaves((n) => n + 1);
       embedded?.onSaved?.();
     } catch (err) {
       setError((err as Error).message);
@@ -262,6 +268,16 @@ export function TemplateEditor({
         : t === 'pipeline'
           ? String(counts.steps)
           : null;
+  const checks = embedded
+    ? templateChecks({
+        projectId: templateId,
+        definition: def,
+        issues,
+        serverIssues: dirty ? [] : view.issues.map(issueText),
+        stages: embedded.stages ?? null,
+      })
+    : [];
+  const needs = attentionTabs(checks);
   /** The Template tab ends each part with the stage that drafts it (handoff §10). */
   const stageLink = (stage: string, text: string) =>
     embedded ? (
@@ -335,6 +351,12 @@ export function TemplateEditor({
                   <>
                     {' '}
                     <span className="tab-count">{tabCount(id)}</span>
+                  </>
+                )}
+                {needs.has(id as SubTab) && (
+                  <>
+                    <span className="tab-dot" aria-hidden="true" />
+                    <span className="visually-hidden"> (needs attention)</span>
                   </>
                 )}
               </button>
@@ -666,6 +688,20 @@ export function TemplateEditor({
             jobs={jobs}
             typeModel={typeModel ? { model: typeModel } : {}}
           />
+        )}
+        {embedded && (
+          <aside className="template-side" aria-label="Checks and changes">
+            <ChecksPanel checks={checks} onOpenSubTab={(t) => openTab(t)} />
+            {record.status === 'draft' && (
+              <DraftChangesPanel
+                api={api}
+                projectId={templateId}
+                version={version}
+                published={embedded.published ?? null}
+                refreshKey={saves}
+              />
+            )}
+          </aside>
         )}
       </div>
       {embedded && editable && dirty && (
