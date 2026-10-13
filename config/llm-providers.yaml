@@ -1,11 +1,15 @@
 # LLM providers available to the worker. Strings support ${VAR} and ${VAR:-default}.
 #
+# These are the DEFAULTS (ADR 0010): the worker seeds them, plus the endpoints in LLM_ENDPOINTS,
+# into the database on start (llm_endpoints, curated llm_models, llm_aliases) and builds its
+# registry from there. An admin's edit in the database wins over this file and .env.
+#
 # kind:        anthropic | openai-chat | openai-responses
 # baseUrl:     override endpoint — any OpenAI-compatible server (vLLM, Ollama, LM Studio,
 #              LiteLLM, Azure-compatible gateways) is just an openai-* provider with a baseUrl.
 # discover:    call the provider's /models endpoint (on startup + every DISCOVERY_INTERVAL_S)
 #              and record results in the llm_models table (shown in the UI model picker).
-# models:      static list, always offered even if discovery is off or fails.
+# models:      the curated models offered in the pickers (a comma-separated env value is split).
 # optional:    skip the provider with a warning when its API key is missing.
 # options:     per kind — effort/serverFallbacks (anthropic); responseFormat/strict/maxTokensParam/
 #              temperature (openai-*; Claude models reject sampling parameters); timeoutS (default 600) and maxRetries (SDK, default 2) for all.
@@ -20,7 +24,7 @@ providers:
     apiKeyEnv: ANTHROPIC_API_KEY
     optional: true
     discover: true
-    models: [claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5]
+    models: ['${ANTHROPIC_MODELS:-claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5}']
     options:
       effort: high # low | medium | high | xhigh | max
       serverFallbacks: true # retry refusals on a fallback model server-side
@@ -32,6 +36,7 @@ providers:
     optional: true
     discover: true
     modelFilter: '^(gpt-|o\d)'
+    models: ['${OPENAI_MODELS:-}']
 
   - name: local
     kind: openai-chat
@@ -41,7 +46,7 @@ providers:
     apiKeyEnv: LOCAL_LLM_API_KEY
     apiKeyRequired: false
     discover: true
-    models: [qwen3.8-27b-mtp, olmocr-2-7b-1025]
+    models: ['${LOCAL_LLM_MODELS:-qwen3.8-27b-mtp,olmocr-2-7b-1025}']
     options:
       # Many local servers only support json_object or ignore strict schemas.
       responseFormat: ${LOCAL_LLM_RESPONSE_FORMAT:-json_schema}
@@ -52,8 +57,8 @@ providers:
       maxRetries: 1 # SDK-level retries (timeouts/5xx); job-level retries happen on top
 
 aliases:
-  default: local/qwen3.8-27b-mtp
-  fast: anthropic/claude-haiku-5-5
+  default: ${DEFAULT_MODEL:-local/qwen3.8-27b-mtp}
+  fast: ${FAST_MODEL:-anthropic/claude-haiku-5-5}
   # Workbench drafting (ADR 0007). Point at a frontier model (external) or a large local one.
   draft: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
 

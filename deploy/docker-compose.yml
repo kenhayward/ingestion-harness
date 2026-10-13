@@ -155,6 +155,14 @@ services:
       OCR_BASE_URL: ${OCR_BASE_URL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
+      # Seeded into the database on start (ADR 0010); an admin's edit there wins.
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-}
+      FAST_MODEL: ${FAST_MODEL:-}
+      ANTHROPIC_MODELS: ${ANTHROPIC_MODELS:-}
+      OPENAI_MODELS: ${OPENAI_MODELS:-}
+      LOCAL_LLM_MODELS: ${LOCAL_LLM_MODELS:-}
+      LLM_ENDPOINTS: ${LLM_ENDPOINTS:-}
+      LLM_ENDPOINT_KEYS: ${LLM_ENDPOINT_KEYS:-}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-2}
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
       # Word (.docx) conversion; empty disables it (Word documents then need review).
