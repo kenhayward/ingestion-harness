@@ -17,6 +17,7 @@ dependencies = [
   "pypdfium2>=4.30",
   "pillow>=11.0",
   "httpx>=0.28",
+  "cryptography>=44",
 ]
 
 [project.scripts]

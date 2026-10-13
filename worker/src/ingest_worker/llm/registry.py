@@ -11,6 +11,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .base import LLMProvider, ModelDescriptor, ProviderKind
+from .secrets import SecretError, decrypt_secret, secrets_keys
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ class ProviderConfig(BaseModel):
     enabled: bool = True
     base_url: str | None = Field(default=None, alias="baseUrl")
     api_key_env: str | None = Field(default=None, alias="apiKeyEnv")
+    #: A key entered in the UI, encrypted by the API (ADR 0010); it wins over `api_key_env`.
+    api_key_enc: str | None = Field(default=None, alias="apiKeyEnc")
     api_key_required: bool = Field(default=True, alias="apiKeyRequired")
     #: Skip (with a warning) instead of failing startup when the API key is missing.
     optional: bool = False
@@ -116,7 +119,14 @@ ENDPOINT_KEYS_ENV = "LLM_ENDPOINT_KEYS"
 
 
 def endpoint_key(cfg: ProviderConfig, env: Mapping[str, str]) -> str | None:
-    """The endpoint's API key from the environment (None when unset or empty)."""
+    """The endpoint's API key: the one stored encrypted (entered in the UI), else the one in
+    the environment (None when unset or empty). A stored key that cannot be decrypted raises
+    `SecretError`: never fall back to another key."""
+    if cfg.api_key_enc:
+        try:
+            return decrypt_secret(cfg.api_key_enc, secrets_keys(env))
+        except SecretError as exc:
+            raise SecretError(f"provider {cfg.name}: {exc}") from exc
     if not cfg.api_key_env:
         return None
     if cfg.api_key_env == ENDPOINT_KEYS_ENV:
@@ -278,7 +288,13 @@ def build_registry(
     for cfg in config.providers:
         if not cfg.enabled:
             continue
-        api_key = endpoint_key(cfg, env)
+        try:
+            api_key = endpoint_key(cfg, env)
+        except SecretError as exc:
+            if not cfg.optional:
+                raise
+            log.warning("%s — skipping optional provider", exc)
+            continue
         if cfg.api_key_required and not api_key:
             msg = f"provider {cfg.name}: environment variable {cfg.api_key_env} is not set"
             if cfg.optional:

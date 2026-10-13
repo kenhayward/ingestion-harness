@@ -234,6 +234,7 @@ class StoreHarness(Protocol):
     def edit_alias(self, name: str, ref: str) -> None: ...
     def uncurate(self, provider: str, model_id: str) -> None: ...
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None: ...
+    def set_key(self, name: str, encrypted: str) -> None: ...
 
 
 class MemoryHarness:
@@ -251,6 +252,9 @@ class MemoryHarness:
 
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None:
         self.store.add_ui_endpoint(cfg)
+
+    def set_key(self, name: str, encrypted: str) -> None:
+        self.store.edit_endpoint(name, api_key_enc=encrypted)
 
 
 class PgHarness:
@@ -282,6 +286,12 @@ class PgHarness:
             """UPDATE llm_models SET curated = false, curated_edited_at = now()
                 WHERE provider = %s AND model_id = %s""",
             (provider, model_id),
+        )
+
+    def set_key(self, name: str, encrypted: str) -> None:
+        self.conn.execute(
+            "UPDATE llm_endpoints SET api_key_enc = %s, edited_at = now() WHERE name = %s",
+            (encrypted, name),
         )
 
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None:
@@ -426,3 +436,18 @@ def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
     assert deps.models is live.registry
     assert deps.models.resolve("default")[1] == "b"
     assert deps.ocr == OcrSettings(model="local/vision-2", concurrency=2)
+
+
+def test_a_key_set_in_the_ui_loads_and_survives_seeding(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("gpu2")], {}))
+    harness.set_key("gpu2", "v1:stored")
+    store.seed(Seed([endpoint("gpu2")], {}))
+    (loaded,) = store.load().endpoints
+    assert loaded.api_key_enc == "v1:stored"
+
+
+def test_an_endpoint_whose_stored_key_cannot_be_decrypted_is_skipped() -> None:
+    seed = Seed([endpoint("local"), endpoint("gpu2", apiKeyEnc="v1:not-for-this-master-key")], {})
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    assert registry.provider_names == ["local"]

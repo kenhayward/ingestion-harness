@@ -275,7 +275,7 @@ class PgLlmConfigStore:
 
     def load(self) -> Seed:
         rows = self._conn.execute(
-            f"""SELECT name, {_ENDPOINT_COLUMNS},
+            f"""SELECT name, {_ENDPOINT_COLUMNS}, api_key_enc,
                        array(SELECT m.model_id FROM llm_models m
                               WHERE m.provider = e.name AND m.curated ORDER BY m.model_id)
                   FROM llm_endpoints e ORDER BY name"""
@@ -293,7 +293,8 @@ class PgLlmConfigStore:
                     "modelFilter": r[7],
                     "options": r[8] or {},
                     "enabled": r[9],
-                    "models": list(r[10]),
+                    "apiKeyEnc": r[10],
+                    "models": list(r[11]),
                     "optional": True,
                 }
             )

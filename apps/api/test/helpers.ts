@@ -1,6 +1,7 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
+import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
@@ -80,6 +81,8 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
+    llm: new MemoryLlmConfigRepo(),
+    llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),
       issuer: new MemoryS3KeyIssuer(),
