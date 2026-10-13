@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SampleText } from '../src/workbench/SampleText.js';
@@ -317,5 +317,80 @@ describe('SamplesTab', () => {
       />,
     );
     expect(await screen.findByRole('note', { name: 'head starts here' })).toBeInTheDocument();
+  });
+});
+
+describe('SamplesTab capacity and polling', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => sampleView({ filename: `s${i}.pdf` }));
+  const pdf = (name: string) => new File(['%PDF-1'], name, { type: 'application/pdf' });
+
+  it('caps a dropped batch to the slots left and ignores drops at capacity', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    const listSamples = vi.fn(async () => many(11));
+    tab(fakeApi({ listSamples, uploadSample }));
+    const zone = (await screen.findByText(/Drop sample files here/)).closest('.drop-zone')!;
+    fireEvent.drop(zone, { dataTransfer: { files: [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')] } });
+    await waitFor(() => expect(uploadSample).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('alert')).toHaveTextContent('b.pdf: no sample slots left');
+  });
+
+  it('uploads nothing and disables the picker with no slots left', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    tab(fakeApi({ listSamples: vi.fn(async () => many(12)), uploadSample }));
+    const zone = (await screen.findByText(/Drop sample files here/)).closest('.drop-zone')!;
+    expect(screen.getByLabelText('Add sample documents')).toBeDisabled();
+    fireEvent.drop(zone, { dataTransfer: { files: [pdf('a.pdf')] } });
+    expect(uploadSample).not.toHaveBeenCalled();
+  });
+
+  it('polls while a sample is preparing, stops when all are ready and after unmount', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: 'preparing' | 'ready' = 'preparing';
+      const listSamples = vi.fn(async () => [
+        sampleView({ filename: 'w.pdf', state, triage: state === 'ready' ? triage(1, []) : null }),
+      ]);
+      const view = render(
+        <SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(listSamples).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      state = 'ready';
+      await vi.advanceTimersByTimeAsync(100);
+      expect(listSamples).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(listSamples).toHaveBeenCalledTimes(3);
+
+      state = 'preparing';
+      view.unmount();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(listSamples).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a list error once a later refresh succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      const listSamples = vi
+        .fn()
+        .mockResolvedValueOnce([
+          sampleView({ filename: 'w.pdf', state: 'preparing', triage: null }),
+        ])
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue([sampleView({ filename: 'w.pdf', state: 'preparing', triage: null })]);
+      render(<SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(screen.getByRole('alert')).toHaveTextContent('network down');
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(screen.queryByRole('alert')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

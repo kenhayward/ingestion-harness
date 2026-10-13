@@ -1326,6 +1326,7 @@ label.inline.list-select {
 }
 .sample-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
@@ -1382,4 +1383,9 @@ label.inline.list-select {
   .sample-actions {
     grid-column: 1 / -1;
   }
+}
+
+.sample-drop:has(input:focus-visible) {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: 2px;
 }

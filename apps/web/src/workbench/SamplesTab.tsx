@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { MAX_SAMPLES, type SampleRole, type SampleView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
@@ -79,11 +79,26 @@ export function SamplesTab({
   const [addAs, setAddAs] = useState<SampleRole>('dev');
   const [over, setOver] = useState(false);
 
+  const [listError, setListError] = useState<string | null>(null);
+  const alive = useRef(true);
+  const inflight = useRef(false);
+  const latest = useRef(0);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
   const refresh = useCallback(async () => {
+    const seq = ++latest.current;
     try {
-      setSamples(await api.listSamples(projectId));
+      const next = await api.listSamples(projectId);
+      if (!alive.current || seq !== latest.current) return;
+      setSamples(next);
+      setListError(null);
     } catch (err) {
-      setError((err as Error).message);
+      if (alive.current && seq === latest.current) setListError((err as Error).message);
     }
   }, [api, projectId]);
 
@@ -94,7 +109,13 @@ export function SamplesTab({
   const preparing = samples?.some((s) => s.state === 'preparing') ?? false;
   useEffect(() => {
     if (!preparing) return;
-    const timer = setInterval(() => void refresh(), pollMs);
+    const timer = setInterval(() => {
+      if (inflight.current) return;
+      inflight.current = true;
+      void refresh().finally(() => {
+        inflight.current = false;
+      });
+    }, pollMs);
     return () => clearInterval(timer);
   }, [preparing, pollMs, refresh]);
 
@@ -113,9 +134,12 @@ export function SamplesTab({
     const failures = files
       .filter((f) => !isSourceFile(f))
       .map((f) => `${f.name}: not a PDF or Word document`);
+    const slots = Math.max(0, MAX_SAMPLES - (samples?.length ?? 0));
+    const accepted = files.filter(isSourceFile);
+    for (const f of accepted.slice(slots)) failures.push(`${f.name}: no sample slots left`);
     setUploading(true);
     let uploaded = 0;
-    for (const file of files.filter(isSourceFile)) {
+    for (const file of accepted.slice(0, slots)) {
       try {
         await api.uploadSample(projectId, file, addAs);
         uploaded += 1;
@@ -129,14 +153,15 @@ export function SamplesTab({
     await refresh();
   };
 
+  const slotsLeft = Math.max(0, MAX_SAMPLES - (samples?.length ?? 0));
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setOver(false);
-    if (!uploading) void upload([...e.dataTransfer.files]);
+    if (!uploading && slotsLeft > 0) void upload([...e.dataTransfer.files]);
   };
 
   if (samples === null) {
-    return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
+    return (error ?? listError) ? <p role="alert">{error ?? listError}</p> : <p>Loading…</p>;
   }
   const summary = sampleSummary(samples);
   const ready = samples.filter((s) => s.state === 'ready');
@@ -238,7 +263,7 @@ export function SamplesTab({
           <Segmented label="Add as" options={ROLES} value={addAs} onChange={setAddAs} />
         </div>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {(error ?? listError) && <p role="alert">{error ?? listError}</p>}
 
       <div className="samples-layout">
         <div className="sample-groups">
