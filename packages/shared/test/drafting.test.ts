@@ -232,6 +232,58 @@ describe('stage states', () => {
       });
     });
   });
+
+  describe('accepting a proposal with no changes', () => {
+    const none = (createdAt: string, decidedAt: string) => ({
+      ...proposal('sections', 'accepted', createdAt, decidedAt),
+      acceptedChanges: [] as number[],
+    });
+    const base = [
+      proposal('survey', 'accepted', t(1), t(1)),
+      proposal('outputs', 'accepted', t(2), t(2)),
+      proposal('sections', 'accepted', t(3), t(3)),
+      proposal('outputs', 'accepted', t(4), t(4)), // outputs changed after sections
+      proposal('steps', 'accepted', t(5), t(5)),
+    ];
+
+    it('keeps an already complete stage: no longer stale, later stages untouched', () => {
+      const states = stageStates([...base, none(t(6), t(7))], []);
+      expect(states.map((s) => s.state)).toEqual(['accepted', 'accepted', 'accepted', 'accepted']);
+      expect(states[2]).toMatchObject({ stage: 'sections', completedAt: t(3) });
+    });
+
+    it('completes a stage that was never complete', () => {
+      const states = stageStates([...base.slice(0, 2), none(t(3), t(4))], []);
+      expect(states[2]).toMatchObject({ state: 'accepted', completedAt: t(4) });
+    });
+
+    it('keeps a skipped stage skipped', () => {
+      const states = stageStates(
+        [...base.slice(0, 2), none(t(5), t(6))],
+        [{ stage: 'sections', skippedAt: t(3) }],
+      );
+      expect(states[2]).toMatchObject({ state: 'skipped', completedAt: t(3) });
+    });
+
+    it('a later earlier-stage completion makes it stale again', () => {
+      const states = stageStates(
+        [...base, none(t(6), t(7)), proposal('outputs', 'accepted', t(8), t(8))],
+        [],
+      );
+      expect(states[2]!.state).toBe('stale');
+    });
+
+    it('a survey acceptance (no change list) still completes the stage', () => {
+      const states = stageStates(
+        [
+          proposal('survey', 'accepted', t(1), t(1)),
+          { ...proposal('survey', 'accepted', t(2), t(3)), acceptedChanges: null },
+        ],
+        [],
+      );
+      expect(states[0]).toMatchObject({ completedAt: t(3) });
+    });
+  });
 });
 
 describe('worker-shaped change dumps (mirrors worker/tests/test_draft_stages.py)', () => {
@@ -353,18 +405,16 @@ describe('references stage', () => {
     ).toBe('steps');
   });
 
-  it('is accepted when every dev sample is verified, and stale after a later earlier-stage change', () => {
-    expect(referencesStage(earlier, base)).toEqual({
+  it('is accepted when every dev sample is verified, whatever earlier stages do later', () => {
+    expect(referencesStage(base)).toEqual({
       stage: 'references',
       state: 'pending',
       completedAt: null,
       skippedAt: null,
     });
-    expect(referencesStage(earlier, { ...base, hasRuns: true, running: true }).state).toBe(
-      'running',
-    );
+    expect(referencesStage({ ...base, hasRuns: true, running: true }).state).toBe('running');
     expect(
-      referencesStage(earlier, {
+      referencesStage({
         ...base,
         hasRuns: true,
         verified: 1,
@@ -372,18 +422,19 @@ describe('references stage', () => {
       }).state,
     ).toBe('proposed');
     const complete = { ...base, verified: 2, lastVerifiedAt: '2026-10-12T10:00:05.000Z' };
-    expect(referencesStage(earlier, complete)).toEqual({
+    expect(referencesStage(complete)).toEqual({
       stage: 'references',
       state: 'accepted',
       completedAt: '2026-10-12T10:00:05.000Z',
       skippedAt: null,
     });
-    const changedLater = [...earlier.slice(0, 3), done('steps', '2026-10-12T10:00:09.000Z')];
-    expect(referencesStage(changedLater, complete).state).toBe('stale');
+    // A reference holds the outputs' true values: sections or steps changing later do not make it
+    // wrong. An outputs change that does outdates the reference itself (fewer verified).
+    expect(referencesStage(complete).state).toBe('accepted');
   });
 
   it('can be skipped', () => {
-    expect(referencesStage(earlier, { ...base, skippedAt: '2026-10-12T10:00:06.000Z' })).toEqual({
+    expect(referencesStage({ ...base, skippedAt: '2026-10-12T10:00:06.000Z' })).toEqual({
       stage: 'references',
       state: 'skipped',
       completedAt: '2026-10-12T10:00:06.000Z',

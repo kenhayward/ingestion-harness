@@ -391,6 +391,8 @@ export interface Api {
   ): Promise<IterationView>;
   /** Queue template runs on unverified holdout samples. */
   startHoldoutReferenceRuns(projectId: string): Promise<JobSummary[]>;
+  /** One sample's reference run again, to re-verify it (dev: the drafting model; holdout: the template's). */
+  runSampleReference(projectId: string, sampleId: string): Promise<JobSummary[]>;
   setPublishThreshold(projectId: string, threshold: number): Promise<ProjectView>;
   getPublishGate(projectId: string): Promise<PublishGateView>;
   /** Rail, header and Overview tab in one call (Workbench redesign W2). */
@@ -746,6 +748,11 @@ export function createHttpApi(base = '/api'): Api {
     startHoldoutReferenceRuns: (id) =>
       post<{ jobs: JobSummary[] }>(
         `${base}/workbench/projects/${id}/holdout/reference-runs`,
+        {},
+      ).then((r) => r.jobs),
+    runSampleReference: (id, sampleId) =>
+      post<{ jobs: JobSummary[] }>(
+        `${base}/workbench/projects/${id}/references/${sampleId}/run`,
         {},
       ).then((r) => r.jobs),
     setPublishThreshold: (id, publishThreshold) =>

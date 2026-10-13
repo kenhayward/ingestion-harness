@@ -326,6 +326,33 @@ describe('keep a stale stage (SC1)', () => {
     expect(res.json()).toEqual({ error });
   });
 
+  it('accepting a re-run that proposes no changes keeps the stage, leaving the draft as it is', async () => {
+    const { start, finish, decide, stages, draft } = await staleSections();
+    const definition = await draft();
+    const rerun = (await start('sections')).json() as ProposalView;
+    await finish(rerun.id, 'sections', { notes: 'The anchors still fit.', changes: [] });
+    const accepted = await decide(rerun.id, { decision: 'accepted', changes: [] });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ status: 'accepted', acceptedChanges: [] });
+    expect(await stages()).toEqual([
+      'survey:skipped',
+      'outputs:accepted',
+      'sections:accepted',
+      'steps:pending',
+      'references:pending',
+    ]);
+    expect(await draft()).toEqual(definition);
+  });
+
+  it('accepting none of a proposal that has changes is still refused', async () => {
+    const { start, finish, decide } = await staleSections();
+    const rerun = (await start('sections')).json() as ProposalView;
+    await finish(rerun.id, 'sections', { notes: '', changes: [putSection('sig', '^Yours')] });
+    const res = await decide(rerun.id, { decision: 'accepted', changes: [] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'choose the changes to accept' });
+  });
+
   it('is a 404 for an unknown project', async () => {
     const { app } = await project();
     const res = await app.inject({

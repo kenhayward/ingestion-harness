@@ -3,6 +3,7 @@ import type { JobStatus, JobSummary, StepRun } from '@ih/shared';
 import {
   chipCounts,
   inChip,
+  jobDuration,
   jobNote,
   menuPosition,
   modelLabel,
@@ -229,4 +230,34 @@ describe('menuPosition', () => {
     ['clamped inside the right edge', rect(1420, 300), viewport, { left: 1212, top: 338 }],
     ['flipped above near the bottom', rect(1300, 820), viewport, { left: 1114, bottom: 84 }],
   ])('%s', (_name, button, vp, expected) => expect(menuPosition(button, vp)).toEqual(expected));
+});
+
+describe('jobDuration', () => {
+  const now = Date.parse('2026-10-12T12:00:00Z');
+  const at = (s: number) => new Date(now - 3600_000 + s * 1000).toISOString();
+  it.each<[string, Partial<JobSummary>, string | null]>([
+    ['finished', { status: 'succeeded', startedAt: at(0), finishedAt: at(94) }, '1:34'],
+    [
+      'awaiting review',
+      { status: 'awaiting_review', startedAt: at(0), finishedAt: at(1384) },
+      '23:04',
+    ],
+    ['over an hour', { status: 'failed', startedAt: at(0), finishedAt: at(3725) }, '1:02:05'],
+    ['running counts up to now', { status: 'running', startedAt: at(3540) }, '1:00'],
+    ['queued', { status: 'queued', startedAt: null }, null],
+    [
+      'queued for a retry keeps no time',
+      { status: 'queued', startedAt: at(0), finishedAt: at(9) },
+      null,
+    ],
+    ['never timed (older jobs, other tasks)', { status: 'succeeded', startedAt: null }, null],
+    // Approving or re-running a step reuses the row: the extraction's time stands.
+    [
+      'a step re-run keeps the extraction time',
+      { status: 'running', task: 'rerun', startedAt: at(0), finishedAt: at(20) },
+      '0:20',
+    ],
+  ])('%s', (_name, o, text) => {
+    expect(jobDuration({ ...job(), ...o }, now)).toBe(text);
+  });
 });

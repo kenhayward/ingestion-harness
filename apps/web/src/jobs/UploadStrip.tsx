@@ -86,7 +86,11 @@ export function UploadStrip({
 
   useEffect(() => {
     api.listSpecs().then(
-      (list) => {
+      (all) => {
+        // Only the newest version of each type: uploads should not pick an old one.
+        const newest = new Map<string, number>();
+        for (const s of all) newest.set(s.id, Math.max(newest.get(s.id) ?? 0, s.version));
+        const list = all.filter((s) => s.version === newest.get(s.id));
         setSpecs(list);
         const first = list.at(-1);
         if (first) setSpec(`${first.id}@${first.version}`);

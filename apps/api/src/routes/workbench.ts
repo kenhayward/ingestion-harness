@@ -186,7 +186,8 @@ const ProposalParams = z.object({ id: Id, pid: z.string().uuid() });
 const DecisionBody = z
   .object({
     decision: z.enum(['accepted', 'rejected']),
-    changes: z.array(z.number().int().min(0)).min(1).optional(),
+    // Empty only for a proposal that has no changes (accepting it keeps the stage).
+    changes: z.array(z.number().int().min(0)).optional(),
   })
   .strict();
 const SkipParams = StageParams;
@@ -270,6 +271,7 @@ export async function stagesOf(app: FastifyInstance, projectId: string): Promise
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
     status: statusOf(p, jobs.get(p.id) ?? null),
+    acceptedChanges: p.acceptedChanges,
   }));
   const [skips, confirms] = await Promise.all([
     app.deps.workbench.listSkips(projectId),
@@ -726,11 +728,7 @@ async function referenceEntries(
   return { entries, definition };
 }
 
-async function referencesView(
-  app: FastifyInstance,
-  projectId: string,
-  earlier: StageView[],
-): Promise<StageView> {
+async function referencesView(app: FastifyInstance, projectId: string): Promise<StageView> {
   const { entries } = await referenceEntries(app, projectId, 'dev');
   const rows = entries.map((e) => e.row);
   const verified = rows.filter(verifiedRow);
@@ -740,7 +738,7 @@ async function referencesView(
     .filter((e) => !verifiedRow(e.row) && e.draftRun !== null)
     .map((e) => e.draftRun!);
   const skips = await app.deps.workbench.listSkips(projectId);
-  return referencesStage(earlier, {
+  return referencesStage({
     devSamples: rows.length,
     verified: verified.length,
     lastVerifiedAt:
@@ -757,7 +755,7 @@ async function referencesView(
 /** All five stages: the four proposal stages, then references (derived separately). */
 export async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const earlier = await stagesOf(app, projectId);
-  return [...earlier, await referencesView(app, projectId, earlier)];
+  return [...earlier, await referencesView(app, projectId)];
 }
 
 const EvaluateBody = z
@@ -2574,8 +2572,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Each stage's state: \`pending\`, \`running\`, \`proposed\` (waiting for a
           decision), \`accepted\`, \`skipped\`, or \`stale\` (an earlier stage was accepted
-          again since). \`references\` is accepted once every ready dev sample has a verified
-          reference. States are derived, never stored. \`skippedAt\` is the stage's latest skip, kept after
+          again since; accepting a re-run that proposes no changes keeps the stage instead). \`references\`
+          is accepted once every ready dev sample has a verified reference, and is never stale (an
+          outputs change outdates the references it affects instead). States are derived, never stored. \`skippedAt\` is the stage's latest skip, kept after
           it is run or accepted again (the Survey tab's "You skipped this stage" banner).
         `,
         params: ProjectIdParams,
@@ -2749,6 +2748,78 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  /**
+   * Re-verify one sample: a fresh reference run of it, verified or not, with the models its set
+   * uses (dev: the drafting model; holdout: the template's own). Saving the reviewed run
+   * supersedes its reference; until then the old one stands.
+   */
+  app.post<{ Params: { id: string; sid: string } }>(
+    '/workbench/projects/:id/references/:sid/run',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'startSampleReferenceRun',
+        summary: 'Run one sample again to re-verify its reference',
+        description: md`
+          Queues a reference run of one ready sample, verified or not, stopping for review: a dev
+          sample runs the drafting model, a holdout sample the template's own models (drafting
+          never sees holdout). Approve the run and save it as the reference to replace the
+          current one, which stands until then. Not blocked by the stage order.
+        `,
+        params: SampleIdParams,
+        response: {
+          201: res('The queued reference run.', JobsCreated),
+          400: DRAFT_NOT_VALID,
+          404: error('`project not found` or `sample not found` (unknown or not ready).'),
+          409: error(
+            '`no open draft; start the next version on the Template tab` or `a reference run ' +
+              'of this sample is already running`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const project = await workbench.getProject(req.params.id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const params = SampleParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'sample not found' });
+      const { id: projectId, sid } = params.data;
+      const sets = await Promise.all(
+        (['dev', 'holdout'] as const).map(async (set) => ({
+          set,
+          entries: (await referenceEntries(app, projectId, set)).entries,
+        })),
+      );
+      const found = sets
+        .flatMap(({ set, entries }) => entries.map((e) => ({ set, entry: e })))
+        .find(({ entry }) => entry.row.sampleId === sid);
+      if (!found) return reply.code(404).send({ error: 'sample not found' });
+      const { draft } = await versionsOf(templates, projectId);
+      if (draft === null) {
+        return reply
+          .code(409)
+          .send({ error: 'no open draft; start the next version on the Template tab' });
+      }
+      const { definition } = (await templates.get(projectId, draft))!;
+      const issues = validateTemplate(definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const { set, entry } = found;
+      if (entry.row.run && activeJob(entry.row.run.status)) {
+        return reply.code(409).send({ error: 'a reference run of this sample is already running' });
+      }
+      const record = (await sampleViews(app, projectId)).find((s) => s.record.id === sid)!.record;
+      const job = await app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
+        projectId,
+        task: 'process',
+        params: referenceRunParams(project.dataPolicy, definition),
+        modelOverride: set === 'dev' ? 'draft' : null,
+        createdBy: req.auth?.label ?? null,
+      });
+      req.log.info({ projectId, sampleId: sid, set }, 'sample reference run');
+      return reply.code(201).send({ jobs: [job] });
+    },
+  );
+
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage/skip',
     {
@@ -2898,6 +2969,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Decides a ready proposal. Rejecting, or accepting a survey, records the decision.
           Accepting a change proposal applies the chosen \`changes\` (indexes into its list;
           all of them for \`accepted\`, some for \`partially_accepted\`) to the open draft.
+          A proposal with no changes is accepted with \`changes: []\`: the draft is unchanged and
+          a stage that was already complete is kept (as by its \`confirm\`), not completed again.
           It is refused when the draft version changed since the proposal, or when the draft
           was edited where a chosen change applies (accept the others, or run the stage again).
           Accepting a \`revise\` proposal, fully or partly, resolves the feedback its applied
@@ -2949,7 +3022,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         return proposalView(app, decided, job);
       }
       const proposed = (current.body as ChangeBody).changes;
-      if (!changes) return reply.code(400).send({ error: 'choose the changes to accept' });
+      if (!changes || (changes.length === 0 && proposed.length > 0)) {
+        return reply.code(400).send({ error: 'choose the changes to accept' });
+      }
       const chosen = [...new Set(changes)].sort((a, b) => a - b);
       if (chosen.some((i) => i >= proposed.length)) {
         return reply.code(400).send({ error: 'no such change' });

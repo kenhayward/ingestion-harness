@@ -416,6 +416,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     restoreIteration: vi.fn(async () => {
       throw new Error('restoreIteration not stubbed');
     }),
+    runSampleReference: vi.fn(async () => {
+      throw new Error('runSampleReference not stubbed');
+    }),
     startHoldoutReferenceRuns: vi.fn(async () => {
       throw new Error('startHoldoutReferenceRuns not stubbed');
     }),

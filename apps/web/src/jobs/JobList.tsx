@@ -1,8 +1,9 @@
 import type { JobSummary, ModelChoice } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { JobActions } from './JobActions.js';
-import { jobNote, modelLabel, relativeTime } from './derive.js';
+import { jobDuration, jobNote, modelLabel, relativeTime } from './derive.js';
 
 /** Job list (UI handoff §1): the file name selects the row into the detail panel. */
 export function JobList({
@@ -46,6 +47,7 @@ export function JobList({
           {jobs.map((job) => {
             const selected = job.id === selectedId;
             const note = jobNote(job);
+            const took = jobDuration(job, now);
             return (
               <tr key={job.id} className={selected ? 'selected' : undefined}>
                 <td className="doc-cell">
@@ -73,6 +75,15 @@ export function JobList({
                   <span title={new Date(job.createdAt).toLocaleString()}>
                     {relativeTime(job.createdAt, now)}
                   </span>
+                  {took && (
+                    <span
+                      className="elapsed"
+                      aria-label={`Processing time ${took}`}
+                      title="Processing time"
+                    >
+                      <Icon name="clock" size={12} /> {took}
+                    </span>
+                  )}
                 </td>
                 <td className="actions-cell">
                   <JobActions
