@@ -451,7 +451,7 @@ fingerprint moved (8 at a time), then filters, counts, sorts and pages in memory
 `queryProjects`. This is "cached project state refreshed on every event", computed lazily, so the
 worker needs no change. The first request after a deploy that bumps `LIST_CACHE_VERSION`, or on a
 fresh database, computes every row (about 25 s for 1,000 seeded projects); later requests touch only
-what changed. The old unpaged array stays behind `?all=1` until the web moves to the paged list.
+what changed. The old unpaged array stays behind `?all=1`, unused by the web; kept for API consumers.
 
 Pins (W3) live in `workbench_pins (owner, project_id)` and belong to the signed-in token
 (`GET /api/workbench/pins`, `PUT` and `DELETE /api/workbench/pins/:projectId`). The bootstrap admin

@@ -912,7 +912,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           the last request.
 
           Deprecated: \`all=1\` returns every project unpaged, as an array of summaries (draft,
-          published version and sample count), and ignores the other parameters.
+          published version and sample count), and ignores the other parameters. Unused by the
+          web; kept for API consumers.
         `,
         querystring: ProjectListQuerySchema.extend({
           all: z.literal('1').optional().describe('Deprecated: the unpaged summary array.'),
@@ -938,7 +939,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** The unpaged list behind `?all=1` (until the web moves to the paged list). */
+  /** The unpaged list behind `?all=1` (unused by the web; kept for API consumers). */
   async function listAllProjects(): Promise<ProjectSummary[]> {
     const projects = await workbench.listProjects();
     return Promise.all(

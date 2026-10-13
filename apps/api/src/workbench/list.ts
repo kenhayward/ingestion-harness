@@ -23,9 +23,10 @@ export const LIST_CACHE_VERSION = 1;
  * before any row is computed and a row is stored under that earlier fingerprint, so a change
  * made during the computation leaves it stale for the next request rather than hiding it. A row
  * computed while a store read failed (`degraded`) answers this request but is not stored.
- * Concurrent callers share one refresh per app. A project deleted after
- * the fingerprints were read is left out. `lastActivityAt` always comes from the fresh
- * fingerprint.
+ * Concurrent callers share one refresh per app, so a request that joins an in-flight refresh
+ * can get rows from before a change made meanwhile (it shows on the next request). A project
+ * deleted after the fingerprints were read is left out. `lastActivityAt` always comes from the
+ * fresh fingerprint.
  */
 export function refreshListCache(app: FastifyInstance): Promise<ProjectListItem[]> {
   const running = inFlight.get(app);
