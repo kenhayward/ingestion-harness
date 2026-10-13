@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { z } from 'zod';
+import type { TemplateChange, TemplateChangeInput } from '@ih/shared';
 
 export const TemplateStatusSchema = z.enum(['draft', 'published']);
 export type TemplateStatus = z.infer<typeof TemplateStatusSchema>;
@@ -20,26 +21,42 @@ export type TemplateRecord = z.infer<typeof TemplateRecordSchema>;
 
 export class TemplateConflictError extends Error {}
 
+/** What a draft write records besides the definition (TP1). */
+export interface DraftWrite {
+  /** The change log entry; nothing is logged without one. */
+  change?: TemplateChangeInput;
+  /** The `updatedAt` the edit started from: a draft written since is not overwritten (null). */
+  expectedUpdatedAt?: string;
+}
+
 /** Persistence for document templates (source of truth; files are only seed/import input). */
 export interface TemplateRepo {
   list(): Promise<TemplateRecord[]>;
   get(id: string, version: number): Promise<TemplateRecord | null>;
   latestPublished(id: string): Promise<TemplateRecord | null>;
-  /** Throws TemplateConflictError when the version exists. */
+  /** Throws TemplateConflictError when the version exists. `change` is logged for drafts only. */
   create(
     id: string,
     version: number,
     definition: Record<string, unknown>,
     status: TemplateStatus,
+    change?: TemplateChangeInput,
   ): Promise<TemplateRecord>;
-  /** Null unless the version exists and is a draft. */
+  /**
+   * Null unless the version exists, is a draft and (with `expectedUpdatedAt`) was not written
+   * since; then nothing is written. The change is logged in the same write.
+   */
   updateDraft(
     id: string,
     version: number,
     definition: Record<string, unknown>,
+    write?: DraftWrite,
   ): Promise<TemplateRecord | null>;
   publish(id: string, version: number): Promise<TemplateRecord | null>;
+  /** Deletes the draft and its change log. */
   deleteDraft(id: string, version: number): Promise<boolean>;
+  /** The version's change log, newest first (migration 0029). */
+  listChanges(id: string, version: number): Promise<TemplateChange[]>;
 }
 
 const byIdVersion = (a: TemplateRecord, b: TemplateRecord) =>
@@ -47,7 +64,23 @@ const byIdVersion = (a: TemplateRecord, b: TemplateRecord) =>
 
 export class MemoryTemplateRepo implements TemplateRepo {
   readonly records = new Map<string, TemplateRecord>();
+  /** The change log (template_changes), oldest first. */
+  readonly changes: (TemplateChange & { templateId: string })[] = [];
+  private changeSeq = 0;
+  private lastTime = 0;
   private key = (id: string, version: number) => `${id}@${version}`;
+
+  /** Strictly increasing, so a stale `expectedUpdatedAt` is always detected. */
+  private now(): string {
+    this.lastTime = Math.max(Date.now(), this.lastTime + 1);
+    return new Date(this.lastTime).toISOString();
+  }
+
+  private log(id: string, version: number, at: string, change?: TemplateChangeInput) {
+    if (change) {
+      this.changes.push({ ...change, templateId: id, version, at, id: String(++this.changeSeq) });
+    }
+  }
 
   async list() {
     return [...this.records.values()].sort(byIdVersion);
@@ -67,11 +100,12 @@ export class MemoryTemplateRepo implements TemplateRepo {
     version: number,
     definition: Record<string, unknown>,
     status: TemplateStatus,
+    change?: TemplateChangeInput,
   ) {
     if (this.records.has(this.key(id, version))) {
       throw new TemplateConflictError(`${id} v${version} already exists`);
     }
-    const now = new Date().toISOString();
+    const now = this.now();
     const record: TemplateRecord = {
       id,
       version,
@@ -82,21 +116,31 @@ export class MemoryTemplateRepo implements TemplateRepo {
       publishedAt: status === 'published' ? now : null,
     };
     this.records.set(this.key(id, version), record);
+    if (status === 'draft') this.log(id, version, now, change);
     return record;
   }
 
-  async updateDraft(id: string, version: number, definition: Record<string, unknown>) {
+  async updateDraft(
+    id: string,
+    version: number,
+    definition: Record<string, unknown>,
+    write: DraftWrite = {},
+  ) {
     const record = await this.get(id, version);
     if (record?.status !== 'draft') return null;
-    const updated = { ...record, definition, updatedAt: new Date().toISOString() };
+    if (write.expectedUpdatedAt !== undefined && write.expectedUpdatedAt !== record.updatedAt) {
+      return null;
+    }
+    const updated = { ...record, definition, updatedAt: this.now() };
     this.records.set(this.key(id, version), updated);
+    this.log(id, version, updated.updatedAt, write.change);
     return updated;
   }
 
   async publish(id: string, version: number) {
     const record = await this.get(id, version);
     if (record?.status !== 'draft') return null;
-    const now = new Date().toISOString();
+    const now = this.now();
     const updated: TemplateRecord = {
       ...record,
       status: 'published',
@@ -110,7 +154,23 @@ export class MemoryTemplateRepo implements TemplateRepo {
   async deleteDraft(id: string, version: number) {
     const record = await this.get(id, version);
     if (record?.status !== 'draft') return false;
+    // ON DELETE CASCADE (migration 0029).
+    for (let i = this.changes.length - 1; i >= 0; i--) {
+      const c = this.changes[i]!;
+      if (c.templateId === id && c.version === version) this.changes.splice(i, 1);
+    }
     return this.records.delete(this.key(id, version));
+  }
+
+  async listChanges(id: string, version: number): Promise<TemplateChange[]> {
+    return this.changes
+      .filter((c) => c.templateId === id && c.version === version)
+      .sort((a, b) => Number(b.id) - Number(a.id))
+      .map((c) => {
+        const change: Partial<typeof c> = { ...c };
+        delete change.templateId;
+        return change as TemplateChange;
+      });
   }
 }
 
@@ -133,6 +193,48 @@ const toRecord = (r: Row): TemplateRecord => ({
   updatedAt: r.updated_at.toISOString(),
   publishedAt: r.published_at ? r.published_at.toISOString() : null,
 });
+
+interface ChangeRow {
+  id: string; // bigint
+  version: number;
+  at: Date;
+  source: TemplateChange['source'];
+  stage: TemplateChange['stage'];
+  proposal_id: string | null;
+  summary: string;
+  diff: string[];
+  created_by: string | null;
+}
+
+const toChange = (r: ChangeRow): TemplateChange => ({
+  id: String(r.id),
+  version: r.version,
+  at: r.at.toISOString(),
+  source: r.source,
+  stage: r.stage,
+  proposalId: r.proposal_id,
+  summary: r.summary,
+  diff: r.diff,
+  by: r.created_by,
+});
+
+/**
+ * Logs `$5…$10` (source, stage, proposal id, summary, diff, by) for the row the CTE `from` wrote,
+ * in the same statement; nothing when `$5` is null or the write matched no row.
+ */
+const LOG_CHANGE = (from: string) => `INSERT INTO template_changes
+    (template_id, version, source, stage, proposal_id, summary, diff, created_by)
+  SELECT ${from}.id, ${from}.version, $5, $6, $7::uuid, $8, $9::jsonb, $10
+    FROM ${from} WHERE $5::text IS NOT NULL`;
+
+const changeParams = (c: TemplateChangeInput | undefined) => [
+  c?.source ?? null,
+  c?.stage ?? null,
+  c?.proposalId ?? null,
+  c?.summary ?? null,
+  JSON.stringify(c?.diff ?? []),
+  c?.by ?? null,
+];
 
 /** Postgres-backed (migration 0003; published rows are also protected by triggers). */
 export class PgTemplateRepo implements TemplateRepo {
@@ -164,23 +266,61 @@ export class PgTemplateRepo implements TemplateRepo {
     version: number,
     definition: Record<string, unknown>,
     status: TemplateStatus,
+    change?: TemplateChangeInput,
   ) {
     const record = await this.one(
-      `INSERT INTO templates (id, version, status, definition, published_at)
-       VALUES ($1, $2, $3, $4, CASE WHEN $3 = 'published' THEN now() END)
-       ON CONFLICT (id, version) DO NOTHING RETURNING *`,
-      [id, version, status, JSON.stringify(definition)],
+      `WITH t AS (
+         INSERT INTO templates (id, version, status, definition, published_at)
+         VALUES ($1, $2, $3, $4, CASE WHEN $3 = 'published' THEN now() END)
+         ON CONFLICT (id, version) DO NOTHING RETURNING *),
+       c AS (${LOG_CHANGE('t')})
+       SELECT * FROM t`,
+      [
+        id,
+        version,
+        status,
+        JSON.stringify(definition),
+        ...changeParams(status === 'draft' ? change : undefined),
+      ],
     );
     if (!record) throw new TemplateConflictError(`${id} v${version} already exists`);
     return record;
   }
 
-  async updateDraft(id: string, version: number, definition: Record<string, unknown>) {
+  async updateDraft(
+    id: string,
+    version: number,
+    definition: Record<string, unknown>,
+    write: DraftWrite = {},
+  ) {
+    // updated_at keeps microseconds; the ISO strings the API hands out keep milliseconds
+    // (node-postgres truncates), so the base is compared truncated to the millisecond.
     return this.one(
-      `UPDATE templates SET definition = $3, updated_at = now()
-        WHERE id = $1 AND version = $2 AND status = 'draft' RETURNING *`,
-      [id, version, JSON.stringify(definition)],
+      `WITH u AS (
+         UPDATE templates SET definition = $3, updated_at = now()
+          WHERE id = $1 AND version = $2 AND status = 'draft'
+            AND ($4::timestamptz IS NULL
+                 OR date_trunc('milliseconds', updated_at) = $4::timestamptz)
+         RETURNING *),
+       c AS (${LOG_CHANGE('u')})
+       SELECT * FROM u`,
+      [
+        id,
+        version,
+        JSON.stringify(definition),
+        write.expectedUpdatedAt ?? null,
+        ...changeParams(write.change),
+      ],
     );
+  }
+
+  async listChanges(id: string, version: number) {
+    const { rows } = await this.pool.query<ChangeRow>(
+      `SELECT id, version, at, source, stage, proposal_id, summary, diff, created_by
+         FROM template_changes WHERE template_id = $1 AND version = $2 ORDER BY id DESC`,
+      [id, version],
+    );
+    return rows.map(toChange);
   }
 
   async publish(id: string, version: number) {

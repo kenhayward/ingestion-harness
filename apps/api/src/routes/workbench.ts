@@ -26,6 +26,7 @@ import {
   MAX_SAMPLES,
   JobSummarySchema,
   PreparedTextSchema,
+  TemplateChangeSchema,
   ProjectListPageSchema,
   ProjectListQuerySchema,
   ProjectSummarySchema,
@@ -109,6 +110,7 @@ import {
   type RevisePreview,
   STEP_PROGRESS_EVENT,
   TestRunSchema,
+  type ChangeStage,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { stepProgress } from '../workbench/test-runs.js';
@@ -118,6 +120,7 @@ import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
+import { draftChange, startedChange } from '../templates/changes.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import {
@@ -1218,10 +1221,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (latest === null) {
         if (!name)
           return reply.code(400).send({ error: 'name is required for a new document type' });
-        await templates.create(id, 1, skeleton(id, name), 'draft');
+        await templates.create(
+          id,
+          1,
+          skeleton(id, name),
+          'draft',
+          startedChange('Draft v1 created', req.auth?.label ?? null),
+        );
       } else {
         name = String(latest.definition.name ?? id);
-        if (draft === null) await createNextDraft(templates, id);
+        if (draft === null)
+          await createNextDraft(templates, id, undefined, req.auth?.label ?? null);
       }
       try {
         const project = await workbench.createProject(id, name);
@@ -1796,6 +1806,36 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         ? await workbench.getBrief(params.data.id, params.data.version)
         : null;
       return found ?? reply.code(404).send({ error: 'brief version not found' });
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/draft/changes',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'listDraftChanges',
+        summary: "List the open draft's changes",
+        description: md`
+          The open draft's change log, newest first: every write to its definition with where it
+          came from (\`hand\` saves, applied \`proposal\`s with their \`stage\`, \`restore\`d
+          iterations, the draft's \`started\` entry, \`import\`s), a one-line \`summary\` and up to
+          four \`diff\` chips. Empty without an open draft, and for drafts started before the log
+          existed. The Template tab's _Changes since vN_ panel.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The changes, newest first.', z.array(TemplateChangeSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const { draft } = await versionsOf(templates, req.params.id);
+      return draft === null ? [] : templates.listChanges(req.params.id, draft);
     },
   );
 
@@ -3009,12 +3049,32 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       }
       // Apply first: if the draft was published meanwhile nothing is written and the proposal
       // stays undecided. Re-applying the same changes after a lost race is idempotent.
-      const updated = await templates.updateDraft(
-        projectId,
-        draft,
-        pinned(applyChanges(draftRecord.definition, selected), projectId, draft),
-      );
+      const next = pinned(applyChanges(draftRecord.definition, selected), projectId, draft);
+      const partial =
+        chosen.length < proposed.length
+          ? ` (${chosen.length} of ${proposed.length} proposed changes)`
+          : '';
+      const updated = await templates.updateDraft(projectId, draft, next, {
+        change: draftChange(
+          draftRecord.definition,
+          next,
+          {
+            source: 'proposal',
+            // A change stage: the branch above returned for every other stage.
+            stage: record.stage as ChangeStage,
+            proposalId: pid,
+            by: req.auth?.label ?? null,
+          },
+          partial,
+        ),
+        // A hand save between the read and this write must not be overwritten (or logged twice).
+        expectedUpdatedAt: draftRecord.updatedAt,
+      });
       if (!updated) {
+        const now = await templates.get(projectId, draft);
+        if (now?.status === 'draft') {
+          return reply.code(409).send({ error: 'the draft changed while applying; try again' });
+        }
         return reply.code(409).send({
           error: 'the draft is no longer open; start the next version and re-run the stage',
         });
@@ -3302,12 +3362,26 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           .code(409)
           .send({ error: 'no open draft; start the next version on the Template tab' });
       }
-      const saved = await templates.updateDraft(
-        projectId,
-        draft,
-        pinned(iteration.definition, projectId, draft),
-      );
-      if (!saved) return reply.code(409).send({ error: 'the draft is no longer open' });
+      const next = pinned(iteration.definition, projectId, draft);
+      const current = await templates.get(projectId, draft);
+      const saved = await templates.updateDraft(projectId, draft, next, {
+        change: draftChange(
+          current?.definition ?? {},
+          next,
+          { source: 'restore', stage: null, proposalId: null, by: req.auth?.label ?? null },
+          ` (from the ${iteration.set} evaluation of ${iteration.createdAt.slice(0, 10)})`,
+        ),
+        ...(current ? { expectedUpdatedAt: current.updatedAt } : {}),
+      });
+      if (!saved) {
+        const now = await templates.get(projectId, draft);
+        return reply.code(409).send({
+          error:
+            now?.status === 'draft'
+              ? 'the draft changed while applying; try again'
+              : 'the draft is no longer open',
+        });
+      }
       req.log.info({ projectId, iteration: iteration.id, version: draft }, 'iteration restored');
       return projectView(app, (await workbench.getProject(projectId))!);
     },

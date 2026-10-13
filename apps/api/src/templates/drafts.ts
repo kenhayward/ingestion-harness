@@ -1,3 +1,4 @@
+import { startedChange } from './changes.js';
 import type { TemplateRecord, TemplateRepo } from './repo.js';
 
 /** v1 draft of a new document type, to fill in with the editor. */
@@ -25,6 +26,7 @@ export async function createNextDraft(
   repo: TemplateRepo,
   id: string,
   from?: number,
+  by: string | null = null,
 ): Promise<TemplateRecord | 'not-found' | 'draft-exists'> {
   const versions = (await repo.list()).filter((r) => r.id === id);
   if (!versions.length) return 'not-found';
@@ -32,5 +34,12 @@ export async function createNextDraft(
   const source = from ? versions.find((v) => v.version === from) : versions.at(-1);
   if (!source) return 'not-found';
   const next = versions.at(-1)!.version + 1;
-  return repo.create(id, next, pinned(source.definition, id, next), 'draft');
+  // No draft exists here, so the source is a published version.
+  return repo.create(
+    id,
+    next,
+    pinned(source.definition, id, next),
+    'draft',
+    startedChange(`Draft v${next} created from published v${source.version}`, by),
+  );
 }

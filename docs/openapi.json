@@ -7641,7 +7641,7 @@
         "tags": [
           "Templates"
         ],
-        "description": "Replaces a draft's definition. Invalid definitions are saved too, so work in progress\nis never lost; `issues` says what still needs fixing before it can be published.\nThe definition's `id` and `version` are pinned to the URL's. Published versions\nare immutable.",
+        "description": "Replaces a draft's definition. Invalid definitions are saved too, so work in progress\nis never lost; `issues` says what still needs fixing before it can be published.\nThe definition's `id` and `version` are pinned to the URL's. Published versions\nare immutable. Each save that changes the definition is recorded in the draft's change\nlog (`GET /api/workbench/projects/{id}/draft/changes`).",
         "requestBody": {
           "required": true,
           "content": {
@@ -7653,6 +7653,11 @@
                     "type": "object",
                     "additionalProperties": {},
                     "description": "The whole definition, as authored."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The `updatedAt` the edit started from. When the draft was written since (a proposal applied, another tab saved), nothing is saved and the answer is a 409."
                   }
                 },
                 "required": [
@@ -7855,7 +7860,7 @@
             }
           },
           "409": {
-            "description": "`{id} v{version} is published; start a new draft`.",
+            "description": "`{id} v{version} is published; start a new draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7881,7 +7886,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`{id} v{version} is published; start a new draft`."
+                  "description": "`{id} v{version} is published; start a new draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt`."
                 }
               }
             }
@@ -15551,6 +15556,171 @@
                   ],
                   "additionalProperties": true,
                   "description": "`project not found` or `brief version not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/draft/changes": {
+      "get": {
+        "operationId": "listDraftChanges",
+        "summary": "List the open draft's changes",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "The open draft's change log, newest first: every write to its definition with where it\ncame from (`hand` saves, applied `proposal`s with their `stage`, `restore`d\niterations, the draft's `started` entry, `import`s), a one-line `summary` and up to\nfour `diff` chips. Empty without an open draft, and for drafts started before the log\nexisted. The Template tab's _Changes since vN_ panel.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The changes, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string",
+                        "enum": [
+                          "hand",
+                          "proposal",
+                          "restore",
+                          "started",
+                          "import"
+                        ]
+                      },
+                      "stage": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "outputs",
+                              "sections",
+                              "steps",
+                              "revise"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The drafting stage of an applied proposal; null for every other source."
+                      },
+                      "proposalId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "description": "One line, e.g. `Added field due_date`."
+                      },
+                      "diff": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Up to 4 short chips, e.g. `+ due_date`, `^A → ^B`."
+                      },
+                      "by": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "The signed-in token label; null without access control."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "at",
+                      "source",
+                      "stage",
+                      "proposalId",
+                      "summary",
+                      "diff",
+                      "by"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The changes, newest first."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
                 }
               }
             }

@@ -27,6 +27,7 @@ import {
   type WorkbenchProject,
 } from '@ih/shared';
 import type { JobEventRecord, ProjectJob } from '../repositories/types.js';
+import { startedChange } from '../templates/changes.js';
 import { pinned } from '../templates/drafts.js';
 import { TemplateConflictError } from '../templates/repo.js';
 import {
@@ -241,7 +242,13 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
 
     // Only now write: the draft, the project, the brief, then the samples.
     try {
-      await templates.create(projectId, 1, pinned(definition, projectId, 1), 'draft');
+      await templates.create(
+        projectId,
+        1,
+        pinned(definition, projectId, 1),
+        'draft',
+        startedChange('Imported from a bundle', req.auth?.label ?? null, 'import'),
+      );
     } catch (err) {
       // Another import or project creation took the id after the check above.
       if (err instanceof TemplateConflictError) return answer(409, taken);

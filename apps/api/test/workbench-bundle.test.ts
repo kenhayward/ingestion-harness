@@ -537,6 +537,9 @@ describe('import', () => {
     expect(job).toMatchObject({ task: 'prepare', status: 'queued' });
     const doc = repo.documents.get(samples[0]!.documentId)!;
     expect(await store.get(doc.bucket, doc.objectKey)).toEqual(pdfBytes(1));
+    expect((await templates.listChanges('memo', 1)).map((c) => [c.source, c.summary])).toEqual([
+      ['import', 'Imported from a bundle'],
+    ]);
   });
 
   it('takes the id and name fields over the manifest', async () => {

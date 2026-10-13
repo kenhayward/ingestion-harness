@@ -595,3 +595,28 @@ describe('http api: runs with a model choice (phase 4d)', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/queue/summary');
   });
 });
+
+describe('http api: template drafts (TP1)', () => {
+  it('lists the draft changes and saves with the base it started from', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, []));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listDraftChanges('letter');
+    await api.saveTemplate('letter', 2, { name: 'A' }, '2026-10-13T10:00:00.000Z');
+    await api.saveTemplate('letter', 2, { name: 'A' });
+    await api.saveTemplate('letter', 2, { name: 'A' }, '');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/workbench/projects/letter/draft/changes',
+      '/api/templates/letter/versions/2',
+      '/api/templates/letter/versions/2',
+      '/api/templates/letter/versions/2',
+    ]);
+    expect(fetchMock.mock.calls.slice(1).map(([, init]) => JSON.parse(String(init?.body)))).toEqual(
+      [
+        { definition: { name: 'A' }, baseUpdatedAt: '2026-10-13T10:00:00.000Z' },
+        { definition: { name: 'A' } },
+        { definition: { name: 'A' } },
+      ],
+    );
+  });
+});

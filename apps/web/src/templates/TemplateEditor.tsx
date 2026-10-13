@@ -1,15 +1,29 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
-import { pickedChoice, VALUE_TYPES, type JobSummary, type ModelChoice } from '@ih/shared';
-import type { Api, TemplateRecordView } from '../api/client.js';
+import {
+  describeDefinitionChange,
+  pickedChoice,
+  VALUE_TYPES,
+  type DataPolicy,
+  type JobSummary,
+  type OverviewItem,
+} from '@ih/shared';
+import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
-import { Segmented } from '../ui/Segmented.js';
+import { TabHeader } from '../workbench/TabHeader.js';
 import { EditorHeader } from './EditorHeader.js';
-import { tabCounts } from './editor-derive.js';
+import { ChecksPanel } from './ChecksPanel.js';
+import { DraftChangesPanel } from './DraftChangesPanel.js';
+import { EmbeddedHeader } from './EmbeddedHeader.js';
+import { attentionTabs, issueText, templateChecks, type SubTab } from './checks.js';
+import { publishBlocker, tabCounts, unsavedText } from './editor-derive.js';
+import { PipelineEditor } from './PipelineEditor.js';
+import type { StepMetric } from '../workbench/steps.js';
 import { StepCard } from './StepCard.js';
 import { TestRail } from './TestRail.js';
 import { QualityPanel } from './QualityPanel.js';
+import { UnsavedBar } from './UnsavedBar.js';
 import {
   checkPathOptions,
   getIn,
@@ -20,11 +34,14 @@ import {
   type Definition,
 } from './model.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
+import { Area, opt, Select, Text } from './fields.js';
+import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
 
 type Path = (string | number)[];
 type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
 
-const TABS: [Tab, string][] = [
+/** The Templates page's order (UI handoff §5). */
+const STANDALONE_TABS: [Tab, string][] = [
   ['general', 'General'],
   ['sections', 'Sections'],
   ['pipeline', 'Pipeline'],
@@ -33,20 +50,30 @@ const TABS: [Tab, string][] = [
   ['quality', 'Quality'],
 ];
 
-const FILLS = [
-  { value: 'fields', label: 'Fields' },
-  { value: 'table', label: 'A table' },
-] as const;
+/** The Template tab's order (handoff §10): Evaluate replaces Quality. */
+const EMBEDDED_TABS: [Tab, string][] = [
+  ['general', 'General'],
+  ['sections', 'Sections'],
+  ['outputs', 'Outputs'],
+  ['pipeline', 'Pipeline'],
+  ['yaml', 'YAML'],
+];
 
-/** Empty text means "not set": the key is dropped rather than stored as "". */
-const opt = (value: string): string | undefined => (value.trim() === '' ? undefined : value);
-const intList = (text: string): number[] =>
-  text
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n > 0);
-const optInt = (text: string): number | undefined =>
-  text.trim() === '' ? undefined : Math.trunc(Number(text));
+/** Set when hosted by the Workbench's Template tab (handoff §10). */
+export interface EmbeddedEditor {
+  /** The draft was published, deleted or a new one started: reload the project. */
+  onChanged: () => void;
+  /** Saved, or a test run queued: stage states may have moved (reload the page overview). */
+  onSaved?: () => void;
+  /** The project's data policy, for the Try on model picker (default: local). */
+  dataPolicy?: DataPolicy;
+  /** The page overview's items (null while unknown): stale stages for Checks. */
+  stages?: readonly OverviewItem[] | null;
+  /** The overview's Template item: the tab header's status line. */
+  item?: OverviewItem | null;
+  /** The latest published version: "Changes since vN" and Full diff. */
+  published?: number | null;
+}
 
 export function TemplateEditor({
   api,
@@ -63,17 +90,18 @@ export function TemplateEditor({
   /** The polled job list: the Test this draft rail shows recent test runs from it. */
   jobs?: readonly JobSummary[];
   /**
-   * Set when hosted by the workbench: the Runs tab replaces the single-sample test run (no Test
-   * this draft rail), publish goes through the Workbench (`api.publish`: no references or
-   * evaluation needed, and the publication is logged), and publish / new draft / delete draft
-   * report back instead of navigating to Document types.
+   * Set when hosted by the Workbench's Template tab: the tab header (Try on, Export, More,
+   * Publish vN) replaces the editor header, publish goes through the Workbench (`api.publish`: no
+   * references or evaluation needed, and the publication is logged), the sub-tabs drop Quality,
+   * edits show the unsaved bar, and publish / new draft / delete draft report back instead of
+   * navigating to Document types.
    */
-  embedded?: { onChanged: () => void };
+  embedded?: EmbeddedEditor;
 }) {
   const [view, setView] = useState<TemplateRecordView | null>(null);
   const [def, setDef] = useState<Definition>({});
   const [saved, setSaved] = useState('');
-  const [tab, setTab] = useState<Tab>('general');
+  const [tab, setTab] = useState<Tab>(embedded ? 'pipeline' : 'general');
   const [outputsTab, setOutputsTab] = useState<'fields' | 'tables'>('fields');
   /** The table configured below the Tables list (clamped to the list). */
   const [tableIndex, setTableIndex] = useState(0);
@@ -88,10 +116,22 @@ export function TemplateEditor({
   const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
+  /** A save refused with 409 (written elsewhere meanwhile, or published): offer a reload. */
+  const [conflict, setConflict] = useState(false);
+  /** Counts draft writes by this editor (save, reload), so the change log reloads after each. */
+  const [saves, setSaves] = useState(0);
+  /** A save is in flight: a second one would carry the same base and be refused as a conflict. */
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const savedDef = useMemo<Definition>(
+    () => (saved ? (JSON.parse(saved) as Definition) : {}),
+    [saved],
+  );
 
   const accept = (v: TemplateRecordView) => {
     setView(v);
     setDef(v.record.definition);
+    setReplaced((r) => r + 1);
     setSaved(JSON.stringify(v.record.definition));
   };
 
@@ -103,10 +143,40 @@ export function TemplateEditor({
     );
   }, [api, templateId, version]);
 
+  /** The open step on the Template tab's Pipeline (clamped to the list when rendered). */
+  const [selectedStep, setSelectedStep] = useState(0);
+  /** Bumped when the draft is replaced wholesale, so open step forms drop their local text. */
+  const [replaced, setReplaced] = useState(0);
+  const [metrics, setMetrics] = useState<ReadonlyMap<string, StepMetric>>(new Map());
+  // `embedded` is a new object on every render: depend on whether it is set.
+  const isEmbedded = embedded !== undefined;
+  useEffect(() => {
+    if (!isEmbedded) return;
+    let live = true;
+    api.getMetrics(templateId).then(
+      (m) => {
+        if (live) setMetrics(new Map(m.steps.map((s) => [s.stepId, s])));
+      },
+      () => {}, // figures are optional: the form works without them
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, templateId, isEmbedded]);
+
   const issues = useMemo(() => validateDefinition(def), [def]);
 
-  if (error && !view) return <p role="alert">{error}</p>;
-  if (!view) return <p>Loading…</p>;
+  if (!view) {
+    const body = error ? <p role="alert">{error}</p> : <p>Loading…</p>;
+    return embedded ? (
+      <section className="template-editor template-embedded">
+        <TabHeader title={`Template · draft v${version}`} item={embedded.item ?? null} />
+        {body}
+      </section>
+    ) : (
+      body
+    );
+  }
 
   const { record } = view;
   const editable = record.status === 'draft';
@@ -122,11 +192,40 @@ export function TemplateEditor({
     }
   };
 
-  const save = () =>
-    act(async () => {
-      accept(await api.saveTemplate(templateId, version, def));
+  const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setConflict(false);
+    try {
+      accept(await api.saveTemplate(templateId, version, def, record.updatedAt || undefined));
       setMessage('Draft saved.');
+      setSaves((n) => n + 1);
+      embedded?.onSaved?.();
+    } catch (err) {
+      setError((err as Error).message);
+      setConflict(err instanceof ApiError && err.status === 409);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+  const reload = () =>
+    act(async () => {
+      accept(await api.getTemplate(templateId, version));
+      setConflict(false);
+      setSaves((n) => n + 1);
+      setMessage('Reloaded the saved draft.');
     });
+  const discard = () => {
+    setDef(savedDef);
+    setReplaced((r) => r + 1);
+    if (tab === 'yaml') setYamlText(toYaml(savedDef, { lineWidth: 100 }));
+    setMessage(null);
+    setError(null);
+    setConflict(false);
+  };
   const publish = () =>
     act(async () => {
       if (embedded) {
@@ -159,6 +258,7 @@ export function TemplateEditor({
       const parsed = parseYaml(yamlText);
       if (!parsed || typeof parsed !== 'object') throw new Error('YAML must be a mapping');
       setDef({ ...(parsed as Definition), id: templateId, version });
+      setReplaced((r) => r + 1);
       setMessage('YAML applied (not saved yet).');
     } catch (err) {
       setError(`YAML: ${(err as Error).message}`);
@@ -171,34 +271,86 @@ export function TemplateEditor({
   const pipeline: Definition[] = def.pipeline ?? [];
   const paths = checkPathOptions(def);
   const counts = tabCounts(def);
+  const tabs = embedded ? EMBEDDED_TABS : STANDALONE_TABS;
   const tabCount = (t: Tab): string | null =>
     t === 'sections'
       ? String(counts.sections)
       : t === 'outputs'
-        ? `${counts.fields} · ${counts.tables}`
+        ? embedded
+          ? String(counts.fields + counts.tables)
+          : `${counts.fields} · ${counts.tables}`
         : t === 'pipeline'
           ? String(counts.steps)
           : null;
+  const checks = embedded
+    ? templateChecks({
+        projectId: templateId,
+        definition: def,
+        issues,
+        serverIssues: dirty ? [] : view.issues.map(issueText),
+        stages: embedded.stages ?? null,
+      })
+    : [];
+  const needs = attentionTabs(checks);
+  /** The Template tab ends each part with the stage that drafts it (handoff §10). */
+  const stageLink = (stage: string, text: string) =>
+    embedded ? (
+      <p className="muted subtab-foot">
+        <a href={`#/workbench/${templateId}/${stage}`}>{text}</a>
+      </p>
+    ) : null;
 
   return (
-    <section className="template-editor">
-      <EditorHeader
-        name={String(def.name ?? templateId)}
-        id={templateId}
-        version={version}
-        status={record.status}
-        publishedVersion={publishedVersion}
-        dirty={dirty}
-        issues={issues.length}
-        exportUrl={api.exportUrl(templateId, version)}
-        onSave={() => void save()}
-        onPublish={() => void publish()}
-        onNewDraft={() => void newDraft()}
-        onDeleteDraft={() => void removeDraft()}
-      />
+    <section className={embedded ? 'template-editor template-embedded' : 'template-editor'}>
+      {embedded ? (
+        <EmbeddedHeader
+          api={api}
+          templateId={templateId}
+          version={version}
+          status={record.status}
+          dirty={dirty}
+          dataPolicy={embedded.dataPolicy ?? 'local'}
+          issues={issues.length}
+          item={embedded.item ?? null}
+          exportUrl={api.exportUrl(templateId, version)}
+          publishBlocker={publishBlocker(dirty, issues.length)}
+          onQueued={() => embedded.onSaved?.()}
+          onPublish={() => void publish()}
+          onNewDraft={() => void newDraft()}
+          onDeleteDraft={() => void removeDraft()}
+        />
+      ) : (
+        <EditorHeader
+          name={String(def.name ?? templateId)}
+          id={templateId}
+          version={version}
+          status={record.status}
+          publishedVersion={publishedVersion}
+          dirty={dirty}
+          issues={issues.length}
+          exportUrl={api.exportUrl(templateId, version)}
+          saving={saving}
+          onSave={() => void save()}
+          onPublish={() => void publish()}
+          onNewDraft={() => void newDraft()}
+          onDeleteDraft={() => void removeDraft()}
+        />
+      )}
       {message && <p role="status">{message}</p>}
-      {error && <p role="alert">{error}</p>}
-      {issues.length > 0 && (
+      {error && (
+        <p role="alert">
+          {error}
+          {conflict && (
+            <>
+              {' '}
+              <button type="button" onClick={() => void reload()}>
+                Reload the draft
+              </button>
+            </>
+          )}
+        </p>
+      )}
+      {!embedded && issues.length > 0 && (
         <ul aria-label="Validation issues" className="issues">
           {issues.map((i) => (
             <li key={i}>{i}</li>
@@ -209,7 +361,7 @@ export function TemplateEditor({
       <div className="editor-layout">
         <div className="editor-main">
           <div role="tablist" aria-label="Template sections">
-            {TABS.map(([id, label]) => (
+            {tabs.map(([id, label]) => (
               <button key={id} role="tab" aria-selected={tab === id} onClick={() => openTab(id)}>
                 {label}
                 {tabCount(id) && (
@@ -218,127 +370,139 @@ export function TemplateEditor({
                     <span className="tab-count">{tabCount(id)}</span>
                   </>
                 )}
+                {needs.has(id as SubTab) && (
+                  <>
+                    <span className="tab-dot" aria-hidden="true" />
+                    <span className="visually-hidden"> (needs attention)</span>
+                  </>
+                )}
               </button>
             ))}
           </div>
 
-          {tab === 'quality' && (
+          {tab === 'quality' && !embedded && (
             <QualityPanel api={api} templateId={templateId} version={version} />
           )}
 
           <fieldset disabled={!editable} className="editor-body">
             {tab === 'general' && (
-              <div className="form-rows">
-                <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
-                <div className="model-row">
-                  <span>Default model</span>
-                  <ModelPicker
-                    label="Default model"
-                    choices={models}
-                    value={typeModel}
-                    emptyLabel={`Default choice${defaultLabel(models)}`}
-                    onChange={(id) => update(['model'], id || undefined)}
+              <>
+                <div className="form-rows">
+                  <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
+                  <div className="model-row">
+                    <span>Default model</span>
+                    <ModelPicker
+                      label="Default model"
+                      choices={models}
+                      value={typeModel}
+                      emptyLabel={`Default choice${defaultLabel(models)}`}
+                      onChange={(id) => update(['model'], id || undefined)}
+                    />
+                  </div>
+                  <Area
+                    label="Description"
+                    rows={3}
+                    value={def.description}
+                    onChange={(v) => update(['description'], opt(v))}
+                  />
+                  <Area
+                    label="Preamble"
+                    rows={14}
+                    hint="Domain guidance placed at the top of every prompt."
+                    value={def.preamble}
+                    onChange={(v) => update(['preamble'], opt(v))}
+                  />
+                  <Select
+                    label="Review"
+                    value={getIn(def, ['review', 'required']) ?? 'on_warnings'}
+                    options={['on_warnings', 'always', 'never']}
+                    onChange={(v) => update(['review', 'required'], v)}
+                  />
+                  <Select
+                    label="OCR"
+                    value={getIn(def, ['document', 'ocr']) ?? 'auto'}
+                    options={['auto', 'always', 'never']}
+                    onChange={(v) => update(['document', 'ocr'], v)}
+                  />
+                  <Select
+                    label="Date order"
+                    value={getIn(def, ['document', 'dateOrder']) ?? 'DMY'}
+                    options={['DMY', 'MDY']}
+                    onChange={(v) => update(['document', 'dateOrder'], v)}
+                  />
+                  <label>
+                    Page markers
+                    <input
+                      type="checkbox"
+                      checked={getIn(def, ['document', 'pageMarkers']) ?? true}
+                      onChange={(e) => update(['document', 'pageMarkers'], e.target.checked)}
+                    />
+                  </label>
+                  <Text
+                    label="Copy anchor"
+                    hint="Regex marking the start of each copy in multi-copy documents (keeps one copy). Pages of a Word document are those of its converted PDF."
+                    value={getIn(def, ['document', 'copies', 'anchor'])}
+                    onChange={(v) =>
+                      update(
+                        ['document', 'copies'],
+                        opt(v)
+                          ? {
+                              select: 'last',
+                              ...(getIn(def, ['document', 'copies']) ?? {}),
+                              anchor: v,
+                            }
+                          : undefined,
+                      )
+                    }
                   />
                 </div>
-                <Area
-                  label="Description"
-                  rows={3}
-                  value={def.description}
-                  onChange={(v) => update(['description'], opt(v))}
-                />
-                <Area
-                  label="Preamble"
-                  rows={14}
-                  hint="Domain guidance placed at the top of every prompt."
-                  value={def.preamble}
-                  onChange={(v) => update(['preamble'], opt(v))}
-                />
-                <Select
-                  label="Review"
-                  value={getIn(def, ['review', 'required']) ?? 'on_warnings'}
-                  options={['on_warnings', 'always', 'never']}
-                  onChange={(v) => update(['review', 'required'], v)}
-                />
-                <Select
-                  label="OCR"
-                  value={getIn(def, ['document', 'ocr']) ?? 'auto'}
-                  options={['auto', 'always', 'never']}
-                  onChange={(v) => update(['document', 'ocr'], v)}
-                />
-                <Select
-                  label="Date order"
-                  value={getIn(def, ['document', 'dateOrder']) ?? 'DMY'}
-                  options={['DMY', 'MDY']}
-                  onChange={(v) => update(['document', 'dateOrder'], v)}
-                />
-                <label>
-                  Page markers
-                  <input
-                    type="checkbox"
-                    checked={getIn(def, ['document', 'pageMarkers']) ?? true}
-                    onChange={(e) => update(['document', 'pageMarkers'], e.target.checked)}
-                  />
-                </label>
-                <Text
-                  label="Copy anchor"
-                  hint="Regex marking the start of each copy in multi-copy documents (keeps one copy). Pages of a Word document are those of its converted PDF."
-                  value={getIn(def, ['document', 'copies', 'anchor'])}
-                  onChange={(v) =>
-                    update(
-                      ['document', 'copies'],
-                      opt(v)
-                        ? {
-                            select: 'last',
-                            ...(getIn(def, ['document', 'copies']) ?? {}),
-                            anchor: v,
-                          }
-                        : undefined,
-                    )
-                  }
-                />
-              </div>
+                {stageLink('revise', 'Revise proposes a new preamble from your feedback')}
+              </>
             )}
 
             {tab === 'sections' && (
-              <RowTable
-                label="Sections"
-                noun="section"
-                columns={[
-                  ['Section ID', '16rem'],
-                  ['Anchor', undefined],
-                  ['Required', '6rem'],
-                ]}
-                items={sections}
-                onChange={(items) => update(['document', 'sections'], items)}
-                create={() => ({ id: '', anchor: '' })}
-                cells={(s, i) => [
-                  <Text
-                    key="id"
-                    bare
-                    label={`Section ${i + 1} id`}
-                    value={s.id}
-                    onChange={(v) => update(['document', 'sections', i, 'id'], v)}
-                  />,
-                  <Text
-                    key="anchor"
-                    bare
-                    className="code"
-                    label={`Section ${i + 1} anchor`}
-                    hint="Multiline regex where the section starts"
-                    value={getIn(s, ['anchor'])}
-                    onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
-                  />,
-                  <input
-                    key="required"
-                    type="checkbox"
-                    aria-label={`Section ${i + 1} required`}
-                    checked={getIn(s, ['required']) ?? true}
-                    onChange={(e) =>
-                      update(['document', 'sections', i, 'required'], e.target.checked)
-                    }
-                  />,
-                ]}
-              />
+              <>
+                <RowTable
+                  label="Sections"
+                  noun="section"
+                  columns={[
+                    ['Section ID', '16rem'],
+                    ['Anchor', undefined],
+                    ['Required', '6rem'],
+                  ]}
+                  items={sections}
+                  onChange={(items) => update(['document', 'sections'], items)}
+                  create={() => ({ id: '', anchor: '' })}
+                  cells={(s, i) => [
+                    <Text
+                      key="id"
+                      bare
+                      label={`Section ${i + 1} id`}
+                      value={s.id}
+                      onChange={(v) => update(['document', 'sections', i, 'id'], v)}
+                    />,
+                    <Text
+                      key="anchor"
+                      bare
+                      className="code"
+                      label={`Section ${i + 1} anchor`}
+                      hint="Multiline regex where the section starts"
+                      value={getIn(s, ['anchor'])}
+                      onChange={(v) => update(['document', 'sections', i, 'anchor'], v)}
+                    />,
+                    <input
+                      key="required"
+                      type="checkbox"
+                      aria-label={`Section ${i + 1} required`}
+                      checked={getIn(s, ['required']) ?? true}
+                      onChange={(e) =>
+                        update(['document', 'sections', i, 'required'], e.target.checked)
+                      }
+                    />,
+                  ]}
+                />
+                {stageLink('sections', 'Ask the model in Sections')}
+              </>
             )}
 
             {tab === 'outputs' && (
@@ -406,6 +570,7 @@ export function TemplateEditor({
                     )}
                   />
                 )}
+                {stageLink('outputs', 'Ask the model in Outputs')}
               </>
             )}
 
@@ -424,7 +589,31 @@ export function TemplateEditor({
             )}
           </fieldset>
           {/* Outside the disabled fieldset: a published version's steps still open (read-only). */}
-          {tab === 'pipeline' && (
+          {tab === 'pipeline' && embedded && (
+            <PipelineEditor
+              pipeline={pipeline}
+              // -1 only when there are no steps (removing the last one leaves -1 behind).
+              selected={
+                pipeline.length === 0
+                  ? -1
+                  : Math.min(Math.max(selectedStep, 0), pipeline.length - 1)
+              }
+              onSelect={setSelectedStep}
+              onChange={(next) => update(['pipeline'], next)}
+              readOnly={!editable}
+              definition={def}
+              models={models}
+              typeModelLabel={
+                typeModel
+                  ? `Document type's model (${modelName(typeModel)})`
+                  : `Default choice${defaultLabel(models)}`
+              }
+              paths={paths}
+              metrics={metrics}
+              resetKey={replaced}
+            />
+          )}
+          {tab === 'pipeline' && !embedded && (
             <div className="pipeline">
               {pipeline.map((step, i) => (
                 <StepCard
@@ -506,6 +695,7 @@ export function TemplateEditor({
               </button>
             </div>
           )}
+          {tab === 'pipeline' && stageLink('steps', 'Ask the model in Steps')}
         </div>
         {!embedded && (
           <TestRail
@@ -516,212 +706,31 @@ export function TemplateEditor({
             typeModel={typeModel ? { model: typeModel } : {}}
           />
         )}
-      </div>
-    </section>
-  );
-}
-
-/** ` (Main Production Model)`: the default choice's label, when there is one. */
-const defaultLabel = (models: readonly ModelChoice[]) => {
-  const choice = models.find((m) => m.isDefault);
-  return choice ? ` (${choice.label})` : '';
-};
-
-function ExtractStep({
-  step,
-  fields,
-  tables,
-  sections,
-  models,
-  typeModelLabel,
-  set,
-  replace,
-}: {
-  step: Definition;
-  fields: string[];
-  tables: string[];
-  sections: string[];
-  models: readonly ModelChoice[];
-  /** The empty option: what a step naming no model inherits. */
-  typeModelLabel: string;
-  set: (key: string, value: unknown) => void;
-  replace: (step: Definition) => void;
-}) {
-  const fillsTable = step.table !== undefined;
-  const toggle = (key: 'fields' | 'sections', id: string, on: boolean) => {
-    const current: string[] = step[key] ?? [];
-    set(key, on ? [...current, id] : current.filter((x) => x !== id));
-  };
-  return (
-    <div className="extract-step">
-      <div className="grid step-settings">
-        <Text label="Step id" value={step.id} onChange={(v) => set('id', v)} />
-        <div className="field">
-          <span className="field-label">Fills</span>
-          <Segmented
-            label="Fills"
-            options={FILLS}
-            value={fillsTable ? 'table' : 'fields'}
-            onChange={(v) => {
-              if (v === (fillsTable ? 'table' : 'fields')) return;
-              if (v === 'table') {
-                replace({ ...step, fields: [], table: tables[0] ?? '' });
-              } else {
-                const rest = { ...step };
-                delete rest.table;
-                delete rest.chunkPages;
-                replace({ ...rest, fields: [] });
-              }
-            }}
-          />
-        </div>
-        {fillsTable ? (
-          <>
-            <Select
-              label="Table"
-              value={step.table}
-              options={tables}
-              onChange={(v) => set('table', v)}
-            />
-            <Text
-              label="Chunk pages"
-              hint="Run once per N pages (large tables)"
-              value={step.chunkPages === undefined ? '' : String(step.chunkPages)}
-              onChange={(v) => set('chunkPages', optInt(v))}
-            />
-          </>
-        ) : (
-          <Checklist
-            label="Fields to fill"
-            options={fields}
-            selected={step.fields ?? []}
-            onToggle={(id, on) => toggle('fields', id, on)}
-          />
+        {embedded && (
+          <aside className="template-side" aria-label="Checks and changes">
+            <ChecksPanel checks={checks} onOpenSubTab={(t) => openTab(t)} />
+            {record.status === 'draft' && (
+              <DraftChangesPanel
+                api={api}
+                projectId={templateId}
+                version={version}
+                published={embedded.published ?? null}
+                refreshKey={saves}
+              />
+            )}
+          </aside>
         )}
-        <Checklist
-          label="Sections"
-          options={sections}
-          selected={step.sections ?? []}
-          onToggle={(id, on) => toggle('sections', id, on)}
-        />
-        <div className="field">
-          <span className="field-label">Model</span>
-          <ModelPicker
-            label="Model"
-            choices={models}
-            // No model, or `default`: the default choice, whichever it is when the step runs.
-            value={step.model === 'default' ? '' : (step.model ?? '')}
-            emptyLabel={typeModelLabel}
-            onChange={(id) => set('model', id || undefined)}
-          />
-        </div>
-        <Text
-          label="Page images"
-          hint="1-based pages sent as images, e.g. 1"
-          value={(step.pageImages ?? []).join(', ')}
-          onChange={(v) => set('pageImages', intList(v).length ? intList(v) : undefined)}
-        />
-        <Text
-          label="Max tokens"
-          value={step.maxTokens === undefined ? '' : String(step.maxTokens)}
-          onChange={(v) => set('maxTokens', optInt(v))}
-        />
-        <Text
-          label="Max attempts"
-          value={step.maxAttempts === undefined ? '' : String(step.maxAttempts)}
-          onChange={(v) => set('maxAttempts', optInt(v))}
-        />
       </div>
-      <div className="step-prompts">
-        <ContextEditor
-          value={step.context ?? {}}
-          onChange={(context) => set('context', Object.keys(context).length ? context : undefined)}
+      {embedded && editable && dirty && (
+        <UnsavedBar
+          text={unsavedText(describeDefinitionChange(savedDef, def).subjects)}
+          version={version}
+          onDiscard={discard}
+          saving={saving}
+          onSave={() => void save()}
         />
-        <Area
-          label="Instructions"
-          value={step.instructions}
-          onChange={(v) => set('instructions', opt(v))}
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * Values from earlier steps for the prompt, one per line: `name = field` or `name = table.column`.
- * Keeps its own text so half-typed lines aren't lost; only complete lines are stored.
- */
-function ContextEditor({
-  value,
-  onChange,
-}: {
-  value: Record<string, string>;
-  onChange: (value: Record<string, string>) => void;
-}) {
-  const [text, setText] = useState(() =>
-    Object.entries(value)
-      .map(([name, path]) => `${name} = ${path}`)
-      .join('\n'),
-  );
-  return (
-    <label
-      className="context"
-      title="One per line: name = field or table.column (must be filled by an earlier step)"
-    >
-      Context
-      <textarea
-        rows={2}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          const entries = e.target.value
-            .split('\n')
-            .map((line) => line.split('='))
-            .filter((parts) => parts.length === 2 && parts[0]!.trim() && parts[1]!.trim())
-            .map(([name, path]) => [name!.trim(), path!.trim()] as const);
-          onChange(Object.fromEntries(entries));
-        }}
-      />
-    </label>
-  );
-}
-
-function CheckStep({
-  step,
-  paths,
-  set,
-}: {
-  step: Definition;
-  paths: string[];
-  set: (key: string, value: unknown) => void;
-}) {
-  return (
-    <div className="grid">
-      <Text label="Check id" value={step.id} onChange={(v) => set('id', v)} />
-      <Select
-        label="Values"
-        value={step.values}
-        options={paths}
-        onChange={(v) => set('values', v)}
-      />
-      <Select
-        label="Reference"
-        value={step.reference}
-        options={paths}
-        onChange={(v) => set('reference', v)}
-      />
-      <Select
-        label="Aliases"
-        value={step.aliases ?? ''}
-        options={['', ...paths]}
-        onChange={(v) => set('aliases', opt(v))}
-      />
-      <Text
-        label="Max distance"
-        value={step.maxDistance === undefined ? '' : String(step.maxDistance)}
-        onChange={(v) => set('maxDistance', optInt(v))}
-      />
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -1026,130 +1035,5 @@ function TableOutputs({
         </section>
       )}
     </div>
-  );
-}
-
-function Checklist({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  options: string[];
-  selected: string[];
-  onToggle: (id: string, on: boolean) => void;
-}) {
-  return (
-    <fieldset className="choice">
-      <legend>{label}</legend>
-      {options.length === 0 && <small>None defined yet.</small>}
-      {options.map((id) => (
-        <label key={id} className="inline">
-          <input
-            type="checkbox"
-            checked={selected.includes(id)}
-            onChange={(e) => onToggle(id, e.target.checked)}
-          />
-          {id}
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
-/** `bare` drops the visible label (table cells under a heading); it stays the accessible name. */
-function Text({
-  label,
-  value,
-  hint,
-  bare,
-  className,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  hint?: string;
-  bare?: boolean;
-  className?: string;
-  onChange: (value: string) => void;
-}) {
-  const input = (
-    <input
-      aria-label={bare ? label : undefined}
-      title={bare ? hint : undefined}
-      className={className}
-      value={value === undefined || value === null ? '' : String(value)}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-  if (bare) return input;
-  return (
-    <label title={hint}>
-      {label}
-      {input}
-    </label>
-  );
-}
-
-function Area({
-  label,
-  value,
-  hint,
-  rows = 4,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  hint?: string;
-  rows?: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label title={hint}>
-      {label}
-      <textarea
-        rows={rows}
-        value={value === undefined || value === null ? '' : String(value)}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  value,
-  options,
-  bare,
-  onChange,
-}: {
-  label: string;
-  value: unknown;
-  options: string[];
-  bare?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const current = value === undefined || value === null ? '' : String(value);
-  const select = (
-    <select
-      aria-label={bare ? label : undefined}
-      value={current}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {!options.includes(current) && <option value={current}>{current || '— choose —'}</option>}
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o || '—'}
-        </option>
-      ))}
-    </select>
-  );
-  if (bare) return select;
-  return (
-    <label>
-      {label}
-      {select}
-    </label>
   );
 }

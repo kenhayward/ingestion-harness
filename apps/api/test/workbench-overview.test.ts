@@ -254,19 +254,42 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     ]);
   });
 
-  it('reads the template figures from the open draft', async () => {
+  it('reads the template figures from the open draft, and the last hand edit from its log', async () => {
     const p = await project();
     const o = await p.overview();
     const template = o.stages.find((s) => s.stage === 'template')!.metrics;
     // `letter`: one pipeline step, one section, one field.
     expect(template[0]).toEqual({ label: 'Steps · sections', value: '1 · 1', at: null });
-    const record = (await p.templates.get('letter', 1))!;
-    expect(template[1]).toEqual({ label: 'Hand edit', value: '—', at: record.updatedAt });
+    // Only the draft's start is logged (the helper wrote the draft directly): no hand edit yet.
+    expect(template[1]).toEqual({ label: 'Hand edit', value: '—', at: null });
+    await p.app.inject({
+      method: 'PUT',
+      url: '/api/templates/letter/versions/1',
+      payload: {
+        definition: { ...(await p.templates.get('letter', 1))!.definition, name: 'Memo' },
+      },
+    });
+    const [hand] = await p.templates.listChanges('letter', 1);
+    expect((await p.metrics('template'))[1]).toEqual({
+      label: 'Hand edit',
+      value: '—',
+      at: hand!.at,
+    });
     expect(await p.metrics('outputs')).toEqual([
       { label: 'Fields · tables', value: '1 · 0', at: null },
       { label: 'Changes applied', value: '—', at: null },
     ]);
     expect((await p.metrics('sections'))[0]).toEqual({ label: 'Sections', value: '1', at: null });
+  });
+
+  it('shows no Hand edit for a published-only project whose live version was never hand-edited', async () => {
+    const p = await project();
+    await p.templates.publish('letter', 1);
+    expect((await p.metrics('template'))[1]).toEqual({
+      label: 'Hand edit',
+      value: '—',
+      at: null,
+    });
   });
 
   it('survives a corrupt drafting body', async () => {

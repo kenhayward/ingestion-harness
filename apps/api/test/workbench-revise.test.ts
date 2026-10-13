@@ -425,6 +425,13 @@ describe('revise', () => {
     });
     // Published between the version check and the write: updateDraft writes nothing.
     vi.spyOn(templates, 'updateDraft').mockResolvedValueOnce(null);
+    const realGet = templates.get.bind(templates);
+    vi.spyOn(templates, 'get')
+      .mockImplementationOnce(realGet)
+      .mockImplementationOnce(async (...args) => {
+        const record = await realGet(...args);
+        return record && { ...record, status: 'published' as const };
+      });
     const res = await decide(id, { decision: 'accepted', changes: [0] });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe(

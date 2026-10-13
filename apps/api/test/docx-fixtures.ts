@@ -3,6 +3,7 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 export const DOCX_MAIN =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml';
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');
 
 /** A paragraph of plain text (WordprocessingML). */
 export const para = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
@@ -26,7 +27,8 @@ export function docx(
     );
   }
   for (const [name, xml] of Object.entries(parts)) files[name] = strToU8(xml);
-  return Buffer.from(zipSync(files));
+  // A fixed entry time: zipSync stamps the current time otherwise, so two calls could differ.
+  return Buffer.from(zipSync(files, { mtime: FIXED_MTIME }));
 }
 
 /** A WordprocessingML part (header, footer, footnotes) holding `inner`. */

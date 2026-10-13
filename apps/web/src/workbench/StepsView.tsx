@@ -13,10 +13,16 @@ import {
 } from './steps.js';
 import { SectionChip } from './tags.js';
 
-function Figures({ metric }: { metric: StepMetric | undefined }) {
+export function StepFigures({
+  metric,
+  here = false,
+}: {
+  metric: StepMetric | undefined;
+  here?: boolean;
+}) {
   const f = stepFigures(metric);
   if (!f) return <p className="muted step-none">No runs yet.</p>;
-  const warning = retryWarning(metric);
+  const warning = retryWarning(metric, here);
   return (
     <>
       <dl className="step-figures">
@@ -93,7 +99,7 @@ function Step({
               )}
             </dd>
           </dl>
-          <Figures metric={metric} />
+          <StepFigures metric={metric} />
         </>
       ) : (
         <>
