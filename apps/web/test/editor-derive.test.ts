@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  changeAtText,
+  changeTag,
   publishBlocker,
   recentTestRuns,
+  stepListSummary,
   stepSummary,
   tabCounts,
+  tryOnBlockedReason,
+  unsavedText,
 } from '../src/templates/editor-derive.js';
 import { job } from './fake-api.js';
 
@@ -75,5 +80,58 @@ describe('recentTestRuns', () => {
       job({ id: `j${i}`, specId: 'letter', test: true, createdAt: at(i) }),
     );
     expect(recentTestRuns(jobs, 'letter').map((j) => j.id)).toEqual(['j7', 'j6', 'j5', 'j4', 'j3']);
+  });
+});
+
+describe('stepListSummary', () => {
+  it.each<[Record<string, unknown>, string]>([
+    [
+      { type: 'extract', id: 'h', fields: ['a', 'b'], sections: ['header', 'supplier'] },
+      'Fills 2 · reads header, supplier',
+    ],
+    [
+      { type: 'extract', id: 'l', table: 'line_items', sections: ['line_items'] },
+      'Fills 1 · reads line_items',
+    ],
+    [{ type: 'extract', id: 'x', fields: [], sections: [] }, 'Fills 0 · reads no sections'],
+    [
+      { type: 'check', id: 'c', values: 'total', reference: 'subtotal' },
+      'Checks total against subtotal',
+    ],
+    [{ type: 'check', id: 'c' }, 'Check not set up yet'],
+  ])('%j', (step, text) => expect(stepListSummary(step)).toBe(text));
+});
+
+describe('unsavedText', () => {
+  it.each<[string[], string]>([
+    [['step totals'], 'Unsaved change to step totals'],
+    [['step totals', 'field a', 'the name'], 'Unsaved changes to step totals and 2 more'],
+    [[], 'Unsaved changes'],
+  ])('%j', (subjects, text) => expect(unsavedText(subjects)).toBe(text));
+});
+
+describe('changeTag', () => {
+  it.each<[Parameters<typeof changeTag>[0], string]>([
+    [{ source: 'hand', stage: null }, 'BY HAND'],
+    [{ source: 'proposal', stage: 'outputs' }, 'OUTPUTS PROPOSAL'],
+    [{ source: 'proposal', stage: 'revise' }, 'REVISE PROPOSAL'],
+    [{ source: 'restore', stage: null }, 'RESTORED'],
+    [{ source: 'started', stage: null }, 'STARTED'],
+    [{ source: 'import', stage: null }, 'IMPORTED'],
+  ])('%j', (c, tag) => expect(changeTag(c)).toBe(tag));
+});
+
+describe('tryOnBlockedReason', () => {
+  it.each<[boolean, number | null, string | null]>([
+    [false, null, 'Loading the dev samples…'],
+    [true, 3, 'Save the draft first: a test run uses the saved draft'],
+    [false, 0, 'No prepared dev samples: add or prepare some on the Samples tab'],
+    [false, 2, null],
+  ])('dirty %s, %s ready', (dirty, n, reason) => expect(tryOnBlockedReason(dirty, n)).toBe(reason));
+});
+
+describe('changeAtText', () => {
+  it('shows the day, month and time', () => {
+    expect(changeAtText('2026-10-12T08:40:00.000Z')).toMatch(/^\d{1,2} Oct,? \d{2}:\d{2}$/);
   });
 });
