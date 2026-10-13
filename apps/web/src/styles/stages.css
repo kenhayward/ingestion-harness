@@ -1559,3 +1559,32 @@ label.inline.list-select {
     flex-wrap: wrap;
   }
 }
+
+/* Drafting bundle panel (handoff §2) */
+.export-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: var(--ih-text-md);
+}
+.export-panel p {
+  font-size: var(--ih-text-sm);
+}
+.export-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.tone-text-ok {
+  color: var(--ih-ok-fg);
+}
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.export-note {
+  margin: 10px 0 0;
+}

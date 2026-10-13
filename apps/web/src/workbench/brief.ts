@@ -3,10 +3,12 @@ import {
   type BriefBody,
   type BriefSection,
   type BriefVersionView,
+  type ExportView,
   type SurveyBody,
 } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { parseCsv } from '../results/csv.js';
+import { formatBytes, plural } from './samples.js';
 
 export type TextSection = Exclude<BriefSection, 'answers'>;
 
@@ -74,4 +76,20 @@ export function compareOf(
   if (version !== current) return [version, current];
   const previous = versions[1]?.version;
   return previous === undefined ? null : [previous, current];
+}
+
+/** The drafting bundle's status line (handoff §2, BR3). */
+export function exportStatusText(e: ExportView): string {
+  if (e.status === 'succeeded') {
+    const parts = [
+      'Export ready',
+      e.briefVersion === null ? 'no brief' : `brief v${e.briefVersion}`,
+    ];
+    if (e.devSamples !== null) parts.push(plural(e.devSamples, 'dev sample'));
+    if (e.bytes !== null) parts.push(formatBytes(e.bytes));
+    return parts.join(' · ');
+  }
+  if (e.status === 'queued' || e.status === 'running') return `Export ${e.status}…`;
+  if (e.status === 'cancelled') return 'Export cancelled';
+  return `Export failed${e.error ? `: ${e.error}` : ''}`;
 }

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { BriefVersionView, SurveyBody } from '@ih/shared';
+import type { BriefVersionView, ExportView, SurveyBody } from '@ih/shared';
 import {
   briefStatus,
   compareOf,
   csvPreview,
+  exportStatusText,
   openQuestions,
   versionChangeText,
 } from '../src/workbench/brief.js';
@@ -95,5 +96,38 @@ describe('compareOf', () => {
   });
   it('has nothing to compare with one version', () => {
     expect(compareOf(1, [view(1)])).toBeNull();
+  });
+});
+
+describe('exportStatusText', () => {
+  const exp = (o: Partial<ExportView>): ExportView => ({
+    jobId: 'j1',
+    status: 'succeeded',
+    error: null,
+    createdAt: 't',
+    updatedAt: 't',
+    briefVersion: 3,
+    devSamples: 6,
+    bytes: 3_250_000,
+    ...o,
+  });
+  it.each<[string, Partial<ExportView>, string]>([
+    ['ready with every fact', {}, 'Export ready · brief v3 · 6 dev samples · 3.1 MB'],
+    [
+      'one sample, no brief, size unknown',
+      { briefVersion: null, devSamples: 1, bytes: null },
+      'Export ready · no brief · 1 dev sample',
+    ],
+    [
+      'facts unreadable',
+      { briefVersion: null, devSamples: null, bytes: null },
+      'Export ready · no brief',
+    ],
+    ['running', { status: 'running' }, 'Export running…'],
+    ['queued', { status: 'queued' }, 'Export queued…'],
+    ['failed', { status: 'needs_review', error: 'boom' }, 'Export failed: boom'],
+    ['cancelled', { status: 'cancelled' }, 'Export cancelled'],
+  ])('%s', (_name, o, text) => {
+    expect(exportStatusText(exp(o))).toBe(text);
   });
 });
