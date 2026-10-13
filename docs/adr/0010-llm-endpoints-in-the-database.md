@@ -91,6 +91,11 @@ rather than by editing files and restarting workers.
    guidance and pages), the Workbench (Run on dev samples, which now takes a choice; Evaluate;
    Compare, its set of choices in the dialog; both reference runs, their model fixed) and
    Document types (test runs; regression, fixed to the template's own models).
+   **Afterwards:** a template's optional `model` (the document type's model choice, set on the
+   General tab) is inherited by each extract step that names none (`stepModel` /
+   `Template.step_model`), so the pickers' "no override" option, "Document type's model", names
+   a real setting; precedence is job override, then step, then document type, then the default
+   choice.
 
 ## Consequences
 - **The database is now the source of truth for models.** The config file and `.env` describe

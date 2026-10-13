@@ -44,6 +44,7 @@ export function JobDetailPanel({
   onChanged,
   models,
   specTitles,
+  typeModels,
   now,
 }: {
   api: Api;
@@ -51,6 +52,8 @@ export function JobDetailPanel({
   onChanged: () => void;
   models: readonly ModelChoice[];
   specTitles: ReadonlyMap<string, string>;
+  /** Each document type's model, by id (unknown types: no name in the dialog). */
+  typeModels?: ReadonlyMap<string, { model?: string }>;
   now: number;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
@@ -132,7 +135,14 @@ export function JobDetailPanel({
           <p className="muted">{filesText(published)}</p>
         </section>
       )}
-      <JobActions api={api} job={job} onChanged={onChanged} models={models} variant="panel" />
+      <JobActions
+        api={api}
+        job={job}
+        onChanged={onChanged}
+        models={models}
+        typeModel={typeModels?.get(job.specId)}
+        variant="panel"
+      />
     </aside>
   );
 }

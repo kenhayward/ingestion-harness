@@ -630,6 +630,28 @@ describe('TemplateEditor tabs and step cards', () => {
     expect(screen.queryByRole('group', { name: /^Table/ })).not.toBeInTheDocument();
   });
 
+  it('sets the document type model on General, which steps naming none inherit', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    const model = await screen.findByRole('combobox', { name: 'Default model' });
+    expect(model).toHaveValue('');
+    await within(model).findByRole('option', { name: 'Default choice (Main Production Model)' });
+    await userEvent.selectOptions(model, 'New for testing only');
+    await userEvent.click(await tab(/Pipeline/));
+    expect(stepHead(1)).toHaveTextContent('New for testing only (document type)');
+    await userEvent.click(stepHead(1));
+    const step = within(screen.getByRole('group', { name: 'Step 1' })).getByRole('combobox', {
+      name: 'Model',
+    });
+    expect(step).toHaveValue('');
+    expect(
+      within(step).getByRole('option', { name: "Document type's model (New for testing only)" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const saved = vi.mocked(api.saveTemplate).mock.calls[0]![2] as Record<string, unknown>;
+    expect(saved.model).toBe('test');
+    expect((saved.pipeline as Record<string, unknown>[])[0]).not.toHaveProperty('model');
+  });
+
   it('picks a step model from the model choices, by label', async () => {
     const { api } = setup(view({ ...validDefinition(), version: 1 }));
     await userEvent.click(await tab(/Pipeline/));

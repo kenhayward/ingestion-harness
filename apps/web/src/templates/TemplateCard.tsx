@@ -130,7 +130,7 @@ export function TemplateCard({
           title={`Test run ${item.name} v${shown}`}
           confirmLabel="Run test"
           choices={choices}
-          emptyLabel="Template's models"
+          emptyLabel="Document type's model"
           summary={
             <p>
               Runs {testFile.name} through v{shown}: reviewable, never published.

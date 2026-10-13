@@ -3,7 +3,7 @@ import { pickedChoice, type ModelChoice, type SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
-import { ModelPicker } from '../ui/ModelPicker.js';
+import { ModelPicker, typeModelLabel } from '../ui/ModelPicker.js';
 
 /** The model choice is remembered per browser ('' / absent = the document type's models). */
 const MODEL_KEY = 'ih.uploadModel';
@@ -210,7 +210,10 @@ export function UploadStrip({
           label="Model"
           choices={models}
           value={model}
-          emptyLabel="Document type's models"
+          emptyLabel={typeModelLabel(
+            models,
+            specs.find((s) => `${s.id}@${s.version}` === spec),
+          )}
           onChange={(next) => {
             setModel(next);
             saveModel(next);

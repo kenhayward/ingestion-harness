@@ -272,7 +272,7 @@ export function EvaluateTab({
           title={`Evaluate v${draft} on ${set}`}
           confirmLabel="Evaluate"
           choices={choices}
-          emptyLabel="Template's models"
+          emptyLabel="Document type's model"
           dataPolicy={dataPolicy}
           {...(holdout ? { fixedModel: "The template's own models" } : {})}
           summary={

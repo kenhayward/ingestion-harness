@@ -240,6 +240,15 @@ describe('JobList confirmations', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it("names the job's document type model in the retry dialog", async () => {
+    const j = job({ filename: 'a.pdf', status: 'failed', specId: 'letter' });
+    renderList([j], { typeModels: new Map([['letter', { model: 'test' }]]) });
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
+    expect(
+      screen.getByRole('option', { name: "Document type's model (New for testing only)" }),
+    ).toBeInTheDocument();
+  });
+
   it("retries with the document type's models (clearing the override)", async () => {
     const api = fakeApi();
     const j = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
