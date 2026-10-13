@@ -1223,6 +1223,16 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
     expect(savedPipeline(api)[2]!.sections).toEqual(['totals']);
   });
 
+  it('lists the sections a step can read, one tick box per row', async () => {
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const step = screen.getByRole('region', { name: 'Step 3' });
+    const reads = within(step).getByRole('group', { name: 'Reads sections' });
+    const rows = within(within(reads).getByRole('list')).getAllByRole('listitem');
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) expect(within(row).getAllByRole('checkbox')).toHaveLength(1);
+  });
+
   it('removes a filled output and offers unfilled outputs first', async () => {
     const { api } = open();
     await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));

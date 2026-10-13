@@ -361,6 +361,21 @@ export function TemplateEditor({
         </ul>
       )}
 
+      {embedded && (
+        // Above the sub-tabs, so the editor below keeps the full width (wide Outputs tables).
+        <aside className="template-side" aria-label="Checks and changes">
+          <ChecksPanel checks={checks} onOpenSubTab={(t) => openTab(t)} />
+          {record.status === 'draft' && (
+            <DraftChangesPanel
+              api={api}
+              projectId={templateId}
+              version={version}
+              published={embedded.published ?? null}
+              refreshKey={saves}
+            />
+          )}
+        </aside>
+      )}
       <div className="editor-layout">
         <div className="editor-main">
           <div role="tablist" aria-label="Template sections">
@@ -708,20 +723,6 @@ export function TemplateEditor({
             jobs={jobs}
             typeModel={typeModel ? { model: typeModel } : {}}
           />
-        )}
-        {embedded && (
-          <aside className="template-side" aria-label="Checks and changes">
-            <ChecksPanel checks={checks} onOpenSubTab={(t) => openTab(t)} />
-            {record.status === 'draft' && (
-              <DraftChangesPanel
-                api={api}
-                projectId={templateId}
-                version={version}
-                published={embedded.published ?? null}
-                refreshKey={saves}
-              />
-            )}
-          </aside>
         )}
       </div>
       {embedded && editable && dirty && (

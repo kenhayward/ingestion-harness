@@ -311,26 +311,36 @@ function ExtractDetail({
           onChange={(v) => set('maxAttempts', optInt(v))}
         />
       </div>
-      <fieldset className="chip-toggles">
+      <fieldset className="section-checks">
         <legend>Reads sections</legend>
-        {sections.length === 0 && <small>No sections defined yet.</small>}
-        {sections.map((id, i) => (
-          <label key={id} className="toggle-chip">
-            <input
-              type="checkbox"
-              checked={reads.includes(id)}
-              onChange={(e) =>
-                set('sections', e.target.checked ? [...reads, id] : reads.filter((s) => s !== id))
-              }
-            />
-            <span
-              className="section-dot"
-              aria-hidden="true"
-              style={{ background: TONE_COLOR[sectionTone(i)] }}
-            />
-            <code>{id}</code>
-          </label>
-        ))}
+        {sections.length === 0 ? (
+          <small>No sections defined yet.</small>
+        ) : (
+          <ul className="section-check-list">
+            {sections.map((id, i) => (
+              <li key={id}>
+                <label className="section-check">
+                  <input
+                    type="checkbox"
+                    checked={reads.includes(id)}
+                    onChange={(e) =>
+                      set(
+                        'sections',
+                        e.target.checked ? [...reads, id] : reads.filter((s) => s !== id),
+                      )
+                    }
+                  />
+                  <span
+                    className="section-dot"
+                    aria-hidden="true"
+                    style={{ background: TONE_COLOR[sectionTone(i)] }}
+                  />
+                  <code>{id}</code>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
       </fieldset>
       <fieldset className="fill-chips">
         <legend>Fills outputs</legend>
