@@ -237,7 +237,7 @@ export const ReferenceValueSchema = z.object({
   kind: z.enum(['field', 'table']),
   /** A field's expected value, or a table's expected rows. */
   value: z.unknown(),
-  /** null: the corrections are unknown. */
+  /** null: the corrections are unknown, or the reference is outdated for this output (re-verify). */
   provenance: z.enum(PROVENANCES).nullable(),
   /** A corrected field: the model's value (shown struck through); otherwise null. */
   proposed: z.unknown(),

@@ -18805,7 +18805,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "The References tab's detail panel (handoff RF2): the sample's reference for the\ncurrent version (as in the list), the run that proposed its values (job, model\noverride, the models its step runs used) and one entry per output of the current\nversion with the expected value (a table's rows) and its provenance: `model` (the\nmodel proposed it and nobody changed it), `corrected` (with the model's value in\n`proposed` for a field) or `entered` (the model proposed nothing); `null` when the\ncorrections are unknown. Dev and holdout samples alike: holdout values are shown to\nthe user, never to a model.",
+        "description": "The References tab's detail panel (handoff RF2): the sample's reference for the\ncurrent version (as in the list), the run that proposed its values (job, model\noverride, the models its step runs used) and one entry per output of the current\nversion with the expected value (a table's rows) and its provenance: `model` (the\nmodel proposed it and nobody changed it), `corrected` (with the model's value in\n`proposed` for a field) or `entered` (the model proposed nothing); `null` when the\ncorrections are unknown or the reference is outdated for that output (listed in\n`reference.outdated`: re-verify). A run saved without a review counts as unknown. Dev and holdout samples alike: holdout values are shown to\nthe user, never to a model.",
         "parameters": [
           {
             "schema": {

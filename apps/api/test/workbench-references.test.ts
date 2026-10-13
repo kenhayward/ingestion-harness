@@ -411,6 +411,41 @@ describe('reference detail (RF2)', () => {
     expect(body.values[0]).toMatchObject({ value: 'Globex', provenance: null });
   });
 
+  it('gives outputs the reference was not verified for no provenance, not MODEL', async () => {
+    const { add, skipAll, propose, detail, repo } = await project();
+    const s = await add(1);
+    await skipAll();
+    const [job] = (await propose()).json().jobs as { id: string; documentId: string }[];
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'awaiting_review' });
+    await repo.approve(job!.id, 'ken', null);
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'succeeded' });
+    await repo.createReference({
+      templateId: 'letter',
+      name: 's1',
+      documentId: job!.documentId,
+      sourceJobId: job!.id,
+      expected: { fields: {}, tables: {} },
+      templateVersion: 1,
+      verifiedOutputs: { fields: [], tables: [] }, // `sender` was added after
+    });
+    const body = (await detail(s.id)).json() as ReferenceDetail;
+    expect(body.reference.outdated).toEqual(['field:sender']);
+    expect(body.values[0]).toMatchObject({ id: 'sender', provenance: null, corrections: [] });
+  });
+
+  it('runs the review query for the references routes only', async () => {
+    const { app, add, skipAll, reviewed, detail, repo } = await project();
+    const s = await add(1);
+    await skipAll();
+    await reviewed(s, []);
+    const spy = vi.spyOn(repo, 'listJobReviews');
+    await app.inject('/api/workbench/projects/letter/stages');
+    await app.inject('/api/workbench/projects/letter/overview');
+    expect(spy).not.toHaveBeenCalled();
+    await detail(s.id);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [
       'an unknown project',

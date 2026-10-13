@@ -34,6 +34,20 @@ export const emptyValue = (v: unknown): boolean =>
   (typeof v === 'string' && v.trim() === '') ||
   (Array.isArray(v) && v.length === 0);
 
+/**
+ * A scalar in its comparable form. Review's editor sends every non-list, non-boolean value as a
+ * trimmed string and the route stores it raw, so `1234` becomes `"1234"` without a change:
+ * strings are trimmed, numeric strings compare as numbers, "true"/"false" as booleans.
+ */
+const comparable = (v: unknown): unknown => {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  if (t === 'true') return true;
+  if (t === 'false') return false;
+  if (t !== '' && /^[+-]?(\d+\.?\d*|\.\d+)$/.test(t) && !/^[+-]?0\d/.test(t)) return Number(t);
+  return t;
+};
+
 /** One correction per key edited: the first edit's old value against the last edit's new one. */
 export function correctionsFromEdits(edits: readonly ReviewEdit[]): Correction[] {
   const byKey = new Map<string, { proposed: unknown; final: unknown }>();
@@ -44,7 +58,7 @@ export function correctionsFromEdits(edits: readonly ReviewEdit[]): Correction[]
   }
   return [...byKey].flatMap(([key, { proposed, final }]): Correction[] => {
     if (emptyValue(proposed) && emptyValue(final)) return [];
-    if (stableJson(proposed) === stableJson(final)) return [];
+    if (stableJson(comparable(proposed)) === stableJson(comparable(final))) return [];
     return [
       { key, kind: emptyValue(proposed) ? 'entered' : 'corrected', proposed: proposed ?? null },
     ];
@@ -63,6 +77,9 @@ export interface ReviewRecord {
  * A saved reference's corrections and who verified it. Null corrections mean unknown: no source
  * job, or the job was re-run (its edits are deleted) or reviewed again after the save, so its
  * edits no longer describe the saved values. `verifiedBy`: the approver, else the last editor.
+ * A run saved as a reference without ever being reviewed (`reviewedAt` null, no edits) is also
+ * unknown, although its values are the model's: conservative on purpose, since treating it as
+ * "no corrections" is only safe if a retry after the save could be detected.
  */
 export function referenceCorrections(
   review: ReviewRecord | null,

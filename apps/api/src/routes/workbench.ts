@@ -485,7 +485,7 @@ async function currentDefinition(app: FastifyInstance, projectId: string) {
   };
 }
 
-type CurrentReference = Awaited<ReturnType<typeof currentReferences>>[number];
+type CurrentReference = Awaited<ReturnType<typeof currentReferences>>['references'][number];
 
 /** A reference row plus the sample's newest reference run (draft model), for stage state. */
 interface ReferenceEntry {
@@ -504,7 +504,8 @@ const verifiedRow = (row: ReferenceRow) =>
  * each one's `outputChanges` against the current outputs.
  */
 async function currentReferences(app: FastifyInstance, projectId: string) {
-  const { draft, version, definition } = await currentDefinition(app, projectId);
+  const current = await currentDefinition(app, projectId);
+  const { draft, version, definition } = current;
   if (draft !== null) await app.deps.repo.carryReferencesForward(projectId, draft);
   const all = await app.deps.repo.listReferencesWithSha(projectId);
   const outputs = definition?.outputs ?? null;
@@ -521,7 +522,7 @@ async function currentReferences(app: FastifyInstance, projectId: string) {
             o.sha256 === r.sha256 &&
             o.templateVersion === r.templateVersion,
         ) ?? null); // `all` is newest first
-  return all
+  const references = all
     .filter(
       (r) =>
         r.supersededAt === null && (r.templateVersion === null || r.templateVersion === version),
@@ -539,6 +540,7 @@ async function currentReferences(app: FastifyInstance, projectId: string) {
             : { from, changed: outputChanges(copy.verifiedOutputs, r.verifiedOutputs) },
       };
     });
+  return { references, definition: current.definition };
 }
 
 /**
@@ -550,8 +552,11 @@ export async function referenceRows(
   projectId: string,
   set: EvaluationSet = 'dev',
   preloaded?: SampleViews,
+  withReviews = false,
 ): Promise<ReferenceRow[]> {
-  return (await referenceEntries(app, projectId, set, preloaded)).map((e) => e.row);
+  return (await referenceEntries(app, projectId, set, preloaded, withReviews)).entries.map(
+    (e) => e.row,
+  );
 }
 
 /**
@@ -566,13 +571,17 @@ async function referenceDetail(
   const views = await sampleViews(app, projectId);
   const sample = views.find((s) => s.record.id === sampleId);
   if (!sample) return 'sample not found';
-  const entry = (await referenceEntries(app, projectId, sample.view.role, views)).find(
-    (e) => e.row.sampleId === sampleId,
+  const { entries, definition } = await referenceEntries(
+    app,
+    projectId,
+    sample.view.role,
+    views,
+    true,
   );
+  const entry = entries.find((e) => e.row.sampleId === sampleId);
   if (!entry?.reference || !entry.row.reference) return 'no reference for this sample';
   const { reference } = entry;
   const info = entry.row.reference;
-  const { definition } = await currentDefinition(app, projectId);
   const values = outputCoverage(definition).outputs.map((o) => {
     const own =
       info.corrections === null
@@ -586,7 +595,9 @@ async function referenceDetail(
         o.kind === 'field'
           ? (reference.expected.fields[o.id] ?? null)
           : (reference.expected.tables[o.id] ?? []),
-      provenance: own === null ? null : outputProvenance(own),
+      // An output the reference was not verified for (outdated) has no value to attribute.
+      provenance:
+        own === null || info.outdated.includes(`${o.kind}:${o.id}`) ? null : outputProvenance(own),
       proposed: o.kind === 'field' && first?.kind === 'corrected' ? first.proposed : null,
       corrections: own ?? [],
     };
@@ -620,12 +631,14 @@ async function referenceEntries(
   projectId: string,
   set: EvaluationSet = 'dev',
   preloaded?: SampleViews,
-): Promise<ReferenceEntry[]> {
+  /** Fetch the source runs' reviews for `corrections` (one query); only the references routes read them. */
+  withReviews = false,
+): Promise<{ entries: ReferenceEntry[]; definition: Record<string, unknown> | null }> {
   const samples = (preloaded ?? (await sampleViews(app, projectId)))
     .filter((s) => s.view.role === set && s.view.state === 'ready')
     .map((s) => s.record)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const references = await currentReferences(app, projectId);
+  const { references, definition } = await currentReferences(app, projectId);
   const runs = (await app.deps.repo.listProjectRuns(projectId)).filter(
     (r) => r.job.referenceId === null,
   );
@@ -638,10 +651,9 @@ async function referenceEntries(
   );
   const sourceIds = picked.flatMap((r) => (r?.sourceJobId ? [r.sourceJobId] : []));
   const reviews = new Map(
-    (sourceIds.length ? await app.deps.repo.listJobReviews(sourceIds) : []).map((r) => [
-      r.jobId,
-      r,
-    ]),
+    (withReviews && sourceIds.length ? await app.deps.repo.listJobReviews(sourceIds) : []).map(
+      (r) => [r.jobId, r],
+    ),
   );
   const info = (r: CurrentReference): ReferenceInfo => ({
     id: r.id,
@@ -654,7 +666,7 @@ async function referenceEntries(
     ...referenceCorrections((r.sourceJobId && reviews.get(r.sourceJobId)) || null, r.createdAt),
     reverified: r.reverified,
   });
-  return samples.map((s, i) => {
+  const entries = samples.map((s, i) => {
     const reference = picked[i]!;
     const run = runs.find((r) => r.sha256 === s.sha256)?.job ?? null;
     const draftRun =
@@ -676,6 +688,7 @@ async function referenceEntries(
       },
     };
   });
+  return { entries, definition };
 }
 
 async function referencesView(
@@ -683,7 +696,7 @@ async function referencesView(
   projectId: string,
   earlier: StageView[],
 ): Promise<StageView> {
-  const entries = await referenceEntries(app, projectId, 'dev');
+  const { entries } = await referenceEntries(app, projectId, 'dev');
   const rows = entries.map((e) => e.row);
   const verified = rows.filter(verifiedRow);
   // Only reference runs (draft model) of samples still without a verified reference count: a
@@ -1947,7 +1960,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     const { definition } = (await templates.get(projectId, draft))!;
     const issues = validateTemplate(definition);
     if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const entries = await referenceEntries(app, projectId, 'dev');
+    const { entries } = await referenceEntries(app, projectId, 'dev');
     if (!entries.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
     const unverified = entries.filter((e) => !verifiedRow(e.row));
     if (!unverified.length) {
@@ -2322,7 +2335,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       }
       const query = ReferencesQuery.safeParse(req.query ?? {});
       if (!query.success) return reply.code(400).send({ error: query.error.issues });
-      return referenceRows(app, req.params.id, query.data.set ?? 'dev');
+      return referenceRows(app, req.params.id, query.data.set ?? 'dev', undefined, true);
     },
   );
 
@@ -2340,7 +2353,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           version with the expected value (a table's rows) and its provenance: \`model\` (the
           model proposed it and nobody changed it), \`corrected\` (with the model's value in
           \`proposed\` for a field) or \`entered\` (the model proposed nothing); \`null\` when the
-          corrections are unknown. Dev and holdout samples alike: holdout values are shown to
+          corrections are unknown or the reference is outdated for that output (listed in
+          \`reference.outdated\`: re-verify). A run saved without a review counts as unknown. Dev and holdout samples alike: holdout values are shown to
           the user, never to a model.
         `,
         params: SampleIdParams,
@@ -2409,7 +2423,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const { definition } = (await templates.get(projectId, draft))!;
       const issues = validateTemplate(definition);
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-      const holdout = await referenceEntries(app, projectId, 'holdout');
+      const { entries: holdout } = await referenceEntries(app, projectId, 'holdout');
       if (!holdout.length) {
         return reply.code(409).send({ error: 'no prepared holdout samples to run' });
       }

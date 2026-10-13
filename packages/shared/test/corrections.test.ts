@@ -104,6 +104,52 @@ describe('correctionsFromEdits', () => {
       [edit({ field: 'party', oldValue: { a: 1, b: 2 }, newValue: { b: 2, a: 1 } })],
       [],
     ],
+    // Review's editor sends every scalar as a string, so unchanged values must compare equal.
+    [
+      'a number re-saved as its string: no correction',
+      [edit({ field: 'qty', oldValue: 1234, newValue: '1234' })],
+      [],
+    ],
+    [
+      'decimals differ only in form: no correction',
+      [edit({ field: 'qty', oldValue: 12.5, newValue: '12.50' })],
+      [],
+    ],
+    [
+      'whitespace around a string: no correction',
+      [edit({ field: 'name', oldValue: 'Acme', newValue: ' Acme ' })],
+      [],
+    ],
+    [
+      'a boolean re-saved as a string: no correction',
+      [edit({ field: 'paid', oldValue: true, newValue: 'true' })],
+      [],
+    ],
+    [
+      'zero is not empty and not equal to 1',
+      [edit({ field: 'qty', oldValue: 0, newValue: '1' })],
+      [{ key: 'qty', kind: 'corrected', proposed: 0 }],
+    ],
+    [
+      'a number that really changed is corrected',
+      [edit({ field: 'qty', oldValue: 1234, newValue: '1235' })],
+      [{ key: 'qty', kind: 'corrected', proposed: 1234 }],
+    ],
+    [
+      'a boolean flipped is corrected',
+      [edit({ field: 'paid', oldValue: true, newValue: 'false' })],
+      [{ key: 'paid', kind: 'corrected', proposed: true }],
+    ],
+    [
+      'null against a blank string: no correction',
+      [edit({ field: 'notes', oldValue: null, newValue: '   ' })],
+      [],
+    ],
+    [
+      'a numeric string against a different non-numeric string is corrected',
+      [edit({ field: 'ref', oldValue: '007', newValue: 'A007' })],
+      [{ key: 'ref', kind: 'corrected', proposed: '007' }],
+    ],
   ])('%s', (_name, edits, expected) => {
     expect(correctionsFromEdits(edits)).toEqual(expected);
   });
