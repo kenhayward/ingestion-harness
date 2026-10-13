@@ -261,7 +261,6 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
     testRun: vi.fn(async () => job({ test: true })),
-    listProjects: vi.fn(async () => []),
     listProjectPage: vi.fn(async () => projectListPage()),
     listPins: vi.fn(async () => []),
     pin: vi.fn(async () => undefined),

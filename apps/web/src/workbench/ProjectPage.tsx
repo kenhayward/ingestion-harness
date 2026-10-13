@@ -5,7 +5,7 @@ import type { ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
 import { ExportPanel } from './ExportPanel.js';
-import { rememberProject } from './listDerive.js';
+import { forgetProject, rememberProject } from './listDerive.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { OverviewTab } from './OverviewTab.js';
 import { ProjectHeader } from './ProjectHeader.js';
@@ -414,6 +414,7 @@ export function ProjectPage({
                 loadOverview();
                 throw err;
               }
+              forgetProject(project.id);
               onNavigate('#/workbench');
             })
           }

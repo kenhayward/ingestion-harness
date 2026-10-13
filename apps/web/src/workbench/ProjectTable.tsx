@@ -123,7 +123,9 @@ export function ProjectTable({
         <table className="projects-table">
           <thead>
             <tr>
-              <th scope="col">Pin</th>
+              <th scope="col">
+                <span className="visually-hidden">Pin</span>
+              </th>
               <th scope="col">Document type</th>
               <th scope="col">Progress</th>
               <th scope="col">Next action</th>

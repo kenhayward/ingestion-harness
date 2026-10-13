@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { ProjectView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
-/** Import a drafting bundle (.zip) as a new local project. */
+/** Import a drafting bundle (.zip) as a new local project; shown inside the list's dialog. */
 export function ImportBundle({
   api,
   onImported,
@@ -30,8 +30,7 @@ export function ImportBundle({
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} aria-label="Import bundle" className="card">
-      <h3>Import bundle</h3>
+    <form onSubmit={(e) => void submit(e)} aria-label="Import bundle">
       <p className="muted">
         Creates a local-only project with the bundle&apos;s draft, brief and dev samples.
       </p>

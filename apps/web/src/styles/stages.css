@@ -642,6 +642,8 @@
   padding: 0;
 }
 .project-card {
+  /* The name's link stretches over the whole card (see below), so the card opens the project. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -650,14 +652,31 @@
   border-radius: var(--ih-radius-lg);
   background: var(--ih-surface);
 }
+.project-card .project-name::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+/* Above the stretched link, so the star and the next action keep their own clicks. */
+.project-card .pin-button,
+.project-card .next-action {
+  position: relative;
+  z-index: 1;
+}
 .project-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+.project-card-head .project-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .project-card-time {
   margin-left: auto;
   font-size: var(--ih-text-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 @media (max-width: 640px) {
   .projects-scroll {
@@ -666,6 +685,13 @@
   .project-cards {
     display: grid;
     gap: 10px;
+  }
+  /* A 44 x 44 px touch target for the card's star. */
+  .project-card .pin-button {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -705,7 +731,8 @@
   flex: 1 1 280px;
   min-width: 0;
 }
-.list-select {
+/* `label.inline` (styles.css) would otherwise win on specificity. */
+label.inline.list-select {
   color: var(--ih-muted);
   font-size: var(--ih-text-sm);
 }

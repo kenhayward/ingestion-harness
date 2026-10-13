@@ -80,5 +80,13 @@ export function rememberProject(id: string): void {
     // Recents are a convenience; nothing to do when storage is unavailable.
   }
 }
+/** Drops a project from the recents (after deleting it), so it no longer takes a card slot. */
+export function forgetProject(id: string): void {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recentProjects().filter((x) => x !== id)));
+  } catch {
+    // Recents are a convenience; nothing to do when storage is unavailable.
+  }
+}
 
 export const formatCount = (n: number): string => n.toLocaleString('en-US');

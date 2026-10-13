@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
 import { ProjectPage } from '../src/workbench/ProjectPage.js';
+import { recentProjects } from '../src/workbench/listDerive.js';
 import { OVERVIEW_TABS, type OverviewItem } from '@ih/shared';
 import { fakeApi, projectOverview, projectView } from './fake-api.js';
 
@@ -336,6 +337,7 @@ describe('ProjectPage', () => {
     await userEvent.click(submit);
     expect(api.deleteProject).toHaveBeenCalledWith('letter');
     expect(onNavigate).toHaveBeenCalledWith('#/workbench');
+    expect(recentProjects()).not.toContain('letter');
   });
 
   it('shows why a delete was refused', async () => {

@@ -5,6 +5,7 @@ import {
   nextHref,
   pagerPages,
   phaseLine,
+  forgetProject,
   recentProjects,
   rememberProject,
   savePageSize,
@@ -110,6 +111,19 @@ describe('recent projects', () => {
       throw new Error('blocked');
     });
     expect(() => rememberProject('x')).not.toThrow();
+  });
+  it('forgets a project and keeps the rest in order', () => {
+    ['a', 'b', 'c'].forEach(rememberProject);
+    forgetProject('b');
+    expect(recentProjects()).toEqual(['c', 'a']);
+    forgetProject('unknown');
+    expect(recentProjects()).toEqual(['c', 'a']);
+  });
+  it('forgetting survives storage that throws', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    expect(() => forgetProject('x')).not.toThrow();
   });
 });
 

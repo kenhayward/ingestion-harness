@@ -37,6 +37,11 @@ type ListState = {
 const SEARCH_DEBOUNCE_MS = 250;
 /** The "Pinned and recent" strip shows at most this many cards. */
 const MAX_CARDS = 3;
+/**
+ * Card ids asked for (the API's limit): more than MAX_CARDS, so a pinned or recent project
+ * that was deleted or is unknown does not take a card slot from one that exists.
+ */
+const MAX_CARD_IDS = 20;
 
 const PHASES: readonly [OverviewPhase | '', string][] = [
   ['', 'Any'],
@@ -144,7 +149,7 @@ export function WorkbenchPage({
   const pinned = useMemo(() => new Set(pins ?? []), [pins]);
   const [recents] = useState(recentProjects);
   const cardIds = useMemo(
-    () => (pins === null ? [] : [...new Set([...pins, ...recents])].slice(0, MAX_CARDS)),
+    () => (pins === null ? [] : [...new Set([...pins, ...recents])].slice(0, MAX_CARD_IDS)),
     [pins, recents],
   );
   const cardKey = cardIds.join(',');
@@ -162,7 +167,12 @@ export function WorkbenchPage({
       (p) => {
         if (seq !== cardsRequest.current) return;
         // Pinned first, then most recently opened: the order of `ids`, not the server's.
-        setCards([...p.items].sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)));
+        setCards(
+          [...p.items]
+            .filter((i) => ids.includes(i.id))
+            .sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
+            .slice(0, MAX_CARDS),
+        );
       },
       () => {
         // The cards are a shortcut; the list below still shows every project.

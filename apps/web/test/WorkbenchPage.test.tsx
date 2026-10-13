@@ -242,11 +242,58 @@ describe('WorkbenchPage', () => {
     );
   });
 
-  it('caps the cards at three ids', async () => {
-    ['d', 'c', 'b', 'a'].forEach(rememberProject);
-    const api = fakeApi({ listPins: vi.fn(async () => ['p']) });
+  it('asks for up to 20 card ids, pins first, and shows at most three cards', async () => {
+    // Deliberately rewritten: the request is no longer cut to three ids, so a deleted or
+    // unknown id cannot take a card slot (see the next test).
+    // Ten recents (the most kept) and twelve pins, one of them also recent: 21 distinct ids.
+    for (let n = 9; n >= 0; n--) rememberProject(`r${n}`);
+    const pins = ['r0', ...Array.from({ length: 11 }, (_, i) => `p${i}`)];
+    const api = fakeApi({
+      listPins: vi.fn(async () => pins),
+      listProjectPage: vi.fn(async (q: Query) =>
+        q.ids
+          ? projectListPage({
+              items: q.ids.map((id) => projectListItem({ id, name: id.toUpperCase() })),
+              total: q.ids.length,
+            })
+          : projectListPage(),
+      ),
+    });
     page(api);
-    await waitFor(() => expect(api.listProjectPage).toHaveBeenCalledWith({ ids: ['p', 'a', 'b'] }));
+    const ids = [...pins, ...Array.from({ length: 8 }, (_, i) => `r${i + 1}`)];
+    await waitFor(() => expect(api.listProjectPage).toHaveBeenCalledWith({ ids }));
+    const cards = await screen.findByRole('region', { name: 'Pinned and recent' });
+    const articles = await within(cards).findAllByRole('article');
+    expect(articles.map((a) => within(a).getAllByRole('link')[0]!.textContent)).toEqual([
+      'R0',
+      'P0',
+      'P1',
+    ]);
+  });
+
+  it('fills the cards past a recent project the server no longer has', async () => {
+    ['d', 'c', 'b', 'gone'].forEach(rememberProject);
+    const api = fakeApi({
+      listProjectPage: vi.fn(async (q: Query) =>
+        q.ids
+          ? projectListPage({
+              items: q.ids
+                .filter((id) => id !== 'gone')
+                .map((id) => projectListItem({ id, name: id.toUpperCase() })),
+              total: 3,
+            })
+          : projectListPage(),
+      ),
+    });
+    page(api);
+    const cards = await screen.findByRole('region', { name: 'Pinned and recent' });
+    await waitFor(() =>
+      expect(
+        within(cards)
+          .getAllByRole('article')
+          .map((a) => within(a).getAllByRole('link')[0]!.textContent),
+      ).toEqual(['B', 'C', 'D']),
+    );
   });
 
   it('omits the cards when nothing is pinned or recent', async () => {

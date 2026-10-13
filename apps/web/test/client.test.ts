@@ -107,13 +107,6 @@ describe('http api: workbench', () => {
     });
   });
 
-  it('lists every project through the unpaged list (?all=1)', async () => {
-    const fetchMock = vi.fn(async (_url: string) => Response.json([]));
-    vi.stubGlobal('fetch', fetchMock);
-    expect(await createHttpApi('/api').listProjects()).toEqual([]);
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/workbench/projects?all=1']);
-  });
-
   it('deletes a workbench project', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
