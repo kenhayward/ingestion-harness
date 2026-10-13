@@ -1,6 +1,6 @@
 # API docs: an OpenAPI reference for the API
 
-**Status:** design · 2026-10-13 · approved in conversation
+**Status:** PR 1 implemented · 2026-10-13 · approved in conversation
 
 The API has about 95 routes in 13 route plugins (`apps/api/src/app.ts`), more than half of them in
 the Workbench. The only description of them today is the code and `CLAUDE.md`. This design adds
@@ -47,9 +47,11 @@ an OpenAPI 3.1 document generated from the routes themselves, and a public docs 
 ## Approach
 
 Route docs sit next to each handler as a Fastify route `schema`. `@fastify/swagger` collects them
-into an OpenAPI 3.1 document, converting Zod with `fastify-type-provider-zod`'s
-`jsonSchemaTransform` (on the major version that supports Zod 3). `@scalar/fastify-api-reference`
-serves the browser.
+into an OpenAPI 3.1 document; a swagger `transform` (`apps/api/src/openapi/zod.ts`) converts the
+Zod 3 schemas with `zod-to-json-schema`. (`fastify-type-provider-zod` now requires Zod 4.)
+`@scalar/fastify-api-reference` serves the browser. A route without `tags` is treated as not
+documented yet and left out of the document, so the browser only ever shows grouped, described
+calls.
 
 Rejected:
 - **A separate `zod-to-openapi` registry**: no change to route files, but docs live away from the
@@ -154,8 +156,11 @@ invalid one is a 404), pagination, and how jobs move through their statuses.
 
 ## The docs browser
 
-- `GET /api/openapi.json`: the generated document, built once on first request and cached.
-- `GET /api/docs` (and its asset routes): Scalar, with assets bundled in the package (no CDN).
+- `GET /api/docs/openapi.json` (and `.yaml`): the generated document, served by Scalar from
+  `@fastify/swagger`.
+- `GET /api/docs/` and `GET /api/docs/js/scalar.js`: Scalar, with its script bundled in the
+  package. It is self-contained: no CDN fonts (`withDefaultFonts: false`), no telemetry, and none
+  of Scalar's hosted extras (AI agent, MCP, SDK generation, developer tools).
   Configured with the `x-tagGroups`, light/dark following the OS, colours taken from
   `apps/web/src/styles/tokens.css`, and "Try it" sending requests to the same origin, so the
   session cookie applies when the reader is signed in. Signed out, a guarded call gets a 401,
@@ -175,8 +180,8 @@ The docs are public. The access hook changes from a path list to a route flag:
 
 The hook still decides on the matched route, never the raw URL, so the path-handling tests in
 `access.test.ts` keep passing unchanged. The sweep test changes from "every `/api` route except
-login and logout" to: the public routes are exactly login, logout, `/api/openapi.json` and the
-routes under `/api/docs`; every other `/api` route returns 401 without a session. ADR 0006 gets an
+login and logout" to: the public routes are exactly login, logout and the routes under
+`/api/docs`; every other `/api` route returns 401 without a session. ADR 0006 gets an
 addendum recording the public docs.
 
 The document describes the API that is already in a public repository, so making it public
@@ -186,26 +191,27 @@ details.
 ## App link
 
 - Side nav (`apps/web/src/shell/AppShell.tsx`): an **API docs** link at the bottom of the nav,
-  visible to everyone signed in, `href="/api/docs"`, opening in a new tab
+  visible to everyone signed in, `href="/api/docs/"`, opening in a new tab
   (`target="_blank" rel="noopener"`) with an external-link icon from `apps/web/src/ui/`.
 - Sign-in page: a small "API docs" link under the form, since the docs need no session.
-- Tests (Testing Library, by role and name): both links exist with `href="/api/docs"`.
+- Tests (Testing Library, by role and name): both links exist with `href="/api/docs/"`.
 
 ## Keeping the docs true
 
-1. **Docs sweep** (`apps/api/test/openapi.test.ts`): every route Fastify registers (collected with
-   an `onRoute` hook in `buildApp`) has `tags` from the known list, a `summary`, a `description`
+1. **Docs sweep** (`apps/api/test/openapi.test.ts`): every route Fastify registers (read from
+   `printRoutes`) has `tags` from the known list, a `summary`, a `description`
    of at least 80 characters, an `operationId`, and a 2xx response. During rollout, an explicit
    allow-list names the undocumented routes; it only shrinks, and the last PR deletes it.
-2. **Response conformance**: a helper in `apps/api/test/helpers.ts`,
-   `expectDocumented(app, res)`, looks up the route's documented schema for the status code and
-   validates the body with Ajv. `app.inject()` calls in the existing route tests go through it,
-   so every response the suite already exercises is checked against the docs, error bodies
-   included. A status code the route does not document fails.
+2. **Response conformance** (`apps/api/test/openapi-conformance.ts`): `testApp` installs an
+   `onSend` hook that looks up the route's documented response for the status code and
+   validates JSON bodies with Ajv; `test/setup.ts` fails the test after any violation. So every
+   response the suite already exercises is checked against the docs, error bodies included, and
+   a status code the route does not document fails.
 3. **Valid document**: the generated document passes `@apidevtools/swagger-parser` validation,
    `operationId`s are unique, and every tag belongs to a group.
-4. **Committed snapshot**: `docs/openapi.json` is generated by `npm run openapi` and checked in
-   `npm run check` (regenerate and compare), so API changes appear in PR diffs.
+4. **Committed snapshot**: `docs/openapi.json` is a file snapshot in `openapi.test.ts`;
+   `npm run openapi` regenerates it, and `npm test` fails when it is stale, so API changes
+   appear in PR diffs.
 5. **Admin flag sweep**: signed in with a user (non-admin) token, every route returns 403
    `admins only` exactly when its `x-admin` is true. This tests behaviour rather than how the check
    is wired (the `adminOnly` pre-handler in `access/routes.ts`, the plugin hook in
@@ -215,8 +221,8 @@ details.
 
 Each PR is red-tests-first and leaves `npm run check` green.
 
-1. **Infrastructure**: dependencies, pass-through compilers, components, `/api/openapi.json`,
-   Scalar at `/api/docs`, public route flag + sweep change + ADR 0006 addendum, docs sweep with a
+1. **Infrastructure**: dependencies, pass-through compilers, components, Scalar and the
+   document at `/api/docs`, public route flag + sweep change + ADR 0006 addendum, docs sweep with a
    full allow-list, conformance helper, snapshot, app links. Documents Health and Auth.
 2. **Pipeline**: Documents, Jobs, Review & steps, Results, Models.
 3. **Configuration**: Specs, Templates, References & regression.
@@ -230,7 +236,7 @@ Each PR is red-tests-first and leaves `npm run check` green.
 - **Pass-through compilers hide wrong schemas at runtime.** The conformance helper catches them
   only for responses the tests exercise; routes with thin tests get thin checking. Each rollout
   PR adds a test for any documented status code no test reaches.
-- **Library compatibility.** `fastify-type-provider-zod` versions are tied to Zod majors; pin the
-  Zod 3 line. A later Zod 4 migration moves to the newer line or to Zod's own `toJSONSchema`.
+- **Library compatibility.** `zod-to-json-schema` covers Zod 3. A later Zod 4 migration moves
+  to Zod's own `toJSONSchema` or `fastify-type-provider-zod`.
 - **Description size.** Long Markdown in route files makes them longer. Accepted: keeping the
   docs beside the code is the point.
