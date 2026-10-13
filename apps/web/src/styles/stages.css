@@ -425,3 +425,32 @@
     color: var(--ih-muted);
   }
 }
+
+.tab-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+.tab-header h2 {
+  margin: 0;
+  font-size: var(--ih-text-xl);
+}
+.tab-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+.tab-note {
+  margin: 6px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
