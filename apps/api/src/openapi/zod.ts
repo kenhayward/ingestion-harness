@@ -10,11 +10,12 @@ export function toJsonSchema(schema: unknown): unknown {
   // Extra properties are refused only by .strict() schemas: handlers strip them otherwise, and
   // responses are never trimmed to their schema.
   // OpenAPI 3.1 schemas are JSON Schema: nullable is `null` in a union, not `nullable: true`.
-  const { $schema: _dialect, ...json } = zodToJsonSchema(schema, {
+  const json: Record<string, unknown> = zodToJsonSchema(schema, {
     target: 'jsonSchema7',
     $refStrategy: 'none',
     removeAdditionalStrategy: 'strict',
   });
+  delete json.$schema;
   return json;
 }
 

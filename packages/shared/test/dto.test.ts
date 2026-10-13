@@ -49,7 +49,8 @@ describe.each([
   });
 
   it(`requires ${required}`, () => {
-    const { [required]: _dropped, ...rest } = example as Record<string, unknown>;
+    const rest: Record<string, unknown> = { ...example };
+    delete rest[required];
     expect(schema.safeParse(rest).success).toBe(false);
   });
 });
