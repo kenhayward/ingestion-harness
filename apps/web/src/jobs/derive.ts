@@ -179,6 +179,10 @@ export function jobDuration(
   return job.finishedAt ? formatDuration((Date.parse(job.finishedAt) - start) / 1000) : null;
 }
 
+/** The drafting-model alias (reference runs store it as their model override). */
+const DRAFT_ALIAS = 'draft';
+const DRAFTING_MODEL = 'Drafting model';
+
 /** Shown instead of a model ref when no model choice matches (people never see refs). */
 export const MODEL_NOT_OFFERED = 'Model no longer offered';
 
@@ -187,6 +191,7 @@ export const MODEL_NOT_OFFERED = 'Model no longer offered';
  * else (a ref no choice has) is never shown; it reads "Model no longer offered".
  */
 export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoice[]): string {
+  if (nameOrRef === DRAFT_ALIAS) return DRAFTING_MODEL;
   const choice =
     pickedChoice(nameOrRef, choices) ?? choices.find((c) => c.ref === nameOrRef) ?? null;
   return choice?.label ?? MODEL_NOT_OFFERED;
@@ -197,6 +202,7 @@ export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoic
  * name like `fast`) by its label. An older plain name stays as it is; a ref is never shown.
  */
 export function choiceName(name: string, choices: readonly ModelChoice[]): string {
+  if (name === DRAFT_ALIAS) return DRAFTING_MODEL;
   const choice = pickedChoice(name, choices);
   if (choice) return choice.label;
   return name.includes('/') ? modelDisplayName(name, choices) : name;
@@ -204,7 +210,7 @@ export function choiceName(name: string, choices: readonly ModelChoice[]): strin
 
 /** The drafting model (a ref) by its choice's label; "Drafting model" when no choice has it. */
 export function draftingModelName(ref: string | null, choices: readonly ModelChoice[]): string {
-  return choices.find((c) => c.ref === ref)?.label ?? 'Drafting model';
+  return choices.find((c) => c.ref === ref)?.label ?? DRAFTING_MODEL;
 }
 
 /** What ran (step runs), else what was requested (override), else the spec default; by name. */
@@ -215,6 +221,13 @@ export function modelLabel(job: JobSummary, choices: readonly ModelChoice[]): st
       ? [job.modelOverride]
       : [];
   if (names.length === 0) return 'Spec default';
+  // A draft-model run (reference runs): its ref usually matches no choice.
+  if (
+    job.modelOverride === DRAFT_ALIAS &&
+    !names.some((n) => pickedChoice(n, choices) ?? choices.some((c) => c.ref === n))
+  ) {
+    return DRAFTING_MODEL;
+  }
   return [...new Set(names.map((n) => modelDisplayName(n, choices)))].join(', ');
 }
 

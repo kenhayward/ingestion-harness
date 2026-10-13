@@ -235,7 +235,7 @@ describe('EvaluateTab', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['Measure', 'Main Production Model', 'New for testing only', 'draft']);
+    ).toEqual(['Measure', 'Main Production Model', 'New for testing only', 'Drafting model']);
     const score = within(table).getByText('score').closest('tr')!;
     expect(score).toHaveTextContent('75%');
     expect(score).toHaveTextContent('50%');

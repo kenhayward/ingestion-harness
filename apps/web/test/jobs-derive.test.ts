@@ -220,6 +220,7 @@ describe('modelDisplayName', () => {
     ['cloud/claude', 'Cloud model'],
     ['local/unknown', 'Model no longer offered'],
     ['gone', 'Model no longer offered'],
+    ['draft', 'Drafting model'],
   ])('%s -> %s', (name, text) => expect(modelDisplayName(name, MODEL_CHOICES)).toBe(text));
 
   it('never shows a ref when there are no choices', () => {
@@ -232,7 +233,7 @@ describe('choiceName', () => {
     ['main', 'Main Production Model'],
     ['default', 'Main Production Model'],
     ['fast', 'fast'],
-    ['draft', 'draft'],
+    ['draft', 'Drafting model'],
     ['local/qwen', 'Main Production Model'],
     ['local/other', 'Model no longer offered'],
   ])('%s -> %s', (name, text) => expect(choiceName(name, MODEL_CHOICES)).toBe(text));
@@ -254,6 +255,9 @@ describe('modelLabel', () => {
     [job({ modelsUsed: [], modelOverride: 'cloud' }), 'Cloud model'],
     [job({ modelsUsed: [], modelOverride: 'a/x' }), 'Model no longer offered'],
     [job({ modelsUsed: [], modelOverride: null }), 'Spec default'],
+    [job({ modelsUsed: ['x/unmatched'], modelOverride: 'draft' }), 'Drafting model'],
+    [job({ modelsUsed: ['local/qwen'], modelOverride: 'draft' }), 'Main Production Model'],
+    [job({ modelsUsed: [], modelOverride: 'draft' }), 'Drafting model'],
   ])('%#', (j, text) => expect(modelLabel(j, MODEL_CHOICES)).toBe(text));
 });
 

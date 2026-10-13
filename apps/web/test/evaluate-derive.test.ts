@@ -138,7 +138,13 @@ describe('historyRows', () => {
       MODEL_CHOICES,
     );
     expect(rows.map((r) => [r.label, r.score, r.id, r.running, r.set])).toEqual([
-      ['Compare · Main Production Model 91 · fast 84 · draft 89', 0.91, 'x3', false, 'dev'],
+      [
+        'Compare · Main Production Model 91 · fast 84 · Drafting model 89',
+        0.91,
+        'x3',
+        false,
+        'dev',
+      ],
       ["Recipe's models · fresh", 0.86, 't', false, 'dev'],
       ["Recipe's models", null, 'r', true, 'holdout'],
     ]);
