@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { BriefBodySchema, stableJson } from '@ih/shared';
+import { BriefBodySchema, stableJson, type GateHint } from '@ih/shared';
 import type {
   Brief,
   BriefBody,
@@ -100,7 +100,15 @@ export interface IterationRecord {
    * The publish gate's raw holdout score (migration 0020), valid while `fingerprint` (a hash of
    * the iteration's jobs) is unchanged; stored only once every job has finished.
    */
-  gateCache: { fingerprint: string; score: number | null; completed: number; total: number } | null;
+  gateCache: {
+    fingerprint: string;
+    score: number | null;
+    completed: number;
+    total: number;
+    /** The hints at `hintsThreshold` (EV1); rows stored before they existed have neither. */
+    hints?: GateHint[];
+    hintsThreshold?: number;
+  } | null;
   createdAt: string;
 }
 

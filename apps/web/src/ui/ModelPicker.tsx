@@ -35,6 +35,7 @@ export function ModelPicker({
   emptyLabel,
   dataPolicy,
   disabled,
+  title,
   selectRef,
 }: {
   /** The accessible name. */
@@ -46,6 +47,8 @@ export function ModelPicker({
   emptyLabel?: string;
   dataPolicy?: DataPolicy;
   disabled?: boolean;
+  /** Why it is disabled, say (the select's tooltip). */
+  title?: string;
   /** The select element (e.g. to focus it when an inline confirm opens). */
   selectRef?: (el: HTMLSelectElement | null) => void;
 }) {
@@ -59,6 +62,7 @@ export function ModelPicker({
         aria-label={label}
         value={selected}
         disabled={disabled}
+        title={title}
         onChange={(e) => onChange(e.target.value)}
       >
         {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}

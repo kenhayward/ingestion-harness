@@ -12527,7 +12527,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Whether the open draft meets the holdout bar. Informational only: references and\nevaluation are optional, and publishing never needs the gate. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.",
+        "description": "Whether the open draft meets the holdout bar. Informational only: references and\nevaluation are optional, and publishing never needs the gate. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.\n\n`hints` (handoff EV1) are the deciding iteration's fields and `table.column`s\nbelow the threshold, worst first, at most 5: `no_step` when no step of the draft\nfills the output (fix on the Steps tab, `stage: steps`), else `low_accuracy`\n(`stage: revise`). Empty without a deciding iteration. The overview's `gate`\ncarries no hints.",
         "parameters": [
           {
             "schema": {
@@ -12541,7 +12541,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The gate.",
+            "description": "The gate and what lowers its score.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12572,6 +12572,41 @@
                     },
                     "reason": {
                       "type": "string"
+                    },
+                    "hints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "accuracy": {
+                            "type": "number"
+                          },
+                          "cause": {
+                            "type": "string",
+                            "enum": [
+                              "no_step",
+                              "low_accuracy"
+                            ]
+                          },
+                          "stage": {
+                            "type": "string",
+                            "enum": [
+                              "steps",
+                              "revise"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "accuracy",
+                          "cause",
+                          "stage"
+                        ],
+                        "additionalProperties": true
+                      }
                     }
                   },
                   "required": [
@@ -12579,10 +12614,11 @@
                     "iterationId",
                     "score",
                     "passes",
-                    "reason"
+                    "reason",
+                    "hints"
                   ],
                   "additionalProperties": true,
-                  "description": "The gate."
+                  "description": "The gate and what lowers its score."
                 }
               }
             }

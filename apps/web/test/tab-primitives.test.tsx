@@ -64,6 +64,13 @@ describe('Meter', () => {
     expect(meter.querySelector('.meter-tick')).toBeNull();
   });
 
+  it('can draw the threshold tick on an empty track', () => {
+    render(<Meter label="Dev" value={null} threshold={0.9} min={0.7} showTickWithoutValue />);
+    const meter = screen.getByRole('img', { name: 'Dev: no score yet' });
+    expect(meter.querySelector('.meter-fill')).toBeNull();
+    expect((meter.querySelector('.meter-tick') as HTMLElement).style.left).toBe('66.67%');
+  });
+
   it('clamps values outside the scale', () => {
     render(<Meter label="Dev" value={1.2} />);
     const meter = screen.getByRole('img', { name: 'Dev: 120%' });

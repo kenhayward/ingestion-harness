@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CorrectionSchema, PROVENANCES } from './corrections.js';
 import { JobStatusSchema, type JobStatus } from './jobs.js';
+import { outputCoverage } from './template.js';
 import { SampleRoleSchema } from './workbench.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
@@ -380,6 +381,64 @@ export const GateViewSchema = z.object({
   reason: z.string(),
 });
 export type GateView = z.infer<typeof GateViewSchema>;
+
+/** Why an output lowers the holdout score (handoff EV1): no step fills it, or it is often wrong. */
+export const GATE_HINT_CAUSES = ['no_step', 'low_accuracy'] as const;
+/** The tab that fixes each cause: Steps adds the missing step; Revise improves one from dev feedback. */
+export const GATE_HINT_STAGES = ['steps', 'revise'] as const;
+/** At most this many hints, worst first. */
+export const MAX_GATE_HINTS = 5;
+
+export const GateHintSchema = z.object({
+  /** A field id or `table.column`, as in the scorecard. */
+  key: z.string(),
+  accuracy: z.number(),
+  cause: z.enum(GATE_HINT_CAUSES),
+  stage: z.enum(GATE_HINT_STAGES),
+});
+export type GateHint = z.infer<typeof GateHintSchema>;
+
+/** `GET /api/workbench/projects/:id/publish-gate`: the gate and what lowers its score. The overview's gate has no hints. */
+export const PublishGateViewSchema = GateViewSchema.extend({ hints: z.array(GateHintSchema) });
+export type PublishGateView = z.infer<typeof PublishGateViewSchema>;
+
+/**
+ * What lowers the deciding holdout run's score (EV1): its fields and `table.column`s below the
+ * threshold, worst first (a missing step before a low accuracy on a tie, then by key), at most
+ * `MAX_GATE_HINTS`. `no_step` when no extract step of `definition` fills the output (a column
+ * takes its table's coverage; a key the definition does not define is not filled either).
+ */
+export function gateHints({
+  threshold,
+  scorecard,
+  definition,
+}: {
+  threshold: number;
+  scorecard: Pick<Scorecard, 'fields' | 'columns'>;
+  definition: unknown;
+}): GateHint[] {
+  const filled = new Set(
+    outputCoverage(definition)
+      .outputs.filter((o) => o.steps.length > 0)
+      .map((o) => o.id),
+  );
+  const hint = (a: Accuracy, output: string): GateHint =>
+    filled.has(output)
+      ? { key: a.id, accuracy: a.accuracy, cause: 'low_accuracy', stage: 'revise' }
+      : { key: a.id, accuracy: a.accuracy, cause: 'no_step', stage: 'steps' };
+  const tableOf = (id: string) => {
+    const dot = id.indexOf('.');
+    return dot < 0 ? id : id.slice(0, dot);
+  };
+  const rank = (h: GateHint) => (h.cause === 'no_step' ? 0 : 1);
+  return [
+    ...scorecard.fields.map((a) => hint(a, a.id)),
+    ...scorecard.columns.map((a) => hint(a, tableOf(a.id))),
+  ]
+    .filter((h) => h.accuracy < threshold)
+    .sort((a, b) => a.accuracy - b.accuracy || rank(a) - rank(b) || a.key.localeCompare(b.key))
+    .slice(0, MAX_GATE_HINTS);
+}
 
 export const percent = (x: number, digits = 0) =>
   digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;

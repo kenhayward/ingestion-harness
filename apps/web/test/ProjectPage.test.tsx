@@ -600,6 +600,6 @@ describe('ProjectPage', () => {
     render(
       <ProjectPage api={api} projectId="letter" tab="evaluate" onNavigate={vi.fn()} role="admin" />,
     );
-    expect(await screen.findByRole('button', { name: 'Evaluate the draft' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Evaluate v1 on dev' })).toBeInTheDocument();
   });
 });
