@@ -42,28 +42,28 @@
   border-radius: 2px;
   border: 1.5px solid transparent;
 }
-.seg-accepted {
+.progress-strip .seg-accepted {
   background: var(--ih-ok-fg);
 }
-.seg-skipped {
+.progress-strip .seg-skipped {
   background: var(--ih-skip-bg);
   border-color: var(--ih-skip-fg);
 }
-.seg-proposed,
-.seg-warn {
+.progress-strip .seg-proposed,
+.progress-strip .seg-warn {
   background: var(--ih-warn-fg);
 }
-.seg-running {
+.progress-strip .seg-running {
   background: var(--ih-accent);
 }
-.seg-stale {
+.progress-strip .seg-stale {
   background: var(--ih-alert-fg);
 }
-.seg-ready {
+.progress-strip .seg-ready {
   background: var(--ih-ok-bg);
   border-color: var(--ih-ok-fg);
 }
-.seg-locked {
+.progress-strip .seg-locked {
   background: var(--ih-lock-bg);
   border-color: var(--ih-lock-fg);
 }
