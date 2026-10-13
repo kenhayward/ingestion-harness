@@ -1,9 +1,9 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { TemplateRecordView } from '../src/api/client.js';
-import { TemplateEditor } from '../src/templates/TemplateEditor.js';
-import { fakeApi, job, projectView, publication } from './fake-api.js';
+import { ApiError, type TemplateRecordView } from '../src/api/client.js';
+import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
+import { fakeApi, job, projectView, publication, sampleView } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
 import { setYaml } from './yaml-editor.js';
 
@@ -33,7 +33,7 @@ const view = (
   issues: [],
 });
 
-function setup(record: TemplateRecordView, overrides = {}, embedded?: { onChanged: () => void }) {
+function setup(record: TemplateRecordView, overrides = {}, embedded?: EmbeddedEditor) {
   const onNavigate = vi.fn();
   const api = fakeApi({
     getTemplate: vi.fn(async () => record),
@@ -217,10 +217,20 @@ describe('TemplateEditor', () => {
     expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/2');
   });
 
+  it('saves with the base it started from on the Templates page too', async () => {
+    const record = view({ ...validDefinition(), version: 1 });
+    record.record.updatedAt = '2026-10-13T10:00:00.000Z';
+    const { api } = setup(record);
+    await userEvent.type(await screen.findByLabelText('Name'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![3]).toBe('2026-10-13T10:00:00.000Z');
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+  });
+
   describe('embedded in the workbench', () => {
     it('hides the single-sample test run (the Runs tab replaces it)', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
-      await screen.findByRole('button', { name: /^Publish v1/ });
+      await screen.findByRole('heading', { level: 2, name: 'Template · draft v1' });
       expect(
         screen.queryByRole('complementary', { name: 'Test this draft' }),
       ).not.toBeInTheDocument();
@@ -248,6 +258,193 @@ describe('TemplateEditor', () => {
       expect(api.publishTemplate).not.toHaveBeenCalled();
       expect(await screen.findByText('Published v1.')).toBeInTheDocument();
       expect(onNavigate).not.toHaveBeenCalled();
+    });
+
+    it('has the tab header, with Publish, and no back link, name heading or Save draft button', async () => {
+      setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      expect(
+        await screen.findByText(/Model proposals and your edits change the same draft/),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Template · draft v1' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Document types/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Publish v1/ })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Export YAML' })).toHaveAttribute(
+        'href',
+        '/api/templates/letter/versions/1/export',
+      );
+    });
+
+    it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, YAML, without Quality', async () => {
+      setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      await screen.findByRole('heading', { level: 2, name: 'Template · draft v1' });
+      const tabs = within(screen.getByRole('tablist', { name: 'Template sections' })).getAllByRole(
+        'tab',
+      );
+      expect(tabs.map((t) => t.textContent?.replace(/\s*\d+.*$/, ''))).toEqual([
+        'General',
+        'Sections',
+        'Outputs',
+        'Pipeline',
+        'YAML',
+      ]);
+      expect(screen.getByRole('tab', { name: /^Pipeline/ })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.queryByRole('tab', { name: /Quality/ })).not.toBeInTheDocument();
+      // validDefinition: one field and one table.
+      expect(screen.getByRole('tab', { name: /^Outputs/ })).toHaveTextContent('Outputs 2');
+    });
+
+    it('shows the unsaved bar on any edit, and Discard restores the saved draft', async () => {
+      const { api } = setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      await userEvent.click(await tab(/^General/));
+      expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      const bar = screen.getByRole('region', { name: 'Unsaved changes' });
+      expect(bar).toHaveTextContent('Unsaved change to the name');
+      expect(bar).toHaveTextContent('Saving marks the latest evaluation out of date.');
+      await userEvent.click(within(bar).getByRole('button', { name: 'Discard' }));
+      expect(screen.getByLabelText('Name')).toHaveValue('Letter');
+      expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+      expect(api.saveTemplate).not.toHaveBeenCalled();
+    });
+
+    it('saves from the bar with the base it started from and reports the save', async () => {
+      const record = view({ ...validDefinition(), version: 1 });
+      record.record.updatedAt = '2026-10-13T10:00:00.000Z';
+      const onSaved = vi.fn();
+      const { api } = setup(record, {}, { onChanged: vi.fn(), onSaved });
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+      expect(api.saveTemplate).toHaveBeenCalledWith(
+        'letter',
+        1,
+        expect.objectContaining({ name: 'Letter!' }),
+        '2026-10-13T10:00:00.000Z',
+      );
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+    });
+
+    it('offers a reload when the draft changed elsewhere', async () => {
+      const definition = { ...validDefinition(), version: 1 };
+      const getTemplate = vi
+        .fn()
+        .mockResolvedValueOnce(view(definition))
+        .mockResolvedValue(view({ ...definition, name: 'Changed elsewhere' }));
+      setup(
+        view(definition),
+        {
+          getTemplate,
+          saveTemplate: vi.fn(async () => {
+            throw new ApiError(
+              'the draft changed since you opened it; reload it to see the changes',
+              409,
+            );
+          }),
+        },
+        { onChanged: vi.fn() },
+      );
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'the draft changed since you opened it',
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Reload the draft' }));
+      await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Changed elsewhere'));
+      expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+    });
+
+    it('tries the saved draft on one prepared dev sample', async () => {
+      const onSaved = vi.fn();
+      const { api } = setup(
+        view({ ...validDefinition(), version: 1 }),
+        {
+          listSamples: vi.fn(async () => [
+            sampleView({ id: 's1', filename: 'inv-0001.pdf' }),
+            sampleView({ id: 's2', filename: 'inv-0012-initech.pdf' }),
+            sampleView({ id: 'h1', filename: 'holdout.pdf', role: 'holdout' }),
+            sampleView({ id: 'p1', filename: 'preparing.pdf', state: 'preparing' }),
+          ]),
+        },
+        { onChanged: vi.fn(), onSaved, dataPolicy: 'local' },
+      );
+      const pick = await screen.findByRole('combobox', { name: 'Try on' });
+      await waitFor(() =>
+        expect([...(pick as HTMLSelectElement).options].map((o) => o.text)).toEqual([
+          'inv-0001.pdf',
+          'inv-0012-initech.pdf',
+        ]),
+      );
+      await userEvent.selectOptions(pick, 's2');
+      await userEvent.click(screen.getByRole('button', { name: 'Test run' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Run test' }));
+      expect(api.runDevTests).toHaveBeenCalledWith('letter', { model: null, sampleIds: ['s2'] });
+      expect(
+        await screen.findByText('Test run queued on inv-0012-initech.pdf.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'See Test runs' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/runs',
+      );
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    it('disables Test run with a reason while edits are unsaved or no dev sample is prepared', async () => {
+      setup(
+        view({ ...validDefinition(), version: 1 }),
+        { listSamples: vi.fn(async () => [sampleView({ state: 'failed', error: 'password' })]) },
+        { onChanged: vi.fn() },
+      );
+      const run = await screen.findByRole('button', { name: 'Test run' });
+      await waitFor(() =>
+        expect(run).toHaveAttribute(
+          'title',
+          'No prepared dev samples: add or prepare some on the Samples tab',
+        ),
+      );
+      expect(run).toBeDisabled();
+      cleanup();
+      setup(
+        view({ ...validDefinition(), version: 1 }),
+        { listSamples: vi.fn(async () => [sampleView()]) },
+        { onChanged: vi.fn() },
+      );
+      await userEvent.click(await tab(/^General/));
+      await userEvent.type(screen.getByLabelText('Name'), '!');
+      const blocked = screen.getByRole('button', { name: 'Test run' });
+      expect(blocked).toBeDisabled();
+      expect(blocked).toHaveAttribute(
+        'title',
+        'Save the draft first: a test run uses the saved draft',
+      );
+    });
+
+    it('ends each part with a link to the stage that drafts it', async () => {
+      setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+      expect(await screen.findByRole('link', { name: 'Ask the model in Steps' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/steps',
+      );
+      await userEvent.click(await tab(/^Outputs/));
+      expect(screen.getByRole('link', { name: 'Ask the model in Outputs' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/outputs',
+      );
+      await userEvent.click(await tab(/^Sections/));
+      expect(screen.getByRole('link', { name: 'Ask the model in Sections' })).toBeInTheDocument();
+      await userEvent.click(await tab(/^General/));
+      expect(screen.getByRole('link', { name: /Revise/ })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/revise',
+      );
     });
 
     it('reports a new draft instead of navigating', async () => {
