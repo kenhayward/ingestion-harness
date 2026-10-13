@@ -298,7 +298,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
           dataPolicy: 'local',
         });
       }
-      for (const job of this.jobs.draftJobs.values()) {
+      for (const job of [...this.jobs.draftJobs.values(), ...this.jobs.exportJobs.values()]) {
         if (job.projectId === id) job.params = { ...job.params, dataPolicy: 'local' };
       }
     }

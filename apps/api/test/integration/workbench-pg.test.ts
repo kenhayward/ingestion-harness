@@ -95,6 +95,43 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect((await repo.listProjectJobs(projectId)).map((j) => j.id)).toEqual([prepare.id]);
   });
 
+  it('keeps one export job per project, even when two start at once', async () => {
+    const projectId = await newProject();
+    const other = await newProject();
+    const elsewhere = await repo.createExportJob(other, { stage: 'export' });
+    const draft = await repo.createDraftJob(projectId, { stage: 'survey' });
+    // Concurrent starts on a project with no export yet: without the lock both would miss the
+    // other's insert and two exports would remain.
+    const started = await Promise.all(
+      [1, 2, 3, 4].map((n) => repo.createExportJob(projectId, { stage: 'export', n })),
+    );
+    const listed = await repo.listExportJobs(projectId);
+    expect(listed).toHaveLength(1);
+    const survivor = listed[0]!;
+    expect(listed[0]).toMatchObject({ projectId, status: 'queued', error: null });
+    // Every other export was removed exactly once, by the call that ran after it.
+    const ids = started.map((s) => s.job.id);
+    expect(ids).toContain(survivor.id);
+    expect(started.flatMap((s) => s.removed).sort()).toEqual(
+      ids.filter((id) => id !== survivor.id).sort(),
+    );
+
+    const next = await repo.createExportJob(projectId, { stage: 'export', n: 5 });
+    expect(next.removed).toEqual([survivor.id]);
+    expect((await repo.listExportJobs(projectId)).map((j) => j.id)).toEqual([next.job.id]);
+    expect(await repo.getJobParams(next.job.id)).toEqual({ stage: 'export', n: 5 });
+    const { rows } = await pool.query<{ test: boolean; priority: number; max_attempts: number }>(
+      'SELECT test, priority, max_attempts FROM jobs WHERE id = $1',
+      [next.job.id],
+    );
+    expect(rows[0]).toEqual({ test: true, priority: -10, max_attempts: 3 });
+
+    // Other projects' exports and this project's draft jobs are untouched; none is a JobSummary.
+    expect((await repo.listExportJobs(other)).map((j) => j.id)).toEqual([elsewhere.job.id]);
+    expect((await repo.listDraftJobs(projectId)).map((j) => j.id)).toEqual([draft.id]);
+    expect(await repo.listProjectJobs(projectId)).toEqual([]);
+  });
+
   it('creates, lists and decides proposals once', async () => {
     const projectId = await newProject();
     const a = await repo.createDraftJob(projectId, { stage: 'survey' });

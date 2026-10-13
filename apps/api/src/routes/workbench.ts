@@ -99,7 +99,7 @@ const DecisionBody = z
 const SkipParams = StageParams;
 const FeedbackParams = z.object({ id: Id, fid: z.string().uuid() });
 
-const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
+export const isAdmin = (app: FastifyInstance, req: FastifyRequest) =>
   app.deps.access === null || req.auth?.role === 'admin';
 
 const StartSegmentation = z.object({ document: z.unknown().optional() }).strict();
@@ -178,7 +178,10 @@ async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageV
 }
 
 /** The body of the latest accepted survey, or null (context for the change stages). */
-async function acceptedSurvey(app: FastifyInstance, projectId: string): Promise<SurveyBody | null> {
+export async function acceptedSurvey(
+  app: FastifyInstance,
+  projectId: string,
+): Promise<SurveyBody | null> {
   const p = (await app.deps.workbench.listProposals(projectId)).find(
     (x) => x.stage === 'survey' && x.decision === 'accepted',
   );
