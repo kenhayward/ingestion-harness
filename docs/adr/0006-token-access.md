@@ -60,3 +60,22 @@ than listed by path; the access hook still decides on the matched route. Sign-in
 the routes the docs plugin registers are the only public `/api` routes, and the sweep in
 `access.test.ts` checks that exact set. The document describes an API whose code is already
 public and carries no deployment details (`servers: [{ url: '/' }]`).
+
+## Addendum (2026-10-13): issued admin tokens
+
+Reading the API log after every deploy is awkward for long-lived admin access, so admins can now
+issue **admin tokens** on the Access page, named and expiring like user tokens.
+
+- **The admin token from the log** (`bootstrap`, migration 0021) is unchanged: replaced on every
+  API start, and the only token that cannot be revoked or deleted.
+- **Issued admin tokens** survive restarts and **must expire** (1, 7, 30, 90 or 365 days; the
+  API refuses "never" and a table constraint backs it). Any admin can revoke or delete them.
+  They are full admins: every admin check is on the role, so they can issue tokens too,
+  including more admin tokens.
+- **Audit:** every token records `issued_by`, the label of the session that issued it, shown in
+  the list. Issuing an admin token is logged at warning level (`admin token issued`, with the
+  id, label, expiry and issuer; never the token).
+
+**Threat model change:** a leaked issued admin token stays valid until it expires or is
+revoked; a restart no longer ends it. Revoking it does not revoke tokens it issued: check the
+list for tokens it issued (`Issued by`) and revoke those too.

@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import type { ChangeBody } from './drafting.js';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
-import type { JobStatus } from './jobs.js';
+import { JobStatusSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
 export const SAMPLE_ROLES = ['dev', 'holdout'] as const;
@@ -182,13 +181,14 @@ export const SegmentationResultSchema = z.object({
 });
 export type SegmentationResult = z.infer<typeof SegmentationResultSchema>;
 
-export interface SegmentationView {
-  jobId: string;
-  status: JobStatus;
-  error: string | null;
+export const SegmentationViewSchema = z.object({
+  jobId: z.string().uuid(),
+  status: JobStatusSchema,
+  error: z.string().nullable(),
   /** Present once the job succeeded. */
-  result: SegmentationResult | null;
-}
+  result: SegmentationResultSchema.nullable(),
+});
+export type SegmentationView = z.infer<typeof SegmentationViewSchema>;
 
 export const DRAFT_STAGES = [
   'survey',
@@ -243,21 +243,12 @@ export const DraftResultSchema = z.object({
 });
 export type DraftResult = z.infer<typeof DraftResultSchema>;
 
-export type ProposalStatus =
-  'running' | 'ready' | 'failed' | 'accepted' | 'partially_accepted' | 'rejected';
-
-export interface ProposalView {
-  id: string;
-  stage: DraftStage;
-  status: ProposalStatus;
-  error: string | null;
-  briefVersion: number | null;
-  /** Resolved model that produced it (once ready). */
-  model: string | null;
-  /** survey: SurveyBody; outputs/sections/steps: ChangeBody. Null until ready. */
-  body: SurveyBody | ChangeBody | null;
-  /** Indexes of the changes applied to the draft (accepted / partially_accepted). */
-  acceptedChanges: number[] | null;
-  createdAt: string;
-  decidedAt: string | null;
-}
+export const ProposalStatusSchema = z.enum([
+  'running',
+  'ready',
+  'failed',
+  'accepted',
+  'partially_accepted',
+  'rejected',
+]);
+export type ProposalStatus = z.infer<typeof ProposalStatusSchema>;

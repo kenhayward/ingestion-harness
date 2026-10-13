@@ -1,6 +1,6 @@
 # API docs: an OpenAPI reference for the API
 
-**Status:** PRs 1–4 implemented · 2026-10-13 · approved in conversation
+**Status:** implemented (PRs 1–5) · 2026-10-13 · approved in conversation
 
 The API has about 95 routes in 13 route plugins (`apps/api/src/app.ts`), more than half of them in
 the Workbench. The only description of them today is the code and `CLAUDE.md`. This design adds
@@ -233,10 +233,11 @@ Each PR is red-tests-first and leaves `npm run check` green.
 2. **Pipeline** (done): Documents, Jobs, Review & steps, Results, Models.
 3. **Configuration** (done): Specs, Templates, References & regression.
 4. **Workbench, part 1** (done): projects and data policy, samples and brief, test runs, bundles.
-5. **Workbench, part 2, and finish**: drafting stages and proposals (with anchor previews),
-   evaluation, iterations and comparisons, feedback and revise, holdout and publish gate, and the
-   data-lake S3 keys; then delete the allow-list, move the route rules from `CLAUDE.md` into a link to the
-   docs, and add the docs to `CLAUDE.md`'s definition of done ("new routes documented").
+5. **Workbench, part 2, and finish** (done): drafting stages and proposals (with anchor
+   previews), evaluation, iterations and comparisons, feedback and revise, holdout and publish
+   gate, and the data-lake S3 keys; the allow-list is deleted, so every route must be documented,
+   and `CLAUDE.md`'s definition of done says so. `CLAUDE.md` keeps its Workbench and access rules:
+   they also cover the worker, the database and storage, which the API docs do not describe.
 
 ## Risks
 

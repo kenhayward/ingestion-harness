@@ -14,6 +14,7 @@ const token = (o: Partial<AccessToken> = {}): AccessToken => ({
   expiresAt: new Date(Date.now() + 30 * DAY).toISOString(),
   revokedAt: null,
   lastUsedAt: null,
+  issuedBy: 'admin',
   status: 'active',
   ...o,
 });
@@ -24,7 +25,13 @@ const rowName = (label: string) => new RegExp(`^${label}\\b`);
 const row = (label: string) => screen.getByRole('row', { name: rowName(label) });
 
 const four = () => [
-  token({ label: 'admin', role: 'admin', status: 'current-admin', expiresAt: null }),
+  token({
+    label: 'admin',
+    role: 'admin',
+    status: 'current-admin',
+    expiresAt: null,
+    issuedBy: null,
+  }),
   token({ label: 'Phone', expiresAt: new Date(Date.now() + 2 * DAY + 3600_000).toISOString() }),
   token({
     label: 'Contractor',
@@ -118,7 +125,7 @@ describe('AccessPage', () => {
     const form = screen.getByRole('form', { name: 'Issue a token' });
     await userEvent.click(within(form).getByRole('button', { name: '90 days' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
-    expect(createToken).toHaveBeenCalledWith('Phone', 90);
+    expect(createToken).toHaveBeenCalledWith('Phone', 90, 'user');
     const panel = await screen.findByRole('region', { name: 'New token' });
     expect(within(panel).getByText('Token created for “Phone”')).toBeInTheDocument();
     expect(
@@ -138,7 +145,51 @@ describe('AccessPage', () => {
     const form = screen.getByRole('form', { name: 'Issue a token' });
     await userEvent.click(within(form).getByRole('button', { name: 'Never' }));
     await userEvent.click(screen.getByRole('button', { name: 'Create token' }));
-    expect(createToken).toHaveBeenCalledWith('Kiosk', null);
+    expect(createToken).toHaveBeenCalledWith('Kiosk', null, 'user');
+  });
+
+  it('issues an admin token, which must expire', async () => {
+    const createToken = vi.fn(async () => ({ token: 'ih_x', record: token({ role: 'admin' }) }));
+    render(<AccessPage api={fakeApi({ createToken })} me={ADMIN} />);
+    const form = screen.getByRole('form', { name: 'Issue a token' });
+    const role = within(form).getByRole('group', { name: 'Role' });
+    expect(within(role).getByRole('button', { name: 'User' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(form).getByRole('button', { name: 'Never' }));
+    await userEvent.click(within(role).getByRole('button', { name: 'Admin' }));
+    expect(within(form).queryByRole('button', { name: 'Never' })).not.toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: '30 days' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(form).getByRole('note')).toHaveTextContent(
+      'Admin tokens have full access, including issuing tokens',
+    );
+    await userEvent.type(screen.getByLabelText('Label'), 'Ops laptop');
+    await userEvent.click(within(form).getByRole('button', { name: '1 year' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create admin token' }));
+    expect(createToken).toHaveBeenCalledWith('Ops laptop', 365, 'admin');
+    expect(await screen.findByText('Admin token created for “Ops laptop”')).toBeInTheDocument();
+  });
+
+  it('lets issued admin tokens be revoked, and shows who issued each token', async () => {
+    const revokeToken = vi.fn(async () => undefined);
+    const ops = token({ label: 'Ops laptop', role: 'admin', issuedBy: 'Ken – laptop' });
+    render(
+      <AccessPage
+        api={fakeApi({ revokeToken, listTokens: vi.fn(async () => [...four(), ops]) })}
+        me={ADMIN}
+      />,
+    );
+    await screen.findByText('Ops laptop');
+    expect(within(row('Ops laptop')).getByText('Issued by Ken – laptop')).toBeInTheDocument();
+    expect(within(row('admin')).queryByText(/Issued by/)).toBeNull();
+    expect(within(row('Ops laptop')).queryByText('Rotates on restart')).toBeNull();
+    await userEvent.click(within(row('Ops laptop')).getByRole('button', { name: 'Revoke' }));
+    await userEvent.click(within(row('Ops laptop')).getByRole('button', { name: 'Revoke now' }));
+    expect(revokeToken).toHaveBeenCalledWith(ops.id);
   });
 
   it('copies the token, saying so', async () => {

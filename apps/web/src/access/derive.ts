@@ -15,6 +15,9 @@ export const EXPIRY_OPTIONS: readonly { value: Expiry; label: string }[] = [
   { value: 'never', label: 'Never' },
 ];
 
+/** Admin tokens must expire, so they offer every preset but Never. */
+export const ADMIN_EXPIRY_OPTIONS = EXPIRY_OPTIONS.filter((o) => o.value !== 'never');
+
 export const expiryDays = (e: Expiry): number | null => (e === 'never' ? null : Number(e));
 
 export type TokenGroup = 'active' | 'expired' | 'revoked';

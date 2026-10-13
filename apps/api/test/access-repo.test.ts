@@ -82,13 +82,63 @@ describe('access tokens', () => {
     expect(await repo.deleteToken('nope')).toBe('not_found');
   });
 
+  it('issues admin tokens that survive a restart and can be revoked or deleted', async () => {
+    const { repo, advance } = setup();
+    await repo.rotateAdminToken();
+    const { token, record } = await repo.createToken('Ops laptop', 90, {
+      role: 'admin',
+      issuedBy: 'admin',
+    });
+    expect(record).toMatchObject({
+      label: 'Ops laptop',
+      role: 'admin',
+      status: 'active',
+      issuedBy: 'admin',
+      expiresAt: '2027-01-10T00:00:00.000Z',
+    });
+    const { sessionId, session } = (await repo.login(token))!;
+    expect(session).toMatchObject({ role: 'admin', label: 'Ops laptop' });
+
+    await repo.rotateAdminToken();
+    expect(await repo.session(sessionId)).toMatchObject({ role: 'admin' });
+    const admins = (await repo.listTokens()).filter((t) => t.role === 'admin');
+    expect(admins.map((t) => t.status).sort()).toEqual(['active', 'current-admin']);
+
+    expect(await repo.revokeToken(record.id)).toBe('ok');
+    expect(await repo.session(sessionId)).toBeNull();
+    expect(await repo.deleteToken(record.id)).toBe('ok');
+
+    const short = await repo.createToken('short', 1, { role: 'admin' });
+    advance(DAY + 1);
+    expect(await repo.login(short.token)).toBeNull();
+    expect((await repo.listTokens()).find((t) => t.id === short.record.id)!.status).toBe('expired');
+  });
+
+  it('refuses an admin token that never expires', async () => {
+    const { repo } = setup();
+    await expect(repo.createToken('forever', null, { role: 'admin' })).rejects.toThrow(
+      'admin tokens must expire',
+    );
+    expect(await repo.listTokens()).toEqual([]);
+  });
+
   it('never exposes hashes, records last use and logs out', async () => {
     const { repo } = setup();
     const { token } = await repo.createToken('a', null);
     const { sessionId } = (await repo.login(token))!;
     const [t] = await repo.listTokens();
     expect(Object.keys(t!).sort()).toEqual(
-      ['createdAt', 'expiresAt', 'id', 'label', 'lastUsedAt', 'revokedAt', 'role', 'status'].sort(),
+      [
+        'createdAt',
+        'expiresAt',
+        'id',
+        'issuedBy',
+        'label',
+        'lastUsedAt',
+        'revokedAt',
+        'role',
+        'status',
+      ].sort(),
     );
     expect(t!.lastUsedAt).not.toBeNull();
     await repo.logout(sessionId);

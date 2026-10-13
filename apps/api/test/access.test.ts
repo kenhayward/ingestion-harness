@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { z } from 'zod';
 import { MemoryAccessRepo, type AccessToken } from '../src/access/repo.js';
 import { AccessTokenSchema } from '../src/access/routes.js';
@@ -167,20 +167,85 @@ describe('token access', () => {
     expect((await del(record.id)).statusCode).toBe(204);
   });
 
-  it.each([{ label: '', expiresInDays: 7 }, { label: 'x', expiresInDays: 3 }, { label: 'x' }])(
-    'validates new tokens: %j',
-    async (payload) => {
-      const { app, adminToken } = await setup();
-      const admin = (await login(app, adminToken)).cookie;
-      const res = await app.inject({
+  it('lets admins issue named, expiring admin tokens that any admin can revoke', async () => {
+    const { app, adminToken, access } = await setup();
+    const warn = vi.spyOn(app.log, 'warn');
+    const admin = (await login(app, adminToken)).cookie;
+    const issue = (cookie: string, label: string, expiresInDays: number | null) =>
+      app.inject({
         method: 'POST',
         url: '/api/auth/tokens',
-        headers: { cookie: admin },
-        payload,
+        headers: { cookie },
+        payload: { label, expiresInDays, role: 'admin' },
       });
-      expect(res.statusCode).toBe(400);
-    },
-  );
+
+    const res = await issue(admin, 'Ops laptop', 90);
+    expect(res.statusCode).toBe(200);
+    const { token, record } = res.json();
+    expect(record).toMatchObject({
+      label: 'Ops laptop',
+      role: 'admin',
+      status: 'active',
+      issuedBy: 'admin',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      { tokenId: record.id, label: 'Ops laptop', expiresAt: record.expiresAt, issuedBy: 'admin' },
+      'admin token issued',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(token);
+
+    // Every admin is equal: an issued admin token can issue and revoke admin tokens too.
+    const ops = (await login(app, token)).cookie;
+    expect((await app.inject({ url: '/api/auth/me', headers: { cookie: ops } })).json()).toEqual({
+      role: 'admin',
+      label: 'Ops laptop',
+      expiresAt: record.expiresAt,
+    });
+    const second = await issue(ops, 'CI', 7);
+    expect(second.json().record).toMatchObject({ role: 'admin', issuedBy: 'Ops laptop' });
+    const revoke = await app.inject({
+      method: 'POST',
+      url: `/api/auth/tokens/${second.json().record.id}/revoke`,
+      headers: { cookie: ops },
+    });
+    expect(revoke.statusCode).toBe(204);
+
+    const never = await issue(admin, 'forever', null);
+    expect(never.statusCode).toBe(400);
+    expect(never.json()).toEqual({ error: 'admin tokens must expire' });
+
+    const user = (await access.createToken('user', 7)).token;
+    expect((await issue((await login(app, user)).cookie, 'sneaky', 7)).statusCode).toBe(403);
+  });
+
+  it('records who issued a user token', async () => {
+    const { app, adminToken } = await setup();
+    const admin = (await login(app, adminToken)).cookie;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/tokens',
+      headers: { cookie: admin },
+      payload: { label: 'Phone', expiresInDays: 30 },
+    });
+    expect(res.json().record).toMatchObject({ role: 'user', issuedBy: 'admin' });
+  });
+
+  it.each([
+    { label: '', expiresInDays: 7 },
+    { label: 'x', expiresInDays: 3 },
+    { label: 'x' },
+    { label: 'x', expiresInDays: 7, role: 'owner' },
+  ])('validates new tokens: %j', async (payload) => {
+    const { app, adminToken } = await setup();
+    const admin = (await login(app, adminToken)).cookie;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/tokens',
+      headers: { cookie: admin },
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+  });
 
   it('signs out', async () => {
     const { app, adminToken } = await setup();

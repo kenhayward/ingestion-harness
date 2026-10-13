@@ -146,6 +146,7 @@ const token = (id: string, label: string) => ({
   expiresAt: null,
   revokedAt: null,
   lastUsedAt: null,
+  issuedBy: null,
   status: 'active' as const,
 });
 
