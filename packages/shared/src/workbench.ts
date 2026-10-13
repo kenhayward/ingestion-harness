@@ -197,11 +197,23 @@ export const SegmentedSampleSchema = z.object({
 });
 export type SegmentedSample = z.infer<typeof SegmentedSampleSchema>;
 
+/** A one-click fix for a required section that missed a sample (worker anchor_hints, SC2). */
+export const AnchorSuggestionSchema = z.object({
+  section: z.string(),
+  sampleId: z.string(),
+  /** The anchor with the sample's way of writing the label added; it matches that sample. */
+  anchor: z.string(),
+  reason: z.string(),
+});
+export type AnchorSuggestion = z.infer<typeof AnchorSuggestionSchema>;
+
 /** Written by the worker's segment task (runs bucket, segmentationKey). */
 export const SegmentationResultSchema = z.object({
   /** Invalid regexes: section id (or "copies") -> message. Those anchors are skipped. */
   anchorErrors: z.record(z.string(), z.string()),
   samples: z.array(SegmentedSampleSchema),
+  /** Required sections that missed a sample, with an anchor that finds it; none before SC2. */
+  suggestions: z.array(AnchorSuggestionSchema).default([]),
 });
 export type SegmentationResult = z.infer<typeof SegmentationResultSchema>;
 

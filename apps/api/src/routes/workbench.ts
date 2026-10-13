@@ -1712,8 +1712,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           A preview's status and, once it succeeded, its result: per sample, the kept copy's
           pages, the sections found (pages and characters) and the required sections missing;
-          and the anchors whose regex is invalid. \`error: result missing\` when the result
-          file is gone.
+          and the anchors whose regex is invalid. \`suggestions\` lists, for required sections
+          that missed a sample, an anchor that would find it (the sample writes the label
+          another way: a synonym, another case, an indent) and why. \`error: result missing\`
+          when the result file is gone.
         `,
         params: z.object({
           id: z.string().describe('The project id.'),

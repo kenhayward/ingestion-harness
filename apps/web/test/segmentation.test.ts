@@ -53,6 +53,7 @@ describe('sectionHits', () => {
   it('counts samples where the anchor matched, ignoring unprepared samples', () => {
     const result = {
       anchorErrors: {},
+      suggestions: [],
       samples: [
         sample([cell({ id: 'a' })], { sampleId: '1' }),
         sample([cell({ id: 'a', found: false, chars: 0, page: null, line: null })], {

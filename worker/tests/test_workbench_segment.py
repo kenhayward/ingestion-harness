@@ -283,3 +283,30 @@ def test_runaway_child_is_reaped_even_when_the_worker_handles_sigterm() -> None:
         assert multiprocessing.active_children() == []
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+def test_a_required_section_that_misses_gets_a_label_variant_suggestion() -> None:
+    document = SegmentDocument.model_validate(
+        {
+            "sections": [
+                {"id": "header", "anchor": r"^TAX INVOICE"},
+                {"id": "supplier", "anchor": r"^(From|Supplier)\b"},
+                {"id": "notes", "anchor": r"^Notes\b", "required": False},
+            ]
+        }
+    )
+    acme = ["TAX INVOICE\nSupplier: Acme Ltd\n"]
+    globex = ["TAX INVOICE\nVendor: Globex Corporation\nNOTES: none\n"]
+    result = segment_samples([("acme", acme), ("globex", globex), ("blank", None)], document)
+    assert result["suggestions"] == [
+        {
+            "section": "supplier",
+            "sampleId": "globex",
+            "anchor": r"^(From|Supplier|Vendor)\b",
+            "reason": 'This sample labels it "Vendor:"; no alternative of the anchor matches that.',
+        }
+    ]
+
+
+def test_a_grid_without_misses_has_no_suggestions() -> None:
+    assert segment_samples([("s1", PAGES)], doc())["suggestions"] == []

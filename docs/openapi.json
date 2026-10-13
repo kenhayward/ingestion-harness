@@ -15836,6 +15836,34 @@
                                 ],
                                 "additionalProperties": true
                               }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "section": {
+                                    "type": "string"
+                                  },
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "anchor": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "section",
+                                  "sampleId",
+                                  "anchor",
+                                  "reason"
+                                ],
+                                "additionalProperties": true
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -15990,7 +16018,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "A preview's status and, once it succeeded, its result: per sample, the kept copy's\npages, the sections found (pages and characters) and the required sections missing;\nand the anchors whose regex is invalid. `error: result missing` when the result\nfile is gone.",
+        "description": "A preview's status and, once it succeeded, its result: per sample, the kept copy's\npages, the sections found (pages and characters) and the required sections missing;\nand the anchors whose regex is invalid. `suggestions` lists, for required sections\nthat missed a sample, an anchor that would find it (the sample writes the label\nanother way: a synonym, another case, an indent) and why. `error: result missing`\nwhen the result file is gone.",
         "parameters": [
           {
             "schema": {
@@ -16136,6 +16164,34 @@
                                 ],
                                 "additionalProperties": true
                               }
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "section": {
+                                    "type": "string"
+                                  },
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "anchor": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "section",
+                                  "sampleId",
+                                  "anchor",
+                                  "reason"
+                                ],
+                                "additionalProperties": true
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -17406,6 +17462,24 @@
                                           "field",
                                           "table"
                                         ]
+                                      },
+                                      "seenIn": {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "of"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -18031,6 +18105,34 @@
                                             ],
                                             "additionalProperties": true
                                           }
+                                        },
+                                        "suggestions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "section": {
+                                                "type": "string"
+                                              },
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "anchor": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "section",
+                                              "sampleId",
+                                              "anchor",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": true
+                                          },
+                                          "default": []
                                         }
                                       },
                                       "required": [
@@ -19280,6 +19382,24 @@
                                             "field",
                                             "table"
                                           ]
+                                        },
+                                        "seenIn": {
+                                          "type": "object",
+                                          "properties": {
+                                            "n": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "of": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "n",
+                                            "of"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -19905,6 +20025,34 @@
                                               ],
                                               "additionalProperties": true
                                             }
+                                          },
+                                          "suggestions": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "section": {
+                                                  "type": "string"
+                                                },
+                                                "sampleId": {
+                                                  "type": "string"
+                                                },
+                                                "anchor": {
+                                                  "type": "string"
+                                                },
+                                                "reason": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "section",
+                                                "sampleId",
+                                                "anchor",
+                                                "reason"
+                                              ],
+                                              "additionalProperties": true
+                                            },
+                                            "default": []
                                           }
                                         },
                                         "required": [
@@ -20206,6 +20354,24 @@
                                           "field",
                                           "table"
                                         ]
+                                      },
+                                      "seenIn": {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "of"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -20831,6 +20997,34 @@
                                             ],
                                             "additionalProperties": true
                                           }
+                                        },
+                                        "suggestions": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "section": {
+                                                "type": "string"
+                                              },
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "anchor": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "section",
+                                              "sampleId",
+                                              "anchor",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": true
+                                          },
+                                          "default": []
                                         }
                                       },
                                       "required": [

@@ -9,6 +9,7 @@ const a = sampleView({ id: 's1', filename: 'a.pdf' });
 const b = sampleView({ id: 's2', filename: 'b.pdf', role: 'holdout' });
 const result: SegmentationResult = {
   anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },
+  suggestions: [],
   samples: [
     {
       sampleId: 's1',

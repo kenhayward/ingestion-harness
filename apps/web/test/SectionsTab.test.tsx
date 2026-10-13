@@ -20,6 +20,7 @@ const definition = {
 const sample = sampleView({ id: 's1', filename: 'a.pdf' });
 const grid = {
   anchorErrors: {},
+  suggestions: [],
   samples: [
     {
       sampleId: 's1',

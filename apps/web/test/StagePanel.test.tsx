@@ -176,6 +176,7 @@ describe('StagePanel', () => {
         ],
         anchorCheck: {
           anchorErrors: {},
+          suggestions: [],
           samples: [
             {
               sampleId: 'sa',

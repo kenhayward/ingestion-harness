@@ -18,6 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from pypdf.errors import FileNotDecryptedError, PdfReadError, WrongPasswordError
 
+from .anchor_hints import suggest_anchor
 from .convert import ConversionRejected
 from .ocr import pages_needing_ocr
 from .pipeline import (
@@ -195,7 +196,8 @@ def segment_samples(
 
     Same steps as prepare_document: copy selection, page markers, then section_spans, so the
     grid shows exactly where production segmentation would cut. Invalid anchors are reported in
-    anchorErrors and skipped; they never fail the preview."""
+    anchorErrors and skipped; they never fail the preview. The grid also carries `suggestions`
+    (anchor_hints) for required sections that miss a sample."""
     anchor_errors: dict[str, str] = {}
     for section in document.sections:
         if (error := _regex_error(section.anchor)) is not None:
@@ -208,6 +210,7 @@ def segment_samples(
     required = [s.id for s in valid if s.required]
 
     rows: list[dict[str, Any]] = []
+    suggestions: list[dict[str, Any]] = []
     for sample_id, pages in samples:
         if not pages:
             rows.append(
@@ -260,7 +263,19 @@ def segment_samples(
                 "sections": cells,
             }
         )
-    return {"anchorErrors": anchor_errors, "samples": rows}
+        for section in valid:
+            if section.required and section.id in unmatched:
+                hint = suggest_anchor(section.anchor, text)
+                if hint is not None:
+                    suggestions.append(
+                        {
+                            "section": section.id,
+                            "sampleId": sample_id,
+                            "anchor": hint[0],
+                            "reason": hint[1],
+                        }
+                    )
+    return {"anchorErrors": anchor_errors, "samples": rows, "suggestions": suggestions}
 
 
 class SegmentSample(BaseModel):

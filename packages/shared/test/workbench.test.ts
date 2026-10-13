@@ -168,6 +168,21 @@ describe('drafting contracts', () => {
     expect(SurveyBodySchema.safeParse(extra).success).toBe(false);
   });
 
+  it('reads a grid written before suggestions as having none, and keeps suggestions', () => {
+    const grid = { anchorErrors: {}, samples: [] };
+    expect(SegmentationResultSchema.parse(grid)).toEqual({ ...grid, suggestions: [] });
+    const suggestion = {
+      section: 'supplier',
+      sampleId: 's1',
+      anchor: '^(From|Supplier|Vendor)\\b',
+      reason: 'This sample labels it "Vendor:"; no alternative of the anchor matches that.',
+    };
+    expect(SegmentationResultSchema.parse({ ...grid, suggestions: [suggestion] })).toEqual({
+      ...grid,
+      suggestions: [suggestion],
+    });
+  });
+
   it('accepts draft jobs', () => {
     expect(JobSummarySchema.shape.task.parse('draft')).toBe('draft');
   });

@@ -4,7 +4,7 @@ import { ApiError } from '../src/api/client.js';
 import { PREVIEW_DEADLINE_MS, useSegmentPreview } from '../src/workbench/useSegmentPreview.js';
 import { fakeApi, segmentationView } from './fake-api.js';
 
-const grid = { anchorErrors: {}, samples: [] };
+const grid = { anchorErrors: {}, samples: [], suggestions: [] };
 
 describe('useSegmentPreview', () => {
   it('starts a preview and polls until it finishes', async () => {
