@@ -4,7 +4,7 @@ import type { OpenAPIV3_1 } from 'openapi-types';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { TAGS } from '../src/openapi/document.js';
-import { md, res } from '../src/openapi/zod.js';
+import { binary, md, multipart, res, toJsonSchema } from '../src/openapi/zod.js';
 import { accessApp, registeredRoutes, testApp } from './helpers.js';
 import { takeViolations } from './openapi-conformance.js';
 
@@ -46,6 +46,45 @@ describe('docs browser', () => {
     expect(page.statusCode).toBe(200);
     expect(page.headers['content-type']).toMatch(/text\/html/);
     expect((await app.inject('/api/docs/js/scalar.js')).statusCode).toBe(200);
+  });
+});
+
+describe('schema helpers', () => {
+  it('forbid extra properties only where the Zod schema is strict', () => {
+    const schema = toJsonSchema(
+      z.object({ strict: z.object({ a: z.string() }).strict(), plain: z.object({}) }),
+    ) as { additionalProperties: unknown; properties: Record<string, object> };
+    expect(schema.additionalProperties).not.toBe(false);
+    expect(schema.properties.strict).toMatchObject({ additionalProperties: false });
+    expect(schema.properties.plain).not.toMatchObject({ additionalProperties: false });
+  });
+
+  it('document binary downloads and multipart uploads', async () => {
+    const { app } = await testApp();
+    app.post(
+      '/api/helpers',
+      {
+        schema: {
+          tags: ['Health'],
+          consumes: ['multipart/form-data'],
+          body: multipart({ name: { type: 'string', description: 'A name.' } }, ['name']),
+          response: { 200: binary('A PDF.', 'application/pdf') },
+        },
+      },
+      async () => 'x',
+    );
+    const doc = (await app.inject('/api/docs/openapi.json')).json<Doc>();
+    const op = doc.paths?.['/api/helpers']?.post as OpenAPIV3_1.OperationObject;
+    const body = op.requestBody as OpenAPIV3_1.RequestBodyObject;
+    expect(body.content['multipart/form-data']?.schema).toMatchObject({
+      type: 'object',
+      required: ['name', 'file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    });
+    expect(op.responses?.['200']).toEqual({
+      description: 'A PDF.',
+      content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+    });
   });
 });
 
@@ -279,8 +318,7 @@ describe('response conformance', () => {
     const app = await conformanceApp();
     await app.inject('/api/conformance/bad');
     expect(takeViolations()).toEqual([
-      "GET /api/conformance/:mode -> 200: data must have required property 'id', " +
-        'data must NOT have additional properties',
+      "GET /api/conformance/:mode -> 200: data must have required property 'id'",
     ]);
   });
 

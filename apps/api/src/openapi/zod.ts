@@ -7,7 +7,13 @@ export const DOCS_PREFIX = '/api/docs';
 /** JSON Schema for a Zod schema (route `schema` blocks may hold either). */
 export function toJsonSchema(schema: unknown): unknown {
   if (!(schema instanceof z.ZodType)) return schema;
-  return zodToJsonSchema(schema, { target: 'openApi3', $refStrategy: 'none' });
+  // Extra properties are refused only by .strict() schemas: handlers strip them otherwise, and
+  // responses are never trimmed to their schema.
+  return zodToJsonSchema(schema, {
+    target: 'openApi3',
+    $refStrategy: 'none',
+    removeAdditionalStrategy: 'strict',
+  });
 }
 
 /** A documented response: swagger uses the schema's description as the response description. */
@@ -16,6 +22,32 @@ export const res = <T extends z.ZodTypeAny>(description: string, schema: T): T =
 
 /** A documented response without a body (204). */
 export const noContent = (description: string) => ({ type: 'null', description }) as const;
+
+/** A documented download: the body is a file of one of these content types. */
+export const binary = (description: string, ...contentTypes: string[]) => ({
+  description,
+  content: Object.fromEntries(
+    contentTypes.map((type) => [type, { schema: { type: 'string', format: 'binary' } }]),
+  ),
+});
+
+/**
+ * A `multipart/form-data` body (use with `consumes: ['multipart/form-data']`): text fields, then
+ * the `file` part. Uploads read fields as they stream in, so fields must come before the file.
+ */
+export function multipart(
+  fields: Record<string, { type: 'string'; description: string; enum?: string[] }>,
+  required: string[],
+) {
+  return {
+    type: 'object',
+    properties: {
+      ...fields,
+      file: { type: 'string', format: 'binary', description: 'The PDF. Send it last.' },
+    },
+    required: [...required, 'file'],
+  };
+}
 
 /** The error body every route sends: a message, or Zod issues for some validation failures. */
 export const ErrorBody = z.object({
