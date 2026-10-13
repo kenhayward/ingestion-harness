@@ -501,9 +501,12 @@ export function overviewItems(ctx: StatusContext): OverviewItem[] {
   const { draft, published } = ctx.inputs;
   const runs = runsState(ctx.runs);
   const metrics = boxMetrics(ctx.facts, ctx.inputs);
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const awaiting =
+    ctx.runs.awaitingReview > 0 ? ` · ${ctx.runs.awaitingReview} awaiting review` : '';
   const runsText =
     runs === 'running'
-      ? `${ctx.runs.unfinished} running`
+      ? `${plural(ctx.runs.unfinished, 'test run')} in progress${awaiting}`
       : runs === 'warn'
         ? `${ctx.runs.awaitingReview} awaiting review`
         : runs === 'accepted'

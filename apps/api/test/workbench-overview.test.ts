@@ -439,7 +439,10 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       payload: {},
     });
     expect(run.statusCode).toBeLessThan(300);
-    expect((await p.item('runs')).state).toBe('running');
+    expect(await p.item('runs')).toMatchObject({
+      state: 'running',
+      status: '1 test run in progress',
+    });
     for (const job of p.repo.jobs.values()) {
       if (job.task === 'process') p.repo.jobs.set(job.id, { ...job, status: 'awaiting_review' });
     }
