@@ -608,13 +608,13 @@ async function iterationView(
  * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
  * draft (version and definition) with the template's own models count; their scores are always
  * recomputed from the jobs (raw output, so review edits never raise them), and coverage is
- * measured against the holdout samples that are ready now. `definition` is the `stableJson` of
- * the draft the gate was decided for.
+ * measured against the holdout samples that are ready now. `definition` is the draft the gate
+ * was decided for.
  */
 async function gateFor(
   app: FastifyInstance,
   project: WorkbenchProject,
-): Promise<GateView & { draft: number | null; definition: string | null }> {
+): Promise<GateView & { draft: number | null; definition: Record<string, unknown> | null }> {
   const { draft } = await versionsOf(app.deps.templates, project.id);
   if (draft === null) {
     return {
@@ -627,7 +627,8 @@ async function gateFor(
       definition: null,
     };
   }
-  const current = stableJson((await app.deps.templates.get(project.id, draft))!.definition);
+  const { definition } = (await app.deps.templates.get(project.id, draft))!;
+  const current = stableJson(definition);
   const ready = (await sampleViews(app, project.id))
     .filter((s) => s.record.role === 'holdout' && s.view.state === 'ready')
     .map((s) => s.record.sha256);
@@ -659,7 +660,7 @@ async function gateFor(
   return {
     ...publishGate({ threshold: project.publishThreshold, candidates }),
     draft,
-    definition: current,
+    definition,
   };
 }
 
@@ -845,10 +846,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.patch<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
     const body = ThresholdBodySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const project = await workbench.setPublishThreshold(req.params.id, body.data.publishThreshold);
+    const project = await workbench.setPublishThreshold(
+      req.params.id,
+      body.data.publishThreshold,
+      req.auth?.label ?? null,
+    );
     if (!project) return reply.code(404).send({ error: 'project not found' });
     req.log.info(
-      { projectId: project.id, publishThreshold: project.publishThreshold },
+      {
+        projectId: project.id,
+        publishThreshold: project.publishThreshold,
+        by: project.thresholdSetBy,
+      },
       'publish threshold changed',
     );
     return projectView(app, project);
@@ -926,25 +935,32 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         .code(409)
         .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
     }
-    // The gate was decided for the draft as it was read then; an edit since then voids it.
-    const now = await templates.get(projectId, draft);
-    if (!now || stableJson(now.definition) !== definition) {
+    // The gate was decided for the draft as it was read then; an edit since then voids it. The
+    // re-check, the publish and the publication record share one transaction.
+    const outcome = await workbench.publishDraft({
+      projectId,
+      version: draft,
+      definition: definition!,
+      publication: {
+        projectId,
+        version: draft,
+        iterationId: gate.iterationId,
+        score: gate.score,
+        threshold: gate.threshold,
+        // An override is recorded only when it was needed.
+        overrideReason: gate.passes ? null : overrideReason!,
+        publishedBy: req.auth?.label ?? null,
+      },
+    });
+    if (outcome.result === 'changed') {
       return reply
         .code(409)
         .send({ error: 'the draft changed while publishing; check the gate again' });
     }
-    const published = await templates.publish(projectId, draft);
-    if (!published) return reply.code(409).send({ error: 'the draft is no longer open' });
-    const publication = await workbench.recordPublication({
-      projectId,
-      version: draft,
-      iterationId: gate.iterationId,
-      score: gate.score,
-      threshold: gate.threshold,
-      // An override is recorded only when it was needed.
-      overrideReason: gate.passes ? null : overrideReason!,
-      publishedBy: req.auth?.label ?? null,
-    });
+    if (outcome.result === 'not-draft') {
+      return reply.code(409).send({ error: 'no open draft to publish' });
+    }
+    const { publication } = outcome;
     req.log.info(
       {
         projectId,

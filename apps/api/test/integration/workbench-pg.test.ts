@@ -552,8 +552,14 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
   it('stores the publish threshold and logs publications as numbers, newest first', async () => {
     const projectId = await newProject();
     expect((await workbench.getProject(projectId))!.publishThreshold).toBe(0.9);
-    expect((await workbench.setPublishThreshold(projectId, 0.75))!.publishThreshold).toBe(0.75);
-    expect(await workbench.setPublishThreshold('it-nope', 0.5)).toBeNull();
+    expect(await workbench.getProject(projectId)).toMatchObject({
+      thresholdSetBy: null,
+      thresholdSetAt: null,
+    });
+    const set = (await workbench.setPublishThreshold(projectId, 0.75, 'ken'))!;
+    expect(set).toMatchObject({ publishThreshold: 0.75, thresholdSetBy: 'ken' });
+    expect(Number.isNaN(Date.parse(set.thresholdSetAt!))).toBe(false);
+    expect(await workbench.setPublishThreshold('it-nope', 0.5, null)).toBeNull();
     const holdout = await workbench.createIteration({
       projectId,
       templateVersion: 1,
@@ -585,6 +591,83 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(a).toMatchObject({ score: null, threshold: 0.75 });
     expect(b).toMatchObject({ score: 0.92, threshold: 0.75, iterationId: holdout.id });
     expect((await workbench.listPublications(projectId)).map((p) => p.id)).toEqual([b.id, a.id]);
+  });
+
+  describe('publishDraft', () => {
+    const definition = { id: 'x', version: 1, outputs: { fields: [] }, name: 'Letter' };
+    const draftOf = async () => {
+      const projectId = await newProject();
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', $2)`,
+        [projectId, JSON.stringify(definition)],
+      );
+      return projectId;
+    };
+    const publication = (projectId: string) => ({
+      projectId,
+      version: 1,
+      iterationId: null,
+      score: 0.95,
+      threshold: 0.9,
+      overrideReason: null,
+      publishedBy: 'ken',
+    });
+    const statusOf = async (projectId: string) =>
+      (
+        await pool.query<{ status: string; published_at: Date | null }>(
+          'SELECT status, published_at FROM templates WHERE id = $1 AND version = 1',
+          [projectId],
+        )
+      ).rows[0]!;
+
+    it('publishes the draft and records the publication together', async () => {
+      const projectId = await draftOf();
+      const result = await workbench.publishDraft({
+        projectId,
+        version: 1,
+        // Key order differs from the stored jsonb: compared as stable JSON.
+        definition: { name: 'Letter', outputs: { fields: [] }, version: 1, id: 'x' },
+        publication: publication(projectId),
+      });
+      expect(result.result).toBe('published');
+      expect(await statusOf(projectId)).toMatchObject({ status: 'published' });
+      expect((await statusOf(projectId)).published_at).not.toBeNull();
+      const listed = await workbench.listPublications(projectId);
+      expect(result).toEqual({ result: 'published', publication: listed[0] });
+      expect(listed[0]).toMatchObject(publication(projectId));
+    });
+
+    it('writes nothing when the draft changed or is not an open draft', async () => {
+      const projectId = await draftOf();
+      const input = { projectId, version: 1, publication: publication(projectId) };
+      expect(
+        await workbench.publishDraft({ ...input, definition: { ...definition, name: 'Old' } }),
+      ).toEqual({ result: 'changed' });
+      expect(await workbench.publishDraft({ ...input, version: 2, definition })).toEqual({
+        result: 'not-draft',
+      });
+      expect(await statusOf(projectId)).toMatchObject({ status: 'draft' });
+      await pool.query(`UPDATE templates SET status = 'published' WHERE id = $1`, [projectId]);
+      expect(await workbench.publishDraft({ ...input, definition })).toEqual({
+        result: 'not-draft',
+      });
+      expect(await workbench.listPublications(projectId)).toEqual([]);
+    });
+
+    it('rolls the publish back when the publication insert fails', async () => {
+      const projectId = await draftOf();
+      await expect(
+        workbench.publishDraft({
+          projectId,
+          version: 1,
+          definition,
+          // No such iteration: the foreign key fails the INSERT inside the transaction.
+          publication: { ...publication(projectId), iterationId: randomUUID() },
+        }),
+      ).rejects.toThrow(/foreign key/);
+      expect(await statusOf(projectId)).toEqual({ status: 'draft', published_at: null });
+      expect(await workbench.listPublications(projectId)).toEqual([]);
+    });
   });
 
   it('groups comparison iterations and records uncached runs', async () => {

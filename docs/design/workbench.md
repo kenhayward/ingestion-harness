@@ -282,6 +282,11 @@ Rules:
   holdout history stay with it, so a later reader can see how much the holdout was relied on.
 - The publish gate uses the holdout score: at or above `publish_threshold` publishes directly;
   below it, publishing needs an override reason, recorded on the publication.
+- The threshold records who last set it and when (`threshold_set_by`, the token label, and
+  `threshold_set_at`; migration 0020).
+- Publishing re-checks that the draft is still the one the gate was decided for, publishes the
+  template and records the publication in one transaction (`WorkbenchRepo.publishDraft`), so a
+  publication is never logged without its template being published, or the reverse.
 - Only an honest holdout run counts: the newest complete holdout iteration of the current draft
   that ran the template's own models (iterations with a model override are for exploration and
   never count), covered every ready holdout sample, and compared every sample it evaluated (a

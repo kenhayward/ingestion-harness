@@ -17,6 +17,8 @@ describe('WorkbenchPage', () => {
           dataPolicyChangedAt: null,
           dataPolicyChangedBy: null,
           publishThreshold: 0.9,
+          thresholdSetBy: null,
+          thresholdSetAt: null,
           draft: 2,
           published: 1,
           samples: 5,

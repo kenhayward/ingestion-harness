@@ -386,6 +386,8 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
       publishThreshold: 0.9,
+      thresholdSetBy: null,
+      thresholdSetAt: null,
     },
     draft: 1,
     published: null,

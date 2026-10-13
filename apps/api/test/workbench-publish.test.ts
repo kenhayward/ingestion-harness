@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { outputKey, preparedTriageKey, type SampleView } from '@ih/shared';
+import { MemoryAccessRepo } from '../src/access/repo.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) =>
@@ -170,6 +171,53 @@ describe('publish gate', () => {
     await holdoutRun(ctx, 'Wrong');
     await patch(0);
     expect((await publish(ctx)).statusCode).toBe(201);
+  });
+
+  it('records who changed the threshold, and when', async () => {
+    const access = new MemoryAccessRepo();
+    const { app, workbench } = await testApp({ access });
+    await workbench.createProject('letter', 'Letter');
+    const { token } = await access.createToken('ken', null);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
+    const cookie = `ih_session=${/ih_session=([^;]*)/.exec(String(login.headers['set-cookie']))![1]}`;
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/workbench/projects/letter',
+      payload: { publishThreshold: 0.8 },
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().project.thresholdSetBy).toBe('ken');
+    const view = (
+      await app.inject({ url: '/api/workbench/projects/letter', headers: { cookie } })
+    ).json();
+    expect(view.project).toMatchObject({ publishThreshold: 0.8, thresholdSetBy: 'ken' });
+    expect(Number.isNaN(Date.parse(view.project.thresholdSetAt))).toBe(false);
+  });
+
+  it('records no actor for the threshold without access control', async () => {
+    const ctx = await project();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/workbench/projects/letter',
+      payload: { publishThreshold: 0.8 },
+    });
+    expect(res.json().project).toMatchObject({ thresholdSetBy: null });
+    expect(res.json().project.thresholdSetAt).not.toBeNull();
+  });
+
+  it('publishes and records the publication in one repo call', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    const publishDraft = vi.spyOn(ctx.workbench, 'publishDraft');
+    expect((await publish(ctx)).statusCode).toBe(201);
+    expect(publishDraft).toHaveBeenCalledOnce();
+    expect(publishDraft.mock.calls[0]![0]).toMatchObject({
+      projectId: 'letter',
+      version: 1,
+      definition: letter(1),
+      publication: { projectId: 'letter', version: 1, overrideReason: null, publishedBy: null },
+    });
   });
 
   it('refuses publishing a workbench type from the Templates page', async () => {
@@ -372,5 +420,23 @@ describe('publish gate honesty', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('the draft changed while publishing; check the gate again');
     expect((await ctx.templates.get('letter', 1))!.status).toBe('draft');
+  });
+
+  it('refuses to publish when the draft was published while the gate was checked', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    const list = ctx.workbench.listIterations.bind(ctx.workbench);
+    let published = false;
+    ctx.workbench.listIterations = async (projectId: string) => {
+      if (!published) {
+        published = true;
+        await ctx.templates.publish('letter', 1);
+      }
+      return list(projectId);
+    };
+    const res = await publish(ctx);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('no open draft to publish');
+    expect(await ctx.workbench.listPublications('letter')).toEqual([]);
   });
 });

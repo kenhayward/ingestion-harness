@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_BRIEF } from '@ih/shared';
 import { MemoryRepo } from '../src/repositories/memory.js';
+import { MemoryTemplateRepo } from '../src/templates/repo.js';
 import { MemoryWorkbenchRepo, WorkbenchConflictError } from '../src/workbench/repo.js';
 
 async function setup() {
   const jobs = new MemoryRepo();
-  const repo = new MemoryWorkbenchRepo(jobs);
+  const repo = new MemoryWorkbenchRepo(jobs, new MemoryTemplateRepo());
   await repo.createProject('letter', 'Letter');
   await jobs.createDocumentAndJob(
     {

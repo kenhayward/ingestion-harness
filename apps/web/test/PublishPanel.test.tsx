@@ -59,6 +59,27 @@ describe('PublishPanel', () => {
     expect(api.publish).toHaveBeenCalledWith('letter', 'Known bad scan in holdout');
   });
 
+  it('shows who last set the threshold, and when', async () => {
+    const view = projectView();
+    const setAt = '2026-10-01T09:30:00.000Z';
+    panel({
+      getProject: vi.fn(async () => ({
+        ...view,
+        project: { ...view.project, thresholdSetBy: 'ken', thresholdSetAt: setAt },
+      })),
+    });
+    expect(
+      await screen.findByText(`Threshold set by ken on ${new Date(setAt).toLocaleDateString()}`),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing about who set the threshold when it was never set', async () => {
+    panel();
+    await screen.findByLabelText('Publish threshold (%)');
+    await waitFor(() => expect(screen.getByLabelText('Publish threshold (%)')).toHaveValue(90));
+    expect(screen.queryByText(/Threshold set by/)).toBeNull();
+  });
+
   it('saves the threshold as a fraction', async () => {
     const { api } = panel({ setPublishThreshold: vi.fn(async () => projectView()) });
     const input = await screen.findByLabelText('Publish threshold (%)');

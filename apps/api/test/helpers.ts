@@ -62,7 +62,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const store = new MemoryObjectStore();
   const targetStore = new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
-  const workbench = new MemoryWorkbenchRepo(repo);
+  const workbench = new MemoryWorkbenchRepo(repo, templates);
   const app = await buildApp({
     repo,
     store,

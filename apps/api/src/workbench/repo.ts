@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { BriefBodySchema } from '@ih/shared';
+import { BriefBodySchema, stableJson } from '@ih/shared';
 import type {
   Brief,
   BriefBody,
@@ -16,6 +16,7 @@ import type {
   WorkbenchProject,
 } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
+import type { MemoryTemplateRepo } from '../templates/repo.js';
 import type { NewDocument, RemovedJob, StoredObject } from '../repositories/types.js';
 
 /** A workbench sample joined with its document row. */
@@ -103,6 +104,21 @@ export type NewIteration = Omit<
 
 export class WorkbenchConflictError extends Error {}
 
+export type NewPublication = Omit<Publication, 'id' | 'publishedAt'>;
+
+export interface PublishDraftInput {
+  projectId: string;
+  version: number;
+  /** The definition the gate was decided for; publishing refuses any other. */
+  definition: Record<string, unknown>;
+  publication: NewPublication;
+}
+
+export type PublishDraftResult =
+  | { result: 'published'; publication: Publication }
+  | { result: 'changed' }
+  | { result: 'not-draft' };
+
 /** What a deleted project leaves to clean up in the internal store. */
 export interface RemovedProject {
   /** Every deleted job with its draft outputs (`inboxObject` is always null: see `documents`). */
@@ -136,9 +152,19 @@ export interface WorkbenchRepo {
     policy: DataPolicy,
     by: string | null,
   ): Promise<WorkbenchProject | null>;
-  /** Null when the project is unknown. */
-  setPublishThreshold(id: string, threshold: number): Promise<WorkbenchProject | null>;
-  recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>): Promise<Publication>;
+  /** Null when the project is unknown. `actor` is the label of the token that changed it. */
+  setPublishThreshold(
+    id: string,
+    threshold: number,
+    actor: string | null,
+  ): Promise<WorkbenchProject | null>;
+  recordPublication(p: NewPublication): Promise<Publication>;
+  /**
+   * Publishes the template draft `version` and records the publication in one transaction:
+   * `not-draft` when the version is not an open draft, `changed` when its definition is no
+   * longer `definition` (both write nothing).
+   */
+  publishDraft(input: PublishDraftInput): Promise<PublishDraftResult>;
   /** Newest first. */
   listPublications(projectId: string): Promise<Publication[]>;
   createProposal(p: NewProposal): Promise<ProposalRecord>;
@@ -179,7 +205,10 @@ export interface WorkbenchRepo {
   deleteProject(id: string): Promise<RemovedProject | null>;
 }
 
-/** In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given. */
+/**
+ * In-memory adapter: reads documents from, and pins them in, the MemoryRepo it's given; the
+ * template repo stands in for the `templates` table that the Pg transactions share.
+ */
 export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly projects = new Map<string, WorkbenchProject>();
   readonly samples = new Map<string, NewSample & { id: string; createdAt: string }>();
@@ -190,7 +219,10 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   readonly publications: Publication[] = [];
   readonly feedback: FeedbackItem[] = [];
 
-  constructor(private readonly jobs: MemoryRepo) {}
+  constructor(
+    private readonly jobs: MemoryRepo,
+    private readonly templates: MemoryTemplateRepo,
+  ) {}
 
   async listProjects() {
     return [...this.projects.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -215,23 +247,47 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       dataPolicyChangedAt: null,
       dataPolicyChangedBy: null,
       publishThreshold: 0.9,
+      thresholdSetBy: null,
+      thresholdSetAt: null,
     };
     this.projects.set(id, project);
     return project;
   }
 
-  async setPublishThreshold(id: string, threshold: number) {
+  async setPublishThreshold(id: string, threshold: number, actor: string | null) {
     const project = this.projects.get(id);
     if (!project) return null;
-    const updated = { ...project, publishThreshold: threshold };
+    const updated = {
+      ...project,
+      publishThreshold: threshold,
+      thresholdSetBy: actor,
+      thresholdSetAt: this.now(),
+    };
     this.projects.set(id, updated);
     return updated;
   }
 
-  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
+  async recordPublication(p: NewPublication) {
     const row: Publication = { ...p, id: randomUUID(), publishedAt: this.now() };
     this.publications.push(row);
     return row;
+  }
+
+  async publishDraft(input: PublishDraftInput): Promise<PublishDraftResult> {
+    const record = await this.templates.get(input.projectId, input.version);
+    if (record?.status !== 'draft') return { result: 'not-draft' };
+    if (stableJson(record.definition) !== stableJson(input.definition)) {
+      return { result: 'changed' };
+    }
+    // The publication first: when it fails the draft stays open, as the Pg rollback leaves it.
+    const publication = await this.recordPublication(input.publication);
+    try {
+      await this.templates.publish(input.projectId, input.version);
+    } catch (err) {
+      this.publications.splice(this.publications.indexOf(publication), 1);
+      throw err;
+    }
+    return { result: 'published', publication };
   }
 
   async listPublications(projectId: string) {
@@ -546,6 +602,8 @@ interface ProjectRow {
   data_policy_changed_at: Date | null;
   data_policy_changed_by: string | null;
   publish_threshold: string;
+  threshold_set_by: string | null;
+  threshold_set_at: Date | null;
 }
 
 interface SampleRow {
@@ -697,6 +755,8 @@ const toProject = (r: ProjectRow): WorkbenchProject => ({
   dataPolicyChangedAt: r.data_policy_changed_at?.toISOString() ?? null,
   dataPolicyChangedBy: r.data_policy_changed_by,
   publishThreshold: Number(r.publish_threshold),
+  thresholdSetBy: r.threshold_set_by,
+  thresholdSetAt: r.threshold_set_at?.toISOString() ?? null,
 });
 
 const toSample = (r: SampleRow): SampleRecord => ({
@@ -744,16 +804,60 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     return rows[0] ? toProject(rows[0]) : null;
   }
 
-  async setPublishThreshold(id: string, threshold: number) {
+  async setPublishThreshold(id: string, threshold: number, actor: string | null) {
     const { rows } = await this.pool.query<ProjectRow>(
-      'UPDATE workbench_projects SET publish_threshold = $2 WHERE id = $1 RETURNING *',
-      [id, threshold],
+      `UPDATE workbench_projects
+          SET publish_threshold = $2, threshold_set_by = $3, threshold_set_at = now()
+        WHERE id = $1 RETURNING *`,
+      [id, threshold, actor],
     );
     return rows[0] ? toProject(rows[0]) : null;
   }
 
-  async recordPublication(p: Omit<Publication, 'id' | 'publishedAt'>) {
-    const { rows } = await this.pool.query<PublicationRow>(
+  async recordPublication(p: NewPublication) {
+    return this.insertPublication(this.pool, p);
+  }
+
+  async publishDraft(input: PublishDraftInput): Promise<PublishDraftResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{
+        definition: Record<string, unknown>;
+        status: string;
+      }>('SELECT definition, status FROM templates WHERE id = $1 AND version = $2 FOR UPDATE', [
+        input.projectId,
+        input.version,
+      ]);
+      const row = rows[0];
+      const refused: PublishDraftResult | null =
+        row?.status !== 'draft'
+          ? { result: 'not-draft' }
+          : stableJson(row.definition) !== stableJson(input.definition)
+            ? { result: 'changed' }
+            : null;
+      if (refused) {
+        await client.query('ROLLBACK');
+        return refused;
+      }
+      await client.query(
+        `UPDATE templates SET status = 'published', published_at = now(), updated_at = now()
+          WHERE id = $1 AND version = $2 AND status = 'draft'`,
+        [input.projectId, input.version],
+      );
+      const publication = await this.insertPublication(client, input.publication);
+      await client.query('COMMIT');
+      return { result: 'published', publication };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async insertPublication(db: pg.Pool | pg.PoolClient, p: NewPublication) {
+    const { rows } = await db.query<PublicationRow>(
       `INSERT INTO workbench_publications
          (project_id, version, iteration_id, score, threshold, override_reason, published_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
