@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BriefVersionViewSchema,
   ComparisonSchema,
   ExportViewSchema,
   FeedbackItemSchema,
@@ -139,6 +140,13 @@ const sample = {
   holdoutRuns: 0,
 };
 
+const briefVersion = {
+  version: 2,
+  createdAt: '2026-10-13T09:00:00.000Z',
+  changedSections: ['glossary'],
+  usedBy: ['outputs'],
+};
+
 const exportView = {
   jobId: '00000000-0000-4000-8000-000000000006',
   status: 'succeeded',
@@ -227,6 +235,7 @@ describe.each([
   ['ProjectView', ProjectViewSchema, projectView, 'brief'],
   ['SampleView', SampleViewSchema, sample, 'state'],
   ['ExportView', ExportViewSchema, exportView, 'status'],
+  ['BriefVersionView', BriefVersionViewSchema, briefVersion, 'usedBy'],
   ['IterationView', IterationViewSchema, iteration, 'scorecard'],
   ['ProposalView', ProposalViewSchema, proposal, 'stage'],
   ['ReferenceRow', ReferenceRowSchema, referenceRow, 'reference'],
