@@ -19,6 +19,11 @@ describe('BundleManifestSchema', () => {
   it('parses a worker-written manifest', () => {
     expect(BundleManifestSchema.parse(manifest)).toEqual(manifest);
   });
+  it('parses a Word sample', () => {
+    const word = { ...manifest.samples[0], filename: 'a.docx', file: `samples/${sha}.docx` };
+    const withWord = { ...manifest, samples: [word] };
+    expect(BundleManifestSchema.parse(withWord)).toEqual(withWord);
+  });
   it('parses the completed stages of a newer export', () => {
     const withStages = { ...manifest, completedStages: ['survey', 'outputs'] };
     expect(BundleManifestSchema.parse(withStages)).toEqual(withStages);
@@ -32,6 +37,17 @@ describe('BundleManifestSchema', () => {
       { ...manifest, samples: [{ ...manifest.samples[0], file: '../a.pdf' }] },
     ],
     ['an unknown key', { ...manifest, extra: 1 }],
+    [
+      'another extension',
+      { ...manifest, samples: [{ ...manifest.samples[0], file: `samples/${sha}.doc` }] },
+    ],
+    [
+      'a file named after another sha256',
+      {
+        ...manifest,
+        samples: [{ ...manifest.samples[0], file: `samples/${'b'.repeat(64)}.docx` }],
+      },
+    ],
     [
       'a completed stage outside the proposal stages',
       { ...manifest, completedStages: ['references'] },

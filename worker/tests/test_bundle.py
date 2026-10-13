@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from ingest_worker.bundle import build_bundle, run_export
+from ingest_worker.convert import DOCX_MIME
 from ingest_worker.drafting import MAX_CONTEXT_SAMPLES, STAGES, DraftSample, build_context
 from ingest_worker.llm.registry import ModelRegistry
 from ingest_worker.main import run_once
@@ -22,6 +23,7 @@ from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, export_key, prepared_text_key
 
 from .fakes import FakeQueue
+from .test_convert import DOCX
 
 PDF = b"%PDF-1.7\n% sample\n%%EOF\n"
 SHA = hashlib.sha256(PDF).hexdigest()
@@ -201,7 +203,7 @@ def test_export_refuses_an_empty_project_name(fixture_specs_dir: Path) -> None:
 
 
 def test_readme_says_what_the_stages_read_and_what_revise_misses() -> None:
-    files = read_zip(build_bundle(manifest={}, context="", brief={}, draft=None, pdfs={}))
+    files = read_zip(build_bundle(manifest={}, context="", brief={}, draft=None, files={}))
     readme = files["README.md"].decode()
     assert "survey, outputs, sections and steps" in readme
     assert "revise" in readme and "feedback" in readme and "evaluation failures" in readme
@@ -238,9 +240,40 @@ def test_bundle_bytes_are_deterministic() -> None:
         context="c",
         brief=BRIEF,
         draft=DRAFT,
-        pdfs={SHA: PDF},
+        files={f"samples/{SHA}.pdf": PDF},
     )
     assert build_bundle(**args) == build_bundle(**args)
+
+
+def test_export_names_a_word_sample_docx(fixture_specs_dir: Path) -> None:
+    store, deps = make(fixture_specs_dir)
+    store.put("inbox", "letter/w.docx", DOCX, DOCX_MIME)
+    word_sha = hashlib.sha256(DOCX).hexdigest()
+    store.put(
+        "runs",
+        prepared_text_key(word_sha),
+        json.dumps({"sha256": word_sha, "pages": []}).encode(),
+        "application/json",
+    )
+    word = {
+        "sampleId": "s2",
+        "filename": "w.docx",
+        "sha256": word_sha,
+        "role": "dev",
+        "bucket": "inbox",
+        "objectKey": "letter/w.docx",
+    }
+    job = export_job()
+    assert job.params is not None
+    job.params["samples"] = [*job.params["samples"], word]
+    manifest = run_export(job, deps, FakeQueue())
+    files = read_zip(store.get("runs", export_key("letter", "job-x")))
+    assert files[f"samples/{word_sha}.docx"] == DOCX
+    assert files[f"samples/{SHA}.pdf"] == PDF
+    assert [s["file"] for s in manifest["samples"]] == [
+        f"samples/{SHA}.pdf",
+        f"samples/{word_sha}.docx",
+    ]
 
 
 def test_an_export_cancelled_during_the_write_removes_its_zip(fixture_specs_dir: Path) -> None:

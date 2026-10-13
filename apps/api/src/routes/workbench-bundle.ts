@@ -217,7 +217,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     ) {
       return answer(409, taken);
     }
-    const samples = sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
+    const samples = await sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return answer(400, { error: samples });
 
     // Only now write: the draft, the project, the brief, then the samples.
@@ -250,7 +250,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           ? await workbench.saveBrief(projectId, brief)
           : null;
       for (const sample of samples) {
-        const body = await readFile(sample.path); // one PDF in memory at a time
+        const body = await readFile(sample.path); // one sample in memory at a time
         const added = await addSampleFile(app, project, {
           filename: sample.filename,
           body,
@@ -288,7 +288,8 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           project, its brief, its accepted survey and completed stages, and its dev samples
           (prepared again). Send the optional \`id\` and \`name\` fields **before** the
           \`bundle\` file; blank means the bundle's own. Everything (manifest, template, brief,
-          every PDF and its sha256) is checked before anything is written. The zip and what it
+          every sample file and its sha256: a PDF, or a Word document without tracked changes,
+          as an upload) is checked before anything is written. The zip and what it
           inflates to are capped at 12 samples at the upload limit plus 8 MiB. See the
           [bundle layout](${BUNDLE_DOCS}).`,
         body: {
@@ -352,7 +353,8 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Queues an export job that builds the project's bundle: a zip with a manifest, the
           brief, the draft template, the accepted survey and completed stages, the drafting
-          context (the same text a drafting model sees) and the ready dev sample PDFs. Holdout
+          context (the same text a drafting model sees) and the ready dev samples as uploaded
+          (PDFs, or Word documents as \`.docx\`). Holdout
           samples never leave. A new export replaces the previous one. Poll
           \`GET …/exports\`, then download the zip. Exporting a \`local\` project needs the
           admin token, since the bundle takes the samples out of the harness.

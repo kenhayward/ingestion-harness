@@ -22579,7 +22579,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Creates a project from an exported bundle: a v1 draft of its template, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, template, brief,\nevery PDF and its sha256) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
+        "description": "Creates a project from an exported bundle: a v1 draft of its template, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, template, brief,\nevery sample file and its sha256: a PDF, or a Word document without tracked changes,\nas an upload) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -22947,7 +22947,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft template, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev sample PDFs. Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
+        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft template, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev samples as uploaded\n(PDFs, or Word documents as `.docx`). Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
         "parameters": [
           {
             "schema": {

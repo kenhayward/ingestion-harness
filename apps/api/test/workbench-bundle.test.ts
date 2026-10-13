@@ -24,6 +24,7 @@ import { WorkbenchConflictError } from '../src/workbench/repo.js';
 import { BundleError, readBundle, type ReadBundleOptions } from '../src/workbench/bundle-import.js';
 import { acceptedSurvey } from '../src/routes/workbench.js';
 import { letter, multipart, testApp } from './helpers.js';
+import { docx } from './docx-fixtures.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 const brief = {
@@ -379,6 +380,8 @@ const pdfBytes = (n: number) => Buffer.from(`%PDF-1.7\n% bundle ${n}\n%%EOF\n`);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const memoYaml = 'id: memo\nversion: 3\nname: Memo\noutputs:\n  fields: []\n  tables: []\n';
 const samplePath = `samples/${sha(pdfBytes(1))}.pdf`;
+/** A sample's file name in a bundle: by its bytes, as the export names it. */
+const ext = (b: Buffer) => (b.subarray(0, 2).toString() === 'PK' ? 'docx' : 'pdf');
 /** A 4 KiB PDF: over the per-file limit for `maxUploadBytes: 1024`. */
 const pdf4KiB = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0x41)]);
 
@@ -397,7 +400,7 @@ function bundleFiles(
       sampleId: `x${i}`,
       filename: `m${i + 1}.pdf`,
       sha256: sha(pdf),
-      file: `samples/${sha(pdf)}.pdf`,
+      file: `samples/${sha(pdf)}.${ext(pdf)}`,
       inContext: true,
     })),
     stages: ['survey'],
@@ -407,7 +410,9 @@ function bundleFiles(
     'manifest.json': strToU8(JSON.stringify(manifest)),
     'brief.json': strToU8(JSON.stringify({ purpose: 'Memos' })),
     'template.yaml': strToU8(memoYaml),
-    ...Object.fromEntries(samples.map((pdf) => [`samples/${sha(pdf)}.pdf`, new Uint8Array(pdf)])),
+    ...Object.fromEntries(
+      samples.map((pdf) => [`samples/${sha(pdf)}.${ext(pdf)}`, new Uint8Array(pdf)]),
+    ),
     ...overrides.files,
   } as Record<string, Uint8Array>;
 }
@@ -456,6 +461,18 @@ const importBundle = (app: FastifyInstance, zip: Buffer, fields: Record<string, 
   });
 
 describe('import', () => {
+  it('imports a Word sample as a .docx', async () => {
+    const { app, store } = await testApp();
+    const word = docx();
+    const res = await importBundle(app, bundle({ samples: [word, pdfBytes(2)] }));
+    expect(res.statusCode).toBe(201);
+    const samples = (
+      await app.inject('/api/workbench/projects/memo/samples')
+    ).json() as SampleView[];
+    const wordSample = samples.find((s) => s.sha256 === sha(word))!;
+    expect(store.objects.get(`inbox/memo/v1/${wordSample.documentId}.docx`)?.body).toEqual(word);
+  });
+
   it('imports a bundle as a new project with a v1 draft, the brief and dev samples', async () => {
     const { app, repo, store, templates } = await testApp();
     const res = await importBundle(app, bundle());
@@ -561,7 +578,33 @@ describe('import', () => {
       'a sample that is not a PDF',
       () => bundle({ samples: [Buffer.from('not a pdf')] }),
       {},
-      /^sample m1\.pdf: not a PDF$/,
+      /^sample m1\.pdf: file is not a PDF or Word document \(\.docx\)$/,
+    ],
+    [
+      'a Word sample with tracked changes',
+      () => bundle({ samples: [docx({ body: '<w:p><w:del w:id="1"><w:r/></w:del></w:p>' })] }),
+      {},
+      /^sample m1\.pdf: the Word document has tracked changes/,
+    ],
+    [
+      'a PDF stored under a .docx name',
+      () =>
+        bundle({
+          manifest: {
+            samples: [
+              {
+                sampleId: 'x0',
+                filename: 'm1.pdf',
+                sha256: sha(pdfBytes(1)),
+                file: `samples/${sha(pdfBytes(1))}.docx`,
+                inContext: true,
+              },
+            ],
+          },
+          files: { [`samples/${sha(pdfBytes(1))}.docx`]: new Uint8Array(pdfBytes(1)) },
+        }),
+      {},
+      /^sample m1\.pdf: the file is a PDF, not a Word document$/,
     ],
     [
       'a sample over the per-file upload limit',
