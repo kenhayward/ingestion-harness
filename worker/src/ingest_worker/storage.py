@@ -28,6 +28,11 @@ def ocr_cache_key(pdf_sha256: str, settings_fingerprint: str, page_number: int) 
     return f"ocr-cache/{pdf_sha256}/{settings_fingerprint}/page-{page_number}.md"
 
 
+def converted_key(source_sha256: str, fingerprint: str) -> str:
+    """The PDF a Word (.docx) source converts to, per converter version (worker-internal)."""
+    return f"converted/{source_sha256}/{fingerprint}.pdf"
+
+
 def reviewed_document_key(job_id: str) -> str:
     """The approved document.json (edits applied) of a reviewed job, in the runs bucket."""
     return f"{job_id}/reviewed-document.json"

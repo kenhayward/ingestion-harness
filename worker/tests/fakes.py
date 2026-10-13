@@ -136,3 +136,23 @@ class FakeQueue:
 
     def reap_stale(self, older_than_s: float) -> int:
         return 0
+
+
+@dataclass
+class FakeConverter:
+    """DocumentConverter double: records each .docx it converts and returns `pdf`."""
+
+    pdf: bytes = b"%PDF-converted"
+    version: str = "fake-1"
+    calls: list[bytes] = field(default_factory=list)
+    #: Raised by to_pdf instead of converting (ConversionRejected, ConverterUnavailable).
+    error: Exception | None = None
+
+    def to_pdf(self, docx: bytes) -> bytes:
+        self.calls.append(docx)
+        if self.error is not None:
+            raise self.error
+        return self.pdf
+
+    def fingerprint(self) -> str:
+        return self.version

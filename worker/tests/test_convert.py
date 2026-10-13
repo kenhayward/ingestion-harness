@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import zipfile
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,6 +17,13 @@ from ingest_worker.convert import (
     GotenbergConverter,
     is_docx,
 )
+from ingest_worker.llm.registry import ModelRegistry
+from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps, Source, load_source
+from ingest_worker.queue import ClaimedJob
+from ingest_worker.specs import load_specs
+from ingest_worker.storage import MemoryObjectStore, converted_key
+
+from .fakes import FakeConverter, FakeQueue
 
 MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
 MACRO = "application/vnd.ms-word.document.macroEnabled.main+xml"
@@ -132,3 +141,105 @@ def test_gotenberg_fingerprint_reads_the_version_once() -> None:
 def test_gotenberg_fingerprint_outage_is_transient() -> None:
     with pytest.raises(ConverterUnavailable):
         gotenberg(_raise(httpx.ConnectError("refused"))).fingerprint()
+
+
+# --- load_source: what the pipeline reads from the inbox ---------------------------------
+
+
+def source_deps(
+    specs_dir: Path, data: bytes, converter: FakeConverter | None
+) -> tuple[PipelineDeps, ClaimedJob]:
+    store = MemoryObjectStore()
+    store.put("inbox", "letter/v1/doc-w.docx", data, DOCX_MIME)
+    deps = PipelineDeps(
+        store=store,
+        specs=load_specs(specs_dir),
+        models=ModelRegistry({}, {}, {}),
+        extract_text=lambda _pdf: ["text"],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        converter=converter,
+    )
+    job = ClaimedJob(
+        id="job-w",
+        document_id="doc-w",
+        spec_id="letter",
+        spec_version=1,
+        bucket="inbox",
+        object_key="letter/v1/doc-w.docx",
+        model_override=None,
+        attempts=1,
+        max_attempts=3,
+    )
+    return deps, job
+
+
+SHA = hashlib.sha256(DOCX).hexdigest()
+
+
+def test_a_pdf_is_passed_through_without_converting(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter()
+    deps, job = source_deps(fixture_specs_dir, b"%PDF-1.7 original", converter)
+    source = load_source(job, deps, FakeQueue())
+    assert source == Source(
+        data=b"%PDF-1.7 original",
+        sha256=hashlib.sha256(b"%PDF-1.7 original").hexdigest(),
+        kind="pdf",
+        pdf=b"%PDF-1.7 original",
+    )
+    assert converter.calls == []
+
+
+def test_a_docx_is_converted_once_and_cached_by_its_sha(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter()
+    deps, job = source_deps(fixture_specs_dir, DOCX, converter)
+    queue = FakeQueue()
+
+    first = load_source(job, deps, queue)
+    assert first == Source(data=DOCX, sha256=SHA, kind="docx", pdf=b"%PDF-converted")
+    assert deps.store.get("runs", converted_key(SHA, "fake-1")) == b"%PDF-converted"
+    assert converted_key(SHA, "fake-1") == f"converted/{SHA}/fake-1.pdf"
+
+    second = load_source(job, deps, queue)
+    assert second == first
+    assert converter.calls == [DOCX]
+    converted = [d for _, _, msg, d in queue.event_details if msg == "converted"]
+    assert [c["cached"] for c in converted] == [False, True]
+    assert converted[0]["converter"] == "fake-1"
+
+
+def test_a_corrupt_cache_entry_is_converted_again(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter()
+    deps, job = source_deps(fixture_specs_dir, DOCX, converter)
+    deps.store.put("runs", converted_key(SHA, "fake-1"), b"junk", "application/pdf")
+    assert load_source(job, deps, FakeQueue()).pdf == b"%PDF-converted"
+    assert deps.store.get("runs", converted_key(SHA, "fake-1")) == b"%PDF-converted"
+    assert len(converter.calls) == 1
+
+
+def test_another_converter_version_converts_again(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter()
+    deps, job = source_deps(fixture_specs_dir, DOCX, converter)
+    load_source(job, deps, FakeQueue())
+    converter.version = "fake-2"
+    load_source(job, deps, FakeQueue())
+    assert len(converter.calls) == 2
+
+
+def test_a_docx_without_a_converter_needs_configuration(fixture_specs_dir: Path) -> None:
+    deps, job = source_deps(fixture_specs_dir, DOCX, None)
+    with pytest.raises(DocumentError, match="set CONVERTER_URL"):
+        load_source(job, deps, FakeQueue())
+
+
+def test_a_rejected_document_is_a_document_error(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter(error=ConversionRejected("500: LibreOffice failed to convert"))
+    deps, job = source_deps(fixture_specs_dir, DOCX, converter)
+    with pytest.raises(DocumentError, match="could not convert the Word document: 500"):
+        load_source(job, deps, FakeQueue())
+
+
+def test_an_outage_propagates_unchanged(fixture_specs_dir: Path) -> None:
+    converter = FakeConverter(error=ConverterUnavailable("converter unreachable"))
+    deps, job = source_deps(fixture_specs_dir, DOCX, converter)
+    with pytest.raises(ConverterUnavailable):
+        load_source(job, deps, FakeQueue())
