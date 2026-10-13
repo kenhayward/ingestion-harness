@@ -6,7 +6,7 @@ export type ChangeKind =
 /** A change as the proposal card shows it: kind tag, tone, id (mono) and the rest in words. */
 export function changeParts(c: DraftChange): {
   kind: ChangeKind;
-  tone: 'info' | 'neutral' | 'ok' | 'alert';
+  tone: 'info' | 'neutral' | 'ok' | 'danger';
   id: string | null;
   text: string;
 } {
@@ -26,7 +26,7 @@ export function changeParts(c: DraftChange): {
         text: `columns ${c.table.columns.map((col) => col.id).join(', ')}`,
       };
     case 'removeOutput':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this output' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this output' };
     case 'putSection':
       return {
         kind: 'SECTION',
@@ -35,7 +35,7 @@ export function changeParts(c: DraftChange): {
         text: `/${c.section.anchor}/${c.section.required ? '' : ' (optional)'}`,
       };
     case 'removeSection':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this section' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this section' };
     case 'setCopies':
       return {
         kind: 'COPIES',
@@ -60,7 +60,7 @@ export function changeParts(c: DraftChange): {
             text: `${c.step.values} against ${c.step.reference}`,
           };
     case 'removeStep':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this step' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this step' };
     case 'setPreamble':
       return {
         kind: 'PREAMBLE',
@@ -69,6 +69,12 @@ export function changeParts(c: DraftChange): {
         text: c.preamble ? 'Set the prompt preamble' : 'Remove the prompt preamble',
       };
   }
+}
+
+/** One line per change for assistive technology (a checkbox label): kind, id and the words. */
+export function changeLabel(c: DraftChange): string {
+  const parts = changeParts(c);
+  return [parts.kind, parts.id, parts.text].filter(Boolean).join(' ');
 }
 
 export type ChangeVerb = 'NEW' | 'CHANGED' | 'REMOVED';

@@ -85,15 +85,15 @@ describe('changeParts', () => {
     ],
     [
       { op: 'removeStep', reason: 'r', id: 'old' },
-      { kind: 'REMOVE', tone: 'alert', id: 'old', text: 'remove this step' },
+      { kind: 'REMOVE', tone: 'danger', id: 'old', text: 'remove this step' },
     ],
     [
       { op: 'removeOutput', reason: 'r', id: 'x' },
-      { kind: 'REMOVE', tone: 'alert', id: 'x', text: 'remove this output' },
+      { kind: 'REMOVE', tone: 'danger', id: 'x', text: 'remove this output' },
     ],
     [
       { op: 'removeSection', reason: 'r', id: 's' },
-      { kind: 'REMOVE', tone: 'alert', id: 's', text: 'remove this section' },
+      { kind: 'REMOVE', tone: 'danger', id: 's', text: 'remove this section' },
     ],
     [
       { op: 'setPreamble', reason: 'r', preamble: 'Be careful' },

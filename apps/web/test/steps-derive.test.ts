@@ -101,6 +101,22 @@ describe('coverageHeadline', () => {
     [cov([], ['total']), null, { tone: 'warn', text: '1 output is filled by more than one step' }],
     [cov(['due_date']), null, { tone: 'warn', text: '1 output not filled by any step' }],
     [
+      cov(['due_date'], ['total', 'tax']),
+      null,
+      {
+        tone: 'warn',
+        text: '1 output not filled by any step; 2 filled by more than one step',
+      },
+    ],
+    [
+      cov(['due_date'], ['total']),
+      cov([], ['total']),
+      {
+        tone: 'warn',
+        text: '1 output not filled by any step — the proposal fixes it; 1 filled by more than one step',
+      },
+    ],
+    [
       cov(['due_date']),
       cov([]),
       { tone: 'warn', text: '1 output not filled by any step — the proposal fixes it' },

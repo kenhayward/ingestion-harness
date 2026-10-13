@@ -5,7 +5,7 @@ const percent = (v: number) => `${Math.round(v * 100)}%`;
 /** A 0..1 figure as a bar (handoff §0.7): role img, the numbers in its label, a threshold tick. */
 export function Meter({
   label,
-  value,
+  value: rawValue,
   threshold,
   min = 0,
   max = 1,
@@ -18,6 +18,8 @@ export function Meter({
   max?: number;
   tone?: StageTone;
 }) {
+  // A figure that is not a number (NaN, Infinity) is no score at all.
+  const value = rawValue !== null && Number.isFinite(rawValue) ? rawValue : null;
   const at = (v: number) => {
     const raw = (v - min) / (max - min);
     const share = max > min && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;

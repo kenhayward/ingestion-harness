@@ -38,7 +38,7 @@ describe('ProposalCard', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'Proposal · 2 of 2 changes selected' }),
     ).toBeInTheDocument();
-    const box = screen.getByRole('checkbox', { name: 'Apply: Field protocol_number (text)' });
+    const box = screen.getByRole('checkbox', { name: 'Apply: FIELD protocol_number text' });
     expect(box).toBeChecked();
     await userEvent.click(box);
     expect(h.onToggle).toHaveBeenCalledWith(0);
@@ -51,6 +51,21 @@ describe('ProposalCard', () => {
     );
   });
 
+  it('tags a removal with the danger tone, as the Outputs table does', () => {
+    const p = changeProposalView({
+      body: {
+        notes: '',
+        changes: [{ op: 'removeOutput', reason: 'Unused', id: 'old' }],
+      },
+    });
+    card(p, {
+      definition: { outputs: { fields: [{ id: 'old' }], tables: [] } },
+      selected: new Set([0]),
+    });
+    expect(screen.getByText('REMOVED')).toHaveClass('tone-danger');
+    expect(screen.getByText('REMOVE')).toHaveClass('tone-danger');
+  });
+
   it('cannot apply nothing', () => {
     card(changeProposalView(), { selected: new Set() });
     expect(screen.getByRole('button', { name: 'Apply 0 selected changes' })).toBeDisabled();
@@ -61,12 +76,12 @@ describe('ProposalCard', () => {
       definition: { outputs: { fields: [{ id: 'approved_on', type: 'text' }], tables: [] } },
     });
     const added = screen
-      .getByRole('checkbox', { name: 'Apply: Field protocol_number (text)' })
+      .getByRole('checkbox', { name: 'Apply: FIELD protocol_number text' })
       .closest('li')!;
     expect(within(added).getByText('NEW')).toBeInTheDocument();
     expect(within(added).getByText('+ protocol_number')).toBeInTheDocument();
     const changed = screen
-      .getByRole('checkbox', { name: 'Apply: Field approved_on (date)' })
+      .getByRole('checkbox', { name: 'Apply: FIELD approved_on date' })
       .closest('li')!;
     expect(within(changed).getByText('CHANGED')).toBeInTheDocument();
     expect(within(changed).getByText('type text → date')).toBeInTheDocument();

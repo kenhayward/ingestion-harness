@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { DraftChange } from '@ih/shared';
@@ -110,7 +110,7 @@ describe('Steps tab', () => {
     expect(screen.getByText(': step 1').closest('li')).toHaveTextContent('supplier_name');
     await userEvent.click(
       screen.getByRole('checkbox', {
-        name: 'Apply: Extract step header: supplier_name, due_date from header',
+        name: 'Apply: EXTRACT header fills supplier_name, due_date from header',
       }),
     );
     expect(
@@ -151,6 +151,20 @@ describe('Steps tab', () => {
       'href',
       '#/workbench/letter/runs',
     );
+  });
+
+  it('clears JUST ADDED when a new proposal is requested', async () => {
+    const api = stepsPanel();
+    api.startStage = vi.fn(async () => PROPOSAL);
+    await userEvent.click(await screen.findByRole('button', { name: 'Apply 2 selected changes' }));
+    expect(
+      within(await screen.findByRole('listitem', { name: 'Step 3: totals-match' })).getByText(
+        'JUST ADDED',
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Propose again' }));
+    await waitFor(() => expect(api.startStage).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText('JUST ADDED')).toBeNull());
   });
 
   it('ignores step figures from a draft that was superseded while loading', async () => {

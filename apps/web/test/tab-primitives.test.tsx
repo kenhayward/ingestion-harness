@@ -75,11 +75,22 @@ describe('Meter degenerate scales', () => {
   it.each([
     ['max equals min', { value: 0.5, min: 0.5, max: 0.5 }],
     ['max below min', { value: 0.5, min: 1, max: 0 }],
-    ['value is NaN', { value: Number.NaN, min: 0, max: 1 }],
-    ['value is Infinity', { value: Number.POSITIVE_INFINITY, min: 0, max: 1 }],
   ])('draws a 0%% fill when %s', (_name, props) => {
     const { container } = render(<Meter label="Dev" {...props} />);
     expect((container.querySelector('.meter-fill') as HTMLElement).style.width).toBe('0%');
+  });
+});
+
+describe('Meter non-finite values', () => {
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+  ])('treats %s as no score yet', (_name, value) => {
+    render(<Meter label="Dev" value={value} threshold={0.9} />);
+    const meter = screen.getByRole('img', { name: 'Dev: no score yet' });
+    expect(meter.querySelector('.meter-fill')).toBeNull();
+    expect(meter.querySelector('.meter-tick')).toBeNull();
   });
 });
 

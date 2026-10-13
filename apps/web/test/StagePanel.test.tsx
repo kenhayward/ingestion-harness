@@ -46,7 +46,7 @@ describe('StagePanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Propose outputs' }));
     expect(api.startStage).toHaveBeenCalledWith('letter', 'outputs');
     const first = await screen.findByRole('checkbox', {
-      name: 'Apply: Field protocol_number (text)',
+      name: 'Apply: FIELD protocol_number text',
     });
     expect(first).toBeChecked();
     expect(screen.getByRole('button', { name: 'Apply 2 selected changes' })).toBeEnabled();
@@ -204,7 +204,7 @@ describe('StagePanel', () => {
       { stage: 'sections' },
     );
     const item = (
-      await screen.findByRole('checkbox', { name: /^Apply: Section approval/ })
+      await screen.findByRole('checkbox', { name: /^Apply: SECTION approval/ })
     ).closest('li')!;
     expect(
       await within(item).findByText('found in 1 of 2 dev samples (missed: b.pdf)'),
@@ -214,11 +214,9 @@ describe('StagePanel', () => {
   it('cannot apply when no change is selected', async () => {
     panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
     await userEvent.click(
-      await screen.findByRole('checkbox', { name: 'Apply: Field protocol_number (text)' }),
+      await screen.findByRole('checkbox', { name: 'Apply: FIELD protocol_number text' }),
     );
-    await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Apply: Field approved_on (date)' }),
-    );
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Apply: FIELD approved_on date' }));
     expect(screen.getByRole('button', { name: 'Apply 0 selected changes' })).toBeDisabled();
   });
 
@@ -308,13 +306,11 @@ describe('StagePanel', () => {
       { stage: 'steps' },
     );
     const extract = (
-      await screen.findByRole('checkbox', { name: /^Apply: Extract step header/ })
+      await screen.findByRole('checkbox', { name: /^Apply: EXTRACT header/ })
     ).closest('li')!;
     expect(within(extract).getByText('EXTRACT')).toBeInTheDocument();
     expect(within(extract).getByText('header block')).toBeInTheDocument();
-    const check = screen
-      .getByRole('checkbox', { name: /^Apply: Check step totals/ })
-      .closest('li')!;
+    const check = screen.getByRole('checkbox', { name: /^Apply: CHECK totals/ }).closest('li')!;
     expect(within(check).getByText('CHECK')).toBeInTheDocument();
     expect(within(check).getByText('items.amount against total')).toBeInTheDocument();
   });

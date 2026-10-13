@@ -1,9 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { Api } from '../src/api/client.js';
 import { describe, expect, it, vi } from 'vitest';
-type TemplateRecordView = Awaited<ReturnType<Api['getTemplate']>>;
 import { useDefinitions } from '../src/workbench/useDefinitions.js';
 import { fakeApi, templateView } from './fake-api.js';
+
+type TemplateRecordView = Awaited<ReturnType<Api['getTemplate']>>;
 
 const def = (version: number) => ({ id: 'letter', version, outputs: { fields: [], tables: [] } });
 

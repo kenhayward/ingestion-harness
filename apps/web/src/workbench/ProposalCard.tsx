@@ -3,7 +3,7 @@ import type { ChangeBody, DraftChange, ProposalStatus, ProposalView } from '@ih/
 import { relativeTime } from '../jobs/derive.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { stageStyle, TONE_COLOR, type DisplayState } from '../ui/stageStyle.js';
-import { changeDiff, changeParts, changeVerb, type ChangeVerb } from './changes.js';
+import { changeDiff, changeLabel, changeParts, changeVerb, type ChangeVerb } from './changes.js';
 
 /** A proposal's status as a stage state: the card's border tone. */
 export const PROPOSAL_STATE: Record<ProposalStatus, DisplayState> = {
@@ -15,40 +15,12 @@ export const PROPOSAL_STATE: Record<ProposalStatus, DisplayState> = {
   failed: 'warn',
 };
 
-const VERB_TONE: Record<ChangeVerb, string> = { NEW: 'ok', CHANGED: 'info', REMOVED: 'alert' };
+const VERB_TONE: Record<ChangeVerb, string> = { NEW: 'ok', CHANGED: 'info', REMOVED: 'danger' };
 
 export interface NextStep {
   href: string;
   label: string;
   text: string;
-}
-
-/** One line per change, used as its checkbox label. */
-export function describeChange(c: DraftChange): string {
-  switch (c.op) {
-    case 'putField':
-      return `Field ${c.field.id} (${c.field.type}${c.field.type === 'enum' ? `: ${(c.field.enum ?? []).join(', ')}` : ''})`;
-    case 'putTable':
-      return `Table ${c.table.id} (${c.table.columns.map((col) => col.id).join(', ')})`;
-    case 'removeOutput':
-      return `Remove output ${c.id}`;
-    case 'putSection':
-      return `Section ${c.section.id}: /${c.section.anchor}/${c.section.required ? '' : ' (optional)'}`;
-    case 'removeSection':
-      return `Remove section ${c.id}`;
-    case 'setCopies':
-      return c.copies
-        ? `Keep the ${c.copies.select} copy, split at /${c.copies.anchor}/`
-        : 'No copy selection';
-    case 'putStep':
-      return c.step.type === 'extract'
-        ? `Extract step ${c.step.id}: ${c.step.table ? `table ${c.step.table}` : c.step.fields.join(', ')} from ${c.step.sections.join(', ')}`
-        : `Check step ${c.step.id}: ${c.step.values} against ${c.step.reference}`;
-    case 'removeStep':
-      return `Remove step ${c.id}`;
-    case 'setPreamble':
-      return c.preamble ? 'Set the prompt preamble' : 'Remove the prompt preamble';
-  }
 }
 
 function ChangeText({ c }: { c: DraftChange }) {
@@ -179,7 +151,7 @@ export function ProposalCard({
               <input
                 id={`${idBase}-${i}`}
                 type="checkbox"
-                aria-label={`Apply: ${describeChange(c)}`}
+                aria-label={`Apply: ${changeLabel(c)}`}
                 checked={selected.has(i)}
                 onChange={() => onToggle(i)}
               />

@@ -85,7 +85,9 @@ export function coverageHeadline(
         };
   }
   const base = `${plural(n, 'output')} not filled by any step`;
-  if (after === null) return { tone: 'warn', text: base };
+  const also =
+    now.multiple.length > 0 ? `; ${now.multiple.length} filled by more than one step` : '';
+  if (after === null) return { tone: 'warn', text: `${base}${also}` };
   const fixed = now.uncovered.filter((id) => !after.uncovered.includes(id)).length;
   const them = n === 1 ? 'it' : 'them';
   const tail =
@@ -94,7 +96,7 @@ export function coverageHeadline(
       : fixed > 0
         ? `the proposal fixes ${fixed}`
         : `the proposal does not fix ${them}`;
-  return { tone: 'warn', text: `${base} — ${tail}` };
+  return { tone: 'warn', text: `${base} — ${tail}${also}` };
 }
 
 export function stepFigures(m: StepMetric | undefined) {

@@ -185,7 +185,11 @@ export function StagePanel({
     };
   }, [api, projectId, stage, draft]);
 
-  const run = () => act(async () => setProposal(await api.startStage(projectId, stage)));
+  const run = () =>
+    act(async () => {
+      setJustAdded(new Set());
+      setProposal(await api.startStage(projectId, stage));
+    });
   const accept = () =>
     act(async () => {
       if (!proposal) return;
