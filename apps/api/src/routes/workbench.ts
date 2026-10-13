@@ -92,7 +92,7 @@ import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';
-import { isPdf, multipartField } from '../uploads.js';
+import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 import {
   WorkbenchConflictError,
   type IterationRecord,
@@ -359,16 +359,20 @@ async function toView(
   };
 }
 
-/** Adds a PDF as a sample (queues its prepare job). Shared by upload and bundle import. */
+/**
+ * Adds a PDF or Word document as a sample (queues its prepare job). Shared by upload and bundle
+ * import.
+ */
 export async function addSampleFile(
   app: FastifyInstance,
   project: WorkbenchProject,
   input: { filename: string; body: Buffer; role: SampleRole },
-): Promise<{ view: SampleView } | { code: 409 | 415; error: string }> {
+): Promise<{ view: SampleView } | { code: 409 | 415 | 422; error: string }> {
   const { workbench, templates } = app.deps;
   const { filename, body, role } = input;
   const projectId = project.id;
-  if (!isPdf(body)) return { code: 415, error: 'file is not a PDF' };
+  const source = checkSource(body);
+  if (!source.ok) return { code: source.code, error: source.error };
 
   const samples = await workbench.listSamples(projectId);
   if (samples.length >= MAX_SAMPLES) {
@@ -376,14 +380,14 @@ export async function addSampleFile(
   }
   const sha256 = createHash('sha256').update(body).digest('hex');
   if (samples.some((s) => s.sha256 === sha256)) {
-    return { code: 409, error: 'this PDF is already a sample of the project' };
+    return { code: 409, error: 'this file is already a sample of the project' };
   }
 
   const { draft, published } = await versionsOf(templates, projectId);
   const version = draft ?? published ?? 1;
   const documentId = randomUUID();
-  const key = inboxKey(projectId, version, documentId);
-  await app.deps.store.put(app.deps.buckets.inbox, key, body, 'application/pdf');
+  const key = inboxKey(projectId, version, documentId, source.ext);
+  await app.deps.store.put(app.deps.buckets.inbox, key, body, source.contentType);
   const job = await app.deps.repo.createWorkbenchJob(
     {
       id: documentId,
@@ -1263,21 +1267,22 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** Upload one sample PDF (multipart: `role` field first, then the file). */
+  /** Upload one sample PDF or Word document (multipart: `role` field first, then the file). */
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/samples',
     {
       schema: {
         tags: ['Samples & brief'],
         operationId: 'addSample',
-        summary: 'Upload a sample PDF',
+        summary: 'Upload a sample document',
         consumes: ['multipart/form-data'],
         description: md`
-          Adds a sample PDF to the project and queues its preparation (text extraction, with
-          OCR for pages without a text layer). Send \`role\` **before** the file. **Dev**
-          samples are what drafting sees; **holdout** samples are only used to score the draft
-          before publishing, never shown to a drafting model. A project holds at most 12
-          samples, each PDF once.
+          Adds a sample to the project and queues its preparation (text extraction, with OCR
+          for pages without a text layer). A sample is a PDF or a Word document (\`.docx\`,
+          without tracked changes), which the worker converts to PDF first. Send \`role\`
+          **before** the file. **Dev** samples are what drafting sees; **holdout** samples are
+          only used to score the draft before publishing, never shown to a drafting model. A
+          project holds at most 12 samples, each file once.
         `,
         params: ProjectIdParams,
         body: multipart(
@@ -1296,10 +1301,12 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           404: PROJECT_NOT_FOUND,
           406: error('The request is not `multipart/form-data`.'),
           409: error(
-            '`a project holds at most 12 samples`, or `this PDF is already a sample of the project`.',
+            '`a project holds at most 12 samples`, or `this file is already a sample of the ' +
+              'project`.',
           ),
           413: error('The file is larger than the upload limit.'),
-          415: error('`file is not a PDF`.'),
+          415: error(`\`${NOT_A_SOURCE}\`.`),
+          422: error(`\`${TRACKED_CHANGES}\`, or the Word document is too large to check.`),
         },
       },
     },

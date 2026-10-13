@@ -9,6 +9,7 @@ const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
   jobId: crypto.randomUUID(),
   documentId: 'd',
   filename: 'a.pdf',
+  contentType: 'application/pdf',
   specId: 'pvp',
   specVersion: 3,
   publishedAt: '2026-10-02T09:00:00.000Z',

@@ -4,6 +4,7 @@ import {
   JobStatusSchema,
   JobSummarySchema,
   pagePreviewKey,
+  sourceContentType,
   type JobSummary,
 } from '@ih/shared';
 import { z } from 'zod';
@@ -384,21 +385,25 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** The uploaded PDF (Jobs "Open PDF"), served inline from the inbox bucket. */
+  /**
+   * The uploaded file from the inbox bucket: a PDF inline (Jobs "Open PDF"), a Word document
+   * as a download (browsers cannot show it).
+   */
   app.get<{ Params: { id: string } }>(
     '/jobs/:id/document',
     {
       schema: {
         tags: ['Jobs'],
         operationId: 'getJobDocument',
-        summary: 'Download the uploaded PDF',
+        summary: 'Download the uploaded document',
         description: md`
-          The PDF the job processes, from the inbox bucket, served inline under its original
-          file name.
+          The file the job processes, from the inbox bucket, under its original file name. A
+          PDF is served inline; a Word document (\`.docx\`) as an attachment with its own
+          content type. The job's \`contentType\` says which it is.
         `,
         params: JobParams,
         response: {
-          200: binary('The PDF.', 'application/pdf'),
+          200: binary('The uploaded file: a PDF or a Word document.', 'application/pdf'),
           404: error('`not found`, or `document missing from storage`.'),
           502: error('`storage unavailable`.'),
         },
@@ -417,9 +422,13 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(502).send({ error: 'storage unavailable' });
       }
       if (!body) return reply.code(404).send({ error: 'document missing from storage' });
+      const type = sourceContentType(doc.key);
       return reply
-        .header('content-type', 'application/pdf')
-        .header('content-disposition', contentDisposition(doc.filename))
+        .header('content-type', type)
+        .header(
+          'content-disposition',
+          contentDisposition(doc.filename, type === 'application/pdf' ? 'inline' : 'attachment'),
+        )
         .header('x-content-type-options', 'nosniff')
         .header('cache-control', 'private, max-age=300')
         .send(body);

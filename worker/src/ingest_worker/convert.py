@@ -6,6 +6,7 @@ The converter is a port: Gotenberg (headless LibreOffice) in deployments, a fake
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from typing import Protocol
 
@@ -14,6 +15,7 @@ import httpx
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 #: The main part's content type of a .docx (not .docm, .dotx or other OOXML packages).
 DOCX_MAIN_TYPE = f"{DOCX_MIME}.main+xml"
+_OVERRIDE = re.compile(r"<Override\s[^>]*>")
 #: Bump when the conversion request changes in a way that changes its output (cache keys).
 CONVERT_VERSION = 1
 #: [Content_Types].xml is a few KiB; anything bigger is not a document we accept.
@@ -34,7 +36,16 @@ def is_docx(data: bytes) -> bool:
             types = z.read(info).decode("utf-8", errors="replace")
     except (zipfile.BadZipFile, KeyError, OSError, ValueError, EOFError):
         return False
-    return f'ContentType="{DOCX_MAIN_TYPE}"' in types and 'PartName="/word/document.xml"' in types
+    return any(
+        _attr(tag, "PartName") == "/word/document.xml"
+        and _attr(tag, "ContentType") == DOCX_MAIN_TYPE
+        for tag in _OVERRIDE.findall(types)
+    )
+
+
+def _attr(tag: str, name: str) -> str | None:
+    match = re.search(rf"\s{name}\s*=\s*[\"']([^\"']*)[\"']", tag)
+    return match.group(1) if match else None
 
 
 class ConversionRejected(Exception):

@@ -5,7 +5,7 @@
 | Service | Tech | Responsibility |
 | --- | --- | --- |
 | `app` | React 19 + Vite, served by nginx | Upload UI, job list, retry, output download. nginx proxies `/api`. |
-| `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs, enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
+| `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs and Word documents (`.docx`), enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
 | `worker` | Python 3.13, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
 | `postgres` | Postgres 17 | `documents`, `jobs` (queue), `job_events`, `job_outputs`, `llm_models`. |
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`. |

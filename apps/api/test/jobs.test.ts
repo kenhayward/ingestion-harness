@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
+import { DOCX_MIME } from '../src/uploads.js';
+import { docx } from './docx-fixtures.js';
 
 async function seedJob() {
   const ctx = await testApp();
@@ -462,6 +464,22 @@ describe('GET /api/jobs/:id/document', () => {
     expect(res.headers['content-disposition']).toBe('inline; filename="a.pdf"');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('serves a Word document as a download with its content type', async () => {
+    const ctx = await testApp();
+    const job = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'demo' }, { filename: 'report.docx', content: docx() }),
+      })
+    ).json();
+    const res = await ctx.app.inject(`/api/jobs/${job.id}/document`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe(DOCX_MIME);
+    expect(res.headers['content-disposition']).toBe('attachment; filename="report.docx"');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('keeps quotes and line breaks in the file name from breaking the header', async () => {

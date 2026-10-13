@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, unlinkSync, writeSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -8,7 +8,7 @@ import { Unzip, UnzipInflate } from 'fflate';
 import { parse as parseYaml } from 'yaml';
 import type { z } from 'zod';
 import type { BundleManifest } from '@ih/shared';
-import { isPdf } from '../uploads.js';
+import { checkSource, isPdf } from '../uploads.js';
 
 /**
  * Reading and checking a drafting bundle for import (Workbench phase 6). The zip is inflated as
@@ -55,7 +55,7 @@ export interface ReadBundleOptions {
 export const BUNDLE_TEXT_ALLOWANCE = 8 * 1024 * 1024;
 
 const METADATA = new Set(['manifest.json', 'brief.json', 'template.yaml', 'survey.json']);
-const SAMPLE = /^samples\/[^/]+\.pdf$/;
+const SAMPLE = /^samples\/[^/]+\.(pdf|docx)$/;
 const HEAD_BYTES = 8;
 /** Compressed bytes inflated per step: bounds the work done between two size checks. */
 const UNZIP_CHUNK = 16 * 1024;
@@ -261,22 +261,36 @@ export function templateEntry(text: Map<string, Buffer>): Record<string, unknown
     : null;
 }
 
-/** Each manifest sample's PDF file, checked; a string is the first problem. */
-export function sampleFiles(
+/**
+ * Each manifest sample's file, checked as an upload would be (a PDF, or a .docx without tracked
+ * changes, matching its extension); a string is the first problem. A .docx is read whole to be
+ * checked, one at a time.
+ */
+export async function sampleFiles(
   bundle: ReadBundle,
   manifest: BundleManifest,
   maxUploadBytes: number,
-): { filename: string; path: string }[] | string {
+): Promise<{ filename: string; path: string }[] | string> {
   const seen = new Set<string>();
   const out: { filename: string; path: string }[] = [];
   for (const s of manifest.samples) {
     const problem = (reason: string) => `sample ${s.filename}: ${reason}`;
     const entry = bundle.samples.get(s.file);
     if (!entry) return problem(`${s.file} is missing from the bundle`);
-    if (!isPdf(entry.head)) return problem('not a PDF');
     if (entry.size > maxUploadBytes) return problem('larger than the upload limit');
+    const source = isPdf(entry.head)
+      ? ({ ok: true, kind: 'pdf' } as const)
+      : checkSource(await readFile(entry.path));
+    if (!source.ok) return problem(source.error);
+    if (!s.file.endsWith(`.${source.kind}`)) {
+      return problem(
+        source.kind === 'pdf'
+          ? 'the file is a PDF, not a Word document'
+          : 'the file is a Word document, not a PDF',
+      );
+    }
     if (entry.sha256 !== s.sha256) return problem('the file does not match its sha256');
-    if (seen.has(s.sha256)) return problem('the same PDF as another sample');
+    if (seen.has(s.sha256)) return problem('the same file as another sample');
     seen.add(s.sha256);
     out.push({ filename: s.filename, path: entry.path });
   }

@@ -48,6 +48,15 @@ def word_zip(main_type: str | None = MAIN, *, padding: int = 0) -> bytes:
 DOCX = word_zip()
 
 
+def types_zip(overrides: str) -> bytes:
+    """A package whose [Content_Types].xml holds exactly `overrides`."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr("[Content_Types].xml", f"<Types>{overrides}</Types>")
+        z.writestr("word/document.xml", "<w:document/>")
+    return out.getvalue()
+
+
 @pytest.mark.parametrize(
     ("data", "expected"),
     [
@@ -60,11 +69,30 @@ DOCX = word_zip()
         (b"%PDF-1.7\n", False),
         (b"", False),
         (bytes(range(256)) * 4, False),
+        (types_zip(f"<Override ContentType='{MAIN}' PartName='/word/document.xml'/>"), True),
+        (types_zip(f'<Override PartName="/word/other.xml" ContentType="{MAIN}"/>'), False),
     ],
-    ids=["docx", "docm", "dotx", "no-types", "huge-types", "truncated", "pdf", "empty", "random"],
+    ids=[
+        "docx",
+        "docm",
+        "dotx",
+        "no-types",
+        "huge-types",
+        "truncated",
+        "pdf",
+        "empty",
+        "random",
+        "attribute-order",
+        "main-type-elsewhere",
+    ],
 )
 def test_is_docx(data: bytes, expected: bool) -> None:
     assert is_docx(data) is expected
+
+
+def test_the_smoke_test_fixture_is_a_docx() -> None:
+    fixture = Path(__file__).parents[2] / "deploy" / "scripts" / "fixtures" / "smoke.docx"
+    assert is_docx(fixture.read_bytes())
 
 
 def gotenberg(handler: httpx.MockTransport) -> GotenbergConverter:

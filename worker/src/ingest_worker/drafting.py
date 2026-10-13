@@ -37,10 +37,11 @@ DRAFT_SYSTEM = (
 
 RULES = """\
 How the ingestion harness reads a document:
-- Each PDF's text is extracted page by page; pages without a text layer are OCR'd, and OCR'd
-  tables are flattened to one line per row with cells separated by two spaces.
-- Pages are prefixed with a line "[page N]" (the original PDF page number).
-- Some PDFs hold several copies of the document (e.g. a blank protocol followed by the executed
+- Each document is a PDF, or a Word document converted to PDF first. Its text is extracted page
+  by page; pages without a text layer are OCR'd, and OCR'd tables are flattened to one line per
+  row with cells separated by two spaces.
+- Pages are prefixed with a line "[page N]" (the page number in the PDF).
+- Some documents hold several copies of the document (e.g. a blank protocol followed by the executed
   one); a copy-selection anchor can keep only the first or last copy.
 - The text is split into sections: each section starts at the first match of its anchor, a
   Python regular expression evaluated in multiline mode, and runs to the next section's start.
@@ -204,7 +205,7 @@ class DraftParamSample(BaseModel):
     filename: str
     sha256: str
     role: str
-    #: Where the sample's PDF lives (export jobs only; draft jobs never read the PDF).
+    #: Where the sample's file lives (export jobs only; draft jobs never read it).
     bucket: str | None = None
     object_key: str | None = Field(default=None, alias="objectKey")
 

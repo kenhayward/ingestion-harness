@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_SAMPLES, preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
 import { WORKBENCH_PRIORITY } from '../src/repositories/types.js';
+import { DOCX_MIME } from '../src/uploads.js';
+import { docx, para } from './docx-fixtures.js';
 import { multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -70,6 +72,20 @@ describe('workbench samples', () => {
     expect(repo.priorities.get(job.id)).toBe(WORKBENCH_PRIORITY);
     expect(await store.get('inbox', `letter/v1/${sample.documentId}.pdf`)).not.toBeNull();
     expect((await app.inject('/api/jobs')).json()).toEqual([]); // prepare jobs stay off the Jobs page
+  });
+
+  it('takes a Word document as a sample, once', async () => {
+    const { upload, store } = await withProject();
+    const res = await upload(docx());
+    expect(res.statusCode).toBe(201);
+    const sample = res.json() as SampleView;
+    const stored = store.objects.get(`inbox/letter/v1/${sample.documentId}.docx`);
+    expect(stored?.contentType).toBe(DOCX_MIME);
+    const again = await upload(docx());
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toEqual({ error: 'this file is already a sample of the project' });
+    const tracked = docx({ body: para('a') + '<w:p><w:ins w:id="1"><w:r/></w:ins></w:p>' });
+    expect((await upload(tracked)).statusCode).toBe(422);
   });
 
   it('takes a holdout role at upload and rejects a bad one', async () => {

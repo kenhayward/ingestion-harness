@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Post-deploy checks through the nginx front door, including token access (ADR 0006) and the
-# data lake's read-only S3 keys (ADR 0008).
+# Post-deploy checks through the nginx front door, including token access (ADR 0006), Word
+# documents through the converter (ADR 0009) and the data lake's read-only S3 keys (ADR 0008).
 #   ADMIN_TOKEN  required: the admin token the API logged at startup ("ADMIN TOKEN ...").
 #   S3_URL       the SeaweedFS S3 port as the lake sees it (default: localhost:S3_PUBLIC_PORT).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_URL="${BASE_URL:-http://localhost:${APP_PORT:-8081}}"
 S3_URL="${S3_URL:-http://localhost:${S3_PUBLIC_PORT:-8335}}"
 TRIES="${TRIES:-30}"
@@ -42,7 +43,8 @@ check /readyz
 
 # Caching and security headers from the app's nginx: the page must be revalidated (or a deploy
 # keeps showing the old build), assets are immutable, and both carry the security headers.
-headers() { curl -fsSI "$BASE_URL$1" | tr -d ''; }
+headers() { curl -fsSI "$BASE_URL$1" | tr -d '
+'; }
 security_headers() { # path label
   local h
   h="$(headers "$1")"
@@ -83,6 +85,26 @@ login "$user_token" "$USER_JAR" || fail "user sign-in"
 [[ "$(status -b "$ADMIN_JAR" -X DELETE "$BASE_URL/api/auth/tokens/$token_id")" == 204 ]] \
   || fail "delete"
 echo "ok   user token: sign-in, revoke, delete"
+
+# --- Word documents (ADR 0009): a .docx sample is converted and prepared (no model call) ------
+word_project=smoke-word
+words_url="$BASE_URL/api/workbench/projects/$word_project"
+status -b "$ADMIN_JAR" -X DELETE "$words_url" >/dev/null # left over from an interrupted run
+[[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
+  -d "{\"id\":\"$word_project\",\"name\":\"Smoke test (Word)\"}" \
+  "$BASE_URL/api/workbench/projects")" == 201 ]] || fail "create the Word smoke project"
+uploaded="$(curl -sS -b "$ADMIN_JAR" -F role=dev -F "file=@$SCRIPT_DIR/fixtures/smoke.docx" \
+  -w '\n%{http_code}' "$words_url/samples")"
+[[ "${uploaded##*$'\n'}" == 201 ]] || fail "upload a .docx sample: $uploaded"
+for ((i = 1; i <= 60; i++)); do
+  samples="$(curl -fsS -b "$ADMIN_JAR" "$words_url/samples")"
+  grep -q '"state":"preparing"' <<<"$samples" || break
+  sleep 2
+done
+grep -q '"state":"ready"' <<<"$samples" || fail "the .docx sample was not prepared: $samples"
+grep -q '"pageCount":2' <<<"$samples" || fail "the converted .docx must have 2 pages: $samples"
+[[ "$(status -b "$ADMIN_JAR" -X DELETE "$words_url")" == 204 ]] || fail "delete the Word project"
+echo "ok   Word document: converted and prepared (2 pages)"
 
 # --- S3 keys (ADR 0008): a lake key can read the publish bucket and nothing more ------------
 s3_status() { # access-key secret service curl-args...
