@@ -170,11 +170,15 @@ export function StagePanel({
     return () => clearInterval(timer);
   }, [running, pollMs, refresh]);
 
-  const proposalId = proposal?.id;
+  // A new proposal starts with every change selected. Reset during render (not in an effect), so
+  // no frame shows its checkboxes unchecked: a slow machine could see one before an effect ran.
   const changeCount = body?.changes.length ?? 0;
-  useEffect(() => {
+  const selectionKey = `${proposal?.id ?? ''}:${changeCount}`;
+  const [selectedFor, setSelectedFor] = useState(selectionKey);
+  if (selectedFor !== selectionKey) {
+    setSelectedFor(selectionKey);
     setSelected(new Set(Array.from({ length: changeCount }, (_, i) => i)));
-  }, [proposalId, changeCount]);
+  }
 
   useEffect(() => {
     if (stage !== 'sections') return;
