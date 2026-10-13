@@ -10,7 +10,8 @@ import {
   type StageView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { relativeTime } from '../jobs/derive.js';
+import { draftingModelName, relativeTime } from '../jobs/derive.js';
+import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
 import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
@@ -58,6 +59,7 @@ export function SurveyTab({
   item?: OverviewItem | null;
   now?: number;
 }) {
+  const models = useModelChoices(api);
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [stages, setStages] = useState<StageView[]>([]);
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -257,8 +259,8 @@ export function SurveyTab({
               <div className="survey-card-head">
                 <h3 id="survey-found-title">What the model found</h3>
                 <span className="muted survey-meta">
-                  {proposal.model ?? 'model'} · brief v{proposal.briefVersion ?? '–'} ·{' '}
-                  {relativeTime(proposal.createdAt, now)}
+                  {proposal.model === null ? 'model' : draftingModelName(proposal.model, models)} ·
+                  brief v{proposal.briefVersion ?? '–'} · {relativeTime(proposal.createdAt, now)}
                 </span>
               </div>
               <p>{body.summary}</p>

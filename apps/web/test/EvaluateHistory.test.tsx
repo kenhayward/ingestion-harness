@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AccuracyCard, HistoryCard } from '../src/workbench/EvaluateHistory.js';
-import { iterationView, publication } from './fake-api.js';
+import { iterationView, MODEL_CHOICES, publication } from './fake-api.js';
 
 describe('AccuracyCard', () => {
   it('lists outputs worst first with bars in words, counting those at 100%', () => {
@@ -68,6 +68,7 @@ describe('HistoryCard', () => {
   const card = (onRestore = vi.fn()) =>
     render(
       <HistoryCard
+        choices={MODEL_CHOICES}
         history={history}
         version={2}
         threshold={0.9}
@@ -93,7 +94,7 @@ describe('HistoryCard', () => {
     expect(rows).toHaveLength(4);
     expect(rows[0]).toHaveTextContent('HOLDOUT');
     expect(rows[0]).toHaveTextContent('88%');
-    expect(rows[1]).toHaveTextContent('Compare · default 75 · fast 50');
+    expect(rows[1]).toHaveTextContent('Compare · Main Production Model 75 · fast 50');
     expect(rows[2]).toHaveTextContent("Recipe's models · fresh");
     expect(rows[3]).toHaveTextContent('v1');
     const restore = within(rows[0]!).getByRole('button', { name: /^Restore v2 holdout run of / });
@@ -125,6 +126,7 @@ describe('HistoryCard', () => {
   it('says when nothing was evaluated', () => {
     render(
       <HistoryCard
+        choices={MODEL_CHOICES}
         history={[]}
         version={2}
         threshold={0.9}

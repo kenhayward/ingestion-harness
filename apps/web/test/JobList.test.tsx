@@ -137,8 +137,8 @@ describe('JobList rows', () => {
   });
 
   it.each([
-    [{ modelsUsed: ['local/qwen', 'anthropic/haiku'] }, 'local/qwen, anthropic/haiku'],
-    [{ modelsUsed: [], modelOverride: 'anthropic/opus' }, 'anthropic/opus'],
+    [{ modelsUsed: ['local/qwen', 'cloud/claude'] }, 'Main Production Model, Cloud model'],
+    [{ modelsUsed: [], modelOverride: 'anthropic/opus' }, 'Model no longer offered'],
     [{ modelsUsed: [], modelOverride: null }, 'Spec default'],
   ])('shows the document type and model: %j', (fields, shown) => {
     renderList([job({ filename: 'a.pdf', specId: 'inv', specVersion: 3, ...fields })], {

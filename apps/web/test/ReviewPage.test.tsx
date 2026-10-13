@@ -1,5 +1,5 @@
 import type { JobSummary } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -294,7 +294,8 @@ describe('ReviewPage', () => {
     });
     await userEvent.click(await screen.findByRole('tab', { name: /Steps/ }));
     const row = await screen.findByRole('row', { name: /data/ });
-    expect(row).toHaveTextContent('local/qwen');
+    await waitFor(() => expect(row).toHaveTextContent('Main Production Model'));
+    expect(row).not.toHaveTextContent('local/qwen');
     await userEvent.click(within(row).getByRole('button', { name: 'Re-run data' }));
     const dialog = screen.getByRole('dialog', { name: 'Re-run data' });
     expect(dialog).toHaveTextContent('Only data calls the model again');

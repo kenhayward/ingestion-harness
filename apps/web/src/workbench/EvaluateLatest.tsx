@@ -1,6 +1,12 @@
 import { Fragment, useEffect, useState } from 'react';
-import { FEEDBACK_MAX_CHARS, type EvaluationSet, type IterationView } from '@ih/shared';
+import {
+  FEEDBACK_MAX_CHARS,
+  type EvaluationSet,
+  type IterationView,
+  type ModelChoice,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { choiceName } from '../jobs/derive.js';
 import { Meter } from '../ui/Meter.js';
 import { offOutputs, outputsDiffering, tableDiff } from './evaluate.js';
 
@@ -39,7 +45,10 @@ export function LatestRun({
   iteration,
   set,
   threshold,
+  choices,
 }: {
+  /** The model choices: the run's model shows by its label. */
+  choices: readonly ModelChoice[];
   api: Api;
   projectId: string;
   iteration: IterationView | null;
@@ -147,7 +156,7 @@ export function LatestRun({
       <header className="eval-latest-head">
         <h3>
           Latest {iteration.set} run {DOT} v{iteration.templateVersion} {DOT}{' '}
-          {iteration.model ?? "recipe's models"}
+          {iteration.model === null ? "recipe's models" : choiceName(iteration.model, choices)}
           {iteration.uncached && ` ${DOT} fresh`}
         </h3>
         <p className="muted">

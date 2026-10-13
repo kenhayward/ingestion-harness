@@ -249,7 +249,7 @@ describe('SamplesTab', () => {
     expect(within(preview).getByRole('region', { name: 'Page 2' })).toHaveTextContent(
       'Batch 1 results',
     );
-    expect(preview).toHaveTextContent('Read by OCR (local/olmocr) · cached per PDF hash');
+    expect(preview).toHaveTextContent('Read by OCR · cached per PDF hash');
     expect(screen.getByRole('button', { name: 'Show text of a.pdf' })).toHaveAttribute(
       'aria-pressed',
       'true',

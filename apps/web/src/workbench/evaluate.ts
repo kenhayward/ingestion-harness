@@ -5,9 +5,11 @@ import {
   type GateHint,
   type GateView,
   type IterationSummary,
+  type ModelChoice,
   type Scorecard,
   type TableComparison,
 } from '@ih/shared';
+import { choiceName } from '../jobs/derive.js';
 
 /** Pure helpers of the Evaluate tab (handoff §8). */
 
@@ -120,7 +122,10 @@ const scoreOf = (h: IterationSummary) => (h.status === 'complete' ? h.score : nu
 const whole = (n: number | null) => (n === null ? '–' : String(Math.round(n * 100)));
 
 /** The iteration list, newest first; a model comparison is one row ("Compare · default 91 · …"). */
-export function historyRows(history: readonly IterationSummary[]): HistoryRow[] {
+export function historyRows(
+  history: readonly IterationSummary[],
+  choices: readonly ModelChoice[],
+): HistoryRow[] {
   const members = new Map<string, IterationSummary[]>();
   for (const h of history) {
     if (h.groupId) members.set(h.groupId, [...(members.get(h.groupId) ?? []), h]);
@@ -138,7 +143,7 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
       return [
         {
           ...base,
-          label: `${h.model ?? "Recipe's models"}${fresh}`,
+          label: `${h.model === null ? "Recipe's models" : choiceName(h.model, choices)}${fresh}`,
           score: scoreOf(h),
           running: h.status === 'running',
         },
@@ -155,7 +160,7 @@ export function historyRows(history: readonly IterationSummary[]): HistoryRow[] 
     return [
       {
         ...base,
-        label: `Compare ${DOT} ${group.map((g) => `${g.model ?? 'recipe'} ${whole(scoreOf(g))}`).join(` ${DOT} `)}${fresh}`,
+        label: `Compare ${DOT} ${group.map((g) => `${g.model === null ? 'recipe' : choiceName(g.model, choices)} ${whole(scoreOf(g))}`).join(` ${DOT} `)}${fresh}`,
         score: scores.length ? Math.max(...scores) : null,
         running: group.some((g) => g.status === 'running'),
       },

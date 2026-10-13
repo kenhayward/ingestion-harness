@@ -1,4 +1,10 @@
-import type { JobStatus, JobSummary, StepRun } from '@ih/shared';
+import {
+  pickedChoice,
+  type JobStatus,
+  type JobSummary,
+  type ModelChoice,
+  type StepRun,
+} from '@ih/shared';
 import { statusGroup, type StatusGroup } from '../shell/derive.js';
 
 /** Status tones (UI handoff): colour + label + shape, lightness differs as well as hue. */
@@ -173,10 +179,43 @@ export function jobDuration(
   return job.finishedAt ? formatDuration((Date.parse(job.finishedAt) - start) / 1000) : null;
 }
 
-/** What ran (step runs), else what was requested (override), else the spec default. */
-export function modelLabel(job: JobSummary): string {
-  if (job.modelsUsed.length) return job.modelsUsed.join(', ');
-  return job.modelOverride ?? 'Spec default';
+/** Shown instead of a model ref when no model choice matches (people never see refs). */
+export const MODEL_NOT_OFFERED = 'Model no longer offered';
+
+/**
+ * The model's name for people: a choice id, `default`, or a choice's ref -> its label. Anything
+ * else (a ref no choice has) is never shown; it reads "Model no longer offered".
+ */
+export function modelDisplayName(nameOrRef: string, choices: readonly ModelChoice[]): string {
+  const choice =
+    pickedChoice(nameOrRef, choices) ?? choices.find((c) => c.ref === nameOrRef) ?? null;
+  return choice?.label ?? MODEL_NOT_OFFERED;
+}
+
+/**
+ * A stored choice name (an evaluation's or step's model: a choice id, `default`, or an older
+ * name like `fast`) by its label. An older plain name stays as it is; a ref is never shown.
+ */
+export function choiceName(name: string, choices: readonly ModelChoice[]): string {
+  const choice = pickedChoice(name, choices);
+  if (choice) return choice.label;
+  return name.includes('/') ? modelDisplayName(name, choices) : name;
+}
+
+/** The drafting model (a ref) by its choice's label; "Drafting model" when no choice has it. */
+export function draftingModelName(ref: string | null, choices: readonly ModelChoice[]): string {
+  return choices.find((c) => c.ref === ref)?.label ?? 'Drafting model';
+}
+
+/** What ran (step runs), else what was requested (override), else the spec default; by name. */
+export function modelLabel(job: JobSummary, choices: readonly ModelChoice[]): string {
+  const names = job.modelsUsed.length
+    ? job.modelsUsed
+    : job.modelOverride
+      ? [job.modelOverride]
+      : [];
+  if (names.length === 0) return 'Spec default';
+  return [...new Set(names.map((n) => modelDisplayName(n, choices)))].join(', ');
 }
 
 const MENU = { width: 220, height: 160, gap: 4, margin: 8 };

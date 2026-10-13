@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { JobSummary } from '@ih/shared';
+import type { JobSummary, ModelChoice } from '@ih/shared';
 import type { ReviewData } from '../api/client.js';
 import { modelLabel } from '../jobs/derive.js';
 import { Icon } from '../ui/Icon.js';
@@ -11,10 +11,12 @@ export function ReviewHeader({
   data,
   jobs,
   jobId,
+  models,
 }: {
   data: ReviewData;
   jobs: readonly JobSummary[];
   jobId: string;
+  models: readonly ModelChoice[];
 }) {
   const reasonsId = useId();
   const { job, template } = data;
@@ -35,7 +37,7 @@ export function ReviewHeader({
               {template.name} · v{template.version}
             </span>
             <StatusPill status={job.status} />
-            <span className="mono">{modelLabel(job)}</span>
+            <span>{modelLabel(job, models)}</span>
           </p>
         </div>
         {queue.total > 0 && (

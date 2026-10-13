@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
-import { outputCoverage } from '@ih/shared';
+import { outputCoverage, type ModelChoice } from '@ih/shared';
+import { choiceName } from '../jobs/derive.js';
 import { TONE_COLOR } from '../ui/stageStyle.js';
 import {
   coverageHeadline,
@@ -53,7 +54,9 @@ function Step({
   sections,
   metric,
   justAdded,
+  models,
 }: {
+  models: readonly ModelChoice[];
   card: StepCard;
   sections: string[];
   metric: StepMetric | undefined;
@@ -73,7 +76,7 @@ function Step({
         </span>
         <code className="step-id">{card.id}</code>
         {justAdded && <span className="kind-tag tone-ok">JUST ADDED</span>}
-        {card.model && <code className="step-model muted">{card.model}</code>}
+        {card.model && <span className="step-model muted">{choiceName(card.model, models)}</span>}
       </div>
       {card.kind === 'EXTRACT' ? (
         <>
@@ -127,7 +130,9 @@ export function StepsView({
   metrics,
   justAdded,
   card,
+  models,
 }: {
+  models: readonly ModelChoice[];
   projectId: string;
   draftVersion: number;
   definition: Record<string, unknown>;
@@ -207,6 +212,7 @@ export function StepsView({
                 sections={sections}
                 metric={byStep.get(c.id)}
                 justAdded={justAdded.has(c.id)}
+                models={models}
               />
             ))}
           </ol>

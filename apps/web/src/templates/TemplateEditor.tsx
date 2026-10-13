@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
-  pickedChoice,
   VALUE_TYPES,
   type DataPolicy,
   type JobSummary,
@@ -33,6 +32,7 @@ import {
   validateDefinition,
   type Definition,
 } from './model.js';
+import { choiceName } from '../jobs/derive.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
@@ -109,7 +109,7 @@ export function TemplateEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const models = useModelChoices(api);
-  const modelName = (id: string) => pickedChoice(id, models)?.label ?? id;
+  const modelName = (id: string) => choiceName(id, models);
   /** The document type's model choice, which steps naming none inherit ('' = the default). */
   const typeModel = typeof def.model === 'string' && def.model !== 'default' ? def.model : '';
   /** The one pipeline step whose card is open (null: all collapsed). */

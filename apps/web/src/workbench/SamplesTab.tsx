@@ -395,10 +395,8 @@ export function SamplesTab({
                 paged
               />
               <p className="muted sample-preview-foot">
-                {shown.triage?.ocrPages.length
-                  ? `Read by OCR (${shown.triage.ocrModel ?? 'OCR model'})`
-                  : 'Text layer'}{' '}
-                · cached per PDF hash, so re-runs see identical text
+                {shown.triage?.ocrPages.length ? 'Read by OCR' : 'Text layer'} · cached per PDF
+                hash, so re-runs see identical text
               </p>
             </>
           ) : (

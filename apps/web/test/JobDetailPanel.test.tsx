@@ -2,7 +2,7 @@ import type { JobOutput, JobSummary, StepRun } from '@ih/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { JobDetailPanel } from '../src/jobs/JobDetailPanel.js';
-import { fakeApi, job } from './fake-api.js';
+import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
 const run = (o: Partial<StepRun> = {}): StepRun => ({
   id: 1,
@@ -40,6 +40,16 @@ const defaults = {
 const panel = () => screen.getByRole('complementary', { name: 'Job details' });
 
 describe('JobDetailPanel', () => {
+  it('shows the model by its choice label, plain, with no ref anywhere', async () => {
+    const j = job({ id: 'm', modelsUsed: ['local/qwen'], modelOverride: null });
+    render(<JobDetailPanel api={fakeApi()} job={j} {...defaults} models={MODEL_CHOICES} />);
+    const dd = within(panel()).getByText('Main Production Model');
+    expect(dd).not.toHaveClass('mono');
+    expect(dd).not.toHaveAttribute('title');
+    expect(panel().innerHTML).not.toContain('local/qwen');
+    await act(async () => {});
+  });
+
   it('shows the reviewer callout, progress and meta, and no downloads of draft outputs', async () => {
     const j = job({
       id: 'a',

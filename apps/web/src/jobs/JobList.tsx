@@ -66,7 +66,7 @@ export function JobList({
                   <span>
                     {specTitles.get(job.specId) ?? job.specId} v{job.specVersion}
                   </span>
-                  <span className="mono muted">{modelLabel(job)}</span>
+                  <span className="muted">{modelLabel(job, models)}</span>
                 </td>
                 <td className="status-cell">
                   <StatusPill status={job.status} />

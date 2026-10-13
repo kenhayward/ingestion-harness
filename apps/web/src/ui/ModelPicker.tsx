@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { pickedChoice, type DataPolicy, type ModelChoice } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { modelDisplayName } from '../jobs/derive.js';
 
 /**
  * The model choices people pick (ADR 0010, phase 4c), loaded once per `api`; empty while
@@ -23,9 +24,9 @@ export function useModelChoices(api: Api): ModelChoice[] {
 
 /**
  * The one model picker: model choices by label (the default marked, external ones flagged),
- * with the model the pick runs shown below. A local-only project cannot pick an external
+ * with an External tag below an external pick. A local-only project cannot pick an external
  * choice. `value` is a choice id (`default` reads as the default choice) or '' for
- * `emptyLabel`; a stored name that is no choice (a legacy `endpoint/model` ref) stays shown.
+ * `emptyLabel`; a stored name that is no choice (a legacy ref) shows as "Model no longer offered".
  */
 export function ModelPicker({
   label,
@@ -66,7 +67,7 @@ export function ModelPicker({
         onChange={(e) => onChange(e.target.value)}
       >
         {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
-        {legacy && <option value={value}>{value} (not a model choice)</option>}
+        {legacy && <option value={value}>Model no longer offered</option>}
         {choices.map((c) => (
           <option
             key={c.id}
@@ -80,10 +81,9 @@ export function ModelPicker({
           </option>
         ))}
       </select>
-      {picked && (
+      {picked?.location === 'external' && (
         <small className="model-hint muted">
-          Runs <code>{picked.ref}</code>
-          {picked.location === 'external' && <span className="tag tone-warn">External</span>}
+          <span className="tag tone-warn">External</span>
         </small>
       )}
     </span>
@@ -102,7 +102,7 @@ export function typeModelLabel(
   const base = "Document type's model";
   if (!type) return base;
   const name = type.model
-    ? (pickedChoice(type.model, choices)?.label ?? type.model)
+    ? modelDisplayName(type.model, choices)
     : choices.find((c) => c.isDefault)?.label;
   return name ? `${base} (${name})` : base;
 }

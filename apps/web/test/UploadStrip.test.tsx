@@ -21,7 +21,7 @@ describe('UploadStrip', () => {
 
     await screen.findByRole('option', { name: /New for testing only/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), 'test');
-    expect(screen.getByText('ryzen/openai/gpt-oss-20b')).toBeInTheDocument();
+    expect(screen.queryByText('ryzen/openai/gpt-oss-20b')).toBeNull();
     const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
     await userEvent.upload(screen.getByLabelText('PDF or Word files'), file);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));

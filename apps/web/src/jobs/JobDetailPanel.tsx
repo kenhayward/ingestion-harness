@@ -118,7 +118,7 @@ export function JobDetailPanel({
           {specTitles.get(job.specId) ?? job.specId} v{job.specVersion}
         </dd>
         <dt>Model</dt>
-        <dd className="mono">{modelLabel(job)}</dd>
+        <dd>{modelLabel(job, models)}</dd>
         <dt>Attempts</dt>
         <dd>{job.attempts}</dd>
         <dt>Created</dt>
