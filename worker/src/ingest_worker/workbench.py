@@ -7,6 +7,7 @@ PreparedTriage)."""
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
 import re
 import signal
@@ -32,6 +33,8 @@ from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, section_spans, select_copy
 from .specs import CopySelection, Section
 from .storage import prepared_text_key, prepared_triage_key, segmentation_key
+
+log = logging.getLogger("ingest_worker")
 
 #: Longest matched line returned to the UI.
 LINE_LIMIT = 200
@@ -73,6 +76,21 @@ def _extract(deps: PipelineDeps, pdf: bytes) -> list[str]:
         raise PrepareFailed("corrupt", f"PDF could not be read: {exc}") from exc
 
 
+def _quietly(
+    job: ClaimedJob,
+    level: Literal["info", "warn"],
+    message: str,
+    data: dict[str, Any],
+    queue: JobQueue,
+) -> None:
+    """Progress is advisory: a failed event write (job deleted mid-run, database blip) must
+    neither replace the DocumentError being raised nor abort a good preparation."""
+    try:
+        queue.event(job.id, level, message, data)
+    except Exception:
+        log.exception("could not record %r for job %s", message, job.id)
+
+
 def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     """Extract and OCR (mode auto) one sample (a PDF, or a .docx converted to PDF); write its
     text and triage to the runs bucket, keyed by the sha256 of the uploaded file. Returns the
@@ -83,13 +101,14 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
         return _prepare(job, deps, queue)
     except DocumentError as exc:
         data = {"code": prepare_error_code(exc), "message": str(exc)}
-        queue.event(job.id, "warn", PREPARE_FAILED, data)
+        _quietly(job, "warn", PREPARE_FAILED, data, queue)
         raise
 
 
 def _prepare(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
-        queue.event(job.id, "info", PREPARE_PROGRESS, {"stage": stage, "page": page, "of": of})
+        data = {"stage": stage, "page": page, "of": of}
+        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
 
     source = load_source(job, deps, queue)
     pdf, sha256 = source.pdf, source.sha256

@@ -227,3 +227,42 @@ def test_a_word_sample_the_converter_rejects_says_why(
 
     [(_, reason)] = queue.reviewed
     assert events_named(queue, PREPARE_FAILED) == [{"code": code, "message": reason}]
+
+
+class FlakyEvents(FakeQueue):
+    """Progress and failure events cannot be written (job deleted mid-run, database blip)."""
+
+    def event(
+        self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+    ) -> None:
+        if message in (PREPARE_PROGRESS, PREPARE_FAILED):
+            raise RuntimeError("could not write the event")
+        super().event(job_id, level, message, data)
+
+
+def test_a_failing_progress_event_does_not_abort_a_good_prepare(fixture_specs_dir: Path) -> None:
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + "Scanned one"]
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE, ""], ocr)
+    queue = FlakyEvents(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    assert queue.failed == []
+    assert deps.store.get_optional("runs", prepared_text_key(SHA)) is not None
+
+
+def test_a_failing_failure_event_keeps_the_needs_review_routing(fixture_specs_dir: Path) -> None:
+    deps = make_deps(fixture_specs_dir, [])
+
+    def locked(_pdf: bytes) -> list[str]:
+        raise FileNotDecryptedError("File has not been decrypted")
+
+    deps.extract_text = locked
+    queue = FlakyEvents(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.reviewed == [("job-p", "PDF is password-protected")]
+    assert queue.failed == []
