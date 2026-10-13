@@ -17,6 +17,7 @@ import {
   type DeleteJobResult,
   type IngestionRepo,
   type JobEventRecord,
+  type JobReview,
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
@@ -577,6 +578,23 @@ export class MemoryRepo implements IngestionRepo {
 
   async listEdits(jobId: string): Promise<ReviewEdit[]> {
     return this.edits.get(jobId) ?? [];
+  }
+
+  async listJobReviews(jobIds: readonly string[]): Promise<JobReview[]> {
+    return [...new Set(jobIds)].flatMap((id) => {
+      const job = this.jobs.get(id);
+      if (!job) return [];
+      return [
+        {
+          jobId: id,
+          status: job.status,
+          reviewer: job.reviewer,
+          reviewedAt: job.reviewedAt,
+          modelOverride: job.modelOverride,
+          edits: this.edits.get(id) ?? [],
+        },
+      ];
+    });
   }
 
   async addEdit(jobId: string, edit: NewEdit): Promise<ReviewEdit> {

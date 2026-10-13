@@ -141,3 +141,43 @@ describe('references across versions (repository)', () => {
     expect((await repo.listReferences('letter', 1)).map((r) => r.name)).toEqual(['a']);
   });
 });
+
+describe('listJobReviews (repository)', () => {
+  it('lists the reviews of several jobs with their edits, leaving out unknown ids', async () => {
+    const repo = new MemoryRepo();
+    const a = await docOf(repo, 'a');
+    const b = await docOf(repo, 'b');
+    repo.jobs.set(a.id, { ...repo.jobs.get(a.id)!, status: 'awaiting_review' });
+    const e1 = await repo.addEdit(a.id, {
+      field: 'total',
+      table: null,
+      row: null,
+      column: null,
+      oldValue: '1',
+      newValue: '2',
+      editor: 'kim',
+      reason: null,
+    });
+    await repo.approve(a.id, 'ken', null);
+    const reviews = await repo.listJobReviews([a.id, b.id, a.id, randomUUID()]);
+    expect(reviews).toEqual([
+      {
+        jobId: a.id,
+        status: 'queued',
+        reviewer: 'ken',
+        reviewedAt: expect.any(String),
+        modelOverride: null,
+        edits: [e1],
+      },
+      {
+        jobId: b.id,
+        status: 'queued',
+        reviewer: null,
+        reviewedAt: null,
+        modelOverride: null,
+        edits: [],
+      },
+    ]);
+    expect(await repo.listJobReviews([])).toEqual([]);
+  });
+});

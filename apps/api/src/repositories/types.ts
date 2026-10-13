@@ -8,6 +8,7 @@ import type {
   Reference,
   ResultSummary,
   ReviewEdit,
+  ReviewRecord,
   SegmentDocument,
   StepRun,
 } from '@ih/shared';
@@ -119,6 +120,12 @@ export interface ListPublishedQuery {
   beforeId?: string;
   /** Case-insensitive file name substring (matched literally). */
   q?: string;
+}
+
+/** A job's review as references read it (handoff RF1): decision, reviewer and every edit. */
+export interface JobReview extends ReviewRecord {
+  jobId: string;
+  modelOverride: string | null;
 }
 
 export interface NewEdit {
@@ -254,6 +261,11 @@ export interface IngestionRepo {
 
   // --- review (jobs in awaiting_review) ---
   listEdits(jobId: string): Promise<ReviewEdit[]>;
+  /**
+   * Reviews of several jobs in one call (the References tab's corrections): one entry per
+   * existing job, in no particular order; unknown ids are left out, duplicates collapse.
+   */
+  listJobReviews(jobIds: readonly string[]): Promise<JobReview[]>;
   addEdit(jobId: string, edit: NewEdit): Promise<ReviewEdit>;
   /** awaiting_review -> queued publish task. Null if the job is not awaiting review. */
   approve(jobId: string, reviewer: string | null, note: string | null): Promise<JobSummary | null>;
