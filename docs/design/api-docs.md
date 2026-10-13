@@ -1,6 +1,6 @@
 # API docs: an OpenAPI reference for the API
 
-**Status:** PR 1 implemented · 2026-10-13 · approved in conversation
+**Status:** PRs 1–2 implemented · 2026-10-13 · approved in conversation
 
 The API has about 95 routes in 13 route plugins (`apps/api/src/app.ts`), more than half of them in
 the Workbench. The only description of them today is the code and `CLAUDE.md`. This design adds
@@ -69,6 +69,12 @@ keep behaviour identical, `buildApp` installs:
 - a pass-through validator compiler (`() => (data) => ({ value: data })`): the handlers'
   `safeParse` stays the source of truth for validation and error messages;
 - a serializer compiler that is plain `JSON.stringify`: a response schema can never drop a field.
+  Fastify's own errors (406, 413, …) reach it as `Error` objects and get the body Fastify sends
+  without a schema (`{ statusCode, code, error, message }`).
+
+Zod converts with the JSON Schema target (OpenAPI 3.1 is JSON Schema, so nullable values are a
+union with `null`), and `additionalProperties: false` appears only for `.strict()` schemas: other
+request bodies have unknown keys stripped, not refused, and responses keep every field.
 
 The docs therefore describe behaviour but cannot enforce it at runtime. Tests do that (see
 "Keeping the docs true").
@@ -221,10 +227,10 @@ details.
 
 Each PR is red-tests-first and leaves `npm run check` green.
 
-1. **Infrastructure**: dependencies, pass-through compilers, components, Scalar and the
+1. **Infrastructure** (done): dependencies, pass-through compilers, components, Scalar and the
    document at `/api/docs`, public route flag + sweep change + ADR 0006 addendum, docs sweep with a
    full allow-list, conformance helper, snapshot, app links. Documents Health and Auth.
-2. **Pipeline**: Documents, Jobs, Review & steps, Results, Models.
+2. **Pipeline** (done): Documents, Jobs, Review & steps, Results, Models.
 3. **Configuration**: Specs, Templates, References & regression.
 4. **Workbench** (two or three PRs): projects, samples, brief and data policy; drafting stages,
    proposals, feedback and revise; test runs, evaluation, holdout, publish and bundles.
