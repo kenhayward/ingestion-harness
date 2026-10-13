@@ -3,14 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
-import {
-  fakeApi,
-  job,
-  projectOverview,
-  projectView,
-  publication,
-  sampleView,
-} from './fake-api.js';
+import { fakeApi, job, projectOverview, projectView, publication, sampleView } from './fake-api.js';
 import { validDefinition } from './template-fixture.js';
 import { setYaml } from './yaml-editor.js';
 
@@ -375,11 +368,7 @@ describe('TemplateEditor', () => {
             finish = resolve;
           }),
       );
-      setup(
-        view({ ...validDefinition(), version: 1 }),
-        { saveTemplate },
-        { onChanged: vi.fn() },
-      );
+      setup(view({ ...validDefinition(), version: 1 }), { saveTemplate }, { onChanged: vi.fn() });
       await userEvent.click(await tab(/^General/));
       await userEvent.type(screen.getByLabelText('Name'), '!');
       await userEvent.dblClick(screen.getByRole('button', { name: 'Save draft v1' }));
@@ -398,11 +387,7 @@ describe('TemplateEditor', () => {
       const saveTemplate = vi.fn(async () => {
         throw new ApiError('the draft changed since you opened it; reload it', 409);
       });
-      setup(
-        view({ ...validDefinition(), version: 1 }),
-        { saveTemplate },
-        { onChanged: vi.fn() },
-      );
+      setup(view({ ...validDefinition(), version: 1 }), { saveTemplate }, { onChanged: vi.fn() });
       await userEvent.click(await tab(/^General/));
       await userEvent.type(screen.getByLabelText('Name'), '!');
       await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));

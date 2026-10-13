@@ -314,9 +314,12 @@ describe('Workbench writes to the draft (TP1)', () => {
     const refused = await decide();
     expect(refused.statusCode).toBe(409);
     expect(refused.json().error).toBe('the draft changed while applying; try again');
-    const draft = (await templates.get('letter', 1))!.definition;
+    const draft = (await templates.get('letter', 1))!.definition as {
+      name?: string;
+      outputs?: { fields?: { id: string }[] };
+    };
     expect(draft.name).toBe('Hand');
-    expect(draft.outputs?.fields?.map((f: { id: string }) => f.id)).not.toContain('date');
+    expect(draft.outputs?.fields?.map((f) => f.id)).not.toContain('date');
     // Only the hand save was logged on top of what was there.
     expect((await templates.listChanges('letter', 1)).length).toBe(before + 1);
     // The proposal is still undecided: trying again applies it on top of the hand save.
