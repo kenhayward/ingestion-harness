@@ -17,6 +17,8 @@ export const ResultSummarySchema = z.object({
   jobId: z.string(),
   documentId: z.string(),
   filename: z.string(),
+  /** The uploaded file's type: `application/pdf`, or the .docx type for a Word document. */
+  contentType: z.string(),
   specId: z.string(),
   specVersion: z.number().int(),
   publishedAt: z.string(),

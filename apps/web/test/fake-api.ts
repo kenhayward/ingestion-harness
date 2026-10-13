@@ -113,6 +113,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     id: crypto.randomUUID(),
     documentId: crypto.randomUUID(),
     filename: 'invoice.pdf',
+    contentType: 'application/pdf',
     specId: 'process-validation-protocol',
     specVersion: 1,
     status: 'queued',

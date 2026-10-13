@@ -3,14 +3,14 @@ import type { FastifyPluginAsync } from 'fastify';
 import { inboxKey, JobSummarySchema } from '@ih/shared';
 import { error, md, multipart, res } from '../openapi/zod.js';
 import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
-import { isPdf, multipartField } from '../uploads.js';
+import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 
 /**
  * POST /api/documents (multipart/form-data)
  *   fields (must precede the file part): specId, specVersion?, model?, test?
  *   (draft template versions can only be uploaded as test runs: test=true)
- *   file: the PDF
- * Stores the PDF in the inbox bucket and enqueues a job.
+ *   file: the PDF or Word document (.docx)
+ * Stores the file in the inbox bucket and enqueues a job.
  */
 export const documentRoutes: FastifyPluginAsync = async (app) => {
   app.post(
@@ -19,11 +19,13 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         tags: ['Documents'],
         operationId: 'uploadDocument',
-        summary: 'Upload a PDF to process',
+        summary: 'Upload a PDF or Word document to process',
         consumes: ['multipart/form-data'],
         description: md`
-          Stores the PDF in the inbox bucket, records the document and queues a \`process\` job
-          for it. The worker picks the job up; poll \`GET /api/jobs/{id}\` for its status.
+          Stores the file in the inbox bucket, records the document and queues a \`process\`
+          job for it. The worker picks the job up; poll \`GET /api/jobs/{id}\` for its status.
+          A Word document (\`.docx\`) is converted to PDF by the worker first, and then
+          processed like a PDF (pages come from the converted PDF).
 
           Send the text fields **before** the file part: the upload is read as it streams in, so
           fields after the file are not seen.
@@ -35,7 +37,10 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           - \`model\` overrides the document type's model for every step (a ref listed by
             \`GET /api/models\` and enabled).
 
-          The file must start with \`%PDF-\` and fit the upload limit (\`MAX_UPLOAD_MB\`).
+          The file's bytes decide what it is, never its name: a PDF (starting \`%PDF-\`) or a
+          \`.docx\` (a Word document; not \`.docm\`, \`.dotx\` or \`.doc\`) without tracked
+          changes. It must fit the upload limit (\`MAX_UPLOAD_MB\`). The job's
+          \`contentType\` says which it is.
         `,
         body: multipart(
           {
@@ -64,7 +69,11 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           ),
           406: error('The request is not `multipart/form-data`.'),
           413: error('The file is larger than the upload limit.'),
-          415: error('`file is not a PDF`.'),
+          415: error(`\`${NOT_A_SOURCE}\`.`),
+          422: error(
+            `\`${TRACKED_CHANGES}\`, or \`the Word document is too large to check (over 64 MiB ` +
+              'unpacked)`.',
+          ),
         },
       },
     },
@@ -99,13 +108,12 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
-      if (!isPdf(body)) {
-        return reply.code(415).send({ error: 'file is not a PDF' });
-      }
+      const source = checkSource(body);
+      if (!source.ok) return reply.code(source.code).send({ error: source.error });
 
       const documentId = randomUUID();
-      const key = inboxKey(spec.id, spec.version, documentId);
-      await store.put(buckets.inbox, key, body, 'application/pdf');
+      const key = inboxKey(spec.id, spec.version, documentId, source.ext);
+      await store.put(buckets.inbox, key, body, source.contentType);
 
       // A draft can change after the run: snapshot the outputs it was run against.
       const record = resolved.draft ? await app.deps.templates.get(spec.id, spec.version) : null;

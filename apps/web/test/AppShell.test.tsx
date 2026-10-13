@@ -172,6 +172,7 @@ const result = (filename: string): ResultSummary => ({
   jobId: filename,
   documentId: filename,
   filename,
+  contentType: 'application/pdf',
   specId: 'pvp',
   specVersion: 1,
   publishedAt: '2026-10-02T08:00:00Z',

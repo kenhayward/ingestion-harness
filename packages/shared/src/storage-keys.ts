@@ -1,15 +1,31 @@
 /**
  * Object key conventions for SeaweedFS / S3. Mirrored in worker/src/ingest_worker/storage.py.
  *
- *   inbox bucket:   {specId}/v{version}/{documentId}.pdf
+ *   inbox bucket:   {specId}/v{version}/{documentId}.{pdf|docx}   (the kind judged from the bytes)
  *   outputs bucket: {specId}/v{version}/{outputId}/{documentId}.{csv|json}
  *   runs bucket:    {jobId}/{extractionId}/attempt-{n}.json   (prompt + raw response audit)
  *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
  *   runs bucket:    segmentation/{projectId}/{jobId}.json   (workbench segment task)
  *   runs bucket:    drafting/{projectId}/{jobId}.json   (workbench draft task)
  */
-export function inboxKey(specId: string, version: number, documentId: string): string {
-  return `${specId}/v${version}/${documentId}.pdf`;
+export function inboxKey(
+  specId: string,
+  version: number,
+  documentId: string,
+  ext: 'pdf' | 'docx' = 'pdf',
+): string {
+  return `${specId}/v${version}/${documentId}.${ext}`;
+}
+
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * The content type of an uploaded source, from its inbox key: the API names the object after
+ * the kind it judged from the bytes (docs/design/word-documents.md), and every document row
+ * copied from it (sample test runs, regression runs) shares the key.
+ */
+export function sourceContentType(objectKey: string): 'application/pdf' | typeof DOCX_MIME {
+  return objectKey.endsWith('.docx') ? DOCX_MIME : 'application/pdf';
 }
 
 export function outputKey(

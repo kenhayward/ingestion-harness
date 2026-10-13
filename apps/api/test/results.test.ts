@@ -330,6 +330,15 @@ describe('GET /api/results/:jobId/archive', () => {
     );
   };
 
+  it('names the zip after a Word document without its extension', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'Batch 8.docx');
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
+    const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
+    expect(res.headers['content-disposition']).toMatch(/^attachment; filename="Batch 8\.zip"/);
+  });
+
   it('zips every published output, one entry per output', async () => {
     const ctx = await testApp();
     const job = await upload(ctx, 'tdemo', 'Batch 7 – final.pdf');

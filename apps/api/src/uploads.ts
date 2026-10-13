@@ -1,4 +1,5 @@
 import type { MultipartFile } from '@fastify/multipart';
+import { DOCX_MIME } from '@ih/shared';
 import { Unzip, UnzipInflate } from 'fflate';
 
 const PDF_MAGIC = Buffer.from('%PDF-');
@@ -10,7 +11,7 @@ export function isPdf(body: Uint8Array): boolean {
 
 /** What an upload is (docs/design/word-documents.md): judged by its bytes, never its name. */
 export type SourceKind = 'pdf' | 'docx';
-export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+export { DOCX_MIME };
 export const CONTENT_TYPES: Record<SourceKind, string> = {
   pdf: 'application/pdf',
   docx: DOCX_MIME,

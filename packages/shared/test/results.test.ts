@@ -57,6 +57,7 @@ describe('result schemas', () => {
         jobId: 'j1',
         documentId: 'd1',
         filename: 'a.pdf',
+        contentType: 'application/pdf',
         specId: 'tdemo',
         specVersion: 1,
         publishedAt: '2026-10-11T11:00:01.000Z',
