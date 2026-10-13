@@ -153,6 +153,14 @@ describe('export', () => {
     expect((await start()).json()).toMatchObject({ briefVersion: null, devSamples: 1 });
   });
 
+  it('reads an export whose params are unreadable as null brief and samples', async () => {
+    const { repo, add, start, list } = await project();
+    await add(1);
+    const view = (await start()).json() as ExportView;
+    repo.exportJobs.set(view.jobId, { ...repo.exportJobs.get(view.jobId)!, params: {} });
+    expect((await list())[0]).toMatchObject({ briefVersion: null, devSamples: null, bytes: null });
+  });
+
   it('carries the accepted survey', async () => {
     const { app, repo, store, add, start } = await project();
     await add(1);

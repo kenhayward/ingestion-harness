@@ -131,9 +131,7 @@ def test_gotenberg_rejections(status: int, body: bytes) -> None:
         converter.to_pdf(DOCX)
 
 
-@pytest.mark.parametrize(
-    ("status", "expected"), [(200, None), (400, 400), (413, 413), (500, 500)]
-)
+@pytest.mark.parametrize(("status", "expected"), [(200, None), (400, 400), (413, 413), (500, 500)])
 def test_a_rejection_carries_the_http_status(status: int, expected: int | None) -> None:
     body = b"<html>not a pdf</html>" if status == 200 else b"nope"
     if status == 500:

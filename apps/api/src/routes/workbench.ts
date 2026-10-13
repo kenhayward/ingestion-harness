@@ -91,11 +91,10 @@ import {
 import { removeJobFiles } from '../jobs/delete.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
-import type { JobEventRecord } from '../repositories/types.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
-import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
+import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';

@@ -46,10 +46,10 @@ export const BundleManifestSchema = z
   .strict();
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;
 
-/** An export job of a project, newest first in lists. */
 /** The worker's last event of an export job; its data carries the zip's `bytes`. */
 export const BUNDLE_EXPORTED_EVENT = 'bundle exported';
 
+/** An export job of a project, newest first in lists. */
 export const ExportViewSchema = z.object({
   jobId: z.string().uuid(),
   status: JobStatusSchema,

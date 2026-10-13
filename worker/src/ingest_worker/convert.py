@@ -94,7 +94,9 @@ class GotenbergConverter:
             raise ConversionRejected("the converter returned something other than a PDF")
         detail = body[:300].decode("utf-8", errors="replace").strip()
         if 400 <= response.status_code < 500 or body.startswith(_LIBREOFFICE_FAILED):
-            raise ConversionRejected(f"{response.status_code}: {detail}", status=response.status_code)
+            raise ConversionRejected(
+                f"{response.status_code}: {detail}", status=response.status_code
+            )
         raise ConverterUnavailable(f"converter error {response.status_code}: {detail}")
 
     def fingerprint(self) -> str:
