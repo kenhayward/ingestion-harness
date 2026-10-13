@@ -223,6 +223,16 @@ describe('StagePanel', () => {
     expect(within(header).getByRole('button', { name: 'Skip this stage' })).toBeInTheDocument();
   });
 
+  it('makes Propose the primary action before the first proposal', async () => {
+    panel({ listProposals: vi.fn(async () => []) });
+    expect(await screen.findByRole('button', { name: 'Propose outputs' })).toHaveClass('primary');
+  });
+
+  it('makes Propose again a plain button once a proposal exists', async () => {
+    panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
+    expect(await screen.findByRole('button', { name: 'Propose again' })).not.toHaveClass('primary');
+  });
+
   it('shows a decided proposal read-only, bordered in its tone', async () => {
     const p = changeProposalView({ status: 'partially_accepted', acceptedChanges: [0] });
     panel({ listProposals: vi.fn(async () => [p]) });

@@ -204,7 +204,7 @@ export function StagePanel({
     <>
       <button
         type="button"
-        className="primary"
+        className={proposal ? undefined : 'primary'}
         disabled={running || busy || !hasDraft}
         onClick={() => void run()}
       >
