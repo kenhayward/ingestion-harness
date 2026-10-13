@@ -72,7 +72,7 @@ describe('listItemFrom', () => {
     expect(i.stages).toHaveLength(10);
     expect(i.stages[5]).toEqual({ stage: 'steps', state: 'proposed' });
     expect(i.phase).toBe('draft');
-    expect(i.done).toBe(5);
+    expect(i.done).toBe(6);
     expect(i.next).toEqual({ kind: 'decide', stage: 'steps', label: 'Decide on Steps' });
     expect(i.flags).toEqual({ attention: true, running: false, ready: false });
   });
