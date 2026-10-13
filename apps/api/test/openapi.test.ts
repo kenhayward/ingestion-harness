@@ -4,7 +4,7 @@ import type { OpenAPIV3_1 } from 'openapi-types';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { TAGS } from '../src/openapi/document.js';
-import { binary, md, multipart, res, toJsonSchema } from '../src/openapi/zod.js';
+import { binary, error, md, multipart, res, toJsonSchema } from '../src/openapi/zod.js';
 import { accessApp, registeredRoutes, testApp } from './helpers.js';
 import { takeViolations } from './openapi-conformance.js';
 
@@ -89,6 +89,26 @@ describe('schema helpers', () => {
 });
 
 describe('route schemas', () => {
+  it("leave Fastify's own error bodies as they are", async () => {
+    const { app } = await testApp();
+    const tooLarge = () => Object.assign(new Error('request file too large'), { statusCode: 413 });
+    app.get('/api/plain', async () => {
+      throw tooLarge();
+    });
+    app.get(
+      '/api/documented',
+      { schema: { tags: ['Health'], response: { 413: error('Too large.') } } },
+      async () => {
+        throw tooLarge();
+      },
+    );
+    const plain = await app.inject('/api/plain');
+    const documented = await app.inject('/api/documented');
+    expect(plain.json()).toMatchObject({ statusCode: 413, error: 'Payload Too Large' });
+    expect(documented.statusCode).toBe(413);
+    expect(documented.body).toBe(plain.body);
+  });
+
   it('document routes without changing how they validate or serialise', async () => {
     const { app } = await testApp();
     app.post(
@@ -128,21 +148,14 @@ describe('md', () => {
  */
 const UNDOCUMENTED = new Set([
   'DELETE /api/access/s3-keys/{id}',
-  'DELETE /api/jobs/{id}',
   'DELETE /api/templates/{id}/references/{ref}',
   'DELETE /api/templates/{id}/versions/{version}',
   'DELETE /api/workbench/projects/{id}',
   'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'DELETE /api/workbench/projects/{id}/samples/{sid}',
   'GET /api/access/s3-keys',
-  'GET /api/jobs',
-  'GET /api/jobs/{id}',
-  'GET /api/jobs/{id}/document',
-  'GET /api/jobs/{id}/outputs/{outputId}',
-  'GET /api/jobs/{id}/pages/{n}',
   'GET /api/jobs/{id}/review',
   'GET /api/jobs/{id}/steps',
-  'GET /api/models',
   'GET /api/results',
   'GET /api/results/{jobId}',
   'GET /api/results/{jobId}/archive',
@@ -177,13 +190,9 @@ const UNDOCUMENTED = new Set([
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/documents',
-  'POST /api/jobs/cleanup',
   'POST /api/jobs/{id}/approve',
-  'POST /api/jobs/{id}/cancel',
   'POST /api/jobs/{id}/edits',
   'POST /api/jobs/{id}/reject',
-  'POST /api/jobs/{id}/retry',
   'POST /api/jobs/{id}/steps/{step}/rerun',
   'POST /api/templates',
   'POST /api/templates/import',
