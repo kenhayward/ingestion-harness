@@ -59,6 +59,11 @@ describe('schema helpers', () => {
     expect(schema.properties.plain).not.toMatchObject({ additionalProperties: false });
   });
 
+  it('write nullable values the OpenAPI 3.1 way', () => {
+    const schema = toJsonSchema(z.enum(['a', 'b']).nullable());
+    expect(schema).toEqual({ anyOf: [{ type: 'string', enum: ['a', 'b'] }, { type: 'null' }] });
+  });
+
   it('document binary downloads and multipart uploads', async () => {
     const { app } = await testApp();
     app.post(
@@ -154,11 +159,6 @@ const UNDOCUMENTED = new Set([
   'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'DELETE /api/workbench/projects/{id}/samples/{sid}',
   'GET /api/access/s3-keys',
-  'GET /api/jobs/{id}/review',
-  'GET /api/jobs/{id}/steps',
-  'GET /api/results',
-  'GET /api/results/{jobId}',
-  'GET /api/results/{jobId}/archive',
   'GET /api/specs',
   'GET /api/specs/{id}',
   'GET /api/templates',
@@ -190,10 +190,6 @@ const UNDOCUMENTED = new Set([
   'POST /api/access/s3-keys',
   'POST /api/access/s3-keys/keys/{keyId}/revoke',
   'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/jobs/{id}/approve',
-  'POST /api/jobs/{id}/edits',
-  'POST /api/jobs/{id}/reject',
-  'POST /api/jobs/{id}/steps/{step}/rerun',
   'POST /api/templates',
   'POST /api/templates/import',
   'POST /api/templates/{id}/drafts',

@@ -9,11 +9,13 @@ export function toJsonSchema(schema: unknown): unknown {
   if (!(schema instanceof z.ZodType)) return schema;
   // Extra properties are refused only by .strict() schemas: handlers strip them otherwise, and
   // responses are never trimmed to their schema.
-  return zodToJsonSchema(schema, {
-    target: 'openApi3',
+  // OpenAPI 3.1 schemas are JSON Schema: nullable is `null` in a union, not `nullable: true`.
+  const { $schema: _dialect, ...json } = zodToJsonSchema(schema, {
+    target: 'jsonSchema7',
     $refStrategy: 'none',
     removeAdditionalStrategy: 'strict',
   });
+  return json;
 }
 
 /** A documented response: swagger uses the schema's description as the response description. */

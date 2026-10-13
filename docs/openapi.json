@@ -67,11 +67,15 @@
                       "type": "string"
                     },
                     "expiresAt": {
-                      "type": [
-                        "string",
-                        "null"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
                       ],
-                      "format": "date-time",
                       "description": "When the token expires; null = never."
                     }
                   },
@@ -196,11 +200,15 @@
                       "type": "string"
                     },
                     "expiresAt": {
-                      "type": [
-                        "string",
-                        "null"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
                       ],
-                      "format": "date-time",
                       "description": "When the token expires; null = never."
                     }
                   },
@@ -278,25 +286,37 @@
                         "format": "date-time"
                       },
                       "expiresAt": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date-time"
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "revokedAt": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date-time"
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "lastUsedAt": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date-time"
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "status": {
                         "type": "string",
@@ -434,9 +454,7 @@
                         ]
                       },
                       {
-                        "enum": [
-                          "null"
-                        ]
+                        "type": "null"
                       }
                     ]
                   }
@@ -485,25 +503,37 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "format": "date-time"
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "revokedAt": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "format": "date-time"
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "lastUsedAt": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "format": "date-time"
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "status": {
                           "type": "string",
@@ -1168,13 +1198,17 @@
                       ]
                     },
                     "reviewReasons": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
-                      "items": {
-                        "type": "string"
-                      }
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "reviewer": {
                       "type": [
@@ -1512,13 +1546,17 @@
                         ]
                       },
                       "reviewReasons": {
-                        "type": [
-                          "array",
-                          "null"
-                        ],
-                        "items": {
-                          "type": "string"
-                        }
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "reviewer": {
                         "type": [
@@ -1738,13 +1776,17 @@
                       ]
                     },
                     "reviewReasons": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
-                      "items": {
-                        "type": "string"
-                      }
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "reviewer": {
                       "type": [
@@ -1799,9 +1841,13 @@
                             "type": "string"
                           },
                           "rowCount": {
-                            "type": [
-                              "integer",
-                              "null"
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           }
                         },
@@ -2030,11 +2076,15 @@
                 "type": "object",
                 "properties": {
                   "model": {
-                    "type": [
-                      "string",
-                      "null"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
                     ],
-                    "minLength": 1,
                     "description": "A model ref to use, null for the document type's model, absent to keep the job's."
                   }
                 },
@@ -2142,13 +2192,17 @@
                       ]
                     },
                     "reviewReasons": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
-                      "items": {
-                        "type": "string"
-                      }
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "reviewer": {
                       "type": [
@@ -2431,13 +2485,17 @@
                       ]
                     },
                     "reviewReasons": {
-                      "type": [
-                        "array",
-                        "null"
-                      ],
-                      "items": {
-                        "type": "string"
-                      }
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "reviewer": {
                       "type": [
@@ -3273,6 +3331,3197 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/review": {
+      "get": {
+        "operationId": "getReview",
+        "summary": "Get a job for review",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Everything the review screen needs for a template job: the job, the template version\nit ran with, the draft document (each field's value with the text and page it came\nfrom, and the table rows) and the edits recorded so far. Available whenever the job\nhas a draft document, not only while it awaits review.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The review view.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "filename": {
+                          "type": "string"
+                        },
+                        "specId": {
+                          "type": "string"
+                        },
+                        "specVersion": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "needs_review",
+                            "awaiting_review",
+                            "rejected",
+                            "cancelled"
+                          ]
+                        },
+                        "modelOverride": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "modelsUsed": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "attempts": {
+                          "type": "integer"
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "task": {
+                          "type": "string",
+                          "enum": [
+                            "process",
+                            "publish",
+                            "rerun",
+                            "prepare",
+                            "segment",
+                            "draft",
+                            "export"
+                          ]
+                        },
+                        "test": {
+                          "type": "boolean"
+                        },
+                        "referenceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "projectId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewReasons": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewer": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewNote": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "outputs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "outputId": {
+                                "type": "string"
+                              },
+                              "stage": {
+                                "type": "string",
+                                "enum": [
+                                  "draft",
+                                  "published"
+                                ]
+                              },
+                              "format": {
+                                "type": "string",
+                                "enum": [
+                                  "csv",
+                                  "json"
+                                ]
+                              },
+                              "bucket": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "rowCount": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "outputId",
+                              "stage",
+                              "format",
+                              "bucket",
+                              "key",
+                              "rowCount"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "documentId",
+                        "filename",
+                        "specId",
+                        "specVersion",
+                        "status",
+                        "modelOverride",
+                        "modelsUsed",
+                        "attempts",
+                        "error",
+                        "task",
+                        "test",
+                        "referenceId",
+                        "projectId",
+                        "reviewReasons",
+                        "reviewer",
+                        "reviewNote",
+                        "reviewedAt",
+                        "createdAt",
+                        "updatedAt",
+                        "outputs"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "template": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_-]*$"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "preamble": {
+                          "type": "string"
+                        },
+                        "document": {
+                          "type": "object",
+                          "properties": {
+                            "pages": {
+                              "type": "object",
+                              "properties": {
+                                "min": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "max": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                }
+                              },
+                              "required": [
+                                "min",
+                                "max"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "ocr": {
+                              "type": "string",
+                              "enum": [
+                                "auto",
+                                "always",
+                                "never"
+                              ],
+                              "default": "auto"
+                            },
+                            "copies": {
+                              "type": "object",
+                              "properties": {
+                                "anchor": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "select": {
+                                  "type": "string",
+                                  "enum": [
+                                    "first",
+                                    "last"
+                                  ],
+                                  "default": "last"
+                                }
+                              },
+                              "required": [
+                                "anchor"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "pageMarkers": {
+                              "type": "boolean",
+                              "default": true
+                            },
+                            "dateOrder": {
+                              "type": "string",
+                              "enum": [
+                                "DMY",
+                                "MDY"
+                              ],
+                              "default": "DMY"
+                            },
+                            "sections": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "anchor": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "anchor"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 1
+                            }
+                          },
+                          "required": [
+                            "sections"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "outputs": {
+                          "type": "object",
+                          "properties": {
+                            "fields": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "text",
+                                      "integer",
+                                      "decimal",
+                                      "date",
+                                      "boolean",
+                                      "enum",
+                                      "list"
+                                    ],
+                                    "default": "text"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "enum": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "minItems": 1
+                                  }
+                                },
+                                "required": [
+                                  "id"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": []
+                            },
+                            "tables": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "columns": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "text",
+                                            "integer",
+                                            "decimal",
+                                            "date",
+                                            "boolean",
+                                            "enum",
+                                            "list"
+                                          ],
+                                          "default": "text"
+                                        },
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "minItems": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "id"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "minItems": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "columns"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": []
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "pipeline": {
+                          "type": "array",
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "extract"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "fields": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    },
+                                    "default": []
+                                  },
+                                  "table": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "sections": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    },
+                                    "minItems": 1
+                                  },
+                                  "instructions": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "default": "default"
+                                  },
+                                  "pageImages": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "default": []
+                                  },
+                                  "maxAttempts": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 5,
+                                    "default": 2
+                                  },
+                                  "maxTokens": {
+                                    "type": "integer",
+                                    "minimum": 256,
+                                    "maximum": 128000,
+                                    "default": 64000
+                                  },
+                                  "chunkPages": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "context": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "propertyNames": {
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    },
+                                    "default": {}
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "id",
+                                  "sections"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "check"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "values": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "reference": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "aliases": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "maxDistance": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "default": 2
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "id",
+                                  "values",
+                                  "reference"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "minItems": 1
+                        },
+                        "review": {
+                          "type": "object",
+                          "properties": {
+                            "required": {
+                              "type": "string",
+                              "enum": [
+                                "always",
+                                "on_warnings",
+                                "never"
+                              ],
+                              "default": "on_warnings"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "default": {}
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "name",
+                        "document",
+                        "outputs",
+                        "pipeline"
+                      ],
+                      "additionalProperties": false,
+                      "description": "The template version the job ran with."
+                    },
+                    "document": {
+                      "type": "object",
+                      "properties": {
+                        "fields": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "value": {},
+                              "evidence": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The text the value was read from."
+                              },
+                              "page": {
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "evidence",
+                              "page"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "tables": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": {}
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "fields",
+                        "tables"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "edits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "field": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "table": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "row": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "column": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "oldValue": {},
+                          "newValue": {},
+                          "editor": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "at",
+                          "field",
+                          "table",
+                          "row",
+                          "column",
+                          "editor",
+                          "reason"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Edits so far, oldest first."
+                    }
+                  },
+                  "required": [
+                    "job",
+                    "template",
+                    "document",
+                    "edits"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The review view."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/edits": {
+      "post": {
+        "operationId": "addEdit",
+        "summary": "Record a reviewer edit",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Corrects one value of a job awaiting review: a field (`field`) or a table cell\n(`table`, 1-based `row`, `column`). Edits are appended, never overwritten:\n`oldValue` is the previous edit's value for the same target, or the draft's. A row\none past the end adds a row. Approving applies the edits to the published document.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "value": {},
+                      "editor": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "table": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "row": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "column": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "value": {},
+                      "editor": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "table",
+                      "row",
+                      "column"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The recorded edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "field": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "table": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "row": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "column": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "oldValue": {},
+                    "newValue": {},
+                    "editor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "field",
+                    "table",
+                    "row",
+                    "column",
+                    "editor",
+                    "reason"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The recorded edit."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid edit` (with `issues`), an unknown field, table or column, or a row that does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`invalid edit` (with `issues`), an unknown field, table or column, or a row that does not exist."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`, `job is not a template document`, `no draft document for this job` or `draft document missing from storage`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`job is {status}, not awaiting_review`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`job is {status}, not awaiting_review`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/approve": {
+      "post": {
+        "operationId": "approveJob",
+        "summary": "Approve a job awaiting review",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Approves the reviewed values: the job is queued again as a `publish` task, which\napplies the edits and delivers the outputs to the final target. A test run (such as a\nWorkbench reference run) is never delivered: its reviewed document is written to the\nruns bucket and the job succeeds. See\n[the job lifecycle](https://github.com/kenhayward/ingestion-harness/blob/main/docs/architecture.md#job-lifecycle).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reviewer": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, queued to publish.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "documentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "specId": {
+                      "type": "string"
+                    },
+                    "specVersion": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "modelOverride": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "modelsUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "attempts": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "task": {
+                      "type": "string",
+                      "enum": [
+                        "process",
+                        "publish",
+                        "rerun",
+                        "prepare",
+                        "segment",
+                        "draft",
+                        "export"
+                      ]
+                    },
+                    "test": {
+                      "type": "boolean"
+                    },
+                    "referenceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "projectId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewReasons": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reviewer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "documentId",
+                    "filename",
+                    "specId",
+                    "specVersion",
+                    "status",
+                    "modelOverride",
+                    "modelsUsed",
+                    "attempts",
+                    "error",
+                    "task",
+                    "test",
+                    "referenceId",
+                    "projectId",
+                    "reviewReasons",
+                    "reviewer",
+                    "reviewNote",
+                    "reviewedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The job, queued to publish."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid body."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: a malformed job id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`: a malformed job id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`job not found or not awaiting review`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`job not found or not awaiting review`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/reject": {
+      "post": {
+        "operationId": "rejectJob",
+        "summary": "Reject a job awaiting review",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Rejects the extracted values with a reason. Rejection is final: nothing is delivered,\nand the job cannot be retried.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reviewer": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The rejected job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "documentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "specId": {
+                      "type": "string"
+                    },
+                    "specVersion": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "modelOverride": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "modelsUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "attempts": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "task": {
+                      "type": "string",
+                      "enum": [
+                        "process",
+                        "publish",
+                        "rerun",
+                        "prepare",
+                        "segment",
+                        "draft",
+                        "export"
+                      ]
+                    },
+                    "test": {
+                      "type": "boolean"
+                    },
+                    "referenceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "projectId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewReasons": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reviewer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "documentId",
+                    "filename",
+                    "specId",
+                    "specVersion",
+                    "status",
+                    "modelOverride",
+                    "modelsUsed",
+                    "attempts",
+                    "error",
+                    "task",
+                    "test",
+                    "referenceId",
+                    "projectId",
+                    "reviewReasons",
+                    "reviewer",
+                    "reviewNote",
+                    "reviewedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The rejected job."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues: `reason` is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues: `reason` is required."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: a malformed job id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`: a malformed job id."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`job not found or not awaiting review`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`job not found or not awaiting review`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/steps": {
+      "get": {
+        "operationId": "listStepRuns",
+        "summary": "List a job's step runs",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Every recorded execution of the job's extract steps: the model used, attempts, token\ncounts, timing and errors, including re-runs. `cached` marks a Workbench test run\nstep served from the step cache (no model call). An unknown job has no runs.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The step runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer"
+                      },
+                      "stepId": {
+                        "type": "string"
+                      },
+                      "trigger": {
+                        "type": "string",
+                        "enum": [
+                          "process",
+                          "rerun"
+                        ]
+                      },
+                      "model": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "attempts": {
+                        "type": "integer"
+                      },
+                      "inputTokens": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "outputTokens": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "succeeded",
+                          "failed"
+                        ]
+                      },
+                      "cached": {
+                        "type": "boolean"
+                      },
+                      "error": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startedAt": {
+                        "type": "string"
+                      },
+                      "finishedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "stepId",
+                      "trigger",
+                      "model",
+                      "attempts",
+                      "inputTokens",
+                      "outputTokens",
+                      "status",
+                      "cached",
+                      "error",
+                      "startedAt",
+                      "finishedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The step runs."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`: a malformed job id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`: a malformed job id."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/steps/{step}/rerun": {
+      "post": {
+        "operationId": "rerunStep",
+        "summary": "Re-run one extract step",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Queues one extract step of a job awaiting review again, optionally with another\nmodel, extra instructions, or pages sent as images so a vision model reads them\ndirectly (e.g. handwriting). The worker reuses the document's text and OCR and re-runs\nthe checks; the job returns to `awaiting_review` with the step's new values.\n\nRefused while the step's outputs have reviewer edits, since a re-run would discard\nthem.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pageImages": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "description": "The extract step id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, queued to re-run the step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "documentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "specId": {
+                      "type": "string"
+                    },
+                    "specVersion": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "modelOverride": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "modelsUsed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "attempts": {
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "task": {
+                      "type": "string",
+                      "enum": [
+                        "process",
+                        "publish",
+                        "rerun",
+                        "prepare",
+                        "segment",
+                        "draft",
+                        "export"
+                      ]
+                    },
+                    "test": {
+                      "type": "boolean"
+                    },
+                    "referenceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "projectId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewReasons": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reviewer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "documentId",
+                    "filename",
+                    "specId",
+                    "specVersion",
+                    "status",
+                    "modelOverride",
+                    "modelsUsed",
+                    "attempts",
+                    "error",
+                    "task",
+                    "test",
+                    "referenceId",
+                    "projectId",
+                    "reviewReasons",
+                    "reviewer",
+                    "reviewNote",
+                    "reviewedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The job, queued to re-run the step."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid body, or `no extract step \"{step}\"`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid body, or `no extract step \"{step}\"`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`, or `job is not a template document`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`, or `job is not a template document`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`job is {status}, not awaiting_review`, the step has reviewer edits, or the job is no longer awaiting review.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`job is {status}, not awaiting_review`, the step has reviewer edits, or the job is no longer awaiting review."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/results": {
+      "get": {
+        "operationId": "listResults",
+        "summary": "List published results",
+        "tags": [
+          "Results"
+        ],
+        "description": "Jobs that delivered outputs to the final target, newest publish first. Test runs are\nnever listed. `q` filters by file name (case-insensitive substring). Page with\n`before` and `beforeId` set to the last row's `publishedAt` and `jobId`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "templateId",
+            "required": false,
+            "description": "Only results of this document type."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "At most 200."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "description": "The next page: the last row's `publishedAt`."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "beforeId",
+            "required": false,
+            "description": "With `before`: the last row's `jobId`."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "jobId": {
+                        "type": "string"
+                      },
+                      "documentId": {
+                        "type": "string"
+                      },
+                      "filename": {
+                        "type": "string"
+                      },
+                      "specId": {
+                        "type": "string"
+                      },
+                      "specVersion": {
+                        "type": "integer"
+                      },
+                      "publishedAt": {
+                        "type": "string"
+                      },
+                      "reviewer": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reviewedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "outputCount": {
+                        "type": "integer"
+                      },
+                      "outputs": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "outputId": {
+                              "type": "string"
+                            },
+                            "format": {
+                              "type": "string",
+                              "enum": [
+                                "csv",
+                                "json"
+                              ]
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "rowCount": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "outputId",
+                            "format",
+                            "name",
+                            "rowCount"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "issueCount": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "jobId",
+                      "documentId",
+                      "filename",
+                      "specId",
+                      "specVersion",
+                      "publishedAt",
+                      "reviewer",
+                      "reviewedAt",
+                      "outputCount",
+                      "outputs",
+                      "issueCount"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The results."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The invalid query fields, e.g. `limit: Number must be less than or equal to 200`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The invalid query fields, e.g. `limit: Number must be less than or equal to 200`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/results/{jobId}": {
+      "get": {
+        "operationId": "getResult",
+        "summary": "Get a published result",
+        "tags": [
+          "Results"
+        ],
+        "description": "One published result: the job, where it was delivered (`target` bucket and prefix),\nits published outputs, and for template jobs the published document read back from the\ntarget with the definition of its fields and tables. If the document cannot be read,\n`document` is null and `documentError` says why; the rest is still returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "filename": {
+                          "type": "string"
+                        },
+                        "specId": {
+                          "type": "string"
+                        },
+                        "specVersion": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "needs_review",
+                            "awaiting_review",
+                            "rejected",
+                            "cancelled"
+                          ]
+                        },
+                        "modelOverride": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "modelsUsed": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "attempts": {
+                          "type": "integer"
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "task": {
+                          "type": "string",
+                          "enum": [
+                            "process",
+                            "publish",
+                            "rerun",
+                            "prepare",
+                            "segment",
+                            "draft",
+                            "export"
+                          ]
+                        },
+                        "test": {
+                          "type": "boolean"
+                        },
+                        "referenceId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "projectId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewReasons": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewer": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewNote": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "documentId",
+                        "filename",
+                        "specId",
+                        "specVersion",
+                        "status",
+                        "modelOverride",
+                        "modelsUsed",
+                        "attempts",
+                        "error",
+                        "task",
+                        "test",
+                        "referenceId",
+                        "projectId",
+                        "reviewReasons",
+                        "reviewer",
+                        "reviewNote",
+                        "reviewedAt",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "bucket": {
+                          "type": "string"
+                        },
+                        "prefix": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "bucket",
+                        "prefix"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "publishedAt": {
+                      "type": "string"
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "outputId": {
+                            "type": "string"
+                          },
+                          "stage": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "published"
+                            ]
+                          },
+                          "format": {
+                            "type": "string",
+                            "enum": [
+                              "csv",
+                              "json"
+                            ]
+                          },
+                          "bucket": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "outputId",
+                          "stage",
+                          "format",
+                          "bucket",
+                          "key",
+                          "rowCount"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "document": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "document_id": {
+                              "type": "string"
+                            },
+                            "fields": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {}
+                                },
+                                "additionalProperties": true
+                              },
+                              "default": {}
+                            },
+                            "tables": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": {}
+                                }
+                              },
+                              "default": {}
+                            },
+                            "checks": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "rows": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "additionalProperties": {}
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "rows"
+                                ],
+                                "additionalProperties": true
+                              },
+                              "default": {}
+                            },
+                            "issues": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              },
+                              "default": []
+                            },
+                            "review": {
+                              "type": "object",
+                              "properties": {
+                                "reviewer": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "note": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "reviewed_at": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "edits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "field": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "table": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "row": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "column": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "value": {}
+                                    },
+                                    "additionalProperties": true
+                                  },
+                                  "default": []
+                                }
+                              },
+                              "additionalProperties": true
+                            },
+                            "published_at": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "document_id"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "documentError": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "missing from target",
+                            "target storage unavailable",
+                            "invalid document"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "definition": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "template"
+                              ]
+                            },
+                            "fields": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "text",
+                                      "integer",
+                                      "decimal",
+                                      "date",
+                                      "boolean",
+                                      "enum",
+                                      "list"
+                                    ],
+                                    "default": "text"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "enum": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "minItems": 1
+                                  }
+                                },
+                                "required": [
+                                  "id"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "tables": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "columns": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "enum": [
+                                            "text",
+                                            "integer",
+                                            "decimal",
+                                            "date",
+                                            "boolean",
+                                            "enum",
+                                            "list"
+                                          ],
+                                          "default": "text"
+                                        },
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "minItems": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "id"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "minItems": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "columns"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "fields",
+                            "tables"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "spec"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "unknown"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "job",
+                    "target",
+                    "publishedAt",
+                    "outputs",
+                    "document",
+                    "documentError",
+                    "definition"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The result."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`result not found`: no published, non-test job with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`result not found`: no published, non-test job with this id."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/results/{jobId}/archive": {
+      "get": {
+        "operationId": "downloadResultArchive",
+        "summary": "Download every output of a result as a ZIP",
+        "tags": [
+          "Results"
+        ],
+        "description": "All published outputs of a result in one ZIP, one `{outputId}.{format}` entry each,\nnamed after the PDF. If any output cannot be read from the target the request fails\nrather than returning a partial archive.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ZIP archive.",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`result not found`, or `output object missing from target`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`result not found`, or `output object missing from target`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`target storage unavailable`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`target storage unavailable`."
                 }
               }
             }
