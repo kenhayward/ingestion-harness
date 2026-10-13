@@ -1,6 +1,6 @@
 # Word documents: accept .docx by converting it to PDF
 
-**Status:** PR 1 implemented (converter and worker) · 2026-10-13 · approach A approved in conversation (.docx only)
+**Status:** PRs 1–2 implemented (converter and worker; API, storage and bundles) · 2026-10-13 · approach A approved in conversation (.docx only)
 
 Content Transformation Studio (CT Studio) ingests only PDFs today. This design lets people upload
 Word documents (`.docx`) wherever they upload a PDF now: the Jobs upload, Templates test runs, and
@@ -127,10 +127,14 @@ the file name and the browser's content type are ignored, as for PDFs today.
 
 ### Storage and the database
 
-- **Migration `0022_document_content_type.sql`:** `documents.content_type text NOT NULL DEFAULT
-  'application/pdf'`, with a CHECK for the two accepted types.
 - **`inboxKey`** takes the extension (`pdf` or `docx`): `{spec}/v{N}/{documentId}.docx`. The
   worker reads `jobs.object_key`, so no queue change is needed.
+- **The content type comes from the key, not a column** (changed in PR 2). `JobSummary` and
+  `ResultSummary` carry `contentType` from `sourceContentType(objectKey)` in
+  `packages/shared/src/storage-keys.ts`. The API names the object after the kind it judged
+  from the bytes, and every document row copied from an upload shares the key: sample test
+  runs, reference runs and regression runs. A column would have to be copied in each of those
+  places, and a missed copy would label a `.docx` as a PDF. No migration is needed.
 - **`GET /api/jobs/:id/document`** serves the stored file with its content type.
   - A PDF is inline, as now.
   - A `.docx` is an attachment with its original file name, since browsers cannot show it.
@@ -202,8 +206,8 @@ The Workbench docs and the template editor's hints say this where they mention p
 
 | Contract | TypeScript | Python |
 | --- | --- | --- |
-| Object keys | `inboxKey(…, ext)` | `storage.converted_key` (new; no TS reader) |
-| Source kinds | `sourceKind` in `apps/api/src/uploads.ts` | `convert.source_kind` |
+| Object keys | `inboxKey(…, ext)`, `sourceContentType` | `storage.converted_key` (new; no TS reader) |
+| Source kinds | `checkSource` in `apps/api/src/uploads.ts` | `convert.is_docx` |
 | Bundle | `BundleManifestSchema` file name (`.pdf` or `.docx`) | `bundle.run_export` |
 
 `CLAUDE.md` gets a "Word documents" rule and the rows above.
@@ -212,15 +216,15 @@ converter on an internal network; identity by the uploaded file.
 
 ## Rollout (three PRs, each green and deployable)
 
-1. **Converter and worker:**
+1. **Converter and worker** (done):
    - The `converter` service: compose, dev-infra, internal network, pinned tag, fonts checked.
    - `DocumentConverter`, `load_source` and the converted cache.
    - Source hashing in prepare, the OCR cache and bundle export.
    - Error routing, ADR 0009 and the worker tests.
    - Nothing uploads a `.docx` yet, so this ships dormant.
-2. **API and storage:**
-   - `sourceKind`/`checkDocx`, migration 0022, `inboxKey` extension, and content types on the
-     document route.
+2. **API and storage** (done):
+   - `checkSource`, the `inboxKey` extension, `contentType` from the key (no migration), and
+     content types on the document route.
    - Workbench sample upload and bundle import/export, results names, OpenAPI docs and
      `CLAUDE.md`.
    - The smoke test uploads a `.docx`.

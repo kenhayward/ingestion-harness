@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { checkSource, DOCX_MIME } from '../src/uploads.js';
 import { docx, para, part } from './docx-fixtures.js';
@@ -43,6 +44,13 @@ describe('checkSource', () => {
       },
     });
     expect(checkSource(elsewhere)).toMatchObject({ ok: false, code: 415 });
+  });
+
+  it("accepts the smoke test's fixture (deploy/scripts/fixtures/smoke.docx)", () => {
+    const fixture = readFileSync(
+      new URL('../../../deploy/scripts/fixtures/smoke.docx', import.meta.url),
+    );
+    expect(checkSource(fixture)).toMatchObject({ ok: true, kind: 'docx' });
   });
 
   it('gives the content type and extension of each kind', () => {

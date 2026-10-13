@@ -11,8 +11,9 @@ PR the feature works end to end through the API; the web follows in PR 3.
 - **One check for every upload path:** `checkSource(body)` in `apps/api/src/uploads.ts` decides
   the kind (`pdf` | `docx`) or the refusal (415, or 422 for tracked changes and oversize). It
   inflates only the parts it reads, under a cap.
-- **The content type is stored on the document:** migration 0022, `documents.content_type`.
-  `JobSummary` and `ResultSummary` carry it as `contentType`.
+- **The content type comes from the inbox key** (`sourceContentType`). This replaces the
+  planned migration 0022, since document rows copied for test, reference and regression runs
+  share the key. `JobSummary` and `ResultSummary` carry it as `contentType`.
 - **`inboxKey`** takes the extension.
 
 **Tech Stack:** TypeScript, Fastify 5, fflate (already an API dependency), Zod, Postgres; the

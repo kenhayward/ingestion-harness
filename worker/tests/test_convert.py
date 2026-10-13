@@ -90,6 +90,11 @@ def test_is_docx(data: bytes, expected: bool) -> None:
     assert is_docx(data) is expected
 
 
+def test_the_smoke_test_fixture_is_a_docx() -> None:
+    fixture = Path(__file__).parents[2] / "deploy" / "scripts" / "fixtures" / "smoke.docx"
+    assert is_docx(fixture.read_bytes())
+
+
 def gotenberg(handler: httpx.MockTransport) -> GotenbergConverter:
     return GotenbergConverter("http://converter:3000/", client=httpx.Client(transport=handler))
 
