@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  applyChanges,
   changeBodyOf,
   type ChangeStage,
   type DataPolicy,
@@ -12,6 +13,8 @@ import type { Api } from '../api/client.js';
 import { OutputsView } from './OutputsView.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { StaleBanner } from './StaleBanner.js';
+import { StepsView } from './StepsView.js';
+import { stepCards, type StepMetric } from './steps.js';
 import { TabHeader } from './TabHeader.js';
 import { useDefinitions } from './useDefinitions.js';
 
@@ -106,6 +109,8 @@ export function StagePanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [metrics, setMetrics] = useState<StepMetric[] | null>(null);
+  const [justAdded, setJustAdded] = useState<ReadonlySet<string>>(new Set());
 
   const showsDefinition = (stage === 'outputs' || stage === 'steps') && typeof draft === 'number';
   const definitions = useDefinitions(
@@ -164,14 +169,32 @@ export function StagePanel({
     }
   };
 
+  useEffect(() => {
+    if (stage !== 'steps' || typeof draft !== 'number') return;
+    api.getMetrics(projectId).then(
+      (m) => setMetrics(m.steps),
+      () => setMetrics(null),
+    );
+  }, [api, projectId, stage, draft]);
+
   const run = () => act(async () => setProposal(await api.startStage(projectId, stage)));
   const accept = () =>
     act(async () => {
       if (!proposal) return;
+      const before = new Set(stepCards(draftDef ?? {}).map((c) => c.id));
       const chosen = [...selected].sort((a, b) => a - b);
       setProposal(await api.decideProposal(projectId, proposal.id, 'accepted', chosen));
       onApplied();
-      await definitions.reload();
+      const reloaded = await definitions.reload();
+      if (reloaded && draftDef) {
+        setJustAdded(
+          new Set(
+            stepCards(reloaded)
+              .map((c) => c.id)
+              .filter((id) => !before.has(id)),
+          ),
+        );
+      }
     });
   const reject = () =>
     act(async () => {
@@ -230,6 +253,14 @@ export function StagePanel({
     label: NEXT[stage].label,
     text: NEXT[stage].text,
   };
+
+  const after =
+    proposal?.status === 'ready' && body && draftDef
+      ? applyChanges(
+          draftDef,
+          body.changes.filter((_, i) => selected.has(i)),
+        )
+      : null;
 
   const card =
     body && proposal ? (
@@ -326,6 +357,16 @@ export function StagePanel({
           />
           {proposal?.status !== 'ready' && card}
         </>
+      ) : stage === 'steps' && draftDef && typeof draft === 'number' ? (
+        <StepsView
+          projectId={projectId}
+          draftVersion={draft}
+          definition={draftDef}
+          after={after}
+          metrics={metrics}
+          justAdded={justAdded}
+          card={card}
+        />
       ) : (
         card
       )}
