@@ -10,6 +10,7 @@ import { httpApi } from './api/client.js';
 import { applyTheme, loadTheme } from './theme.js';
 import './styles/tokens.css';
 import './styles.css';
+import './styles/stages.css';
 
 // Before the first render, so a stored Light/Dark choice never flashes the other theme.
 applyTheme(loadTheme());

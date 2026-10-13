@@ -1,0 +1,117 @@
+/* Workbench stage status primitives (docs/design/workbench-redesign/WORKBENCH-HANDOFF.md §2). */
+.stage-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+@keyframes ih-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.stage-icon.spin {
+  animation: ih-spin 1.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-icon.spin {
+    animation: none;
+  }
+}
+.stage-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+}
+.stage-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.progress-strip {
+  display: inline-flex;
+  gap: 3px;
+}
+.progress-strip .seg {
+  width: 13px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1.5px solid transparent;
+}
+.progress-strip .seg-accepted {
+  background: var(--ih-ok-fg);
+}
+.progress-strip .seg-skipped {
+  background: var(--ih-skip-bg);
+  border-color: var(--ih-skip-fg);
+}
+.progress-strip .seg-proposed,
+.progress-strip .seg-warn {
+  background: var(--ih-warn-fg);
+}
+.progress-strip .seg-running {
+  background: var(--ih-accent);
+}
+.progress-strip .seg-stale {
+  background: var(--ih-alert-fg);
+}
+.progress-strip .seg-ready {
+  background: var(--ih-ok-bg);
+  border-color: var(--ih-ok-fg);
+}
+.progress-strip .seg-locked {
+  background: var(--ih-lock-bg);
+  border-color: var(--ih-lock-fg);
+}
+.progress-strip .seg-pending {
+  background: transparent;
+  border: 1px dashed var(--ih-border-strong);
+}
+.next-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.next-action[data-tone='ok'] {
+  color: var(--ih-ok-fg);
+}
+.next-action[data-tone='warn'] {
+  color: var(--ih-warn-fg);
+}
+.next-action[data-tone='accent'] {
+  color: var(--ih-accent);
+}
+.next-action[data-tone='alert'] {
+  color: var(--ih-alert-fg);
+}
+.next-action[data-tone='neutral'] {
+  color: var(--ih-muted);
+}
+.phase-panel {
+  position: relative;
+  border-radius: 14px;
+  background: var(--ih-band);
+  border: 1px solid var(--ih-band-bd);
+}
+.phase-panel-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+.phase-panel-title {
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.phase-panel-range {
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
