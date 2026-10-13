@@ -2,7 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the three items deferred from phase 6: bundles carry the accepted survey and stage progress, bundle import no longer holds the whole bundle in memory, and an unpublished Workbench project can be deleted (so a failed import can be retried under the same id).
+**Goal:** Close the items deferred from phases 5a, 5b and 6.
+
+- **Phase 6:**
+  - Bundles carry the accepted survey and stage progress.
+  - Bundle import no longer holds the whole bundle in memory.
+  - An unpublished Workbench project can be deleted, so a failed import can be retried under the same id.
+- **Phase 5a:**
+  - Publishing and recording the publication become one transaction.
+  - Threshold changes record who made them.
+  - The publish gate stops recomputing unchanged holdout runs.
+- **Phase 5b:**
+  - An emptied version is not refilled from an older one.
+  - Every Workbench test run snapshots its outputs.
+  - Regression never runs a legacy and a pinned reference for the same PDF.
 
 **Architecture:**
 - **Survey and stage state.** Export params gain `completedStages`. The worker writes `survey.json` and lists `completedStages` in the manifest, both optional, so earlier v1 bundles still import.
@@ -273,4 +286,146 @@ Run: `npx vitest run --project api apps/api/test/workbench-delete.test.ts` and `
 ```bash
 git add apps CLAUDE.md docs
 git commit -m "Workbench: delete an unpublished project; docs for the follow-ups"
+```
+
+---
+
+### Task 4: Atomic publish and threshold attribution (5a follow-ups); migration 0020
+
+**Files:**
+- Create: `db/migrations/0020_workbench_followups.sql`
+- Modify: `apps/api/src/workbench/repo.ts` (interface, memory and Pg)
+- Modify: `apps/api/src/routes/workbench.ts` (the publish and PATCH routes)
+- Modify: `packages/shared/src/workbench.ts` (`WorkbenchProject` fields)
+- Modify: `apps/web/src/workbench/PublishPanel.tsx`
+- Test: `apps/api/test/workbench-publish.test.ts`, `apps/api/test/workbench-publish-repo.test.ts`, `apps/api/test/integration/workbench-pg.test.ts`, `apps/web/test/PublishPanel.test.tsx`
+
+**Interfaces:**
+- Migration 0020 (Task 5 uses it too):
+
+```sql
+-- Workbench follow-ups: who last changed the publish threshold, and a per-iteration cache of the
+-- publish gate's raw holdout scores (keyed by a fingerprint of the iteration's jobs).
+ALTER TABLE workbench_projects
+  ADD COLUMN threshold_set_by text,
+  ADD COLUMN threshold_set_at timestamptz;
+ALTER TABLE workbench_iterations ADD COLUMN gate_cache jsonb;
+```
+
+- Threshold attribution:
+  - `WorkbenchProject` gains `thresholdSetBy: string | null` and `thresholdSetAt: string | null`.
+  - `setPublishThreshold(id, threshold, actor: string | null)` sets both columns (`now()`).
+- `WorkbenchRepo.publishDraft(input: { projectId: string; version: number; definition: Record<string, unknown>; publication: Omit<Publication, 'id' | 'publishedAt'> }): Promise<{ result: 'published'; publication: Publication } | { result: 'changed' } | { result: 'not-draft' }>`
+  - In Pg this is ONE transaction:
+    1. `SELECT definition, status FROM templates WHERE id = $1 AND version = $2 FOR UPDATE`.
+    2. If there is no row or it is not a draft → `not-draft`.
+    3. If `stableJson(row.definition) !== stableJson(input.definition)` → `changed` (compare in TS after the locked read).
+    4. `UPDATE templates SET status='published', published_at=now(), updated_at=now() WHERE … AND status='draft'`.
+    5. `INSERT INTO workbench_publications …`.
+    6. COMMIT.
+  - Memory does the same against `MemoryTemplateRepo`. Give `MemoryWorkbenchRepo` access to it the way it already holds `MemoryRepo`, and adapt `testApp()` and the composition root.
+  - The publish route replaces the sequence (re-check, `templates.publish`, `recordPublication`) with this single call:
+    - `changed` → 409 `the draft changed while publishing; check the gate again`;
+    - `not-draft` → 409 `no open draft to publish`;
+    - the response is otherwise unchanged.
+
+- [ ] **Step 1: Failing tests.**
+  - Repo tests (memory), one per result. `published` writes both the template status and the publication; `changed` and `not-draft` write neither.
+  - Rollback, memory: the publication insert fails (spy it to throw) → the template stays a draft. Make the memory implementation write both only after both have succeeded.
+  - Rollback, Pg (integration test): a publication with a threshold outside the CHECK range makes the INSERT fail inside the transaction, and the draft stays a draft.
+  - The existing "draft changed while publishing" API test keeps passing.
+  - Threshold:
+    - `PATCH /projects/:id` records `thresholdSetBy` from `req.auth?.label ?? null`, plus `thresholdSetAt`.
+    - `GET /projects/:id` returns both fields.
+    - PublishPanel shows "Threshold set by <label> on <date>" when they are present.
+- [ ] **Step 2: See the tests fail, implement, then see them pass** (`npx vitest run --project api` and `--project web`).
+- [ ] **Step 3: Docs.** In the 5a text of `CLAUDE.md` and `docs/design/workbench.md`, add two points:
+  - the gate re-check, the publish and the publication record now happen in one transaction;
+  - the threshold records who set it.
+- [ ] **Step 4: Pg run, check, commit.** Run the Pg integration test on a throwaway container, as in Task 1. Then run `npm run check` and check its exit code.
+
+```bash
+git add db/migrations/0020_workbench_followups.sql apps packages CLAUDE.md docs
+git commit -m "Workbench: publish atomically and attribute threshold changes"
+```
+
+---
+
+### Task 5: Cache the publish gate's holdout scores by job fingerprint (5a follow-up)
+
+**Files:**
+- Modify: `apps/api/src/workbench/repo.ts` (`setGateCache`, `IterationRecord.gateCache`), `apps/api/src/routes/workbench.ts` (`gateFor`)
+- Test: `apps/api/test/workbench-publish.test.ts`, `apps/api/test/integration/workbench-pg.test.ts`
+
+**Interfaces:**
+- `IterationRecord.gateCache: { fingerprint: string; score: number | null; completed: number; total: number } | null`.
+- `WorkbenchRepo.setGateCache(iterationId: string, cache: NonNullable<IterationRecord['gateCache']>): Promise<void>`.
+- **Fingerprint:** sha256 of `stableJson` of the iteration's jobs, in `jobIds` order.
+  - Each job contributes `[id, status, updatedAt, referenceId]`.
+  - A deleted job contributes `[id, null, null, null]`.
+  - The data comes from one `listProjectRuns(projectId)` call.
+- **In `gateFor`:**
+  - When `gateCache.fingerprint` equals the fresh fingerprint, use the cached score, completed and total.
+  - Otherwise recompute with `iterationView` (raw holdout output, as today). Store the result with `setGateCache` only when every job has finished: none queued, running or awaiting_review.
+  - Coverage stays live, computed from `sample_shas` and the current samples.
+
+- [ ] **Step 1: Failing tests.**
+  1. **Cache hit:** a second `GET /publish-gate` with nothing changed reads no job documents. Count document reads by wrapping or spying on the `MemoryObjectStore`.
+  2. **Invalidation:** each of these changes the fingerprint, and the test asserts the gate changes:
+     - deleting a job;
+     - changing a job's status (a re-run);
+     - nulling a job's `referenceId` (an unpinned reference hard-deleted).
+  3. **Review edits:** a `reviewed-document.json` still never changes the gate.
+- [ ] **Step 2: Make them pass.** See them fail, implement, see them pass. Add a Pg integration case for the `setGateCache` round-trip. Run `npm run check`.
+- [ ] **Step 3: Docs.** In the 5a text of CLAUDE.md, replace "`gateFor` always recomputes those scores from the jobs" with the fingerprint cache rule (it still reads the raw output).
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps CLAUDE.md docs
+git commit -m "Workbench: cache publish gate scores by a fingerprint of the iteration's jobs"
+```
+
+---
+
+### Task 6: References follow-ups (5b)
+
+**Files:**
+- Modify:
+  - `apps/api/src/repositories/memory.ts` and `pg.ts` (`carryReferencesForward`);
+  - `apps/api/src/regression/report.ts` (`versionReferences`);
+  - `apps/api/src/routes/workbench.ts`: every place that creates a Workbench `process` job (test runs, evaluations, compare, reference runs);
+  - any other API path that creates a test `process` job on a draft template version (search for `createDocumentAndJob(` and `createWorkbenchJob(`).
+- Test: `apps/api/test/references-repo.test.ts`, `references.test.ts`, `workbench-versions.test.ts`, the tests of the job-creating routes you touch, and `apps/api/test/integration/workbench-pg.test.ts`.
+
+**Rules:**
+1. **Emptied version.** `carryReferencesForward` takes as its source the newest earlier version that has ANY reference row, live or superseded, and copies that version's live rows (possibly none). An emptied v2 therefore passes on nothing, and v1 is not resurrected.
+   - Pg: drop the `superseded_at IS NULL` filter from the `max(template_version)` subquery, but keep the outer filter.
+   - Memory: the same.
+2. **Snapshot on every test run.** Every API path that creates a `process` test job on a DRAFT version stores `params.outputs = <that draft's definition.outputs>`:
+   - dev test runs;
+   - evaluation runs (dev and holdout);
+   - compare groups;
+   - the Templates/editor test run, if it can carry params. Where the repo method can't take params, extend it minimally, keeping Memory and Pg the same.
+   Reference runs already do this. Saving a reference then uses the snapshot, so the "draft changed after this run" 409 only remains for jobs created before this change. Update existing `toEqual` assertions on params deliberately, and list each one in your report.
+3. **One reference per PDF.** `versionReferences` builds on `listReferencesWithSha` (every row): keep live references that are pinned to the version or unpinned and not outdated, then keep ONE per document sha256, preferring the pinned one. Return plain `Reference` objects (drop `sha256`).
+
+- [ ] **Step 1: Failing tests.**
+  - Repo (memory and Pg): soft-delete every v2 reference → `carryReferencesForward('letter', 3)` returns 0, and v3 has none.
+  - For each job-creating route you change, `getJobParams(job).outputs` equals the draft outputs at creation.
+  - End to end: a dev test run of a draft, then a draft edit to `steps` only, then approve and save the reference → 201. Today this is a 409.
+  - Regression: an unpinned (legacy) reference and a pinned v2 reference for the same PDF → `versionReferences('letter', 2)` has exactly one entry, the pinned one, and `POST …/versions/2/regression` creates one job.
+- [ ] **Step 2: Make the tests pass.**
+  1. Run the tests and see them fail.
+  2. Implement, then see them pass.
+  3. Run the Pg integration test.
+  4. Run `npm run check`.
+- [ ] **Step 3: Docs.** In the 5b text of CLAUDE.md and `docs/design/workbench.md`, describe:
+  - the carry-source rule;
+  - the outputs snapshot on every Workbench test run;
+  - dedupe by PDF.
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps CLAUDE.md docs
+git commit -m "References: no refill of emptied versions, outputs snapshot on every test run, one reference per PDF"
 ```
