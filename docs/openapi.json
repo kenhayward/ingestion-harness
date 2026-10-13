@@ -11793,6 +11793,703 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/publish-gate": {
+      "get": {
+        "operationId": "getPublishGate",
+        "summary": "Check the publish gate",
+        "tags": [
+          "Holdout & publish gate"
+        ],
+        "description": "Whether the open draft may be published without an override. The newest complete\nholdout iteration that evaluated the draft exactly as it is now (version and\ndefinition), with the template's own models, decides. It passes only when it covered\nevery ready holdout sample, compared every sample it evaluated (a job that failed,\nneeds review, was cancelled or deleted fails it), and scored at or above the\nproject's threshold. `reason` says why it passes or fails. Scores are recomputed\nfrom the models' raw output, so review edits cannot raise them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The gate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "threshold": {
+                      "type": "number"
+                    },
+                    "iterationId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "score": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "passes": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "threshold",
+                    "iterationId",
+                    "score",
+                    "passes",
+                    "reason"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The gate."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/publish": {
+      "post": {
+        "operationId": "publishProject",
+        "summary": "Publish the draft through the gate",
+        "tags": [
+          "Holdout & publish gate"
+        ],
+        "description": "Publishes the open draft when the publish gate passes. Below the gate it needs an\n`overrideReason` (10 to 1000 characters), which is recorded with the publication.\nIf the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "overrideReason": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 1000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Published.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publication": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "iterationId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "threshold": {
+                          "type": "number"
+                        },
+                        "overrideReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "projectId",
+                        "version",
+                        "iterationId",
+                        "score",
+                        "threshold",
+                        "overrideReason",
+                        "publishedBy",
+                        "publishedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "project": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "dataPolicy": {
+                              "type": "string",
+                              "enum": [
+                                "local",
+                                "external"
+                              ]
+                            },
+                            "dataPolicyChangedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "dataPolicyChangedBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "publishThreshold": {
+                              "type": "number"
+                            },
+                            "thresholdSetBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "thresholdSetAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "createdAt",
+                            "dataPolicy",
+                            "dataPolicyChangedAt",
+                            "dataPolicyChangedBy",
+                            "publishThreshold",
+                            "thresholdSetBy",
+                            "thresholdSetAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "draft": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "published": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "brief": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "projectId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer"
+                                },
+                                "body": {
+                                  "type": "object",
+                                  "properties": {
+                                    "purpose": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "outputs": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "exampleOutput": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "glossary": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "variants": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "rules": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "answers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "question": {
+                                            "type": "string"
+                                          },
+                                          "answer": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "question",
+                                          "answer"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "default": []
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "projectId",
+                                "version",
+                                "body",
+                                "createdAt"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "project",
+                        "draft",
+                        "published",
+                        "brief"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "publication",
+                    "project"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Published."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues (an override reason under 10 characters), or `the draft is not valid` (with `issues`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {},
+                    "issues": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "additionalProperties": true,
+                  "description": "Zod issues (an override reason under 10 characters), or `the draft is not valid` (with `issues`)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Below the gate without an override (`{reason}; give an override reason to publish anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while publishing; check the gate again`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "gate": {
+                      "type": "object",
+                      "properties": {
+                        "threshold": {
+                          "type": "number"
+                        },
+                        "iterationId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "passes": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "threshold",
+                        "iterationId",
+                        "score",
+                        "passes",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Below the gate without an override (`{reason}; give an override reason to publish anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while publishing; check the gate again`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/publications": {
+      "get": {
+        "operationId": "listPublications",
+        "summary": "List a project's publications",
+        "tags": [
+          "Holdout & publish gate"
+        ],
+        "description": "Every version published from the Workbench, newest first: the iteration and score the\ngate used, the threshold, the override reason when the gate did not pass, and who\npublished it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The publications.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer"
+                      },
+                      "iterationId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "score": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "threshold": {
+                        "type": "number"
+                      },
+                      "overrideReason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "publishedBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "publishedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "projectId",
+                      "version",
+                      "iterationId",
+                      "score",
+                      "threshold",
+                      "overrideReason",
+                      "publishedBy",
+                      "publishedAt"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The publications."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/samples": {
       "get": {
         "operationId": "listSamples",
@@ -16712,6 +17409,318 @@
                   ],
                   "additionalProperties": true,
                   "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/holdout/reference-runs": {
+      "post": {
+        "operationId": "startHoldoutReferenceRuns",
+        "summary": "Start reference runs on the holdout samples",
+        "tags": [
+          "Holdout & publish gate"
+        ],
+        "description": "Runs the open draft with the template's own models (never the drafting model, which\nmust not see holdout) on every ready holdout sample that has no reference and no\nactive run, stopping each for review. Verify the values, approve, then save each job\nas a reference: holdout evaluations and the publish gate need them. Not a stage: the\nstage order does not apply.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The queued reference runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "documentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "specId": {
+                            "type": "string"
+                          },
+                          "specVersion": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "needs_review",
+                              "awaiting_review",
+                              "rejected",
+                              "cancelled"
+                            ]
+                          },
+                          "modelOverride": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "modelsUsed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "task": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "publish",
+                              "rerun",
+                              "prepare",
+                              "segment",
+                              "draft",
+                              "export"
+                            ]
+                          },
+                          "test": {
+                            "type": "boolean"
+                          },
+                          "referenceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "projectId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewReasons": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "documentId",
+                          "filename",
+                          "specId",
+                          "specVersion",
+                          "status",
+                          "modelOverride",
+                          "modelsUsed",
+                          "attempts",
+                          "error",
+                          "task",
+                          "test",
+                          "referenceId",
+                          "projectId",
+                          "reviewReasons",
+                          "reviewer",
+                          "reviewNote",
+                          "reviewedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "jobs"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued reference runs."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The open draft is not valid: `the draft is not valid`, with `issues`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The open draft is not valid: `the draft is not valid`, with `issues`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no open draft; start the next version on the Template tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no open draft; start the next version on the Template tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
                 }
               }
             }
@@ -22254,6 +23263,1304 @@
                   ],
                   "additionalProperties": true,
                   "description": "`the export has not finished`, or `a sample changed since this export; export again`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys": {
+      "get": {
+        "operationId": "listS3Keys",
+        "summary": "List data-lake consumers and keys",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admin token required.** The data-lake consumers (one read-only SeaweedFS identity\neach, `lake-{id}`) and their keys, never their secrets, with the bucket and\nendpoint the data lake is configured with. See [ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md).",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The consumers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bucket": {
+                      "type": "string",
+                      "description": "The publish bucket the keys can read."
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The S3 endpoint the data lake uses, if configured."
+                    },
+                    "consumers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "userName": {
+                            "type": "string",
+                            "description": "The SeaweedFS identity: `lake-{id}`."
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "keys": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "accessKeyId": {
+                                  "type": "string"
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                },
+                                "expiresAt": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "revokedAt": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "active",
+                                    "expired",
+                                    "revoked"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "accessKeyId",
+                                "createdAt",
+                                "expiresAt",
+                                "revokedAt",
+                                "status"
+                              ],
+                              "additionalProperties": true
+                            },
+                            "description": "Newest first; at most two active."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "userName",
+                          "createdAt",
+                          "keys"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "bucket",
+                    "endpoint",
+                    "consumers"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The consumers."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createS3Key",
+        "summary": "Create a data-lake consumer and key",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admin token required.** Creates a consumer with read-only access to the publish\nbucket and its first key. The `secretAccessKey` is in this response only:\nSeaweedFS holds it and it is never shown again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "expiresInDays": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          7
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          30
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          90
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          365
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "expiresInDays"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The consumer, key and secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "consumer": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "userName": {
+                          "type": "string",
+                          "description": "The SeaweedFS identity: `lake-{id}`."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "keys": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "accessKeyId": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "expiresAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "revokedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "expired",
+                                  "revoked"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "accessKeyId",
+                              "createdAt",
+                              "expiresAt",
+                              "revokedAt",
+                              "status"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "description": "Newest first; at most two active."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "userName",
+                        "createdAt",
+                        "keys"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "key": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "accessKeyId": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "accessKeyId",
+                        "createdAt",
+                        "expiresAt",
+                        "revokedAt",
+                        "status"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "secretAccessKey": {
+                      "type": "string",
+                      "description": "Shown only in this response."
+                    },
+                    "bucket": {
+                      "type": "string",
+                      "description": "The publish bucket the keys can read."
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The S3 endpoint the data lake uses, if configured."
+                    }
+                  },
+                  "required": [
+                    "consumer",
+                    "key",
+                    "secretAccessKey",
+                    "bucket",
+                    "endpoint"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The consumer, key and secret."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`SeaweedFS could not be reached: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`SeaweedFS could not be reached: …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys/{id}/rotate": {
+      "post": {
+        "operationId": "rotateS3Key",
+        "summary": "Rotate a consumer's key",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admin token required.** Issues a new key for the consumer and sets the current\nones to expire after `graceDays` (1, 7 or 30), so the data lake can switch without\ndowntime. A consumer has at most two active keys.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresInDays": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          7
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          30
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          90
+                        ]
+                      },
+                      {
+                        "type": "number",
+                        "enum": [
+                          365
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "graceDays": {
+                    "type": "number",
+                    "enum": [
+                      1,
+                      7,
+                      30
+                    ]
+                  }
+                },
+                "required": [
+                  "expiresInDays",
+                  "graceDays"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The consumer id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The new key and secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "consumer": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "userName": {
+                          "type": "string",
+                          "description": "The SeaweedFS identity: `lake-{id}`."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "keys": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "accessKeyId": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "expiresAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "revokedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "expired",
+                                  "revoked"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "accessKeyId",
+                              "createdAt",
+                              "expiresAt",
+                              "revokedAt",
+                              "status"
+                            ],
+                            "additionalProperties": true
+                          },
+                          "description": "Newest first; at most two active."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "userName",
+                        "createdAt",
+                        "keys"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "key": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "accessKeyId": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "accessKeyId",
+                        "createdAt",
+                        "expiresAt",
+                        "revokedAt",
+                        "status"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "secretAccessKey": {
+                      "type": "string",
+                      "description": "Shown only in this response."
+                    },
+                    "bucket": {
+                      "type": "string",
+                      "description": "The publish bucket the keys can read."
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The S3 endpoint the data lake uses, if configured."
+                    }
+                  },
+                  "required": [
+                    "consumer",
+                    "key",
+                    "secretAccessKey",
+                    "bucket",
+                    "endpoint"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The new key and secret."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`expiresInDays and graceDays (1, 7 or 30) are required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`expiresInDays and graceDays (1, 7 or 30) are required`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`this consumer already has two active keys: revoke one first`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`this consumer already has two active keys: revoke one first`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`SeaweedFS could not be reached: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`SeaweedFS could not be reached: …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys/keys/{keyId}/revoke": {
+      "post": {
+        "operationId": "revokeS3Key",
+        "summary": "Revoke a key",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admin token required.** Revokes one key and deletes it from SeaweedFS at once. If\nSeaweedFS is unreachable, the key is still revoked and is deleted as soon as it can\nbe reached (the reconciler runs every minute).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "keyId",
+            "required": true,
+            "description": "The key id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Revoked and deleted."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`Revoked, but SeaweedFS could not be reached: …. The key is deleted as soon as it is reachable.`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Revoked, but SeaweedFS could not be reached: …. The key is deleted as soon as it is reachable.`"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys/{id}": {
+      "delete": {
+        "operationId": "deleteS3Consumer",
+        "summary": "Delete a data-lake consumer",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admin token required.** Deletes the consumer, its keys and its SeaweedFS\nidentity.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The consumer id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`SeaweedFS could not be reached: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`SeaweedFS could not be reached: …`."
                 }
               }
             }

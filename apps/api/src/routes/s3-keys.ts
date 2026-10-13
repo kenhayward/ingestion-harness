@@ -1,5 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { error, md, noContent, res } from '../openapi/zod.js';
+import { IssuedKeySchema } from '../s3keys/service.js';
+import { S3ConsumerSchema } from '../s3keys/repo.js';
 
 const UUID = z.string().uuid();
 const Expiry = z.union([
@@ -15,6 +18,29 @@ const RotateBody = z.object({
   expiresInDays: Expiry,
   graceDays: z.union([z.literal(1), z.literal(7), z.literal(30)]),
 });
+
+/** Route docs (docs/design/api-docs.md). */
+const ADR =
+  'https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md';
+const Settings = {
+  bucket: z.string().describe('The publish bucket the keys can read.'),
+  endpoint: z.string().nullable().describe('The S3 endpoint the data lake uses, if configured.'),
+};
+const IssuedView = IssuedKeySchema.extend(Settings);
+const ADMINS_ONLY = error('`admins only`.');
+const NOT_HERE = error(
+  '`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or ' +
+    '`not found`.',
+);
+const UNREACHABLE = error('`SeaweedFS could not be reached: …`.');
+const base = (operationId: string, summary: string, description: string) => ({
+  tags: ['Data-lake S3 keys'],
+  'x-admin': true,
+  operationId,
+  summary,
+  description,
+});
+const ConsumerParams = z.object({ id: z.string().uuid().describe('The consumer id.') });
 
 const NOT_AVAILABLE =
   'S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)';
@@ -38,51 +64,149 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
   const validId = (id: string, reply: FastifyReply) =>
     UUID.safeParse(id).success || (reply.code(404).send({ error: 'not found' }), false);
 
-  app.get('/access/s3-keys', async () => service!.list());
+  app.get(
+    '/access/s3-keys',
+    {
+      schema: {
+        ...base(
+          'listS3Keys',
+          'List data-lake consumers and keys',
+          md`
+            **Admin token required.** The data-lake consumers (one read-only SeaweedFS identity
+            each, \`lake-{id}\`) and their keys, never their secrets, with the bucket and
+            endpoint the data lake is configured with. See [ADR 0008](${ADR}).`,
+        ),
+        response: {
+          200: res(
+            'The consumers.',
+            z.object({ ...Settings, consumers: z.array(S3ConsumerSchema) }),
+          ),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+        },
+      },
+    },
+    async () => service!.list(),
+  );
 
-  app.post('/access/s3-keys', async (req, reply) => {
-    const body = CreateBody.safeParse(req.body ?? {});
-    if (!body.success) {
-      return reply.code(400).send({ error: 'label (1-100 chars) and expiresInDays are required' });
-    }
-    try {
-      const issued = await service!.issue(body.data.label, body.data.expiresInDays);
-      return { ...issued, ...service!.settings };
-    } catch (err) {
-      req.log.error({ err }, 'issuing an S3 key failed');
-      return reply.code(502).send({ error: unreachable(err) });
-    }
-  });
-
-  app.post<{ Params: { id: string } }>('/access/s3-keys/:id/rotate', async (req, reply) => {
-    if (!validId(req.params.id, reply)) return reply;
-    const body = RotateBody.safeParse(req.body ?? {});
-    if (!body.success) {
-      return reply
-        .code(400)
-        .send({ error: 'expiresInDays and graceDays (1, 7 or 30) are required' });
-    }
-    try {
-      const result = await service!.rotate(
-        req.params.id,
-        body.data.expiresInDays,
-        body.data.graceDays,
-      );
-      if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
-      if (result === 'limit') {
+  app.post(
+    '/access/s3-keys',
+    {
+      schema: {
+        ...base(
+          'createS3Key',
+          'Create a data-lake consumer and key',
+          md`
+            **Admin token required.** Creates a consumer with read-only access to the publish
+            bucket and its first key. The \`secretAccessKey\` is in this response only:
+            SeaweedFS holds it and it is never shown again.
+          `,
+        ),
+        body: CreateBody,
+        response: {
+          200: res('The consumer, key and secret.', IssuedView),
+          400: error('`label (1-100 chars) and expiresInDays are required`.'),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+          502: UNREACHABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = CreateBody.safeParse(req.body ?? {});
+      if (!body.success) {
         return reply
-          .code(409)
-          .send({ error: 'this consumer already has two active keys: revoke one first' });
+          .code(400)
+          .send({ error: 'label (1-100 chars) and expiresInDays are required' });
       }
-      return { ...result, ...service!.settings };
-    } catch (err) {
-      req.log.error({ err }, 'rotating an S3 key failed');
-      return reply.code(502).send({ error: unreachable(err) });
-    }
-  });
+      try {
+        const issued = await service!.issue(body.data.label, body.data.expiresInDays);
+        return { ...issued, ...service!.settings };
+      } catch (err) {
+        req.log.error({ err }, 'issuing an S3 key failed');
+        return reply.code(502).send({ error: unreachable(err) });
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/access/s3-keys/:id/rotate',
+    {
+      schema: {
+        ...base(
+          'rotateS3Key',
+          "Rotate a consumer's key",
+          md`
+            **Admin token required.** Issues a new key for the consumer and sets the current
+            ones to expire after \`graceDays\` (1, 7 or 30), so the data lake can switch without
+            downtime. A consumer has at most two active keys.
+          `,
+        ),
+        params: ConsumerParams,
+        body: RotateBody,
+        response: {
+          200: res('The new key and secret.', IssuedView),
+          400: error('`expiresInDays and graceDays (1, 7 or 30) are required`.'),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+          409: error('`this consumer already has two active keys: revoke one first`.'),
+          502: UNREACHABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!validId(req.params.id, reply)) return reply;
+      const body = RotateBody.safeParse(req.body ?? {});
+      if (!body.success) {
+        return reply
+          .code(400)
+          .send({ error: 'expiresInDays and graceDays (1, 7 or 30) are required' });
+      }
+      try {
+        const result = await service!.rotate(
+          req.params.id,
+          body.data.expiresInDays,
+          body.data.graceDays,
+        );
+        if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
+        if (result === 'limit') {
+          return reply
+            .code(409)
+            .send({ error: 'this consumer already has two active keys: revoke one first' });
+        }
+        return { ...result, ...service!.settings };
+      } catch (err) {
+        req.log.error({ err }, 'rotating an S3 key failed');
+        return reply.code(502).send({ error: unreachable(err) });
+      }
+    },
+  );
 
   app.post<{ Params: { keyId: string } }>(
     '/access/s3-keys/keys/:keyId/revoke',
+    {
+      schema: {
+        ...base(
+          'revokeS3Key',
+          'Revoke a key',
+          md`
+            **Admin token required.** Revokes one key and deletes it from SeaweedFS at once. If
+            SeaweedFS is unreachable, the key is still revoked and is deleted as soon as it can
+            be reached (the reconciler runs every minute).
+          `,
+        ),
+        params: z.object({ keyId: z.string().uuid().describe('The key id.') }),
+        response: {
+          204: noContent('Revoked and deleted.'),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+          502: error(
+            '`Revoked, but SeaweedFS could not be reached: …. The key is deleted as soon as it ' +
+              'is reachable.`',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       if (!validId(req.params.keyId, reply)) return reply;
       try {
@@ -98,15 +222,37 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.delete<{ Params: { id: string } }>('/access/s3-keys/:id', async (req, reply) => {
-    if (!validId(req.params.id, reply)) return reply;
-    try {
-      const result = await service!.remove(req.params.id);
-      if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
-      return reply.code(204).send();
-    } catch (err) {
-      req.log.error({ err }, 'deleting an S3 key consumer failed');
-      return reply.code(502).send({ error: unreachable(err) });
-    }
-  });
+  app.delete<{ Params: { id: string } }>(
+    '/access/s3-keys/:id',
+    {
+      schema: {
+        ...base(
+          'deleteS3Consumer',
+          'Delete a data-lake consumer',
+          md`
+            **Admin token required.** Deletes the consumer, its keys and its SeaweedFS
+            identity.
+          `,
+        ),
+        params: ConsumerParams,
+        response: {
+          204: noContent('Deleted.'),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+          502: UNREACHABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!validId(req.params.id, reply)) return reply;
+      try {
+        const result = await service!.remove(req.params.id);
+        if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
+        return reply.code(204).send();
+      } catch (err) {
+        req.log.error({ err }, 'deleting an S3 key consumer failed');
+        return reply.code(502).send({ error: unreachable(err) });
+      }
+    },
+  );
 }

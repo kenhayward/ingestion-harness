@@ -14,6 +14,7 @@ import {
   EMPTY_BRIEF,
   FeedbackBodySchema,
   FeedbackItemSchema,
+  GateViewSchema,
   IterationSummarySchema,
   IterationViewSchema,
   MAX_SAMPLES,
@@ -22,6 +23,7 @@ import {
   ProjectSummarySchema,
   ProjectViewSchema,
   ProposalViewSchema,
+  PublicationSchema,
   PublishBodySchema,
   ReferenceRowSchema,
   PreparedTriageSchema,
@@ -1080,6 +1082,24 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: ProjectParams }>(
     '/workbench/projects/:id/publish-gate',
+    {
+      schema: {
+        tags: ['Holdout & publish gate'],
+        operationId: 'getPublishGate',
+        summary: 'Check the publish gate',
+        description: md`
+          Whether the open draft may be published without an override. The newest complete
+          holdout iteration that evaluated the draft exactly as it is now (version and
+          definition), with the template's own models, decides. It passes only when it covered
+          every ready holdout sample, compared every sample it evaluated (a job that failed,
+          needs review, was cancelled or deleted fails it), and scored at or above the
+          project's threshold. \`reason\` says why it passes or fails. Scores are recomputed
+          from the models' raw output, so review edits cannot raise them.
+        `,
+        params: ProjectIdParams,
+        response: { 200: res('The gate.', GateViewSchema), 404: PROJECT_NOT_FOUND },
+      },
+    },
     async (req, reply): Promise<GateView> => {
       const project = await workbench.getProject(req.params.id);
       if (!project) return reply.code(404).send({ error: 'project not found' });
@@ -1089,64 +1109,119 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /** Publish the open draft through the holdout gate; below it, only with an override reason. */
-  app.post<{ Params: ProjectParams }>('/workbench/projects/:id/publish', async (req, reply) => {
-    const body = PublishBodySchema.safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: body.error.issues });
-    const projectId = req.params.id;
-    const project = await workbench.getProject(projectId);
-    if (!project) return reply.code(404).send({ error: 'project not found' });
-    const { draft, definition, ...gate } = await gateFor(app, project);
-    if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
-    const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
-    if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-    const { overrideReason } = body.data;
-    if (!gate.passes && !overrideReason) {
-      return reply
-        .code(409)
-        .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
-    }
-    // The gate was decided for the draft as it was read then; an edit since then voids it. The
-    // re-check, the publish and the publication record share one transaction.
-    const outcome = await workbench.publishDraft({
-      projectId,
-      version: draft,
-      definition: definition!,
-      publication: {
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/publish',
+    {
+      schema: {
+        tags: ['Holdout & publish gate'],
+        operationId: 'publishProject',
+        summary: 'Publish the draft through the gate',
+        description: md`
+          Publishes the open draft when the publish gate passes. Below the gate it needs an
+          \`overrideReason\` (10 to 1000 characters), which is recorded with the publication.
+          If the draft changes after the gate was decided, nothing is published: check the gate
+          again. Every publication is logged (\`GET …/publications\`). This is the only way to
+          publish a Workbench document type. See
+          [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
+        `,
+        params: ProjectIdParams,
+        body: PublishBodySchema,
+        response: {
+          201: res(
+            'Published.',
+            z.object({ publication: PublicationSchema, project: ProjectViewSchema }),
+          ),
+          400: res(
+            'Zod issues (an override reason under 10 characters), or `the draft is not valid` ' +
+              '(with `issues`).',
+            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+          ),
+          404: PROJECT_NOT_FOUND,
+          409: res(
+            'Below the gate without an override (`{reason}; give an override reason to publish ' +
+              'anyway`, with the `gate`), `no open draft to publish`, or `the draft changed while ' +
+              'publishing; check the gate again`.',
+            z.object({ error: z.string(), gate: GateViewSchema.optional() }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = PublishBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const projectId = req.params.id;
+      const project = await workbench.getProject(projectId);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft, definition, ...gate } = await gateFor(app, project);
+      if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
+      const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      const { overrideReason } = body.data;
+      if (!gate.passes && !overrideReason) {
+        return reply
+          .code(409)
+          .send({ error: `${gate.reason}; give an override reason to publish anyway`, gate });
+      }
+      // The gate was decided for the draft as it was read then; an edit since then voids it. The
+      // re-check, the publish and the publication record share one transaction.
+      const outcome = await workbench.publishDraft({
         projectId,
         version: draft,
-        iterationId: gate.iterationId,
-        score: gate.score,
-        threshold: gate.threshold,
-        // An override is recorded only when it was needed.
-        overrideReason: gate.passes ? null : overrideReason!,
-        publishedBy: req.auth?.label ?? null,
-      },
-    });
-    if (outcome.result === 'changed') {
-      return reply
-        .code(409)
-        .send({ error: 'the draft changed while publishing; check the gate again' });
-    }
-    if (outcome.result === 'not-draft') {
-      return reply.code(409).send({ error: 'no open draft to publish' });
-    }
-    const { publication } = outcome;
-    req.log.info(
-      {
-        projectId,
-        version: draft,
-        iterationId: gate.iterationId,
-        score: gate.score,
-        threshold: gate.threshold,
-        override: publication.overrideReason !== null,
-      },
-      'workbench draft published',
-    );
-    return reply.code(201).send({ publication, project: await projectView(app, project) });
-  });
+        definition: definition!,
+        publication: {
+          projectId,
+          version: draft,
+          iterationId: gate.iterationId,
+          score: gate.score,
+          threshold: gate.threshold,
+          // An override is recorded only when it was needed.
+          overrideReason: gate.passes ? null : overrideReason!,
+          publishedBy: req.auth?.label ?? null,
+        },
+      });
+      if (outcome.result === 'changed') {
+        return reply
+          .code(409)
+          .send({ error: 'the draft changed while publishing; check the gate again' });
+      }
+      if (outcome.result === 'not-draft') {
+        return reply.code(409).send({ error: 'no open draft to publish' });
+      }
+      const { publication } = outcome;
+      req.log.info(
+        {
+          projectId,
+          version: draft,
+          iterationId: gate.iterationId,
+          score: gate.score,
+          threshold: gate.threshold,
+          override: publication.overrideReason !== null,
+        },
+        'workbench draft published',
+      );
+      return reply.code(201).send({ publication, project: await projectView(app, project) });
+    },
+  );
 
   app.get<{ Params: ProjectParams }>(
     '/workbench/projects/:id/publications',
+    {
+      schema: {
+        tags: ['Holdout & publish gate'],
+        operationId: 'listPublications',
+        summary: "List a project's publications",
+        description: md`
+          Every version published from the Workbench, newest first: the iteration and score the
+          gate used, the threshold, the override reason when the gate did not pass, and who
+          published it.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The publications.', z.array(PublicationSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
     async (req, reply): Promise<Publication[]> => {
       if (!(await workbench.getProject(req.params.id))) {
         return reply.code(404).send({ error: 'project not found' });
@@ -1999,6 +2074,31 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/holdout/reference-runs',
+    {
+      schema: {
+        tags: ['Holdout & publish gate'],
+        operationId: 'startHoldoutReferenceRuns',
+        summary: 'Start reference runs on the holdout samples',
+        description: md`
+          Runs the open draft with the template's own models (never the drafting model, which
+          must not see holdout) on every ready holdout sample that has no reference and no
+          active run, stopping each for review. Verify the values, approve, then save each job
+          as a reference: holdout evaluations and the publish gate need them. Not a stage: the
+          stage order does not apply.
+        `,
+        params: ProjectIdParams,
+        response: {
+          201: res('The queued reference runs.', JobsCreated),
+          400: DRAFT_NOT_VALID,
+          404: PROJECT_NOT_FOUND,
+          409: error(
+            '`no open draft; start the next version on the Template tab`, `no prepared holdout ' +
+              'samples to run`, `every holdout sample already has a reference`, or `reference ' +
+              'runs are already running`.',
+          ),
+        },
+      },
+    },
     async (req, reply) => {
       const projectId = req.params.id;
       const project = await workbench.getProject(projectId);

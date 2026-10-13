@@ -159,15 +159,6 @@ describe('md', () => {
  * entry that is documented, or no longer exists, fails the sweep. The last rollout PR deletes it.
  */
 const UNDOCUMENTED = new Set([
-  'DELETE /api/access/s3-keys/{id}',
-  'GET /api/access/s3-keys',
-  'GET /api/workbench/projects/{id}/publications',
-  'GET /api/workbench/projects/{id}/publish-gate',
-  'POST /api/access/s3-keys',
-  'POST /api/access/s3-keys/keys/{keyId}/revoke',
-  'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/workbench/projects/{id}/holdout/reference-runs',
-  'POST /api/workbench/projects/{id}/publish',
 ]);
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;
