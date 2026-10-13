@@ -38,6 +38,9 @@ const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const JobParams = z.object({ id: Id, jobId: z.string().uuid() });
 /** The template version the export carried (`draft` is the definition it was built from). */
 const ExportedVersion = z.object({ draft: z.object({ version: z.number().int() }) });
+/** The samples the export carried. */
+const ExportedSamples = z.object({ samples: z.array(z.object({ sampleId: z.string() })) });
+const SAMPLES_CHANGED = 'a sample changed since this export; export again';
 
 const MAX_BUNDLE_ENTRIES = MAX_SAMPLES + 32;
 /** Room for the small text entries (manifest, brief, template, context) beside the PDFs. */
@@ -290,9 +293,19 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       if (job.status !== 'succeeded') {
         return reply.code(409).send({ error: 'the export has not finished' });
       }
+      const jobParams = await repo.getJobParams(jobId);
+      // Holdout rule (ADR 0007): a sample made holdout or removed since must not leave in an
+      // older bundle. Membership and role only; a sample added later is simply not in it.
+      const carried = ExportedSamples.safeParse(jobParams);
+      const devIds = new Set(
+        (await workbench.listSamples(id)).filter((s) => s.role === 'dev').map((s) => s.id),
+      );
+      if (!carried.success || carried.data.samples.some((s) => !devIds.has(s.sampleId))) {
+        return reply.code(409).send({ error: SAMPLES_CHANGED });
+      }
       const body = await store.get(buckets.runs, exportKey(id, jobId));
       if (!body) return reply.code(404).send({ error: 'bundle not found' });
-      const exported = ExportedVersion.safeParse(await repo.getJobParams(jobId));
+      const exported = ExportedVersion.safeParse(jobParams);
       const name = exported.success
         ? `${id}-v${exported.data.draft.version}-bundle.zip`
         : `${id}-bundle.zip`;

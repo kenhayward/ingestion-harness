@@ -240,6 +240,45 @@ describe('export', () => {
     expect((await download('not-a-uuid')).statusCode).toBe(404);
   });
 
+  it.each(['holdout', 'removed', 'unchanged'])(
+    'refuses a bundle whose samples changed since the export (%s)',
+    async (change) => {
+      const { app, store, add, start, download, finish } = await project();
+      const kept = await add(1);
+      const changed = await add(2);
+      const view = (await start()).json() as ExportView;
+      finish(view.jobId);
+      await store.put(
+        'runs',
+        exportKey('letter', view.jobId),
+        Buffer.from('zip'),
+        'application/zip',
+      );
+      // A sample added later, still preparing, does not change what the bundle carries.
+      await app.inject({
+        method: 'POST',
+        url: '/api/workbench/projects/letter/samples',
+        ...multipart({ role: 'dev' }, { filename: 's3.pdf', content: pdf(3) }),
+      });
+      const url = `/api/workbench/projects/letter/samples/${changed.id}`;
+      if (change === 'holdout') {
+        const res = await app.inject({ method: 'PATCH', url, payload: { role: 'holdout' } });
+        expect(res.statusCode).toBe(200);
+      } else if (change === 'removed') {
+        expect((await app.inject({ method: 'DELETE', url })).statusCode).toBe(204);
+      }
+      expect(kept.role).toBe('dev');
+
+      const res = await download(view.jobId);
+      if (change === 'unchanged') {
+        expect(res.statusCode).toBe(200);
+      } else {
+        expect(res.statusCode).toBe(409);
+        expect(res.json().error).toBe('a sample changed since this export; export again');
+      }
+    },
+  );
+
   it('revoking to local downgrades a queued export, like every other project job', async () => {
     const { repo, workbench, add, start } = await project();
     await workbench.setDataPolicy('letter', 'external', null);
