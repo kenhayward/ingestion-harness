@@ -26,6 +26,14 @@ from .fakes import FakeQueue
 PDF = b"%PDF-1.7\n% sample\n%%EOF\n"
 SHA = hashlib.sha256(PDF).hexdigest()
 BRIEF = {"purpose": "Letters to extract"}
+# SurveyBodySchema (packages/shared/src/workbench.ts) / drafting.SURVEY_SCHEMA.
+SURVEY = {
+    "summary": "Letters",
+    "structure": [{"name": "Header", "description": "Sender", "howToFind": "Top"}],
+    "variants": [],
+    "candidates": [],
+    "questions": [],
+}
 DRAFT = {"id": "letter", "version": 2, "name": "Letter", "outputs": {"fields": [], "tables": []}}
 
 
@@ -125,9 +133,29 @@ def test_export_writes_the_bundle_with_the_drafters_exact_context(
                 }
             ],
             "stages": list(STAGES),
+            "completedStages": [],
         }
     )
     assert "README.md" in files
+    assert "survey.json" not in files
+
+
+def test_export_carries_the_survey_and_completed_stages(fixture_specs_dir: Path) -> None:
+    store, deps = make(fixture_specs_dir)
+    job = export_job(survey=SURVEY, completedStages=["survey", "outputs"])
+    manifest = run_export(job, deps, FakeQueue())
+    files = read_zip(store.get("runs", export_key("letter", "job-x")))
+    assert json.loads(files["survey.json"]) == SURVEY
+    assert manifest["completedStages"] == ["survey", "outputs"]
+    assert json.loads(files["manifest.json"])["completedStages"] == ["survey", "outputs"]
+
+
+def test_export_without_a_survey_has_no_survey_entry(fixture_specs_dir: Path) -> None:
+    store, deps = make(fixture_specs_dir)
+    manifest = run_export(export_job(), deps, FakeQueue())
+    files = read_zip(store.get("runs", export_key("letter", "job-x")))
+    assert "survey.json" not in files
+    assert manifest["completedStages"] == []
 
 
 def test_export_refuses_holdout_samples(fixture_specs_dir: Path) -> None:

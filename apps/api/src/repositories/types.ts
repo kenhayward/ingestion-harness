@@ -150,6 +150,11 @@ export interface IngestionRepo {
    * jobs are kept: each one backs a proposal.
    */
   createDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
+  /**
+   * A document-less `draft` job that is already `succeeded` and so never claimed: the record
+   * behind a proposal whose body came from elsewhere (an imported bundle's survey).
+   */
+  createFinishedDraftJob(projectId: string, params: Record<string, unknown>): Promise<ProjectJob>;
   /** Draft jobs of a project, newest first. */
   listDraftJobs(projectId: string): Promise<ProjectJob[]>;
   /**

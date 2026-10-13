@@ -223,6 +223,16 @@ export class PgRepo implements IngestionRepo {
     return toSegmentJob(rows[0]!);
   }
 
+  async createFinishedDraftJob(projectId: string, params: Record<string, unknown>) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params, status)
+       VALUES ($1, 'draft', true, $2, 3, $3, 'succeeded')
+       RETURNING id, project_id, status, error, created_at, updated_at`,
+      [projectId, WORKBENCH_PRIORITY, JSON.stringify(params)],
+    );
+    return toSegmentJob(rows[0]!);
+  }
+
   async listDraftJobs(projectId: string) {
     const { rows } = await this.pool.query<SegmentRow>(
       `SELECT id, project_id, status, error, created_at, updated_at FROM jobs

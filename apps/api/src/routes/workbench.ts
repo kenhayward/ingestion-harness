@@ -170,7 +170,8 @@ function statusOf(p: ProposalRecord, job: ProjectJob | null): ProposalStatus {
   return job.status === 'succeeded' ? 'ready' : 'failed';
 }
 
-async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageView[]> {
+/** The four proposal stages (`STAGE_ORDER`), without references. */
+export async function stagesOf(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const jobs = new Map((await app.deps.repo.listDraftJobs(projectId)).map((j) => [j.id, j]));
   const proposals = (await app.deps.workbench.listProposals(projectId)).map((p) => ({
     stage: p.stage,

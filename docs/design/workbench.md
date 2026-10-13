@@ -195,8 +195,8 @@ enforced here, in one place, and covered by tests.
 
 The export bundle is a deterministic zip of the project's drafting material, for drafting elsewhere
 or for importing into another deployment. Layout: `manifest.json` (format, version, project,
-template and brief versions, samples, stages), `README.md`, `context.md`, `brief.json`,
-`template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
+template and brief versions, samples, stages, `completedStages`), `README.md`, `context.md`,
+`brief.json`, `survey.json` (the accepted survey, when there is one), `template.yaml`, `stages/<id>.md` and `stages/<id>.schema.json`, and `samples/<sha256>.pdf`.
 
 - **Dev only.** Holdout samples are refused at export; only dev samples are included, and
   `context.md` is exactly `build_context`, so it carries the same dev-only guarantee as drafting.
@@ -205,8 +205,11 @@ template and brief versions, samples, stages), `README.md`, `context.md`, `brief
 - **Import** creates a `local` project with template draft v1, the brief and the dev samples, which
   are re-prepared (each queues a `prepare` job). It validates the whole bundle before writing
   anything and refuses an id that already exists (import under another id).
-- **Not imported:** the accepted survey and the stage states. The imported project's own drafting
-  context therefore differs from the bundle's `context.md` until the survey is redone.
+- **Survey and stages:** `completedStages` lists the proposal stages accepted or skipped at
+  export. Import accepts `survey.json` as a survey proposal (a finished `draft` job no worker
+  claims, model `imported`) and records the other completed stages as skipped, in stage order so
+  none is stale; a completed survey without `survey.json` is recorded as skipped. Bundles without
+  `completedStages` import with every stage pending.
 
 ### Models and data policy
 

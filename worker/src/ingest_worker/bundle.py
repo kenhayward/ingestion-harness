@@ -48,8 +48,10 @@ README = """\
   instructions, and ask for JSON matching the schema.
 - `samples/` holds the dev sample PDFs; `manifest.json` lists them. Holdout samples are never
   included.
+- `survey.json` (when present) is the accepted survey; `manifest.json` lists the stages
+  already accepted or skipped in `completedStages`.
 - Import the bundle into another deployment from the Workbench page to start a project with
-  this brief, draft and these samples.
+  this brief, draft, survey, completed stages and these samples.
 """
 
 
@@ -57,6 +59,8 @@ class ExportParams(DraftParams):
     """jobs.params of an export job (written by the API): a drafting context plus the name."""
 
     project_name: str = Field(alias="projectName", min_length=1)
+    #: Proposal stages accepted or skipped at export time (import restores them).
+    completed_stages: list[str] = Field(default_factory=list, alias="completedStages")
 
 
 def build_bundle(
@@ -66,6 +70,7 @@ def build_bundle(
     brief: dict[str, Any],
     draft: dict[str, Any] | None,
     pdfs: dict[str, bytes],
+    survey: dict[str, Any] | None = None,
 ) -> bytes:
     """The bundle zip. Deterministic: entries in a fixed order with a fixed timestamp."""
     entries: list[tuple[str, bytes]] = [
@@ -73,6 +78,10 @@ def build_bundle(
         ("README.md", README.encode()),
         ("context.md", context.encode()),
         ("brief.json", json.dumps(brief, indent=2, ensure_ascii=False).encode()),
+    ]
+    if survey is not None:
+        entries.append(("survey.json", json.dumps(survey, indent=2, ensure_ascii=False).encode()))
+    entries += [
         (
             "template.yaml",
             yaml.safe_dump(draft or {}, sort_keys=False, allow_unicode=True).encode(),
@@ -144,9 +153,15 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
             for i, s in enumerate(params.samples)
         ],
         "stages": list(STAGES),
+        "completedStages": params.completed_stages,
     }
     data = build_bundle(
-        manifest=manifest, context=context, brief=params.brief, draft=params.draft, pdfs=pdfs
+        manifest=manifest,
+        context=context,
+        brief=params.brief,
+        draft=params.draft,
+        pdfs=pdfs,
+        survey=params.survey,
     )
     check_cancelled(job, queue)
     key = export_key(job.project_id, job.id)

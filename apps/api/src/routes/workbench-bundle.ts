@@ -8,10 +8,16 @@ import {
   BundleManifestSchema,
   EMPTY_BRIEF,
   MAX_SAMPLES,
+  STAGE_ORDER,
+  SurveyBodySchema,
+  draftingKey,
   exportKey,
   type BriefBody,
   type BundleManifest,
+  type DraftResult,
+  type DraftStage,
   type ExportView,
+  type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
 import type { ProjectJob } from '../repositories/types.js';
@@ -26,6 +32,7 @@ import {
   isAdmin,
   projectView,
   sampleViews,
+  stagesOf,
   versionsOf,
 } from './workbench.js';
 
@@ -163,6 +170,52 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
   const { repo, store, buckets, templates, workbench } = app.deps;
 
   /**
+   * The imported stage rail: the survey as an accepted proposal (a finished draft job that no
+   * worker claims, holding the imported body), then a skip for every other completed stage.
+   * Completions are written in `STAGE_ORDER` so none is stale. A completed survey without a
+   * `survey.json` is skipped: the draft holds the work, but there is no survey to accept.
+   */
+  const restoreStages = async (
+    projectId: string,
+    input: { survey: SurveyBody | null; completed: DraftStage[]; briefVersion: number | null },
+  ) => {
+    if (input.survey) {
+      const job = await repo.createFinishedDraftJob(projectId, {
+        stage: 'survey',
+        dataPolicy: 'local',
+        imported: true,
+      });
+      const result: DraftResult = {
+        stage: 'survey',
+        model: 'imported',
+        body: input.survey,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
+      await store.put(
+        buckets.runs,
+        draftingKey(projectId, job.id),
+        Buffer.from(JSON.stringify(result)),
+        'application/json',
+      );
+      await workbench.createProposal({
+        id: job.id,
+        projectId,
+        stage: 'survey',
+        briefVersion: input.briefVersion,
+        baseVersion: null,
+        baseDefinition: null,
+        feedbackIds: null,
+      });
+      await workbench.decideProposal(projectId, job.id, 'accepted');
+    }
+    for (const stage of STAGE_ORDER) {
+      if (!input.completed.includes(stage)) continue;
+      if (stage === 'survey' && input.survey) continue; // accepted above
+      await workbench.addSkip(projectId, stage);
+    }
+  };
+
+  /**
    * Import a bundle as a new project (multipart: optional `id` and `name` fields, then the zip).
    * Everything is checked before anything is written.
    */
@@ -188,6 +241,12 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       const parsed = jsonEntry(files, 'brief.json', BriefBodySchema);
       if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
       brief = parsed.value;
+    }
+    let survey: SurveyBody | null = null; // older bundles carry none
+    if (files['survey.json']) {
+      const parsed = jsonEntry(files, 'survey.json', SurveyBodySchema);
+      if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+      survey = parsed.value;
     }
     const id = ProjectId.safeParse(idField ?? manifest.value.project.id);
     if (!id.success) return reply.code(400).send({ error: `id: ${firstIssue(id.error)}` });
@@ -228,14 +287,20 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     };
     try {
       // A bundle exported without a saved brief carries the empty one: save none.
-      if (brief && manifest.value.briefVersion !== null) {
-        await workbench.saveBrief(projectId, brief);
-      }
+      const saved =
+        brief && manifest.value.briefVersion !== null
+          ? await workbench.saveBrief(projectId, brief)
+          : null;
       for (const sample of samples) {
         const added = await addSampleFile(app, project, { ...sample, role: 'dev' });
         // Unexpected after validation.
         if ('error' in added) return failed({ filename: sample.filename, error: added.error });
       }
+      await restoreStages(projectId, {
+        survey,
+        completed: manifest.value.completedStages ?? [],
+        briefVersion: saved?.version ?? null,
+      });
     } catch (err) {
       return failed({ err });
     }
@@ -267,6 +332,9 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       }));
     if (!samples.length) return reply.code(409).send({ error: 'no prepared dev samples' });
     const brief = await workbench.latestBrief(id);
+    const completedStages = (await stagesOf(app, id))
+      .filter((s) => s.state === 'accepted' || s.state === 'skipped')
+      .map((s) => s.stage);
     const { job, removed } = await repo.createExportJob(id, {
       stage: 'export',
       dataPolicy: project.dataPolicy,
@@ -275,6 +343,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       brief: brief?.body ?? EMPTY_BRIEF,
       draft: record.definition,
       survey: await acceptedSurvey(app, id),
+      completedStages,
       samples,
     });
     for (const removedId of removed) await store.delete(buckets.runs, exportKey(id, removedId));

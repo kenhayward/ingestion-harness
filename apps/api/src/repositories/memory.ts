@@ -139,6 +139,13 @@ export class MemoryRepo implements IngestionRepo {
     return job;
   }
 
+  async createFinishedDraftJob(projectId: string, params: Record<string, unknown>) {
+    const job = await this.createDraftJob(projectId, params);
+    const finished: ProjectJob = { ...job, status: 'succeeded' };
+    this.draftJobs.set(job.id, { ...finished, params });
+    return finished;
+  }
+
   async listDraftJobs(projectId: string) {
     // Map iteration is insertion order, which is reliable where timestamps can tie.
     return [...this.draftJobs.values()]

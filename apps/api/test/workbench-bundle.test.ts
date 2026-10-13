@@ -17,6 +17,7 @@ import { MemoryAccessRepo } from '../src/access/repo.js';
 import type { AppDeps } from '../src/app.js';
 import { TemplateConflictError } from '../src/templates/repo.js';
 import { WorkbenchConflictError } from '../src/workbench/repo.js';
+import { acceptedSurvey } from '../src/routes/workbench.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -102,6 +103,7 @@ describe('export', () => {
       brief,
       draft: letter(1),
       survey: null,
+      completedStages: [],
       samples: [
         {
           sampleId: dev.id,
@@ -152,6 +154,20 @@ describe('export', () => {
 
     const view = (await start()).json() as ExportView;
     expect(repo.exportJobs.get(view.jobId)!.params.survey).toEqual(survey);
+  });
+
+  it('carries the completed stages', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    for (const stage of ['survey', 'outputs']) {
+      const skipped = await app.inject({
+        method: 'POST',
+        url: `/api/workbench/projects/letter/stages/${stage}/skip`,
+      });
+      expect(skipped.statusCode).toBe(201);
+    }
+    const view = (await start()).json() as ExportView;
+    expect(repo.exportJobs.get(view.jobId)!.params.completedStages).toEqual(['survey', 'outputs']);
   });
 
   it('replaces the previous export and deletes its zip', async () => {
@@ -524,6 +540,12 @@ describe('import', () => {
       /^brief\.json: /,
     ],
     [
+      'a survey.json that is not a survey',
+      () => bundle({ files: { 'survey.json': strToU8('{"summary": 3}') } }),
+      {},
+      /^survey\.json: /,
+    ],
+    [
       'a sample that is not a PDF',
       () => bundle({ samples: [Buffer.from('not a pdf')] }),
       {},
@@ -569,6 +591,69 @@ describe('import', () => {
     expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
     expect(store.objects.size).toBe(0);
     expect(repo.jobs.size).toBe(0);
+  });
+
+  const importedSurvey = {
+    summary: 'Memos.',
+    structure: [{ name: 'Header', description: 'Sender', howToFind: 'Top' }],
+    variants: [],
+    candidates: [],
+    questions: [],
+  };
+  const stagesOf = async (app: FastifyInstance, id: string) =>
+    (
+      (await app.inject(`/api/workbench/projects/${id}/stages`)).json() as {
+        stage: string;
+        state: string;
+      }[]
+    )
+      .filter((s) => s.stage !== 'references')
+      .map((s) => [s.stage, s.state]);
+
+  it('imports the accepted survey and the completed stages', async () => {
+    const { app, repo } = await testApp();
+    const zip = bundle({
+      manifest: { completedStages: ['survey', 'outputs', 'sections'] },
+      files: { 'survey.json': strToU8(JSON.stringify(importedSurvey)) },
+    });
+    const res = await importBundle(app, zip);
+    expect(res.statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'accepted'],
+      ['outputs', 'skipped'],
+      ['sections', 'skipped'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toEqual(importedSurvey);
+    // Nothing for a worker to run but the samples' prepare jobs.
+    expect((await repo.listDraftJobs('memo')).map((j) => j.status)).toEqual(['succeeded']);
+    const queued = [...repo.jobs.values()].filter((j) => j.status === 'queued');
+    expect(queued.map((j) => j.task)).toEqual(['prepare']);
+  });
+
+  it('leaves every stage pending for a bundle without completed stages or a survey', async () => {
+    const { app } = await testApp();
+    expect((await importBundle(app, bundle())).statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'pending'],
+      ['outputs', 'pending'],
+      ['sections', 'pending'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toBeNull();
+  });
+
+  it('records a completed survey without survey.json as skipped', async () => {
+    const { app } = await testApp();
+    const res = await importBundle(app, bundle({ manifest: { completedStages: ['survey'] } }));
+    expect(res.statusCode).toBe(201);
+    expect(await stagesOf(app, 'memo')).toEqual([
+      ['survey', 'skipped'],
+      ['outputs', 'pending'],
+      ['sections', 'pending'],
+      ['steps', 'pending'],
+    ]);
+    expect(await acceptedSurvey(app, 'memo')).toBeNull();
   });
 
   it('keeps a padded bundle small enough to upload', () => {

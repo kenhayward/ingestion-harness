@@ -95,6 +95,30 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect((await repo.listProjectJobs(projectId)).map((j) => j.id)).toEqual([prepare.id]);
   });
 
+  it('creates a finished draft job that is listed and never claimable', async () => {
+    const projectId = await newProject();
+    const params = { stage: 'survey', dataPolicy: 'local', imported: true };
+    const job = await repo.createFinishedDraftJob(projectId, params);
+    expect(job).toMatchObject({ projectId, status: 'succeeded', error: null });
+    expect((await repo.listDraftJobs(projectId)).map((j) => [j.id, j.status])).toEqual([
+      [job.id, 'succeeded'],
+    ]);
+    const { rows } = await pool.query<{
+      task: string;
+      test: boolean;
+      priority: number;
+      document_id: string | null;
+      params: Record<string, unknown>;
+    }>('SELECT task, test, priority, document_id, params FROM jobs WHERE id = $1', [job.id]);
+    expect(rows[0]).toEqual({
+      task: 'draft',
+      test: true,
+      priority: -10,
+      document_id: null,
+      params,
+    });
+  });
+
   it('keeps one export job per project, even when two start at once', async () => {
     const projectId = await newProject();
     const other = await newProject();

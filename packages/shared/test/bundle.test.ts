@@ -19,6 +19,10 @@ describe('BundleManifestSchema', () => {
   it('parses a worker-written manifest', () => {
     expect(BundleManifestSchema.parse(manifest)).toEqual(manifest);
   });
+  it('parses the completed stages of a newer export', () => {
+    const withStages = { ...manifest, completedStages: ['survey', 'outputs'] };
+    expect(BundleManifestSchema.parse(withStages)).toEqual(withStages);
+  });
   it.each([
     ['another format', { ...manifest, format: 'zip' }],
     ['a newer format version', { ...manifest, formatVersion: 2 }],
@@ -28,6 +32,10 @@ describe('BundleManifestSchema', () => {
       { ...manifest, samples: [{ ...manifest.samples[0], file: '../a.pdf' }] },
     ],
     ['an unknown key', { ...manifest, extra: 1 }],
+    [
+      'a completed stage outside the proposal stages',
+      { ...manifest, completedStages: ['references'] },
+    ],
   ])('rejects %s', (_name, value) => {
     expect(BundleManifestSchema.safeParse(value).success).toBe(false);
   });
