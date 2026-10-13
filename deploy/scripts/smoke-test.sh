@@ -43,8 +43,10 @@ check /readyz
 
 # Caching and security headers from the app's nginx: the page must be revalidated (or a deploy
 # keeps showing the old build), assets are immutable, and both carry the security headers.
-headers() { curl -fsSI "$BASE_URL$1" | tr -d '
-'; }
+# Strip the CR of each CRLF header line. Written as the escape '\r', never a raw CR byte: line-ending
+# normalisation (eol=lf) turned a raw one into a newline once, which joined every header into one
+# line so no '^Header:' check could match.
+headers() { curl -fsSI "$BASE_URL$1" | tr -d '\r'; }
 security_headers() { # path label
   local h
   h="$(headers "$1")"
