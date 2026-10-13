@@ -14,6 +14,7 @@ import {
   projectView,
   templateView,
 } from './fake-api.js';
+import { validDefinition } from './template-fixture.js';
 
 /** The fixture overview with some items replaced. */
 const overviewWith = (
@@ -48,7 +49,7 @@ const TAB_TITLES = [
   ['references', 'References'],
   ['evaluate', 'Evaluate'],
   ['revise', 'Revise'],
-  ['template', 'Template'],
+  ['template', 'Template · draft v1'],
   ['runs', 'Test runs'],
 ] as const;
 
@@ -632,5 +633,28 @@ describe('ProjectPage', () => {
       <ProjectPage api={api} projectId="letter" tab="evaluate" onNavigate={vi.fn()} role="admin" />,
     );
     expect(await screen.findByRole('button', { name: 'Evaluate v1 on dev…' })).toBeInTheDocument();
+  });
+  it("passes the overview's stale stages to the Template tab and refreshes the overview after a save", async () => {
+    const getProjectOverview = vi.fn(async () =>
+      overviewWith({
+        steps: { state: 'stale', status: 'Stale — Sections changed after it was accepted' },
+      }),
+    );
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })),
+      getProjectOverview,
+      getTemplate: vi.fn(async () => templateView({ ...validDefinition(), version: 2 })),
+    });
+    page(api, 'template');
+    const checks = await screen.findByRole('region', { name: 'Checks' });
+    expect(
+      await within(checks).findByRole('link', { name: 'Review in Steps' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Changes since v1' })).toBeInTheDocument();
+    const calls = getProjectOverview.mock.calls.length;
+    await userEvent.click(screen.getByRole('tab', { name: /^General/ }));
+    await userEvent.type(screen.getByLabelText('Name'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v2' }));
+    await waitFor(() => expect(getProjectOverview.mock.calls.length).toBeGreaterThan(calls));
   });
 });

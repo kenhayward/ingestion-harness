@@ -399,34 +399,43 @@ export function ProjectPage({
               onChanged={loadOverview}
             />
           )}
-          {tab === 'template' && header('template')}
           {tab === 'template' &&
             (draft !== null ? (
+              // The editor owns its tab header ("Template · draft vN", Try on, Export, More).
               <TemplateEditor
                 key={draft}
                 api={api}
                 templateId={project.id}
                 version={draft}
                 onNavigate={onNavigate}
-                embedded={{ onChanged: load }}
+                embedded={{
+                  onChanged: load,
+                  onSaved: loadOverview,
+                  dataPolicy: project.dataPolicy,
+                  stages: overview?.stages ?? null,
+                  published,
+                }}
               />
             ) : (
-              <div className="card">
-                <p>Every version is published; start the next one to keep developing.</p>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() =>
-                    void act(async () => {
-                      await api.newDraft(project.id, published!);
-                      load();
-                      loadOverview();
-                    })
-                  }
-                >
-                  Start v{(published ?? 0) + 1}
-                </button>
-              </div>
+              <>
+                {header('template')}
+                <div className="card">
+                  <p>Every version is published; start the next one to keep developing.</p>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() =>
+                      void act(async () => {
+                        await api.newDraft(project.id, published!);
+                        load();
+                        loadOverview();
+                      })
+                    }
+                  >
+                    Start v{(published ?? 0) + 1}
+                  </button>
+                </div>
+              </>
             ))}
         </div>
       </div>
