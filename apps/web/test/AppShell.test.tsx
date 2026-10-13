@@ -1,9 +1,9 @@
 import type { ResultSummary } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { fakeApi, job } from './fake-api.js';
+import { fakeApi, job, projectView } from './fake-api.js';
 
 const SEARCH = 'Search jobs, results and document types';
 
@@ -88,6 +88,24 @@ describe('app shell', () => {
       'href',
       '#/workbench',
     );
+  });
+
+  it('collapses the main nav to labelled icons on a project page only', async () => {
+    window.location.hash = '#/workbench/letter';
+    const api = fakeApi({
+      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      getProject: vi.fn(async () => projectView()),
+    });
+    render(<App api={api} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(nav).toHaveClass('compact');
+    for (const name of ['Jobs', 'Results', 'Document types', 'Workbench', 'Access']) {
+      const link = within(nav).getByRole('link', { name });
+      expect(link).toHaveAttribute('title', name);
+    }
+    window.location.hash = '#/templates';
+    await waitFor(() => expect(nav).not.toHaveClass('compact'));
+    expect(within(nav).getByRole('link', { name: 'Document types' })).not.toHaveAttribute('title');
   });
 
   it('focuses search on Ctrl+K, not on a plain k, and Escape clears it', async () => {

@@ -472,6 +472,30 @@ html {
   text-transform: uppercase;
   color: var(--ih-muted);
 }
+/* Project pages: icons only, to make room for the project's own step rail (Workbench redesign). */
+.side-nav.compact {
+  flex: 0 0 68px;
+  padding: 20px 10px;
+}
+.side-nav.compact a {
+  position: relative;
+  justify-content: center;
+  padding: 0;
+}
+.side-nav.compact .nav-label,
+.side-nav.compact .nav-heading,
+.side-nav.compact .nav-foot > svg:last-of-type {
+  display: none;
+}
+.side-nav.compact .nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: var(--ih-text-xs);
+}
 .page {
   flex: 999 1 640px;
   min-width: 0;

@@ -15,16 +15,23 @@ function NavLink({
   icon,
   label,
   current,
+  compact,
   children,
 }: {
   href: string;
   icon: IconName;
   label: string;
   current: boolean;
+  compact: boolean;
   children?: ReactNode;
 }) {
   return (
-    <a href={href} aria-current={current ? 'page' : undefined}>
+    <a
+      href={href}
+      aria-current={current ? 'page' : undefined}
+      aria-label={compact ? label : undefined}
+      title={compact ? label : undefined}
+    >
       <Icon name={icon} size={18} />
       <span className="nav-label">{label}</span>
       {children}
@@ -55,6 +62,7 @@ export function AppShell({
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
   const attention = attentionCount(jobs);
+  const compact = route.name === 'project';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -125,8 +133,14 @@ export function AppShell({
         </div>
       </header>
       <div className="app-body">
-        <nav className="side-nav" aria-label="Main">
-          <NavLink href="#/" icon="jobs" label="Jobs" current={section === 'jobs'}>
+        <nav className={compact ? 'side-nav compact' : 'side-nav'} aria-label="Main">
+          <NavLink
+            href="#/"
+            icon="jobs"
+            label="Jobs"
+            current={section === 'jobs'}
+            compact={compact}
+          >
             {attention > 0 && (
               <span className="nav-badge">
                 <span aria-hidden="true">{attention}</span>
@@ -139,26 +153,42 @@ export function AppShell({
             icon="results"
             label="Results"
             current={section === 'results'}
+            compact={compact}
           />
           <NavLink
             href="#/templates"
             icon="types"
             label="Document types"
             current={section === 'templates'}
+            compact={compact}
           />
           <NavLink
             href="#/workbench"
             icon="workbench"
             label="Workbench"
             current={section === 'workbench'}
+            compact={compact}
           />
           {me.role === 'admin' && (
             <>
               <span className="nav-heading">Admin</span>
-              <NavLink href="#/access" icon="key" label="Access" current={section === 'access'} />
+              <NavLink
+                href="#/access"
+                icon="key"
+                label="Access"
+                current={section === 'access'}
+                compact={compact}
+              />
             </>
           )}
-          <a className="nav-foot" href={API_DOCS} target="_blank" rel="noopener">
+          <a
+            className="nav-foot"
+            href={API_DOCS}
+            target="_blank"
+            rel="noopener"
+            aria-label={compact ? 'API docs (opens in a new tab)' : undefined}
+            title={compact ? 'API docs' : undefined}
+          >
             <Icon name="file" size={18} />
             <span className="nav-label">API docs</span>
             <Icon name="open" size={14} />
