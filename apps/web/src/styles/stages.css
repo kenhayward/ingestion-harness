@@ -1779,7 +1779,7 @@ label.inline.list-select {
 /* Survey (handoff §3) */
 .survey-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
 }
@@ -1819,6 +1819,7 @@ label.inline.list-select {
   list-style: none;
   margin: 12px 0;
   padding: 0;
+  grid-template-columns: minmax(0, 1fr);
   display: grid;
   gap: 12px;
 }
@@ -1915,4 +1916,23 @@ label.inline.list-select {
 .survey-candidates h3,
 .survey-anatomy h3 {
   font-weight: 600;
+}
+.survey-main > *,
+.survey-anatomy,
+.survey-card-head > * {
+  min-width: 0;
+}
+.survey-candidates .table-scroll {
+  max-width: 100%;
+  max-height: none;
+  overflow-x: auto;
+}
+.survey-candidates .table-scroll td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.survey-found,
+.survey-questions,
+.survey-anatomy {
+  overflow-wrap: anywhere;
 }
