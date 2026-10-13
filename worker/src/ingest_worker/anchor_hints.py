@@ -28,29 +28,41 @@ LABEL_VARIANTS: tuple[frozenset[str], ...] = (
 )
 
 _HEAD = re.compile(r"(\(\?i\))?\^(\\s\*)?")
-_TAIL = re.compile(r"(?:\\b|:)$")
+_TAIL = re.compile(r"(\\b|:)$")
+_WILDCARD = re.compile(r"(?<!\\)\.")
 _GROUP = re.compile(r"\((?:\?:)?([^()]*)\)")
 _SPACE = re.compile(r"\\s[+*]?|\\ ")
 _ESCAPED = re.compile(r"\\([#&'./-])")
 _PLAIN = re.compile(r"[A-Za-z0-9 #&'./-]+")
 
 
-def anchor_labels(anchor: str) -> tuple[bool, bool, list[str]] | None:
-    """(case-insensitive, indented, labels) of an anchor shaped like `^Label`, `^(A|B)\\b` or
-    `(?i)^\\s*(?:A|B):`; None for any other regex."""
+def _parse(anchor: str) -> tuple[bool, bool, list[str], str] | None:
+    """(case-insensitive, indented, labels, tail) with tail one of `\\b`, `:` or "" (none)."""
     head = _HEAD.match(anchor)
     if head is None:
         return None
-    body = _TAIL.sub("", anchor[head.end() :])
+    rest = anchor[head.end() :]
+    found_tail = _TAIL.search(rest)
+    tail = found_tail.group(1) if found_tail else ""
+    body = rest[: len(rest) - len(tail)]
     group = _GROUP.fullmatch(body)
     alternatives = group.group(1).split("|") if group else [body]
     labels: list[str] = []
     for alternative in alternatives:
+        if _WILDCARD.search(alternative):
+            return None  # an unescaped dot matches anything: not a label
         text = _ESCAPED.sub(r"\1", _SPACE.sub(" ", alternative))
         if "\\" in text or not text.strip() or not _PLAIN.fullmatch(text):
             return None
         labels.append(" ".join(text.split()))
-    return head.group(1) is not None, head.group(2) is not None, labels
+    return head.group(1) is not None, head.group(2) is not None, labels, tail
+
+
+def anchor_labels(anchor: str) -> tuple[bool, bool, list[str]] | None:
+    """(case-insensitive, indented, labels) of an anchor shaped like `^Label`, `^(A|B)\\b` or
+    `(?i)^\\s*(?:A|B):`; None for any other regex."""
+    parsed = _parse(anchor)
+    return None if parsed is None else parsed[:3]
 
 
 def _pattern(label: str) -> str:
@@ -60,10 +72,10 @@ def _pattern(label: str) -> str:
 def suggest_anchor(anchor: str, text: str) -> tuple[str, str] | None:
     """(new anchor, reason) when `text` starts a line with another way of writing the anchor's
     label; None otherwise."""
-    parsed = anchor_labels(anchor)
+    parsed = _parse(anchor)
     if parsed is None:
         return None
-    insensitive, indented, labels = parsed
+    insensitive, indented, labels, tail = parsed
     known = {label.lower() for label in labels}
     synonyms = sorted({v for group in LABEL_VARIANTS if known & group for v in group} - known)
     for label in [*labels, *synonyms]:
@@ -78,7 +90,7 @@ def suggest_anchor(anchor: str, text: str) -> tuple[str, str] | None:
         prefix = ("(?i)" if insensitive else "") + "^"
         if indented or found.group(1):
             prefix += r"\s*"
-        suggestion = prefix + group + r"\b"
+        suggestion = prefix + group + tail
         if suggestion == anchor or re.search(suggestion, text, re.MULTILINE) is None:
             continue
         end = found.end(2)

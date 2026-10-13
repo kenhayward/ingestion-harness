@@ -19,6 +19,7 @@ REASON = "; no alternative of the anchor matches that."
         (r"^(TAX )?INVOICE", None),
         (r"^Payment (terms|details)", None),
         (r"^\d+\.0 PURPOSE", None),
+        (r"^Inv.", None),
         (r"\A", None),
     ],
 )
@@ -51,7 +52,7 @@ def test_anchor_labels(anchor: str, expected: tuple[bool, bool, list[str]] | Non
             "a two-word synonym",
             r"^Payment terms",
             "Remit to: Bank of Example\n",
-            (r"^(Payment\s+terms|Remit\s+to)\b", 'This sample labels it "Remit to:"' + REASON),
+            (r"^(Payment\s+terms|Remit\s+to)", 'This sample labels it "Remit to:"' + REASON),
         ),
         (
             "a case-insensitive anchor keeps its flag",
@@ -59,6 +60,19 @@ def test_anchor_labels(anchor: str, expected: tuple[bool, bool, list[str]] | Non
             "  Vendor: Globex\n",
             (r"(?i)^\s*vendor\b", 'This sample labels it "Vendor:"' + REASON),
         ),
+        (
+            "a colon tail is kept, not loosened to a word boundary",
+            r"^Supplier:",
+            "Vendor: Globex\n",
+            (r"^(Supplier|Vendor):", 'This sample labels it "Vendor:"' + REASON),
+        ),
+        (
+            "no tail stays no tail",
+            r"^Total",
+            "  Total: 12.00\n",
+            (r"^\s*Total", 'This sample labels it "Total:"' + REASON),
+        ),
+        ("an unescaped dot is a wildcard, not a label", r"^Inv.", "Invoice\n", None),
         ("an anchor too clever to rewrite", r"^(TAX )?INVOICE", "Invoice\n", None),
         ("no variant in the text", r"^Supplier\b", "Nothing like it here\n", None),
         ("a label only mid-line", r"^Supplier\b", "Bill to: X   Supplier: Y\n", None),
