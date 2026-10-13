@@ -839,6 +839,7 @@ fieldset.choice label.inline:has(input:checked) {
 
 /* Sections, fields, table columns: one item per row under column headings. */
 .row-table table {
+  width: 100%;
   table-layout: fixed;
   margin-bottom: 0.5rem;
 }
@@ -2040,7 +2041,11 @@ input.danger-border {
   font-size: var(--ih-text-xs);
 }
 .table-outputs .doc-button {
+  max-width: 100%;
   font-size: var(--ih-text-md);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .result-preview {
   flex: 1 1 320px;
@@ -2401,6 +2406,7 @@ a.button.icon.bordered {
 .editor-main {
   flex: 999 1 640px;
   min-width: 0;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2741,7 +2747,10 @@ tr.confirming td {
 .table-outputs .step-tools {
   justify-content: flex-end;
 }
+/* Grows with its columns table (whose min-width stops columns collapsing when zoomed), at least
+   the panel's width; .editor-main scrolls sideways rather than the page. */
 .table-config {
+  min-width: min-content;
   padding: 16px;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);

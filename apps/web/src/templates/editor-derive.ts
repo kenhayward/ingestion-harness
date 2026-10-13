@@ -11,6 +11,16 @@ export function publishBlocker(dirty: boolean, issues: number): string | null {
   return null;
 }
 
+/**
+ * The narrowest a row table may be: the index, its fixed columns, 10rem for each flexible one
+ * and the actions. Below that the table (and its card) grows instead of squeezing the flexible
+ * columns to nothing, e.g. when the page is zoomed in.
+ */
+export function rowTableMinWidth(columns: readonly [string, string | undefined][]): string {
+  const widths = ['2.5rem', ...columns.map(([, w]) => w ?? '10rem'), '9rem'];
+  return `calc(${widths.join(' + ')})`;
+}
+
 /** Tab counts; parts an unfinished draft lacks count 0. */
 export function tabCounts(def: {
   document?: { sections?: unknown };

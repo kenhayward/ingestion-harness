@@ -17,7 +17,7 @@ import { ChecksPanel } from './ChecksPanel.js';
 import { DraftChangesPanel } from './DraftChangesPanel.js';
 import { EmbeddedHeader } from './EmbeddedHeader.js';
 import { attentionTabs, issueText, templateChecks, type SubTab } from './checks.js';
-import { publishBlocker, tabCounts, unsavedText } from './editor-derive.js';
+import { publishBlocker, rowTableMinWidth, tabCounts, unsavedText } from './editor-derive.js';
 import { PipelineEditor } from './PipelineEditor.js';
 import type { StepMetric } from '../workbench/steps.js';
 import { StepCard } from './StepCard.js';
@@ -762,10 +762,10 @@ function ValueList({
       noun={label}
       addLabel={addLabel}
       columns={[
-        [`${heading} ID`, '14rem'],
-        ['Name', '16rem'],
-        ['Type', '8rem'],
-        ['Enum values', '14rem'],
+        [`${heading} ID`, '12rem'],
+        ['Name', '12rem'],
+        ['Type', '7rem'],
+        ['Enum values', '10rem'],
         ['Description', undefined],
       ]}
       items={items}
@@ -853,7 +853,7 @@ function RowTable<T extends Definition>({
 }) {
   return (
     <div className="row-table">
-      <table aria-label={label}>
+      <table aria-label={label} style={{ minWidth: rowTableMinWidth(columns) }}>
         <thead>
           <tr>
             <th style={{ width: '2.5rem' }}>#</th>
@@ -862,7 +862,7 @@ function RowTable<T extends Definition>({
                 {heading}
               </th>
             ))}
-            <th style={{ width: '11rem' }} />
+            <th style={{ width: '9rem' }} />
           </tr>
         </thead>
         <tbody>
@@ -950,11 +950,11 @@ function TableOutputs({
           <table aria-label="Tables">
             <thead>
               <tr>
-                <th>#</th>
+                <th style={{ width: '2.5rem' }}>#</th>
                 <th>Table ID</th>
-                <th>Name</th>
-                <th>Columns</th>
-                <th>
+                <th style={{ width: '35%' }}>Name</th>
+                <th style={{ width: '8rem' }}>Columns</th>
+                <th style={{ width: '9rem' }}>
                   <span className="visually-hidden">Actions</span>
                 </th>
               </tr>
