@@ -444,6 +444,7 @@ function bundleWithout(name: string) {
 }
 
 /** The import temp dirs under the OS temp dir. */
+// Safe as a global snapshot: no other test file makes ih-import- dirs in the OS tmpdir.
 const tmpEntries = async () =>
   (await readdir(tmpdir())).filter((name) => name.startsWith('ih-import-')).sort();
 
