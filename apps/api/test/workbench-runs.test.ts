@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_BRIEF, preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
+import {
+  EMPTY_BRIEF,
+  preparedTextKey,
+  preparedTriageKey,
+  STEP_PROGRESS_EVENT,
+  type SampleView,
+} from '@ih/shared';
 import { WORKBENCH_PRIORITY } from '../src/repositories/types.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -261,5 +267,47 @@ describe('dev test run housekeeping', () => {
     expect(res.json().deleted).toBe(1);
     expect(c.repo.jobs.has(c.runId)).toBe(false);
     await expectSampleIntact(c);
+  });
+});
+
+describe('test run progress (TR3)', () => {
+  async function runningRun() {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    await ctx.add(1);
+    const [created] = (await ctx.run()).json().jobs as { id: string }[];
+    const id = created!.id;
+    const startedAt = ctx.repo.now();
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, status: 'running', startedAt });
+    const listed = async () =>
+      (
+        (await ctx.app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+          id: string;
+          progress: unknown;
+        }[]
+      ).find((j) => j.id === id)!;
+    return { ...ctx, id, listed };
+  }
+  const event = { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null };
+
+  it("shows a running run's latest progress of this attempt", async () => {
+    const r = await runningRun();
+    expect((await r.listed()).progress).toBeNull(); // nothing reported yet
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, { ...event, attempt: 1 });
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    expect((await r.listed()).progress).toEqual(event);
+  });
+
+  it("ignores an earlier attempt's progress, malformed data and finished runs", async () => {
+    const r = await runningRun();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    // The run is claimed again (retry or reaped lock): the old event predates this attempt.
+    r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, startedAt: r.repo.now() });
+    expect((await r.listed()).progress).toBeNull();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, { step: 'totals' });
+    expect((await r.listed()).progress).toBeNull();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, status: 'succeeded' });
+    expect((await r.listed()).progress).toBeNull();
   });
 });

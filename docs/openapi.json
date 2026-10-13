@@ -15831,7 +15831,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "The project's jobs except sample preparation: test runs, reference runs and\nevaluation jobs, newest first. Open one with `GET /api/jobs/{id}/review`.",
+        "description": "The project's jobs except sample preparation: test runs, reference runs and\nevaluation jobs, newest first. Test runs started together share a `batchId`; a\nrunning job carries its latest `progress` in this attempt (step, attempt, chunk;\nnull before the first model call). Open one with `GET /api/jobs/{id}/review`.",
         "parameters": [
           {
             "schema": {
@@ -15994,6 +15994,66 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "progress": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "step": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "of": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "attempt": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "chunk": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "n": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "of": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "n",
+                                      "of"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "step",
+                              "index",
+                              "of",
+                              "attempt",
+                              "chunk"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -16021,7 +16081,8 @@
                       "updatedAt",
                       "batchId",
                       "startedAt",
-                      "finishedAt"
+                      "finishedAt",
+                      "progress"
                     ],
                     "additionalProperties": true
                   },

@@ -107,8 +107,11 @@ import {
   MAX_ROW_DIFFS,
   RevisePreviewSchema,
   type RevisePreview,
+  STEP_PROGRESS_EVENT,
+  TestRunSchema,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
+import { stepProgress } from '../workbench/test-runs.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
@@ -2014,19 +2017,26 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         summary: "List a project's jobs",
         description: md`
           The project's jobs except sample preparation: test runs, reference runs and
-          evaluation jobs, newest first. Open one with \`GET /api/jobs/{id}/review\`.
+          evaluation jobs, newest first. Test runs started together share a \`batchId\`; a
+          running job carries its latest \`progress\` in this attempt (step, attempt, chunk;
+          null before the first model call). Open one with \`GET /api/jobs/{id}/review\`.
         `,
         params: ProjectIdParams,
-        response: { 200: res('The jobs.', z.array(JobSummarySchema)), 404: PROJECT_NOT_FOUND },
+        response: { 200: res('The jobs.', z.array(TestRunSchema)), 404: PROJECT_NOT_FOUND },
       },
     },
     async (req, reply) => {
       if (!(await workbench.getProject(req.params.id))) {
         return reply.code(404).send({ error: 'project not found' });
       }
-      return (await app.deps.repo.listProjectJobs(req.params.id)).filter(
+      const jobs = (await app.deps.repo.listProjectJobs(req.params.id)).filter(
         (j) => j.task !== 'prepare',
       );
+      const running = jobs.filter((j) => j.status === 'running').map((j) => j.id);
+      const events = running.length
+        ? await app.deps.repo.latestEvents(running, [STEP_PROGRESS_EVENT])
+        : [];
+      return jobs.map((j) => ({ ...j, progress: stepProgress(j, events) }));
     },
   );
 
