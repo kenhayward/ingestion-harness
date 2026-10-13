@@ -4,6 +4,7 @@ import { ApiError, type Api } from '../api/client.js';
 import { PROJECT_TABS, type ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
 import { BriefTab } from './BriefTab.js';
+import { ExportPanel } from './ExportPanel.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { ReferencesTab } from './ReferencesTab.js';
 import { ReviseTab } from './ReviseTab.js';
@@ -162,12 +163,20 @@ export function ProjectPage({
       </nav>
       {tab === 'samples' && <SamplesTab api={api} projectId={project.id} pollMs={pollMs} />}
       {tab === 'brief' && (
-        <BriefTab
-          api={api}
-          projectId={project.id}
-          brief={view.brief}
-          onSaved={(brief) => setView({ ...view, brief })}
-        />
+        <>
+          <BriefTab
+            api={api}
+            projectId={project.id}
+            brief={view.brief}
+            onSaved={(brief) => setView({ ...view, brief })}
+          />
+          <ExportPanel
+            api={api}
+            projectId={project.id}
+            dataPolicy={project.dataPolicy}
+            pollMs={pollMs}
+          />
+        </>
       )}
       {tab === 'survey' && (
         <SurveyTab

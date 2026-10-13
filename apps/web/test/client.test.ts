@@ -46,6 +46,23 @@ describe('http api: URLs', () => {
 });
 
 describe('http api: workbench', () => {
+  it('imports a bundle as multipart with id and name before the file', async () => {
+    const fetchMock = vi.fn(async () => respond(201, { draft: 1 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['PK'], 'b.zip', { type: 'application/zip' });
+    await createHttpApi('/api').importBundle(file, { id: 'memo2', name: 'Memo' });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/workbench/projects/import');
+    expect(init.method).toBe('POST');
+    expect([...(init.body as FormData).keys()]).toEqual(['id', 'name', 'bundle']);
+  });
+
+  it('links the bundle download of an export', () => {
+    expect(createHttpApi('/api').exportBundleUrl('letter', 'j1')).toBe(
+      '/api/workbench/projects/letter/exports/j1/bundle',
+    );
+  });
+
   it('uploads a sample as multipart with its role before the file', async () => {
     const fetchMock = vi.fn(async () => respond(201, { id: 's1' }));
     vi.stubGlobal('fetch', fetchMock);

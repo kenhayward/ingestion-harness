@@ -315,6 +315,14 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
+    startExport: vi.fn(async () => {
+      throw new Error('startExport not stubbed');
+    }),
+    listExports: vi.fn(async () => []),
+    exportBundleUrl: (id, jobId) => `/api/workbench/projects/${id}/exports/${jobId}/bundle`,
+    importBundle: vi.fn(async () => {
+      throw new Error('importBundle not stubbed');
+    }),
     listSamples: vi.fn(async () => []),
     uploadSample: vi.fn(async () => {
       throw new Error('uploadSample not stubbed');

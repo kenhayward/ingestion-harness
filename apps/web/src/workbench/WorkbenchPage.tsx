@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { ProjectSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { matchesQuery } from '../shell/derive.js';
+import { ImportBundle } from './ImportBundle.js';
 
 /** Workbench projects (one per document type) and "New project". */
 export function WorkbenchPage({
@@ -95,6 +96,8 @@ export function WorkbenchPage({
           Create project
         </button>
       </form>
+
+      <ImportBundle api={api} onImported={(p) => onNavigate(`#/workbench/${p.project.id}`)} />
     </section>
   );
 }
