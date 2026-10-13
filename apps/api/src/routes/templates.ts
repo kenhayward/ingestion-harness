@@ -3,7 +3,7 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
-import { TemplateIssueSchema, validateTemplate } from '../templates/definitions.js';
+import { TemplateIssueSchema, templateIssues, validateTemplate } from '../templates/definitions.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import {
   TemplateConflictError,
@@ -89,9 +89,10 @@ const NOT_VALID = res(
   z.object({ error: z.string(), issues: z.array(TemplateIssueSchema) }),
 );
 
-const withIssues = (record: TemplateRecord) => ({
+/** The record with its issues, the models its steps name included (ADR 0010). */
+const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
   record,
-  issues: validateTemplate(record.definition),
+  issues: await templateIssues(app.deps, record.definition),
 });
 
 const count = (value: unknown) => (Array.isArray(value) ? value.length : 0);
@@ -146,6 +147,7 @@ async function summarise(
 }
 
 export const templateRoutes: FastifyPluginAsync = async (app) => {
+  const withIssues = issuesOf(app);
   const repo = () => app.deps.templates;
   const versionOf = (p: Params) => Number(p.version);
   const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'template not found' });
@@ -231,7 +233,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         skeleton(body.data.id, body.data.name),
         'draft',
       );
-      return reply.code(201).send(withIssues(record));
+      return reply.code(201).send(await withIssues(record));
     },
   );
 
@@ -252,7 +254,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const record = await repo().get(req.params.id, versionOf(req.params));
-      return record ? withIssues(record) : notFound(reply);
+      return record ? await withIssues(record) : notFound(reply);
     },
   );
 
@@ -295,7 +297,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         version,
         pinned(body.data.definition, id, version),
       );
-      return withIssues(record!);
+      return await withIssues(record!);
     },
   );
 
@@ -335,9 +337,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (existing.status !== 'draft') {
         return reply.code(409).send({ error: `${id} v${version} is already published` });
       }
-      const issues = validateTemplate(existing.definition);
+      const issues = await templateIssues(app.deps, existing.definition);
       if (issues.length) return reply.code(400).send({ error: 'template is not valid', issues });
-      return withIssues((await repo().publish(id, version))!);
+      return await withIssues((await repo().publish(id, version))!);
     },
   );
 
@@ -371,7 +373,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (created === 'draft-exists') {
         return reply.code(409).send({ error: 'a draft already exists; edit or delete it first' });
       }
-      return reply.code(201).send(withIssues(created));
+      return reply.code(201).send(await withIssues(created));
     },
   );
 
@@ -480,7 +482,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           .code(409)
           .send({ error: `publish ${ident.data.id} from the Workbench (holdout gate)` });
       }
-      const issues = validateTemplate(definition);
+      const issues = await templateIssues(app.deps, definition);
       if (body.data.publish && issues.length) {
         return reply.code(400).send({ error: 'template is not valid', issues });
       }
@@ -491,7 +493,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           ident.data,
           body.data.publish ? 'published' : 'draft',
         );
-        return reply.code(201).send(withIssues(record));
+        return reply.code(201).send(await withIssues(record));
       } catch (err) {
         if (err instanceof TemplateConflictError)
           return reply.code(409).send({ error: err.message });

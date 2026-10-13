@@ -200,18 +200,20 @@ def test_the_registry_comes_from_the_stored_endpoints_and_aliases() -> None:
 
 
 def test_the_ocr_alias_picks_the_ocr_model() -> None:
-    seed = Seed(endpoints=[endpoint("local")], aliases={"ocr": "local/vision-2"})
+    seed = Seed(
+        endpoints=[endpoint("local", models=["vision-2"])], aliases={"ocr": "local/vision-2"}
+    )
     ocr = OcrConfig.model_validate({"model": "local/olmocr", "baseUrl": "http://ocr-host/v1"})
     live = LiveModels(MemoryLlmConfigStore(seed), ocr, env={}, factories=fake_factories())
     assert live.ocr_model == "local/vision-2"
     provider, model = live.registry.resolve_ocr("ocr")
     assert model == "vision-2"
-    assert provider is not live.registry.resolve("local/x")[0]  # OCR keeps its own endpoint
+    assert provider is not live.registry.resolve("local/vision-2")[0]  # OCR keeps its own endpoint
 
 
 def test_live_models_rebuild_only_when_the_stored_config_changes() -> None:
     store = MemoryLlmConfigStore(
-        Seed(endpoints=[endpoint("local")], aliases={"default": "local/a"})
+        Seed(endpoints=[endpoint("local", models=["a", "b"])], aliases={"default": "local/a"})
     )
     made: list[str] = []
     live = LiveModels(store, None, env={}, factories=fake_factories(made))
@@ -235,6 +237,7 @@ class StoreHarness(Protocol):
     def uncurate(self, provider: str, model_id: str) -> None: ...
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None: ...
     def set_key(self, name: str, encrypted: str) -> None: ...
+    def disable_model(self, provider: str, model_id: str) -> None: ...
 
 
 class MemoryHarness:
@@ -255,6 +258,9 @@ class MemoryHarness:
 
     def set_key(self, name: str, encrypted: str) -> None:
         self.store.edit_endpoint(name, api_key_enc=encrypted)
+
+    def disable_model(self, provider: str, model_id: str) -> None:
+        self.store.disable_model(provider, model_id)
 
 
 class PgHarness:
@@ -285,6 +291,12 @@ class PgHarness:
         self.conn.execute(
             """UPDATE llm_models SET curated = false, curated_edited_at = now()
                 WHERE provider = %s AND model_id = %s""",
+            (provider, model_id),
+        )
+
+    def disable_model(self, provider: str, model_id: str) -> None:
+        self.conn.execute(
+            "UPDATE llm_models SET enabled = false WHERE provider = %s AND model_id = %s",
             (provider, model_id),
         )
 
@@ -417,7 +429,10 @@ def test_the_worker_swaps_in_the_rebuilt_registry_and_ocr_model() -> None:
     from ingest_worker.storage import MemoryObjectStore
 
     store = MemoryLlmConfigStore(
-        Seed([endpoint("local")], {"default": "local/a", "ocr": "local/olmocr"})
+        Seed(
+            [endpoint("local", models=["a", "b", "olmocr", "vision-2"])],
+            {"default": "local/a", "ocr": "local/olmocr"},
+        )
     )
     ocr = OcrConfig.model_validate({"model": "local/olmocr"})
     live = LiveModels(store, ocr, env={}, factories=fake_factories())
@@ -451,3 +466,63 @@ def test_an_endpoint_whose_stored_key_cannot_be_decrypted_is_skipped() -> None:
     seed = Seed([endpoint("local"), endpoint("gpu2", apiKeyEnc="v1:not-for-this-master-key")], {})
     registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
     assert registry.provider_names == ["local"]
+
+
+# --- only configured models run (ADR 0010, phase 4) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("ref", "resolved"),
+    [
+        ("local/a", ("local", "a")),
+        ("default", ("local", "a")),
+        ("ryzen/openai/gpt-oss-20b", ("ryzen", "openai/gpt-oss-20b")),
+    ],
+)
+def test_offered_models_resolve(ref: str, resolved: tuple[str, str]) -> None:
+    seed = Seed(
+        [endpoint("local", models=["a"]), endpoint("ryzen", models=["openai/gpt-oss-20b"])],
+        {"default": "local/a"},
+    )
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    provider, model = registry.resolve(ref)
+    assert (provider.name, model) == resolved
+
+
+@pytest.mark.parametrize(
+    ("ref", "message"),
+    [
+        ("local/advertised", "model local/advertised is not offered on endpoint local"),
+        ("stale", "model local/gone is not offered on endpoint local"),
+        ("ryzen/gpt-oss-20b", "model ryzen/gpt-oss-20b is not offered on endpoint ryzen"),
+    ],
+)
+def test_models_not_offered_never_run(ref: str, message: str) -> None:
+    seed = Seed(
+        [endpoint("local", models=["a"]), endpoint("ryzen", models=["openai/gpt-oss-20b"])],
+        {"stale": "local/gone"},
+    )
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    with pytest.raises(ModelResolutionError, match=message):
+        registry.resolve(ref)
+    with pytest.raises(ModelResolutionError, match="Models page"):
+        registry.resolve_ocr(ref)
+
+
+def test_a_registry_built_from_the_config_file_alone_is_not_restricted() -> None:
+    # Tests and tools that build a registry straight from a config keep resolving any model.
+    from ingest_worker.llm.registry import build_registry
+
+    cfg = LLMConfig.model_validate(
+        {"providers": [{"name": "local", "kind": "openai-chat", "apiKeyRequired": False}]}
+    )
+    registry = build_registry(cfg, env={}, factories=fake_factories())
+    assert registry.resolve("local/anything")[1] == "anything"
+
+
+def test_a_disabled_model_is_not_offered(harness: StoreHarness) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("local", models=["a", "b"])], {}))
+    harness.disable_model("local", "b")
+    (local,) = store.load().endpoints
+    assert local.models == ["a"]

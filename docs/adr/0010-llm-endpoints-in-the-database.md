@@ -1,6 +1,6 @@
 # 0010: LLM endpoints and curated models live in the database; .env seeds them
 
-**Status:** accepted · 2026-10-13 · phases 1-3 of 4 implemented
+**Status:** accepted · 2026-10-13 · phases 1-3 and 4a of 4 implemented
 
 ## Context
 Content Transformation Studio (CT Studio) had one local LLM endpoint (`LOCAL_LLM_BASE_URL`) next
@@ -59,7 +59,12 @@ rather than by editing files and restarting workers.
    still list every model the worker discovered.
 2. Pickers list curated, enabled models only; discovery becomes suggestions.
 3. Admin API and the Models page (the admin's name menu, top right), with encrypted keys.
-4. Aliases and the OCR model in the UI; the `discover` job.
+4. **4a:** only offered models run. The worker resolves a ref (after its aliases, OCR
+   included) only when the model is curated and enabled on its endpoint, else
+   `ModelResolutionError` (the job goes to `needs_review`, no call is made); the API refuses a
+   step re-run naming any other model (400) and reports a template step naming one as an issue
+   (`pipeline.N.model`), which blocks publishing; the Review screen's re-run model is a picker.
+   **4b:** aliases and the OCR model in the UI; the `discover` job.
 
 ## Consequences
 - **The database is now the source of truth for models.** The config file and `.env` describe

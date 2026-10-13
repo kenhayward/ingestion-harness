@@ -99,7 +99,11 @@ import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
-import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';
+import {
+  draftOutputsSnapshot,
+  templateIssues,
+  validateTemplate,
+} from '../templates/definitions.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 import {
   WorkbenchConflictError,
@@ -1226,7 +1230,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!project) return reply.code(404).send({ error: 'project not found' });
       const { draft, definition, ...gate } = await gateFor(app, project);
       if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
-      const issues = validateTemplate((await templates.get(projectId, draft))!.definition);
+      const issues = await templateIssues(
+        app.deps,
+        (await templates.get(projectId, draft))!.definition,
+      );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
       // re-check, the publish and the publication record share one transaction.
