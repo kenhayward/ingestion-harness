@@ -1,0 +1,34 @@
+/* Workbench stage status primitives (docs/design/workbench-redesign/WORKBENCH-HANDOFF.md §2). */
+.stage-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+@keyframes ih-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.stage-icon.spin {
+  animation: ih-spin 1.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-icon.spin {
+    animation: none;
+  }
+}
+.stage-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+}
+.stage-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
