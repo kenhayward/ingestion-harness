@@ -162,7 +162,9 @@ describe('SectionsTab', () => {
     await screen.findByRole('button', { name: 'a.pdf · all' });
     await userEvent.click(screen.getByText(/^Document options/));
     await userEvent.clear(screen.getByLabelText('Copy anchor'));
-    await userEvent.click(screen.getByRole('button', { name: 'Save to draft v2' }));
+    const save = screen.getByRole('button', { name: 'Save to draft v2' });
+    await waitFor(() => expect(save).toBeEnabled(), { timeout: 2000 });
+    await userEvent.click(save);
     const document: Record<string, unknown> = { ...definition.document };
     delete document.copies;
     expect(api.saveTemplate).toHaveBeenCalledWith('letter', 2, {
@@ -182,7 +184,9 @@ describe('SectionsTab', () => {
     const api = setup({ getTemplate: vi.fn(async () => templateView(described)) });
     await screen.findByRole('button', { name: 'a.pdf · all' });
     await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
-    await userEvent.click(screen.getByRole('button', { name: 'Save to draft v2' }));
+    const save = screen.getByRole('button', { name: 'Save to draft v2' });
+    await waitFor(() => expect(save).toBeEnabled(), { timeout: 2000 });
+    await userEvent.click(save);
     expect(api.saveTemplate).toHaveBeenCalledWith('letter', 2, {
       ...described,
       document: {
@@ -211,6 +215,36 @@ describe('SectionsTab', () => {
     await userEvent.type(screen.getByLabelText('Anchor of section 1'), '?');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeEnabled(),
+    );
+  });
+
+  it('blocks saving while the preview reports an invalid anchor', async () => {
+    const bad = { ...grid, anchorErrors: { all: 'missing ), unterminated subpattern' } };
+    setup({ getSegmentation: vi.fn(async () => segmentationView({ jobId: 'j1', result: bad })) });
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
+    expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeDisabled();
+    expect(await screen.findByText(/Fix the invalid anchor to save/)).toBeInTheDocument();
+  });
+
+  it('keeps Save disabled until the pending preview has finished', async () => {
+    const api = setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
+    expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeDisabled();
+    await waitFor(() => expect(api.startSegmentation).toHaveBeenCalledTimes(2), { timeout: 2000 });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeEnabled(),
+    );
+  });
+
+  it('keeps the selection when the selected section is renamed', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'a.pdf · all' }));
+    await userEvent.type(screen.getByLabelText('Id of section 1'), 'x');
+    expect(screen.getByRole('button', { name: 'a.pdf · allx' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
   });
 
@@ -255,7 +289,9 @@ describe('SectionsTab', () => {
     );
     expect(api.saveTemplate).not.toHaveBeenCalled();
     expect(screen.getByText('Unsaved anchors')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save to draft v2' })).toBeEnabled(),
+    );
   });
 
   it('selects a sample and section from a grid cell', async () => {

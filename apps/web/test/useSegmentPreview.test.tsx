@@ -72,7 +72,7 @@ describe('useSegmentPreview', () => {
     const { result } = renderHook(() => useSegmentPreview(api, 'letter', 1));
     act(() => result.current.preview());
     await waitFor(() =>
-      expect(result.current.error).toBe('Preview was replaced; click Preview to try again'),
+      expect(result.current.error).toBe('Preview was replaced; edit an anchor to try again'),
     );
     expect(api.startSegmentation).toHaveBeenCalledTimes(2);
     expect(result.current.running).toBe(false);

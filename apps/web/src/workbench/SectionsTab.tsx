@@ -66,6 +66,8 @@ export function SectionsTab({
   const [error, setError] = useState<string | null>(null);
   const { view, running, error: previewError, preview } = useSegmentPreview(api, projectId, pollMs);
   const [saving, setSaving] = useState(false);
+  // An edit whose debounced preview has not started yet.
+  const [pending, setPending] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextKey = useRef(0);
 
@@ -135,6 +137,9 @@ export function SectionsTab({
   const complete = isComplete(rows);
   // A preview that timed out means an anchor backtracks; production segmentation has no such cap.
   const slowAnchor = previewError?.includes('backtrack') ?? false;
+  // The worker reports an anchor that is not a valid regular expression.
+  const invalidAnchor = Object.keys(view?.result?.anchorErrors ?? {}).length > 0;
+  const settling = pending || running;
 
   const edit = (nextRows: Row[], nextCopies: Copies = copies) => {
     setRows(nextRows);
@@ -142,14 +147,21 @@ export function SectionsTab({
     setMessage(null);
     if (timer.current) clearTimeout(timer.current);
     if (isComplete(nextRows)) {
-      timer.current = setTimeout(
-        () => preview(candidate(nextRows, nextCopies, pageMarkers)),
-        PREVIEW_DEBOUNCE_MS,
-      );
+      setPending(true);
+      timer.current = setTimeout(() => {
+        setPending(false);
+        preview(candidate(nextRows, nextCopies, pageMarkers));
+      }, PREVIEW_DEBOUNCE_MS);
+    } else {
+      setPending(false);
     }
   };
-  const setRow = (i: number, patch: Partial<Row>) =>
+  const setRow = (i: number, patch: Partial<Row>) => {
+    if (selected && patch.id !== undefined && selected.sectionId === rows[i]?.id) {
+      setSelected({ ...selected, sectionId: patch.id });
+    }
     edit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  };
 
   const save = async () => {
     if (saving) return;
@@ -231,13 +243,25 @@ export function SectionsTab({
                   type="button"
                   className={dirty ? 'primary' : undefined}
                   onClick={() => void save()}
-                  disabled={!dirty || !complete || saving || slowAnchor}
+                  disabled={
+                    !dirty || !complete || saving || slowAnchor || invalidAnchor || settling
+                  }
+                  title={
+                    invalidAnchor
+                      ? 'Fix the invalid anchor to save'
+                      : settling
+                        ? 'Waiting for the preview'
+                        : undefined
+                  }
                 >
                   Save to draft v{draft}
                 </button>
               </span>
             </div>
             {slowAnchor && <p className="muted">Fix the slow anchor to save.</p>}
+            {invalidAnchor && !slowAnchor && (
+              <p className="muted">Fix the invalid anchor to save.</p>
+            )}
             {message && <p role="status">{message}</p>}
             {(error ?? previewError) && <p role="alert">{error ?? previewError}</p>}
             <ol className="anchor-list">
