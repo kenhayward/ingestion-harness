@@ -92,6 +92,7 @@ const UNDOCUMENTED = new Set([
   'DELETE /api/jobs/{id}',
   'DELETE /api/templates/{id}/references/{ref}',
   'DELETE /api/templates/{id}/versions/{version}',
+  'DELETE /api/workbench/projects/{id}',
   'DELETE /api/workbench/projects/{id}/feedback/{fid}',
   'DELETE /api/workbench/projects/{id}/samples/{sid}',
   'GET /api/access/s3-keys',
