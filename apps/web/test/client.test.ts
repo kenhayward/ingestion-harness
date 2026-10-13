@@ -489,3 +489,44 @@ describe('http api: jobs', () => {
     expect(urls).toEqual(['/api/jobs', '/api/jobs?mine=1']);
   });
 });
+
+describe('http api: LLM endpoints', () => {
+  it('calls the admin routes', async () => {
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : respond(200, {}),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listLlmEndpoints();
+    await api.createLlmEndpoint({
+      name: 'gpu2',
+      kind: 'openai-chat',
+      baseUrl: 'http://x/v1',
+      location: 'local',
+    });
+    await api.updateLlmEndpoint('gpu 2', { enabled: false });
+    await api.setLlmEndpointModels('gpu2', ['a']);
+    await api.deleteLlmEndpoint('gpu2');
+    const calls = fetch.mock.calls.map((c) => [
+      c[0],
+      (c[1] as RequestInit | undefined)?.method ?? 'GET',
+      (c[1] as RequestInit | undefined)?.body ?? null,
+    ]);
+    expect(calls).toEqual([
+      ['/api/llm/endpoints', 'GET', null],
+      [
+        '/api/llm/endpoints',
+        'POST',
+        JSON.stringify({
+          name: 'gpu2',
+          kind: 'openai-chat',
+          baseUrl: 'http://x/v1',
+          location: 'local',
+        }),
+      ],
+      ['/api/llm/endpoints/gpu%202', 'PATCH', JSON.stringify({ enabled: false })],
+      ['/api/llm/endpoints/gpu2/models', 'PUT', JSON.stringify({ models: ['a'] })],
+      ['/api/llm/endpoints/gpu2', 'DELETE', null],
+    ]);
+  });
+});

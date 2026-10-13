@@ -63,6 +63,8 @@ export function ReviewPage({
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [cursor, setCursor] = useState(-1);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+  /** The models a re-run may use: those offered in the pickers (ADR 0010). */
+  const [models, setModels] = useState<string[]>([]);
   const [rerun, setRerun] = useState<{
     step: string;
     model: string;
@@ -84,7 +86,12 @@ export function ReviewPage({
   }, [load]);
 
   useEffect(() => {
-    if (tab === 'steps') api.getStepRuns(jobId).then(setStepRuns, () => setStepRuns([]));
+    if (tab !== 'steps') return;
+    api.getStepRuns(jobId).then(setStepRuns, () => setStepRuns([]));
+    api.listModels().then(
+      (list) => setModels(list.filter((m) => m.enabled).map((m) => m.ref)),
+      () => setModels([]),
+    );
   }, [api, jobId, tab]);
 
   const view = useMemo(() => (data ? effectiveView(data) : null), [data]);
@@ -356,11 +363,17 @@ export function ReviewPage({
                   </p>
                   <label>
                     Model for re-run
-                    <input
+                    <select
                       value={rerun.model}
-                      placeholder="step default"
                       onChange={(e) => setRerun({ ...rerun, model: e.target.value })}
-                    />
+                    >
+                      <option value="">Step default</option>
+                      {models.map((ref) => (
+                        <option key={ref} value={ref}>
+                          {ref}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Guidance for re-run

@@ -313,3 +313,60 @@ describe('search scope', () => {
     expect(screen.getByText('No tokens match “zzz”.')).toBeInTheDocument();
   });
 });
+
+describe('the admin name menu', () => {
+  it('opens Models, Access and Sign out from the name of an admin', async () => {
+    const onSignOut = vi.fn();
+    const api = fakeApi({
+      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      logout: vi.fn(async () => {
+        onSignOut();
+      }),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    const trigger = within(banner).getByRole('button', { name: 'Ken (admin): account menu' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(within(banner).queryByRole('menu')).toBeNull();
+    await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = within(banner).getByRole('menu', { name: 'Ken (admin): account menu' });
+    expect(within(menu).getByRole('menuitem', { name: 'Models' })).toHaveAttribute(
+      'href',
+      '#/models',
+    );
+    expect(within(menu).getByRole('menuitem', { name: 'Access' })).toHaveAttribute(
+      'href',
+      '#/access',
+    );
+    await userEvent.keyboard('{Escape}');
+    expect(within(banner).queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Models' }));
+    expect(window.location.hash).toBe('#/models');
+    expect(within(banner).queryByRole('menu')).toBeNull();
+    await userEvent.click(trigger);
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Sign out' }));
+    await waitFor(() => expect(onSignOut).toHaveBeenCalled());
+  });
+
+  it('keeps a plain chip with Sign out for users', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({ role: 'user' as const, label: 'Ann', expiresAt: null })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    expect(within(banner).queryByRole('button', { name: /account menu/ })).toBeNull();
+    expect(within(banner).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  it('lists Models in the admin nav', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('link', { name: 'Models' })).toHaveAttribute('href', '#/models');
+  });
+});

@@ -177,6 +177,8 @@ class MemoryLlmConfigStore:
         self.curated: dict[tuple[str, str], tuple[bool, bool]] = {}
         #: name -> (ref, edited)
         self.aliases: dict[str, tuple[str, bool]] = {}
+        #: (provider, model_id) disabled by an admin: not offered even when curated
+        self.disabled: set[tuple[str, str]] = set()
         self._version = 0
         if seed is not None:
             self.seed(seed)
@@ -190,6 +192,7 @@ class MemoryLlmConfigStore:
             {n: (e.cfg.model_dump(), e.source, e.edited) for n, e in self.endpoints.items()},
             dict(self.curated),
             dict(self.aliases),
+            frozenset(self.disabled),
         )
 
     def seed(self, seed: Seed) -> None:
@@ -231,7 +234,9 @@ class MemoryLlmConfigStore:
                 update={
                     "optional": True,
                     "models": sorted(
-                        m for (p, m), (curated, _) in self.curated.items() if p == n and curated
+                        m
+                        for (p, m), (curated, _) in self.curated.items()
+                        if p == n and curated and (p, m) not in self.disabled
                     ),
                 }
             )
@@ -254,6 +259,11 @@ class MemoryLlmConfigStore:
     def edit_alias(self, name: str, ref: str) -> None:
         before = self._snapshot()
         self.aliases[name] = (ref, True)
+        self._changed(before)
+
+    def disable_model(self, provider: str, model_id: str) -> None:
+        before = self._snapshot()
+        self.disabled.add((provider, model_id))
         self._changed(before)
 
     def uncurate(self, provider: str, model_id: str) -> None:

@@ -24,6 +24,17 @@ async function seed(status: 'awaiting_review' | 'queued' = 'awaiting_review') {
 
 const post = (url: string, payload: object) => ({ method: 'POST' as const, url, payload });
 
+const offered = (ref: string, curated = true) => ({
+  ref,
+  provider: ref.split('/')[0]!,
+  providerKind: 'openai-chat' as const,
+  modelId: ref.slice(ref.indexOf('/') + 1),
+  displayName: null,
+  enabled: true,
+  discoveredAt: '',
+  curated,
+});
+
 describe('step runs and re-runs', () => {
   it('lists the recorded step runs of a job', async () => {
     const { app, repo, job } = await seed();
@@ -48,7 +59,8 @@ describe('step runs and re-runs', () => {
   });
 
   it('re-queues a single extract step with optional model and guidance', async () => {
-    const { app, job } = await seed();
+    const { app, repo, job } = await seed();
+    repo.models = [offered('other/better')];
     const res = await app.inject(
       post(`/api/jobs/${job.id}/steps/data/rerun`, {
         model: 'other/better',
@@ -103,5 +115,28 @@ describe('step runs and re-runs', () => {
     expect((await app.inject(post(`/api/jobs/${job.id}/steps/head/rerun`, {}))).statusCode).toBe(
       200,
     );
+  });
+});
+
+describe('re-run models (only configured models run, ADR 0010)', () => {
+  it.each([
+    ['other/advertised', 'model other/advertised is not offered: add it on the Models page'],
+    ['nope', 'unknown model alias nope'],
+  ])('refuses %s', async (model, error) => {
+    const { app, repo, job } = await seed();
+    repo.models = [offered('other/better'), offered('other/advertised', false)];
+    const res = await app.inject(post(`/api/jobs/${job.id}/steps/data/rerun`, { model }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe(error);
+    expect(repo.jobs.get(job.id)!.status).toBe('awaiting_review');
+  });
+
+  it('accepts an alias that resolves to an offered model', async () => {
+    const { app, repo, job } = await seed();
+    repo.models = [offered('other/better')];
+    const { llm } = app.deps as unknown as { llm: { aliases: Record<string, string> } };
+    llm.aliases = { fast: 'other/better' };
+    const res = await app.inject(post(`/api/jobs/${job.id}/steps/data/rerun`, { model: 'fast' }));
+    expect(res.statusCode).toBe(200);
   });
 });

@@ -69,6 +69,8 @@ export const EndpointCreateBodySchema = z
     path: ['baseUrl'],
   });
 export type EndpointCreateBody = z.infer<typeof EndpointCreateBodySchema>;
+/** What a client sends (defaults not applied yet). */
+export type EndpointCreateInput = z.input<typeof EndpointCreateBodySchema>;
 
 export const EndpointPatchBodySchema = z
   .object({
@@ -95,4 +97,26 @@ export function resolveAlias(name: string, aliases: Record<string, string>): str
     ref = aliases[ref]!;
   }
   return ref.includes('/') ? ref : null;
+}
+
+/**
+ * Why a model ref (or alias) may not run, or null when it may: only models offered on their
+ * endpoint run (ADR 0010; the worker enforces the same). `unknownAliases: 'allow'` leaves an
+ * alias name the database doesn't define to the worker (template checks: unit tests run with
+ * no aliases).
+ */
+export function modelRefProblem(
+  ref: string,
+  offered: ReadonlySet<string>,
+  aliases: Record<string, string>,
+  { unknownAliases = 'refuse' }: { unknownAliases?: 'refuse' | 'allow' } = {},
+): string | null {
+  const notOffered = 'is not offered: add it on the Models page';
+  if (ref in aliases) {
+    const resolved = resolveAlias(ref, aliases);
+    if (resolved === null) return `alias ${ref} does not resolve to a model`;
+    return offered.has(resolved) ? null : `alias ${ref} uses ${resolved}, which ${notOffered}`;
+  }
+  if (ref.includes('/')) return offered.has(ref) ? null : `model ${ref} ${notOffered}`;
+  return unknownAliases === 'allow' ? null : `unknown model alias ${ref}`;
 }

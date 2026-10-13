@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { seedTemplates } from '../src/templates/seed.js';
 import { fakePdf, multipart, testApp } from './helpers.js';
@@ -74,6 +74,61 @@ describe('template lifecycle', () => {
     expect(
       (await app.inject({ method: 'DELETE', url: '/api/templates/letter/versions/1' })).statusCode,
     ).toBe(409);
+  });
+
+  it('reports a step model that is not offered, and will not publish it', async () => {
+    const { app, repo } = await testApp();
+    repo.models = [
+      {
+        ref: 'local/qwen',
+        provider: 'local',
+        providerKind: 'openai-chat',
+        modelId: 'qwen',
+        displayName: null,
+        enabled: true,
+        discoveredAt: '',
+        curated: true,
+      },
+    ];
+    await app.inject(json('POST', '/api/templates', { id: 'letter', name: 'Letter' }));
+    const withModel = (model: string) => ({
+      ...definition(),
+      pipeline: [{ type: 'extract', id: 'head', fields: ['sender'], sections: ['all'], model }],
+    });
+    const saved = await app.inject(
+      json('PUT', '/api/templates/letter/versions/1', { definition: withModel('ryzen/other') }),
+    );
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().issues).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message: 'step "head": model ryzen/other is not offered: add it on the Models page',
+      },
+    ]);
+    const refused = await app.inject(json('POST', '/api/templates/letter/versions/1/publish', {}));
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().issues).toHaveLength(1);
+    await app.inject(
+      json('PUT', '/api/templates/letter/versions/1', { definition: withModel('local/qwen') }),
+    );
+    const published = await app.inject(
+      json('POST', '/api/templates/letter/versions/1/publish', {}),
+    );
+    expect(published.statusCode).toBe(200);
+    expect(published.json().issues).toEqual([]);
+  });
+
+  it('refuses to import straight to published with a model that is not offered', async () => {
+    const { app } = await testApp();
+    const yaml = stringifyYaml({
+      ...definition('memo'),
+      pipeline: [
+        { type: 'extract', id: 'head', fields: ['sender'], sections: ['all'], model: 'x/y' },
+      ],
+    });
+    const res = await app.inject(json('POST', '/api/templates/import', { yaml, publish: true }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json().issues)).toContain('model x/y is not offered');
   });
 
   it('publishes a type without a Workbench project, even while another type has one', async () => {
