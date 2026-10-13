@@ -162,6 +162,25 @@ describe('JobList rows', () => {
     expect(within(row('a.pdf')).getByText('6 min ago')).toBeInTheDocument();
   });
 
+  it('shows under the created time how long processing took, with a clock', () => {
+    renderList([
+      job({
+        filename: 'done.pdf',
+        status: 'succeeded',
+        startedAt: '2026-10-12T11:50:00Z',
+        finishedAt: '2026-10-12T11:51:34Z',
+      }),
+      job({ filename: 'running.pdf', status: 'running', startedAt: '2026-10-12T11:36:56Z' }),
+      job({ filename: 'queued.pdf', status: 'queued' }),
+    ]);
+    const done = within(row('done.pdf')).getByLabelText('Processing time 1:34');
+    expect(done).toHaveTextContent('1:34');
+    expect(done.querySelector('svg')).not.toBeNull();
+    // Still running: counts up to now.
+    expect(within(row('running.pdf')).getByLabelText('Processing time 23:04')).toBeInTheDocument();
+    expect(within(row('queued.pdf')).queryByLabelText(/Processing time/)).toBeNull();
+  });
+
   it('says when there are no jobs', () => {
     renderList([]);
     expect(screen.getByText('No jobs yet.')).toBeInTheDocument();

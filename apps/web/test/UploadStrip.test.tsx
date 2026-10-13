@@ -38,6 +38,26 @@ describe('UploadStrip', () => {
   });
 });
 
+describe('UploadStrip document types', () => {
+  it('offers only the newest version of each document type', async () => {
+    const api = fakeApi({
+      listSpecs: vi.fn(async () => [
+        { id: 'letter', version: 1, title: 'Letter' },
+        { id: 'letter', version: 3, title: 'Letter' },
+        { id: 'memo', version: 2, title: 'Memo' },
+        { id: 'letter', version: 2, title: 'Letter' },
+      ]),
+    });
+    render(<UploadStrip api={api} onUploaded={() => {}} />);
+    const select = screen.getByLabelText('Document type');
+    await screen.findByRole('option', { name: 'Memo · v2' });
+    expect([...select.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      'Letter · v3',
+      'Memo · v2',
+    ]);
+  });
+});
+
 describe("UploadStrip names the document type's model", () => {
   it('shows which choice the selected type runs when no model is picked', async () => {
     const api = fakeApi({

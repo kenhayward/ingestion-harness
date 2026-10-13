@@ -1301,6 +1301,17 @@ button.danger-fill {
   font-size: var(--ih-text-md);
   color: var(--ih-muted);
 }
+.created-cell > span {
+  display: block;
+}
+.created-cell .elapsed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--ih-text-sm);
+  font-variant-numeric: tabular-nums;
+}
 .job-list .actions-cell {
   width: 1%;
 }
