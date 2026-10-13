@@ -25,6 +25,13 @@ describe('sign-in gate', () => {
     ).toBeInTheDocument();
   });
 
+  it('links to the API docs, which need no sign-in', async () => {
+    render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
+    const link = await screen.findByRole('link', { name: 'API docs (opens in a new tab)' });
+    expect(link).toHaveAttribute('href', '/api/docs/');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
   it.each([
     [401, 'That token is invalid or has expired.'],
     [429, 'Too many attempts. Try again in a few minutes.'],
