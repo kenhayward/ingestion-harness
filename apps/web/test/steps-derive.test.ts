@@ -72,6 +72,16 @@ describe('stepCards', () => {
     expect(stepCards({})).toEqual([]);
   });
 
+  it.each([
+    [{ values: 'a.b', reference: 'c' }, 'a.b = c'],
+    [{ values: 'a.b' }, 'a.b'],
+    [{ reference: 'c' }, 'c'],
+    [{}, null],
+  ])('describes a check step without undefined (%j)', (rest, compares) => {
+    const cards = stepCards({ pipeline: [{ type: 'check', id: 'x', ...rest }] });
+    expect(cards[0]?.compares).toBe(compares);
+  });
+
   it('lists the sections and the outputs line', () => {
     expect(sectionIds(DEF)).toEqual(['header', 'line_items', 'totals']);
     expect(outputsLine(DEF)).toBe('Outputs: 2 fields · line_items');

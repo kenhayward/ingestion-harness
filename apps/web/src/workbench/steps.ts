@@ -41,7 +41,10 @@ export function stepCards(definition: Def): StepCard[] {
             fills: [],
             reads: [],
             chunkPages: null,
-            compares: `${String(s.values)} = ${String(s.reference)}`,
+            compares:
+              [s.values, s.reference]
+                .filter((x): x is string => typeof x === 'string' && x !== '')
+                .join(' = ') || null,
           }
         : {
             number: i + 1,

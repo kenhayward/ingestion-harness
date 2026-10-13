@@ -28,6 +28,8 @@ const obj = (v: unknown): Def =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Def) : {};
 const list = (v: unknown): Def[] =>
   Array.isArray(v) ? v.map(obj).filter((x) => typeof x.id === 'string') : [];
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const sortedEnum = (v: unknown) => (Array.isArray(v) ? [...v].map(String).sort() : v);
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : '—');
 const typeOf = (v: Def) => (typeof v.type === 'string' ? v.type : 'text');
 const outputsOf = (def: Def) => {
@@ -35,8 +37,18 @@ const outputsOf = (def: Def) => {
   return { fields: list(o.fields), tables: list(o.tables) };
 };
 const sameValue = (a: Def, b: Def) =>
-  stableJson({ name: a.name, type: typeOf(a), description: a.description, enum: a.enum }) ===
-  stableJson({ name: b.name, type: typeOf(b), description: b.description, enum: b.enum });
+  stableJson({
+    name: a.name,
+    type: typeOf(a),
+    description: a.description,
+    enum: sortedEnum(a.enum),
+  }) ===
+  stableJson({
+    name: b.name,
+    type: typeOf(b),
+    description: b.description,
+    enum: sortedEnum(b.enum),
+  });
 const sameTable = (a: Def, b: Def) =>
   stableJson({ name: a.name, description: a.description }) ===
   stableJson({ name: b.name, description: b.description });
@@ -96,7 +108,7 @@ export function outputRows(draft: Def, live: Def | null): OutputRow[] {
       table: null,
       name: text(item.name),
       type: 'table',
-      values: `${list(item.columns).length} columns`,
+      values: plural(list(item.columns).length, 'column'),
       description: text(item.description),
       vsLive,
     };

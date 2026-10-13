@@ -110,4 +110,19 @@ describe('outputRows', () => {
   it('reads a draft with no outputs', () => {
     expect(outputRows({}, null)).toEqual([]);
   });
+
+  it.each([
+    [1, '1 column'],
+    [2, '2 columns'],
+  ])('pluralises the column count of a table (%i)', (n, values) => {
+    const columns = Array.from({ length: n }, (_, i) => ({ id: `c${i}` }));
+    const rows = outputRows({ outputs: { tables: [{ id: 't', columns }] } }, null);
+    expect(rows[0]).toMatchObject({ kind: 'table', values });
+  });
+
+  it('does not mark a reordered enum as changed', () => {
+    const live = { outputs: { fields: [{ id: 'c', type: 'enum', enum: ['GBP', 'EUR'] }] } };
+    const draft = { outputs: { fields: [{ id: 'c', type: 'enum', enum: ['EUR', 'GBP'] }] } };
+    expect(outputRows(draft, live)[0]?.vsLive).toBeNull();
+  });
 });
