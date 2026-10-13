@@ -147,6 +147,32 @@ export function relativeTime(iso: string, now: number): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/** "0:31", "2:05", "1:02:05". */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+/**
+ * How long the job's latest extraction took (`startedAt` to `finishedAt`, migration 0028), up
+ * to now while it runs; null when it was never timed or is queued (again).
+ */
+export function jobDuration(
+  job: Pick<JobSummary, 'status' | 'task' | 'startedAt' | 'finishedAt'>,
+  now: number,
+): string | null {
+  if (!job.startedAt || job.status === 'queued') return null;
+  const start = Date.parse(job.startedAt);
+  // A step re-run or publish keeps the extraction's start: only a running extraction counts up.
+  if (job.status === 'running' && job.task === 'process') {
+    return formatDuration((now - start) / 1000);
+  }
+  return job.finishedAt ? formatDuration((Date.parse(job.finishedAt) - start) / 1000) : null;
+}
+
 /** What ran (step runs), else what was requested (override), else the spec default. */
 export function modelLabel(job: JobSummary): string {
   if (job.modelsUsed.length) return job.modelsUsed.join(', ');

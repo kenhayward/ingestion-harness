@@ -6,7 +6,7 @@ import type {
   StepProgress,
   TestRun,
 } from '@ih/shared';
-import { statusLabel, statusTone, type Tone } from '../jobs/derive.js';
+import { formatDuration, jobDuration, statusLabel, statusTone, type Tone } from '../jobs/derive.js';
 import { shortDateTime } from './references.js';
 
 /** Test runs started together (one `POST …/test-runs`, handoff TR2). */
@@ -177,24 +177,11 @@ export function runDetail(run: TestRun): { text: string; tone: DetailTone } {
   }
 }
 
-/** "0:31", "2:05", "1:02:05". */
-export function formatDuration(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = String(s % 60).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
+export { formatDuration };
 
 /** The latest attempt's run time; up to now while running; "—" when not timed. */
 export function runDuration(run: TestRun, now: number): string {
-  if (!run.startedAt || run.status === 'queued') return '—';
-  const start = Date.parse(run.startedAt);
-  // A step re-run or publish keeps the extraction's start: only a running extraction counts up.
-  if (run.status === 'running' && run.task === 'process') {
-    return formatDuration((now - start) / 1000);
-  }
-  return run.finishedAt ? formatDuration((Date.parse(run.finishedAt) - start) / 1000) : '—';
+  return jobDuration(run, now) ?? '—';
 }
 
 export type RunAction = 'review-now' | 'review' | 'retry' | null;
