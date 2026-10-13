@@ -552,6 +552,32 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf((await repo.createRegressionJob(reference, 2)).id)).toBeNull();
   });
 
+  it('marks a model curated only while its endpoint exists and is enabled', async () => {
+    const on = `it-on-${randomUUID().slice(0, 8)}`;
+    const off = `it-off-${randomUUID().slice(0, 8)}`;
+    const gone = `it-gone-${randomUUID().slice(0, 8)}`;
+    await pool.query(
+      `INSERT INTO llm_endpoints (name, kind, enabled) VALUES ($1, 'openai-chat', true),
+              ($2, 'openai-chat', false)`,
+      [on, off],
+    );
+    await pool.query(
+      `INSERT INTO llm_models (provider, provider_kind, model_id, curated) VALUES
+         ($1, 'openai-chat', 'picked', true), ($1, 'openai-chat', 'found', false),
+         ($2, 'openai-chat', 'picked', true), ($3, 'openai-chat', 'picked', true)`,
+      [on, off, gone],
+    );
+    const mine = (await repo.listModels()).filter((m) => [on, off, gone].includes(m.provider));
+    expect(mine.map((m) => [m.ref, m.curated])).toEqual(
+      [
+        [`${on}/found`, false],
+        [`${on}/picked`, true],
+        [`${off}/picked`, false],
+        [`${gone}/picked`, false],
+      ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
+  });
+
   it('stores who queued a job and lists only their jobs', async () => {
     const projectId = await newProject();
     const label = `it-user-${randomUUID().slice(0, 8)}`;

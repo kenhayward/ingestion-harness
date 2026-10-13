@@ -25,6 +25,7 @@ describe('UploadStrip', () => {
           displayName: 'Claude Opus 5.5',
           enabled: true,
           discoveredAt: '',
+          curated: true,
         },
       ],
     });
@@ -58,6 +59,7 @@ describe('UploadStrip remembers the model', () => {
     displayName: 'Claude Opus 5.5',
     enabled: true,
     discoveredAt: '',
+    curated: true,
   };
   const api = () => fakeApi({ listModels: async () => [opus] });
 

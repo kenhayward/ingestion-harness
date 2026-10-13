@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
-import { inboxKey, JobSummarySchema } from '@ih/shared';
+import { inboxKey, isOffered, JobSummarySchema } from '@ih/shared';
 import { error, md, multipart, res } from '../openapi/zod.js';
 import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
@@ -103,7 +103,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
 
       const model = multipartField(file, 'model') || null;
       if (model) {
-        const known = (await repo.listModels()).some((m) => m.enabled && m.ref === model);
+        const known = (await repo.listModels()).some((m) => isOffered(m) && m.ref === model);
         if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
       }
 

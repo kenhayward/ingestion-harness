@@ -113,7 +113,33 @@ describe('POST /api/documents', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('accepts a discovered, enabled model override', async () => {
+  it('refuses a discovered model that was never curated', async () => {
+    const { app, repo } = await testApp();
+    repo.models = [
+      {
+        ref: 'local/qwen3-32b',
+        provider: 'local',
+        providerKind: 'openai-chat',
+        modelId: 'qwen3-32b',
+        displayName: null,
+        enabled: true,
+        discoveredAt: new Date().toISOString(),
+        curated: false,
+      },
+    ];
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/documents',
+      ...multipart(
+        { specId: 'demo', model: 'local/qwen3-32b' },
+        { filename: 'a.pdf', content: fakePdf },
+      ),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('unknown or disabled model local/qwen3-32b');
+  });
+
+  it('accepts a curated, enabled model override', async () => {
     const { app, repo } = await testApp();
     repo.models = [
       {
@@ -124,6 +150,7 @@ describe('POST /api/documents', () => {
         displayName: 'Claude Opus 5.5',
         enabled: true,
         discoveredAt: new Date().toISOString(),
+        curated: true,
       },
     ];
     const res = await app.inject({
