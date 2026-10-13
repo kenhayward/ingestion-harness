@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { OverviewItem, ReferenceRow } from '@ih/shared';
 import { ReferencesTab } from '../src/workbench/ReferencesTab.js';
-import { fakeApi, job, referenceInfo, referenceRow, templateView } from './fake-api.js';
+import {
+  fakeApi,
+  job,
+  referenceDetail,
+  referenceInfo,
+  referenceRow,
+  sampleView,
+  templateView,
+} from './fake-api.js';
 
 const definition = {
   id: 'letter',
@@ -182,5 +190,255 @@ describe('ReferencesTab', () => {
       '#/workbench/letter/steps',
     );
     expect(strip).toHaveTextContent('due_date has no step yet — add one on the Steps tab.');
+  });
+});
+
+describe('ReferencesTab samples list', () => {
+  it('groups dev and holdout samples with their line, tracker, corrections and Review link', async () => {
+    tab({
+      dev: [
+        saved('inv-0012.pdf', {
+          version: 2,
+          reverified: { from: 1, changed: [] },
+          sourceJobId: 'src-1',
+          corrections: [{ key: 'total', kind: 'corrected', proposed: '3,912.00' }],
+        }),
+        referenceRow({ filename: 'inv-0031.pdf', run: run('awaiting_review', 'j31') }),
+      ],
+      holdout: [saved('inv-0019.pdf', { carriedFrom: 1 })],
+    });
+    const list = await screen.findByRole('region', { name: 'Samples' });
+    const dev = within(list).getByRole('group', { name: 'Dev samples' });
+    expect(dev).toHaveTextContent('1 of 2 verified · run by the draft model');
+    const first = within(dev).getByRole('button', { name: /inv-0012\.pdf/ });
+    expect(first).toHaveTextContent(/Re-verified in v2 · .+ · was v1/);
+    expect(
+      within(first).getByRole('img', { name: 'Run: done · Reviewed: done · Saved: done' }),
+    ).toBeInTheDocument();
+    expect(first).toHaveTextContent('Verified');
+    expect(first).toHaveTextContent('Corrected: total');
+    const reviews = within(dev).getAllByRole('link', { name: 'Review' });
+    expect(reviews.map((a) => a.getAttribute('href'))).toEqual(['#/review/src-1', '#/review/j31']);
+    const second = within(dev).getByRole('button', { name: /inv-0031\.pdf/ });
+    expect(second).toHaveTextContent('Awaiting review');
+    expect(
+      within(second).getByRole('img', { name: 'Run: done · Reviewed: not yet · Saved: not yet' }),
+    ).toBeInTheDocument();
+    const holdout = within(list).getByRole('group', { name: 'Holdout samples' });
+    expect(holdout).toHaveTextContent('HOLDOUT');
+    expect(holdout).toHaveTextContent(
+      '1 of 1 verified · run by the live template, sealed from drafting',
+    );
+    expect(holdout).toHaveTextContent(/Carried from v1 · /);
+  });
+
+  it('filters All / Corrected / Needs you with counts', async () => {
+    tab({
+      dev: [
+        saved('a.pdf', { corrections: [{ key: 'total', kind: 'corrected', proposed: '1' }] }),
+        saved('b.pdf'),
+        referenceRow({ filename: 'c.pdf' }),
+      ],
+    });
+    const list = await screen.findByRole('region', { name: 'Samples' });
+    const all = within(list).getByRole('button', { name: 'All 3' });
+    expect(all).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(within(list).getByRole('button', { name: 'Corrected 1' }));
+    expect(within(list).getByRole('button', { name: 'Corrected 1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(list).queryByText('b.pdf')).toBeNull();
+    expect(within(list).getByText('a.pdf')).toBeInTheDocument();
+    await userEvent.click(within(list).getByRole('button', { name: 'Needs you 1' }));
+    expect(within(list).getByText('c.pdf')).toBeInTheDocument();
+    expect(within(list).queryByText('a.pdf')).toBeNull();
+  });
+
+  it('runs the template on unverified holdout samples from the holdout group, with a reason when it cannot', async () => {
+    const { api, onChanged } = tab(
+      { holdout: [referenceRow({ filename: 'h.pdf' })] },
+      { startHoldoutReferenceRuns: vi.fn(async () => [job()]) },
+    );
+    const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
+    await userEvent.click(
+      within(holdout).getByRole('button', { name: 'Run the template on 1 unverified' }),
+    );
+    expect(api.startHoldoutReferenceRuns).toHaveBeenCalledWith('letter');
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('disables the holdout run with a reason when every holdout sample is verified', async () => {
+    tab({ holdout: [saved('h.pdf')] });
+    const holdout = await screen.findByRole('group', { name: 'Holdout samples' });
+    const button = within(holdout).getByRole('button', {
+      name: 'Run the template on 0 unverified',
+    });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Every holdout sample has a verified reference');
+  });
+
+  it('names the samples not counted and links to Samples', async () => {
+    tab(
+      { dev: [saved('a.pdf')] },
+      {
+        listSamples: vi.fn(async () => [
+          sampleView({ filename: 'inv-0055.pdf', state: 'preparing' }),
+          sampleView({ filename: 'inv-0056.pdf', state: 'failed' }),
+          sampleView({ filename: 'a.pdf', state: 'ready' }),
+        ]),
+      },
+    );
+    const foot = await screen.findByText(/Not counted:/);
+    expect(foot).toHaveTextContent(
+      'Not counted: inv-0055.pdf is still preparing · inv-0056.pdf failed to prepare.',
+    );
+    expect(screen.getByRole('link', { name: 'Samples' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/samples',
+    );
+  });
+
+  it('polls while a run is active', async () => {
+    const dev = vi
+      .fn()
+      .mockResolvedValueOnce([referenceRow({ run: run('running') })])
+      .mockResolvedValue([referenceRow({ run: run('awaiting_review') })]);
+    tab(
+      {},
+      {
+        listReferenceRows: vi.fn(async (_id: string, set?: string) =>
+          set === 'holdout' ? [] : dev(),
+        ),
+      },
+    );
+    expect(await screen.findByText('Awaiting review')).toBeInTheDocument();
+  });
+});
+
+describe('ReferencesTab detail panel', () => {
+  it('opens the first saved sample and shows provenance per output, the model value struck through', async () => {
+    const a = saved('inv-0012.pdf', { sourceJobId: 'src-1' });
+    const getReferenceDetail = vi.fn(async () =>
+      referenceDetail({
+        sampleId: a.sampleId,
+        filename: 'inv-0012.pdf',
+        reference: a.reference!,
+        run: { jobId: 'src-1', modelOverride: 'draft', models: ['local/qwen'] },
+        values: [
+          {
+            id: 'sender',
+            kind: 'field',
+            value: 'Initech Ltd',
+            provenance: 'model',
+            proposed: null,
+            corrections: [],
+          },
+          {
+            id: 'total',
+            kind: 'field',
+            value: '4,694.40',
+            provenance: 'corrected',
+            proposed: '3,912.00',
+            corrections: [{ key: 'total', kind: 'corrected', proposed: '3,912.00' }],
+          },
+          {
+            id: 'due_date',
+            kind: 'field',
+            value: '2026-09-11',
+            provenance: 'entered',
+            proposed: null,
+            corrections: [{ key: 'due_date', kind: 'entered', proposed: null }],
+          },
+          {
+            id: 'line_items',
+            kind: 'table',
+            value: [{}, {}],
+            provenance: 'model',
+            proposed: null,
+            corrections: [],
+          },
+        ],
+        corrections: [
+          { key: 'total', kind: 'corrected', proposed: '3,912.00' },
+          { key: 'due_date', kind: 'entered', proposed: null },
+        ],
+      }),
+    );
+    tab({ dev: [a] }, { getReferenceDetail });
+    const panel = await screen.findByRole('complementary', { name: 'Reference inv-0012.pdf' });
+    expect(getReferenceDetail).toHaveBeenCalledWith('letter', a.sampleId);
+    expect(
+      within(screen.getByRole('region', { name: 'Samples' })).getByRole('button', {
+        name: /inv-0012\.pdf/,
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(panel).toHaveTextContent(/saved .+ by ken/);
+    expect(panel).toHaveTextContent(
+      'Run by the draft model (local/qwen) · src-1 · 2 of 4 values changed in Review',
+    );
+    const table = within(panel).getByRole('table', { name: 'Reference values' });
+    const [, sender, total, due, lines] = within(table).getAllByRole('row');
+    expect(sender).toHaveTextContent('MODEL ✓');
+    expect(within(total!).getByText('3,912.00').tagName).toBe('DEL');
+    expect(total).toHaveTextContent('CORRECTED');
+    expect(due).toHaveTextContent('BY HAND');
+    expect(lines).toHaveTextContent('2 rows');
+    expect(within(panel).getByRole('link', { name: 'Open in Review to change' })).toHaveAttribute(
+      'href',
+      '#/review/src-1',
+    );
+    expect(panel).toHaveTextContent('Saving again replaces this reference for v2.');
+  });
+
+  it('switches to a holdout sample with the sealed note', async () => {
+    const h = saved('inv-0033.pdf');
+    const getReferenceDetail = vi.fn(async (_p: string, sid: string) =>
+      referenceDetail({
+        sampleId: sid,
+        filename: 'inv-0033.pdf',
+        role: 'holdout',
+        reference: h.reference!,
+        run: { jobId: 'hj', modelOverride: null, models: [] },
+      }),
+    );
+    tab({ dev: [saved('a.pdf')], holdout: [h] }, { getReferenceDetail });
+    await userEvent.click(await screen.findByRole('button', { name: /inv-0033\.pdf/ }));
+    const panel = await screen.findByRole('complementary', { name: 'Reference inv-0033.pdf' });
+    expect(panel).toHaveAttribute('data-role', 'holdout');
+    expect(panel).toHaveTextContent('Run by the live template v1');
+    expect(panel).toHaveTextContent('Holdout values are only scored, never shown to drafting.');
+  });
+
+  it('says when the corrections are unknown', async () => {
+    const a = saved('a.pdf', { corrections: null, verifiedBy: null });
+    tab(
+      { dev: [a] },
+      {
+        getReferenceDetail: vi.fn(async () =>
+          referenceDetail({
+            sampleId: a.sampleId,
+            reference: a.reference!,
+            run: null,
+            values: [
+              {
+                id: 'sender',
+                kind: 'field',
+                value: 'x',
+                provenance: null,
+                proposed: null,
+                corrections: [],
+              },
+            ],
+            corrections: null,
+          }),
+        ),
+      },
+    );
+    const panel = await screen.findByRole('complementary', { name: 'Reference a.pdf' });
+    expect(panel).toHaveTextContent('Which values were changed in Review is not known');
+    expect(within(panel).getByRole('table', { name: 'Reference values' })).not.toHaveTextContent(
+      'MODEL ✓',
+    );
   });
 });

@@ -2068,3 +2068,118 @@ label.inline.list-select {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.refs-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+.refs-samples,
+.refs-detail {
+  min-width: 0;
+}
+.refs-samples-head,
+.refs-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.refs-samples-head {
+  justify-content: space-between;
+}
+.refs-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.refs-filter button[aria-pressed='true'] {
+  border-color: var(--ih-accent);
+  background: var(--ih-info-bg);
+}
+.refs-group {
+  margin-top: 12px;
+}
+.refs-rows {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.refs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--ih-border);
+}
+.refs-row-main {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 4px 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 4px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  text-align: left;
+}
+.refs-row-main[aria-pressed='true'] {
+  border-left-color: var(--ih-accent);
+  background: var(--ih-info-bg);
+}
+.refs-row-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.refs-row-status,
+.refs-row-corrections {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.refs-tracker {
+  display: inline-flex;
+  gap: 4px;
+}
+.refs-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ih-ok-fg);
+  border-radius: 50%;
+}
+.refs-dot.done {
+  background: var(--ih-ok-fg);
+}
+.refs-foot {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.refs-detail {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.refs-detail[data-role='holdout'] {
+  border-color: var(--ih-skip-fg);
+}
+.refs-detail[data-role='holdout'] header {
+  background: var(--ih-skip-bg);
+}
+@media (max-width: 760px) {
+  .refs-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .refs-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .refs-detail {
+    position: static;
+    max-height: none;
+  }
+}

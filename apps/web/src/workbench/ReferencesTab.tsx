@@ -3,13 +3,32 @@ import {
   outputNeeds,
   rightFirstTime,
   type DataPolicy,
+  correctionOutput,
   type OverviewItem,
+  type ReferenceDetail,
   type ReferenceRow,
+  type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Meter } from '../ui/Meter.js';
 import { TabHeader } from './TabHeader.js';
-import { isActive, readyBanner, unverifiedCount, verified } from './references.js';
+import {
+  REFERENCE_FILTERS,
+  correctionSummary,
+  isActive,
+  matchesFilter,
+  readyBanner,
+  reviewHref,
+  rowLine,
+  rowStatus,
+  shortDateTime,
+  tracker,
+  trackerLabel,
+  unverifiedCount,
+  verified,
+  type ReferenceFilter,
+} from './references.js';
+import { SampleTag } from './tags.js';
 import { useDefinitions } from './useDefinitions.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
@@ -63,13 +82,18 @@ export function ReferencesTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ReferenceFilter>('all');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [samples, setSamples] = useState<SampleView[]>([]);
 
   const refresh = useCallback(async () => {
     try {
-      const [devRows, holdout] = await Promise.all([
+      const [devRows, holdout, sampleList] = await Promise.all([
         api.listReferenceRows(projectId),
         api.listReferenceRows(projectId, 'holdout'),
+        api.listSamples(projectId).catch(() => [] as SampleView[]),
       ]);
+      setSamples(sampleList);
       setRows(devRows);
       setHoldoutRows(holdout);
       setError(null);
@@ -135,6 +159,7 @@ export function ReferencesTab({
   const banner = readyBanner(dev, holdout, version);
   const right = useMemo(() => rightFirstTime(dev, draftDef), [dev, draftDef]);
   const needs = useMemo(() => outputNeeds(dev, draftDef), [dev, draftDef]);
+  const current = selected ?? [...dev, ...holdout].find((r) => r.reference)?.sampleId ?? null;
 
   return (
     <div className="references-tab">
@@ -188,16 +213,6 @@ export function ReferencesTab({
           version={version}
           tone="skip"
           note="Extracted by the template’s own models — never seen by drafting"
-          action={
-            <button
-              type="button"
-              disabled={holdoutReason !== null}
-              title={holdoutReason ?? undefined}
-              onClick={() => void proposeHoldout()}
-            >
-              Run the template on {holdoutCount} unverified holdout
-            </button>
-          }
         />
         <section className="card refs-card">
           <h3>Right first time</h3>
@@ -222,7 +237,68 @@ export function ReferencesTab({
         </section>
       </div>
       <NeedsStrip projectId={projectId} needs={needs} samples={right.references} />
-      {/* Samples list and detail panel: Task 8 */}
+      <div className="refs-layout">
+        <section className="card refs-samples" aria-label="Samples">
+          <div className="refs-samples-head">
+            <h3>Samples</h3>
+            <div className="refs-filter" role="group" aria-label="Filter samples">
+              {REFERENCE_FILTERS.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                >
+                  {FILTER_LABEL[f]} {[...dev, ...holdout].filter((r) => matchesFilter(r, f)).length}
+                </button>
+              ))}
+            </div>
+          </div>
+          <SampleGroup
+            role="dev"
+            rows={dev}
+            filter={filter}
+            version={version}
+            selected={current}
+            onSelect={setSelected}
+            note="run by the draft model"
+          />
+          <SampleGroup
+            role="holdout"
+            rows={holdout}
+            filter={filter}
+            version={version}
+            selected={current}
+            onSelect={setSelected}
+            note="run by the live template, sealed from drafting"
+            action={
+              <button
+                type="button"
+                disabled={holdoutReason !== null}
+                title={holdoutReason ?? undefined}
+                onClick={() => void proposeHoldout()}
+              >
+                Run the template on {holdoutCount} unverified
+              </button>
+            }
+          />
+          <NotCounted projectId={projectId} samples={samples} />
+        </section>
+        {current && (
+          <ReferenceDetailPanel
+            api={api}
+            projectId={projectId}
+            sampleId={current}
+            version={version}
+            published={published}
+          />
+        )}
+      </div>
+      <p className="muted">
+        References carry over to the next version. Only those whose outputs change type, enum values
+        or columns need verifying again; renaming or describing an output does not. Holdout samples
+        are extracted by the live template’s own models and are never sent to the draft model.
+      </p>
     </div>
   );
 }
@@ -234,7 +310,6 @@ function RefCard({
   version,
   tone,
   note,
-  action,
 }: {
   title: string;
   n: number;
@@ -242,7 +317,6 @@ function RefCard({
   version: number | null;
   tone: 'ok' | 'skip';
   note: string;
-  action?: ReactNode;
 }) {
   return (
     <section className={`card refs-card${tone === 'skip' ? ' refs-card-holdout' : ''}`}>
@@ -255,7 +329,6 @@ function RefCard({
       </p>
       <Meter label={`${title} verified`} value={of ? n / of : null} tone={tone} />
       <p className="muted">{note}</p>
-      {action}
     </section>
   );
 }
@@ -301,5 +374,237 @@ function NeedsStrip({
         </p>
       )}
     </section>
+  );
+}
+
+const FILTER_LABEL = { all: 'All', corrected: 'Corrected', needs: 'Needs you' } as const;
+
+function SampleGroup({
+  role,
+  rows,
+  filter,
+  version,
+  selected,
+  onSelect,
+  note,
+  action,
+}: {
+  role: 'dev' | 'holdout';
+  rows: ReferenceRow[];
+  filter: ReferenceFilter;
+  version: number | null;
+  selected: string | null;
+  onSelect: (id: string) => void;
+  note: string;
+  action?: ReactNode;
+}) {
+  const label = role === 'dev' ? 'Dev samples' : 'Holdout samples';
+  const shown = rows.filter((r) => matchesFilter(r, filter));
+  return (
+    <div role="group" aria-label={label} className="refs-group" data-role={role}>
+      <div className="refs-group-head">
+        <SampleTag role={role} />
+        <strong>{label}</strong>
+        <span className="muted">
+          {rows.filter(verified).length} of {rows.length} verified · {note}
+        </span>
+        {action}
+      </div>
+      {shown.length === 0 ? (
+        <p className="muted">
+          {rows.length ? 'No samples match this filter.' : 'No ready samples.'}
+        </p>
+      ) : (
+        <ul className="refs-rows">
+          {shown.map((r) => {
+            const t = tracker(r);
+            const href = reviewHref(r);
+            return (
+              <li key={r.sampleId} className="refs-row">
+                <button
+                  type="button"
+                  className="refs-row-main"
+                  aria-pressed={selected === r.sampleId}
+                  disabled={!r.reference}
+                  title={r.reference ? undefined : 'No reference to show yet'}
+                  onClick={() => onSelect(r.sampleId)}
+                >
+                  <span className="refs-row-name">
+                    <code>{r.filename}</code>
+                    <small className="muted">{rowLine(r, version)}</small>
+                  </span>
+                  <span className="refs-tracker" role="img" aria-label={trackerLabel(t)}>
+                    {[t.ran, t.reviewed, t.saved].map((done, i) => (
+                      <span
+                        key={i}
+                        className={`refs-dot${done ? ' done' : ''}`}
+                        aria-hidden="true"
+                      />
+                    ))}
+                  </span>
+                  <span className="refs-row-status">{rowStatus(r)}</span>
+                  <span className="refs-row-corrections">{correctionSummary(r)}</span>
+                </button>
+                {href && <a href={href}>Review</a>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function NotCounted({ projectId, samples }: { projectId: string; samples: SampleView[] }) {
+  const parts = samples.flatMap((s) =>
+    s.state === 'preparing'
+      ? [`${s.filename} is still preparing`]
+      : s.state === 'failed'
+        ? [`${s.filename} failed to prepare`]
+        : [],
+  );
+  if (parts.length === 0) return null;
+  return (
+    <p className="refs-foot muted">
+      Not counted: {parts.join(' · ')}. <a href={`#/workbench/${projectId}/samples`}>Samples</a>
+    </p>
+  );
+}
+
+const PROVENANCE_TAG = {
+  model: { text: 'MODEL ✓', tone: 'ok' },
+  corrected: { text: 'CORRECTED', tone: 'warn' },
+  entered: { text: 'BY HAND', tone: 'info' },
+} as const;
+
+const display = (v: unknown) =>
+  v === null || v === undefined || v === '' ? '—' : typeof v === 'string' ? v : JSON.stringify(v);
+
+function runText(detail: ReferenceDetail, published: number | null) {
+  const run = detail.run;
+  if (!run) return 'The run that proposed these values is no longer there';
+  const models = run.models.length ? ` (${run.models.join(', ')})` : '';
+  const who =
+    run.modelOverride === 'draft'
+      ? `the draft model${models}`
+      : run.modelOverride === null
+        ? `the live template${published === null ? '' : ` v${published}`}${models}`
+        : `${run.modelOverride}${models}`;
+  const changed =
+    detail.corrections === null
+      ? null
+      : new Set(detail.corrections.map((c) => correctionOutput(c.key))).size;
+  return `Run by ${who} · ${run.jobId}${
+    changed === null ? '' : ` · ${changed} of ${detail.values.length} values changed in Review`
+  }`;
+}
+
+function ReferenceDetailPanel({
+  api,
+  projectId,
+  sampleId,
+  version,
+  published,
+}: {
+  api: Api;
+  projectId: string;
+  sampleId: string;
+  version: number | null;
+  published: number | null;
+}) {
+  const [detail, setDetail] = useState<ReferenceDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setDetail(null);
+    api.getReferenceDetail(projectId, sampleId).then(
+      (d) => live && (setDetail(d), setError(null)),
+      (err: Error) => live && setError(err.message),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, projectId, sampleId]);
+  if (error)
+    return (
+      <aside className="card refs-detail">
+        <p role="alert">{error}</p>
+      </aside>
+    );
+  if (!detail)
+    return (
+      <aside className="card refs-detail">
+        <p>Loading…</p>
+      </aside>
+    );
+  const r = detail.reference;
+  const holdout = detail.role === 'holdout';
+  return (
+    <aside
+      className="card refs-detail"
+      aria-label={`Reference ${detail.filename}`}
+      data-role={detail.role}
+    >
+      <header>
+        <SampleTag role={detail.role} /> <code>{detail.filename}</code>
+        <p className="muted">
+          Reference “{r.name}”{r.version !== null ? ` · v${r.version}` : ''} · saved{' '}
+          {shortDateTime(r.createdAt)}
+          {r.verifiedBy ? ` by ${r.verifiedBy}` : ''}
+        </p>
+        <p className="muted">{runText(detail, published)}</p>
+        {detail.corrections === null && (
+          <p className="muted">
+            Which values were changed in Review is not known: the run was re-run or removed after
+            the save.
+          </p>
+        )}
+      </header>
+      <div className="table-scroll">
+        <table aria-label="Reference values">
+          <thead>
+            <tr>
+              <th scope="col">Output</th>
+              <th scope="col">Value</th>
+              <th scope="col">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detail.values.map((v) => (
+              <tr key={v.id}>
+                <td>
+                  <code>{v.id}</code>
+                </td>
+                <td>
+                  {v.provenance === 'corrected' && v.kind === 'field' && (
+                    <del>{display(v.proposed)}</del>
+                  )}{' '}
+                  {v.kind === 'table'
+                    ? `${Array.isArray(v.value) ? v.value.length : 0} rows`
+                    : display(v.value)}
+                </td>
+                <td>
+                  {v.provenance && (
+                    <span className={`kind-tag tone-${PROVENANCE_TAG[v.provenance].tone}`}>
+                      {PROVENANCE_TAG[v.provenance].text}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {r.sourceJobId && (
+        <a className="button" href={`#/review/${r.sourceJobId}`}>
+          Open in Review to change
+        </a>
+      )}
+      <p className="muted">
+        {holdout
+          ? 'Holdout values are only scored, never shown to drafting.'
+          : `Saving again replaces this reference for v${version ?? '?'}.`}
+      </p>
+    </aside>
   );
 }
