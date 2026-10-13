@@ -4,6 +4,7 @@ import {
   changeTag,
   publishBlocker,
   recentTestRuns,
+  rowTableMinWidth,
   stepListSummary,
   stepSummary,
   tabCounts,
@@ -138,4 +139,23 @@ describe('changeAtText', () => {
   it('shows the day, month and time', () => {
     expect(changeAtText('2026-10-12T08:40:00.000Z')).toMatch(/^\d{1,2} Oct,? \d{2}:\d{2}$/);
   });
+});
+
+describe('rowTableMinWidth', () => {
+  it.each([
+    [[['ID', '14rem']], 'calc(2.5rem + 14rem + 9rem)'],
+    [
+      [
+        ['ID', '14rem'],
+        ['Description', undefined],
+      ],
+      'calc(2.5rem + 14rem + 10rem + 9rem)',
+    ],
+    [[], 'calc(2.5rem + 9rem)'],
+  ] as [[string, string | undefined][], string][])(
+    'adds the index, every column (10rem when flexible) and the actions',
+    (columns, expected) => {
+      expect(rowTableMinWidth(columns)).toBe(expected);
+    },
+  );
 });

@@ -3013,16 +3013,34 @@ label.inline.list-select {
   }
 }
 
-/* Template tab: Checks and Changes since vN (handoff §10) */
+/* Template tab: Checks and Changes since vN (handoff §10), a compact strip above the sub-tabs so
+   the editor below keeps the full width. */
 .template-side {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
   min-width: 0;
-  position: sticky;
-  top: calc(var(--ih-topbar-h, 0px) + 12px);
-  max-height: calc(100vh - var(--ih-topbar-h, 0px) - 24px);
+  margin: 0 0 12px;
+}
+.template-side > .card {
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: var(--ih-text-sm);
+}
+.template-side h3 {
+  margin: 0 0 4px;
+  font-size: var(--ih-text-sm);
+}
+.template-side .checks-list li {
+  padding: 2px 0;
+}
+.template-side .changes-list {
+  max-height: 7.5rem;
   overflow-y: auto;
+}
+.template-side .changes-list li {
+  padding: 4px 0;
 }
 .checks-panel {
   border-left: 4px solid var(--ih-ok-fg);
@@ -3086,12 +3104,11 @@ label.inline.list-select {
 /* Template tab: layout, Try on, Pipeline editor, unsaved bar (handoff §10) */
 .template-embedded .editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
 .template-embedded .editor-main {
   min-width: 0;
+  overflow-x: auto;
 }
 .try-on {
   display: flex;
@@ -3161,36 +3178,58 @@ label.inline.list-select {
   border: 0;
   padding: 0;
 }
-.chip-toggles,
+/* The card already pads the step form; the Templates page's step cards pad .step-body instead. */
+.step-detail .step-body {
+  padding: 12px 0 0;
+}
+.section-checks,
+.fill-chips {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+}
 .fill-chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 12px 0;
-  padding: 0;
-  border: 0;
 }
-.toggle-chip,
+.section-checks legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.section-check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* `label` is a column app-wide; these rows read box, colour, id from left to right. */
+.section-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  color: var(--ih-text);
+  font-weight: 400;
+  cursor: pointer;
+}
+.section-check input {
+  flex: none;
+  margin: 0;
+}
+.section-check code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .fill-chips .fill-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-pill);
-}
-.toggle-chip {
-  padding: 4px 10px;
-}
-.toggle-chip:has(input:checked) {
-  border-color: var(--ih-accent);
-  background: var(--ih-accent-soft);
-}
-.toggle-chip:has(input:focus-visible) {
-  outline: 2px solid var(--ih-accent);
-  outline-offset: 2px;
-}
-.fill-chips .fill-chip {
   padding: 2px 4px 2px 10px;
   background: transparent;
 }
@@ -3238,16 +3277,10 @@ label.inline.list-select {
   border-radius: var(--ih-radius-sm);
   background: var(--ih-code-bg);
 }
-@media (max-width: 1100px) {
-  .template-embedded .editor-layout {
+@media (max-width: 760px) {
+  .template-side {
     grid-template-columns: minmax(0, 1fr);
   }
-  .template-embedded .template-side {
-    position: static;
-    max-height: none;
-  }
-}
-@media (max-width: 760px) {
   .pipeline-editor {
     grid-template-columns: minmax(0, 1fr);
   }
