@@ -69,7 +69,8 @@ def _object(required: dict[str, Any]) -> dict[str, Any]:
 
 _STRING: dict[str, Any] = {"type": "string"}
 
-#: Mirrors packages/shared/src/workbench.ts SurveyBodySchema.
+#: Mirrors packages/shared/src/workbench.ts SurveyBodySchema (seenIn is optional there: older
+#: surveys have none).
 SURVEY_SCHEMA: dict[str, Any] = _object(
     {
         "summary": _STRING,
@@ -86,6 +87,7 @@ SURVEY_SCHEMA: dict[str, Any] = _object(
                     "description": _STRING,
                     "where": _STRING,
                     "kind": {"type": "string", "enum": ["field", "table"]},
+                    "seenIn": _object({"n": {"type": "integer"}, "of": {"type": "integer"}}),
                 }
             ),
         },
@@ -106,11 +108,23 @@ Task: survey these documents before anyone designs a template.
 - variants: how the samples differ (issuers, layouts, scanned vs text, blank vs executed copies,
   missing parts).
 - candidates: data worth extracting, guided by the brief: name (lowercase_snake_case), what it
-  is, where it is found, and kind = field (one value per document) or table (repeating rows).
+  is, where it is found, kind = field (one value per document) or table (repeating rows), and
+  seenIn: In how many of the samples shown here you saw it (n), of how many samples (of).
 - questions: what you need the user to decide or explain before the outputs can be designed.
 Return JSON only.""",
     SURVEY_SCHEMA,
 )
+
+
+def clamp_seen_in(body: dict[str, Any], samples: int) -> dict[str, Any]:
+    """`of` is the number of samples the model was shown, whatever it wrote; `n` stays within
+    0..of. Returns a new body (TS: SeenInSchema)."""
+    candidates = [
+        {**c, "seenIn": {"n": max(0, min(int(c["seenIn"]["n"]), samples)), "of": samples}}
+        for c in body["candidates"]
+    ]
+    return {**body, "candidates": candidates}
+
 
 STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS, REVISE)}
 #: Stages that propose changes to the current draft (so they need it).
@@ -341,6 +355,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     prompt = f"{context}\n\n{stage.instructions}"
     result, body = propose(prompt, f"draft-{stage.id}")
+    if stage.id == "survey":
+        body = clamp_seen_in(body, len(samples))
     if stage.id == "sections":
         grid, misses = anchor_check(samples, draft, body)
         if misses:

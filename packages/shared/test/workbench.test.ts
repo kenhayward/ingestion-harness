@@ -152,6 +152,22 @@ describe('drafting contracts', () => {
     expect(SurveyBodySchema.safeParse({ ...body, extra: 1 }).success).toBe(false);
   });
 
+  it('reads seenIn on a candidate, and surveys written before it', () => {
+    const candidate = { name: 'vat', description: 'VAT', where: 'totals', kind: 'field' as const };
+    const body = {
+      summary: 's',
+      structure: [],
+      variants: [],
+      candidates: [candidate],
+      questions: [],
+    };
+    expect(SurveyBodySchema.parse(body)).toEqual(body);
+    const seen = { ...body, candidates: [{ ...candidate, seenIn: { n: 3, of: 6 } }] };
+    expect(SurveyBodySchema.parse(seen)).toEqual(seen);
+    const extra = { ...body, candidates: [{ ...candidate, seenIn: { n: 3, of: 6, x: 1 } }] };
+    expect(SurveyBodySchema.safeParse(extra).success).toBe(false);
+  });
+
   it('accepts draft jobs', () => {
     expect(JobSummarySchema.shape.task.parse('draft')).toBe('draft');
   });

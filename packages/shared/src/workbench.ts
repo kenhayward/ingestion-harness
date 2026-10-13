@@ -232,6 +232,12 @@ export const AVAILABLE_STAGES: readonly DraftStage[] = [
   'revise',
 ];
 
+/** In how many of the samples the model was shown it saw a candidate (handoff SV2). */
+export const SeenInSchema = z
+  .object({ n: z.number().int().nonnegative(), of: z.number().int().nonnegative() })
+  .strict();
+export type SeenIn = z.infer<typeof SeenInSchema>;
+
 /** Body of a `survey` proposal. Mirrors worker drafting.SURVEY_SCHEMA. */
 export const SurveyBodySchema = z
   .object({
@@ -247,6 +253,8 @@ export const SurveyBodySchema = z
           description: z.string(),
           where: z.string(),
           kind: z.enum(['field', 'table']),
+          /** Written by the model since SV2; surveys stored before it have none. */
+          seenIn: SeenInSchema.optional(),
         })
         .strict(),
     ),

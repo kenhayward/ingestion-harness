@@ -14,9 +14,11 @@ from ingest_worker.drafting import (
     MAX_CONTEXT_SAMPLES,
     MAX_SAMPLE_CHARS,
     SURVEY,
+    SURVEY_SCHEMA,
     DraftSample,
     anchor_check,
     build_context,
+    clamp_seen_in,
 )
 from ingest_worker.llm.base import LLMError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
@@ -51,7 +53,13 @@ SURVEY_BODY = {
     ],
     "variants": ["Executed copy follows the blank one"],
     "candidates": [
-        {"name": "protocol_number", "description": "Id", "where": "header", "kind": "field"}
+        {
+            "name": "protocol_number",
+            "description": "Id",
+            "where": "header",
+            "kind": "field",
+            "seenIn": {"n": 1, "of": 1},
+        }
     ],
     "questions": [{"question": "Which copy?", "why": "Two copies"}],
 }
@@ -645,3 +653,37 @@ def test_revise_without_section_changes_never_segments(
 
     monkeypatch.setattr("ingest_worker.drafting.segment_with_timeout", stub)
     revise_prompt(fixture_specs_dir)
+
+
+def test_survey_schema_asks_for_seen_in_on_every_candidate() -> None:
+    item = SURVEY_SCHEMA["properties"]["candidates"]["items"]
+    assert "seenIn" in item["required"]
+    assert item["properties"]["seenIn"]["required"] == ["n", "of"]
+    assert "In how many" in SURVEY.instructions
+
+
+@pytest.mark.parametrize(
+    ("seen", "samples", "expected"),
+    [
+        ({"n": 2, "of": 3}, 3, {"n": 2, "of": 3}),
+        ({"n": 9, "of": 12}, 4, {"n": 4, "of": 4}),  # `of` is what was sent, n within it
+        ({"n": -1, "of": 2}, 2, {"n": 0, "of": 2}),
+        ({"n": 1, "of": 0}, 0, {"n": 0, "of": 0}),
+    ],
+)
+def test_clamp_seen_in(seen: dict[str, int], samples: int, expected: dict[str, int]) -> None:
+    body = {**SURVEY_BODY, "candidates": [{**SURVEY_BODY["candidates"][0], "seenIn": seen}]}
+    assert clamp_seen_in(body, samples)["candidates"][0]["seenIn"] == expected
+    assert body["candidates"][0]["seenIn"] == seen  # not mutated
+
+
+def test_survey_job_stores_seen_in_against_the_samples_sent(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    candidate = {**SURVEY_BODY["candidates"][0], "seenIn": {"n": 5, "of": 6}}
+    provider.responses = [{**SURVEY_BODY, "candidates": [candidate]}]
+    queue = FakeQueue(jobs=[draft_job()])
+
+    run_once(queue, deps, "w1")
+
+    result = json.loads(store.get("runs", drafting_key("letter", "job-d")))
+    assert result["body"]["candidates"][0]["seenIn"] == {"n": 1, "of": 1}
