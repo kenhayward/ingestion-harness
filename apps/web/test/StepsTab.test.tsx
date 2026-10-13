@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { DraftChange } from '@ih/shared';
@@ -151,6 +151,41 @@ describe('Steps tab', () => {
       'href',
       '#/workbench/letter/runs',
     );
+  });
+
+  it('ignores step figures from a draft that was superseded while loading', async () => {
+    let resolveSlow!: (m: typeof METRICS) => void;
+    const slow = new Promise<typeof METRICS>((res) => (resolveSlow = res));
+    const getMetrics = vi.fn().mockReturnValueOnce(slow).mockResolvedValue(METRICS);
+    const api = fakeApi({
+      listProposals: vi.fn(async () => []),
+      getTemplate: vi.fn(async () => templateView(BEFORE)),
+      getMetrics,
+    });
+    const props = {
+      api,
+      projectId: 'letter',
+      stage: 'steps' as const,
+      title: 'Extraction steps',
+      dataPolicy: 'local' as const,
+      hasDraft: true,
+      published: null,
+      pollMs: 1,
+      onApplied: vi.fn(),
+      onSkipped: vi.fn(),
+    };
+    const { rerender } = render(<StagePanel {...props} draft={4} />);
+    rerender(<StagePanel {...props} draft={5} />);
+    const header = await screen.findByRole('listitem', { name: 'Step 1: header' });
+    expect(await within(header).findByText('1.1')).toBeInTheDocument();
+    await act(async () =>
+      resolveSlow({
+        ...METRICS,
+        steps: [{ ...METRICS.steps[0]!, avgAttempts: 1.7 }, METRICS.steps[1]!],
+      }),
+    );
+    expect(within(header).getByText('1.1')).toBeInTheDocument();
+    expect(within(header).queryByText('1.7')).toBeNull();
   });
 
   it('says when a step has no runs yet', async () => {

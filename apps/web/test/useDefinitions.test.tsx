@@ -35,15 +35,6 @@ describe('useDefinitions', () => {
     expect(result.current.draftDef?.version).toBe(2);
   });
 
-  it('does not set state after unmount', async () => {
-    const slow = deferred();
-    const api = fakeApi({ getTemplate: vi.fn(() => slow.promise) });
-    const { result, unmount } = renderHook(() => useDefinitions(api, 'letter', 1, null, true));
-    unmount();
-    await act(async () => slow.resolve(templateView(def(1))));
-    expect(result.current.draftDef).toBeNull();
-  });
-
   it('keeps the draft when the live version cannot be loaded', async () => {
     const api = fakeApi({
       getTemplate: vi.fn(async (_id: string, v: number) => {

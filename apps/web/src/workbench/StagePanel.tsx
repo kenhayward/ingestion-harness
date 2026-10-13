@@ -171,10 +171,18 @@ export function StagePanel({
 
   useEffect(() => {
     if (stage !== 'steps' || typeof draft !== 'number') return;
+    let live = true;
     api.getMetrics(projectId).then(
-      (m) => setMetrics(m.steps),
-      () => setMetrics(null),
+      (m) => {
+        if (live) setMetrics(m.steps);
+      },
+      () => {
+        if (live) setMetrics(null);
+      },
     );
+    return () => {
+      live = false;
+    };
   }, [api, projectId, stage, draft]);
 
   const run = () => act(async () => setProposal(await api.startStage(projectId, stage)));
