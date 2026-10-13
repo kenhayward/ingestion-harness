@@ -19346,7 +19346,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Each stage's state: `pending`, `running`, `proposed` (waiting for a\ndecision), `accepted`, `skipped`, or `stale` (an earlier stage was accepted\nagain since). `references` is accepted once every ready dev sample has a verified\nreference. States are derived, never stored. `skippedAt` is the stage's latest skip, kept after\nit is run or accepted again (the Survey tab's \"You skipped this stage\" banner).",
+        "description": "Each stage's state: `pending`, `running`, `proposed` (waiting for a\ndecision), `accepted`, `skipped`, or `stale` (an earlier stage was accepted\nagain since; accepting a re-run that proposes no changes keeps the stage instead). `references`\nis accepted once every ready dev sample has a verified reference, and is never stale (an\noutputs change outdates the references it affects instead). States are derived, never stored. `skippedAt` is the stage's latest skip, kept after\nit is run or accepted again (the Survey tab's \"You skipped this stage\" banner).",
         "parameters": [
           {
             "schema": {
@@ -20531,6 +20531,360 @@
                   ],
                   "additionalProperties": true,
                   "description": "`no open draft; start the next version on the Template tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/references/{sid}/run": {
+      "post": {
+        "operationId": "startSampleReferenceRun",
+        "summary": "Run one sample again to re-verify its reference",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Queues a reference run of one ready sample, verified or not, stopping for review: a dev\nsample runs the drafting model, a holdout sample the template's own models (drafting\nnever sees holdout). Approve the run and save it as the reference to replace the\ncurrent one, which stands until then. Not blocked by the stage order.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "description": "The sample id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The queued reference run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "documentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "contentType": {
+                            "type": "string"
+                          },
+                          "specId": {
+                            "type": "string"
+                          },
+                          "specVersion": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "needs_review",
+                              "awaiting_review",
+                              "rejected",
+                              "cancelled"
+                            ]
+                          },
+                          "modelOverride": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "modelsUsed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "task": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "publish",
+                              "rerun",
+                              "prepare",
+                              "segment",
+                              "draft",
+                              "export"
+                            ]
+                          },
+                          "test": {
+                            "type": "boolean"
+                          },
+                          "referenceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "projectId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewReasons": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "documentId",
+                          "filename",
+                          "contentType",
+                          "specId",
+                          "specVersion",
+                          "status",
+                          "modelOverride",
+                          "modelsUsed",
+                          "attempts",
+                          "error",
+                          "task",
+                          "test",
+                          "referenceId",
+                          "projectId",
+                          "createdBy",
+                          "reviewReasons",
+                          "reviewer",
+                          "reviewNote",
+                          "reviewedAt",
+                          "createdAt",
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "jobs"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued reference run."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The open draft is not valid: `the draft is not valid`, with `issues`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The open draft is not valid: `the draft is not valid`, with `issues`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found` or `sample not found` (unknown or not ready).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found` or `sample not found` (unknown or not ready)."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no open draft; start the next version on the Template tab` or `a reference run of this sample is already running`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no open draft; start the next version on the Template tab` or `a reference run of this sample is already running`."
                 }
               }
             }
@@ -21955,7 +22309,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback its applied\nchanges answer (their `answers`); a proposal whose changes name none resolves all the\nfeedback it was sent.",
+        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nA proposal with no changes is accepted with `changes: []`: the draft is unchanged and\na stage that was already complete is kept (as by its `confirm`), not completed again.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback its applied\nchanges answer (their `answers`); a proposal whose changes name none resolves all the\nfeedback it was sent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21975,8 +22329,7 @@
                     "items": {
                       "type": "integer",
                       "minimum": 0
-                    },
-                    "minItems": 1
+                    }
                   }
                 },
                 "required": [

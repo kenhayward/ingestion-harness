@@ -282,6 +282,8 @@ type ProposalLike = {
   status: ProposalStatus;
   createdAt: string;
   decidedAt: string | null;
+  /** The changes applied on accepting; `[]` = accepted with none (null for a survey). */
+  acceptedChanges?: readonly number[] | null;
 };
 
 /**
@@ -294,22 +296,35 @@ export function stageStates(
   skips: StageSkip[],
   confirms: readonly StageConfirm[] = [],
 ): StageView[] {
+  // Accepting a proposal with no changes leaves the stage as it was: once the stage is complete
+  // it confirms it ("Keep") up to that moment instead of completing it again, so the stages
+  // after it do not go stale over nothing.
+  const kept: StageConfirm[] = [];
   const completions = STAGE_ORDER.map((stage) => {
-    const done = [
-      ...proposals
-        .filter(
-          (p) =>
-            p.stage === stage &&
-            (p.status === 'accepted' || p.status === 'partially_accepted') &&
-            p.decidedAt !== null,
-        )
-        .map((p) => ({ kind: 'accepted' as const, at: p.decidedAt! })),
-      ...skips
-        .filter((s) => s.stage === stage)
-        .map((s) => ({ kind: 'skipped' as const, at: s.skippedAt })),
-    ].sort((a, b) => b.at.localeCompare(a.at));
+    const decided = proposals
+      .filter(
+        (p) =>
+          p.stage === stage &&
+          (p.status === 'accepted' || p.status === 'partially_accepted') &&
+          p.decidedAt !== null,
+      )
+      .sort((a, b) => a.decidedAt!.localeCompare(b.decidedAt!));
+    const skipped = skips.filter((s) => s.stage === stage).map((s) => s.skippedAt);
+    const done: { kind: 'accepted' | 'skipped'; at: string }[] = [];
+    for (const p of decided) {
+      const at = p.decidedAt!;
+      const empty = Array.isArray(p.acceptedChanges) && p.acceptedChanges.length === 0;
+      if (empty && (done.length > 0 || skipped.some((x) => x < at))) {
+        kept.push({ stage, confirmedAt: at, upTo: at });
+      } else {
+        done.push({ kind: 'accepted', at });
+      }
+    }
+    done.push(...skipped.map((at) => ({ kind: 'skipped' as const, at })));
+    done.sort((a, b) => b.at.localeCompare(a.at));
     return done[0] ?? null;
   });
+  const allConfirms = [...confirms, ...kept];
   return STAGE_ORDER.map((stage, i) => {
     const done = completions[i] ?? null;
     const latest = proposals
@@ -319,7 +334,7 @@ export function stageStates(
       latest !== undefined &&
       (latest.status === 'running' || latest.status === 'ready') &&
       (done === null || latest.createdAt > done.at);
-    const keptUpTo = newest(confirms.filter((c) => c.stage === stage).map((c) => c.upTo));
+    const keptUpTo = newest(allConfirms.filter((c) => c.stage === stage).map((c) => c.upTo));
     const since =
       done === null ? null : keptUpTo !== null && keptUpTo > done.at ? keptUpTo : done.at;
     const stale = since !== null && completions.slice(0, i).some((c) => c !== null && c.at > since);
@@ -355,34 +370,28 @@ export function firstIncomplete(states: StageView[]): DraftStage | null {
 
 /**
  * The references stage (phase 4a) is complete once every ready dev sample has a verified
- * reference; it is derived from samples and references, not from proposals.
+ * reference; it is derived from samples and references, not from proposals. It is never stale:
+ * a reference holds the outputs' true values, which later sections or steps do not change, and
+ * an outputs change that does makes the reference itself outdated (unverified).
  */
-export function referencesStage(
-  earlier: StageView[],
-  input: {
-    devSamples: number;
-    verified: number;
-    lastVerifiedAt: string | null;
-    running: boolean;
-    hasRuns: boolean;
-    skippedAt: string | null;
-  },
-): StageView {
+export function referencesStage(input: {
+  devSamples: number;
+  verified: number;
+  lastVerifiedAt: string | null;
+  running: boolean;
+  hasRuns: boolean;
+  skippedAt: string | null;
+}): StageView {
   const verifiedAt =
     input.devSamples > 0 && input.verified >= input.devSamples ? input.lastVerifiedAt : null;
   const skipped = input.skippedAt !== null && (verifiedAt === null || input.skippedAt > verifiedAt);
   const completedAt = skipped ? input.skippedAt : verifiedAt;
-  const stale =
-    completedAt !== null &&
-    earlier.some((s) => s.completedAt !== null && s.completedAt > completedAt);
   const state: StageState = input.running
     ? 'running'
     : completedAt !== null
-      ? stale
-        ? 'stale'
-        : skipped
-          ? 'skipped'
-          : 'accepted'
+      ? skipped
+        ? 'skipped'
+        : 'accepted'
       : input.hasRuns || input.verified > 0
         ? 'proposed'
         : 'pending';

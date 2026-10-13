@@ -2216,6 +2216,12 @@ label.inline.list-select {
   overflow: auto;
   overflow-wrap: anywhere;
 }
+.refs-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .refs-detail-empty {
   text-align: center;
 }
