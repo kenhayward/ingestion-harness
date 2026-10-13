@@ -77,7 +77,7 @@ const missSetup = () =>
     })),
   });
 
-function setup(overrides = {}) {
+function setup(overrides = {}, onDirtyChange?: (dirty: boolean) => void) {
   const api = fakeApi({
     getTemplate: vi.fn(async () => templateView(definition)),
     saveTemplate: vi.fn(async (_id: string, _v: number, d: Record<string, unknown>) =>
@@ -92,7 +92,15 @@ function setup(overrides = {}) {
     })),
     ...overrides,
   });
-  render(<SectionsTab api={api} projectId="letter" draft={2} pollMs={1} />);
+  render(
+    <SectionsTab
+      api={api}
+      projectId="letter"
+      draft={2}
+      pollMs={1}
+      {...(onDirtyChange ? { onDirtyChange } : {})}
+    />,
+  );
   return api;
 }
 
@@ -323,5 +331,61 @@ describe('SectionsTab', () => {
       { timeout: 2000 },
     );
     expect(screen.getByRole('button', { name: 'Move section 1 up' })).toBeDisabled();
+  });
+
+  it('says why Save to draft is disabled', async () => {
+    setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    const save = screen.getByRole('button', { name: 'Save to draft v2' });
+    expect(save).toHaveAttribute('title', 'No unsaved changes');
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
+    expect(save).toHaveAttribute('title', 'Waiting for the preview');
+    await userEvent.click(screen.getByRole('button', { name: 'Add section' }));
+    expect(save).toHaveAttribute(
+      'title',
+      'Every section needs an id and an anchor; ids must differ',
+    );
+  });
+
+  it('gives the slow-anchor reason as the Save title', async () => {
+    const api = setup();
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    api.startSegmentation = vi.fn(async () =>
+      segmentationView({
+        jobId: 'j2',
+        status: 'needs_review',
+        error: 'preview took longer than 10s; an anchor may backtrack catastrophically',
+      }),
+    );
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), '+');
+    await screen.findByRole('alert', {}, { timeout: 2000 });
+    expect(screen.getByRole('button', { name: 'Save to draft v2' })).toHaveAttribute(
+      'title',
+      'Fix the slow anchor to save',
+    );
+  });
+
+  it('hides the suggestion while a newer edit is waiting for its preview', async () => {
+    missSetup();
+    const hint = await screen.findByRole('note', { name: 'supplier not found' });
+    expect(within(hint).getByRole('button', { name: /^Use / })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Anchor of section 2'), 'x');
+    expect(
+      within(screen.getByRole('note', { name: 'supplier not found' })).queryByRole('button', {
+        name: /^Use /,
+      }),
+    ).toBeNull();
+  });
+
+  it('reports unsaved anchors to the page, and clears them after saving', async () => {
+    const onDirtyChange = vi.fn();
+    setup({}, onDirtyChange);
+    await screen.findByRole('button', { name: 'a.pdf · all' });
+    await userEvent.type(screen.getByLabelText('Anchor of section 1'), 'x');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    const save = screen.getByRole('button', { name: 'Save to draft v2' });
+    await waitFor(() => expect(save).toBeEnabled(), { timeout: 2000 });
+    await userEvent.click(save);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
   });
 });

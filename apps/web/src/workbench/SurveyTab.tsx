@@ -111,6 +111,7 @@ export function SurveyTab({
   const body = proposal ? surveyBodyOf(proposal) : null;
   const saved = brief?.body.answers ?? [];
   const progress = body ? answerProgress(body.questions, saved, typed) : null;
+  const unsavedAnswers = (progress?.unsaved.length ?? 0) > 0;
   const banner = skipBanner(stages, proposal ?? null);
   const savedAnswer = (q: string) => saved.find((a) => a.question === q)?.answer ?? '';
 
@@ -138,7 +139,7 @@ export function SurveyTab({
       );
       const next = await api.saveBrief(projectId, {
         ...base,
-        answers: [...kept, ...progress.unsaved],
+        answers: [...kept, ...progress.unsaved.filter((u) => u.answer !== '')],
       });
       onBriefSaved(next);
       setTyped({});
@@ -150,7 +151,8 @@ export function SurveyTab({
       <button
         type="button"
         className={proposal ? undefined : 'primary'}
-        disabled={running || busy}
+        disabled={running || busy || unsavedAnswers}
+        title={unsavedAnswers ? 'Save your answers first' : undefined}
         onClick={() => void run()}
       >
         {proposal ? 'Run again' : 'Run survey'}
@@ -240,6 +242,7 @@ export function SurveyTab({
                   <button
                     type="button"
                     disabled={progress.unsaved.length === 0 || busy}
+                    title={progress.unsaved.length === 0 ? 'Type an answer first' : undefined}
                     onClick={() => void saveAnswers()}
                   >
                     {saveAnswersLabel(progress.unsaved.length, (brief?.version ?? 0) + 1)}

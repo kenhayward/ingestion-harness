@@ -97,6 +97,7 @@ export function StagePanel({
   published = null,
   briefVersion = null,
   canSkip = true,
+  blockedReason = null,
   title,
   item = null,
   now = Date.now(),
@@ -121,6 +122,8 @@ export function StagePanel({
   briefVersion?: number | null;
   /** False for stages the API refuses to skip (revise). */
   canSkip?: boolean;
+  /** Keep and Apply are disabled with this reason (the Sections tab has unsaved anchors). */
+  blockedReason?: string | null;
   /** With a title the panel opens with the tab header (Propose and Skip as its actions). */
   title?: string;
   item?: OverviewItem | null;
@@ -317,6 +320,7 @@ export function StagePanel({
         onApply={() => void accept()}
         onReject={() => void reject()}
         busy={busy}
+        applyBlockedReason={blockedReason}
         now={now}
         note={anchorLine}
         next={nextStep}
@@ -363,7 +367,12 @@ export function StagePanel({
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
       {title !== undefined && item?.state === 'stale' && stage !== 'revise' && (
-        <StaleBanner onKeep={() => void keep()} keepLabel={KEEP[stage].label} busy={busy}>
+        <StaleBanner
+          onKeep={() => void keep()}
+          keepLabel={KEEP[stage].label}
+          busy={busy}
+          keepBlockedReason={blockedReason}
+        >
           {item.status}. {KEEP[stage].text}
         </StaleBanner>
       )}

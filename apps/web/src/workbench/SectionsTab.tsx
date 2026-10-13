@@ -50,11 +50,14 @@ export function SectionsTab({
   projectId,
   draft,
   pollMs,
+  onDirtyChange,
 }: {
   api: Api;
   projectId: string;
   draft: number | null;
   pollMs: number;
+  /** Reports whether there are unsaved anchor edits (false again on unmount). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [copies, setCopies] = useState<Copies>(null);
@@ -117,6 +120,14 @@ export function SectionsTab({
     [],
   );
 
+  const dirtyNow = rows !== null && JSON.stringify(candidate(rows, copies, pageMarkers)) !== saved;
+  const reportDirty = useRef(onDirtyChange);
+  reportDirty.current = onDirtyChange;
+  useEffect(() => {
+    reportDirty.current?.(dirtyNow);
+  }, [dirtyNow]);
+  useEffect(() => () => reportDirty.current?.(false), []);
+
   const result = view?.result ?? null;
   useEffect(() => {
     if (!result) return;
@@ -140,6 +151,20 @@ export function SectionsTab({
   // The worker reports an anchor that is not a valid regular expression.
   const invalidAnchor = Object.keys(view?.result?.anchorErrors ?? {}).length > 0;
   const settling = pending || running;
+  // Why Save is disabled, in the order the user can fix things.
+  const saveBlocked = saving
+    ? 'Saving…'
+    : invalidAnchor
+      ? 'Fix the invalid anchor to save'
+      : slowAnchor
+        ? 'Fix the slow anchor to save'
+        : !complete
+          ? 'Every section needs an id and an anchor; ids must differ'
+          : settling
+            ? 'Waiting for the preview'
+            : !dirty
+              ? 'No unsaved changes'
+              : undefined;
 
   const edit = (nextRows: Row[], nextCopies: Copies = copies) => {
     setRows(nextRows);
@@ -243,16 +268,8 @@ export function SectionsTab({
                   type="button"
                   className={dirty ? 'primary' : undefined}
                   onClick={() => void save()}
-                  disabled={
-                    !dirty || !complete || saving || slowAnchor || invalidAnchor || settling
-                  }
-                  title={
-                    invalidAnchor
-                      ? 'Fix the invalid anchor to save'
-                      : settling
-                        ? 'Waiting for the preview'
-                        : undefined
-                  }
+                  disabled={saveBlocked !== undefined}
+                  title={saveBlocked}
                 >
                   Save to draft v{draft}
                 </button>
@@ -423,7 +440,7 @@ export function SectionsTab({
                     ? suggestion.reason
                     : 'No other way of writing its label starts a line in this sample; edit the anchor by hand.'}
                 </p>
-                {suggestion && (
+                {suggestion && !settling && (
                   <button type="button" onClick={() => applySuggestion(suggestion)}>
                     Use <code>{suggestion.anchor}</code>
                   </button>

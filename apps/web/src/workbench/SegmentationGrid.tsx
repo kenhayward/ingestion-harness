@@ -18,7 +18,7 @@ const LEGEND = [
 /** Samples × sections (handoff §5): where each anchor lands; a cell selects sample + section. */
 export function SegmentationGrid({
   result,
-  sections,
+  sections: rawSections,
   samples,
   onOpen,
   selected = null,
@@ -29,6 +29,11 @@ export function SegmentationGrid({
   onOpen: (sampleId: string, sectionId: string) => void;
   selected?: Selection | null;
 }) {
+  // Only columns with a usable id: a new row (empty id) or a repeated one has no column yet.
+  const sections = rawSections.filter(
+    (s, i) => s.id && rawSections.findIndex((o) => o.id === s.id) === i,
+  );
+  const seen = new Set(result.samples.flatMap((r) => r.sections.map((c) => c.id)));
   const byId = new Map(samples.map((s) => [s.id, s]));
   const errors = Object.entries(result.anchorErrors);
   return (
@@ -55,19 +60,29 @@ export function SegmentationGrid({
           <thead>
             <tr>
               <th scope="col">Sample</th>
-              {sections.map((s) => {
+              {sections.map((s, col) => {
+                // A section the preview has not run yet (renamed or new) is pending, not 0 hits.
+                const pending = !seen.has(s.id);
                 const { hits, of } = sectionHits(result, s.id);
-                const short = s.required && hits < of;
+                const short = !pending && s.required && hits < of;
                 return (
                   <th
-                    key={s.id}
+                    key={col}
                     scope="col"
-                    aria-label={`${s.id}, matched in ${hits} of ${of} samples`}
+                    aria-label={
+                      pending
+                        ? `${s.id}, not in the preview yet`
+                        : `${s.id}, matched in ${hits} of ${of} samples`
+                    }
                   >
                     <code>{s.id}</code>{' '}
-                    <small
-                      className={short ? 'tone-text-danger' : 'tone-text-ok'}
-                    >{`${hits}/${of}`}</small>
+                    {pending ? (
+                      <small className="muted">–</small>
+                    ) : (
+                      <small
+                        className={short ? 'tone-text-danger' : 'tone-text-ok'}
+                      >{`${hits}/${of}`}</small>
+                    )}
                   </th>
                 );
               })}
@@ -87,13 +102,13 @@ export function SegmentationGrid({
                       {row.error}
                     </td>
                   ) : (
-                    sections.map((s) => {
+                    sections.map((s, col) => {
                       const cell = row.sections.find((c) => c.id === s.id);
                       const flag = cell ? cellFlag(cell, s.required, row, sections.length) : null;
                       const state = cell === undefined ? null : (flag ?? 'found');
-                      const descId = `seg-${row.sampleId}-${s.id}`;
+                      const descId = `seg-${row.sampleId}-${col}`;
                       return (
-                        <td key={s.id} className={state ? `cell-${state}` : undefined}>
+                        <td key={col} className={state ? `cell-${state}` : undefined}>
                           <button
                             type="button"
                             className="seg-cell"

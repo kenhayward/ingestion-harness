@@ -30,11 +30,11 @@ describe('answerProgress', () => {
       [],
     ],
     [
-      'clearing a saved answer unanswers it, and is not saved',
+      'clearing a saved answer unanswers it, and is saved as a removal',
       [{ question: 'A?', answer: 'x' }],
       { 'A?': '' },
       0,
-      [],
+      ['A?'],
     ],
     ['blank typing is not an answer', [], { 'C?': '   ' }, 0, []],
   ])('%s', (_name, saved, typed, answered, unsaved) => {

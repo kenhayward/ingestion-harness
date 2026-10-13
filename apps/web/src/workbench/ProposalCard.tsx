@@ -45,6 +45,7 @@ export function ProposalCard({
   onApply,
   onReject,
   busy,
+  applyBlockedReason,
   now,
   note,
   next,
@@ -60,6 +61,8 @@ export function ProposalCard({
   onApply: () => void;
   onReject: () => void;
   busy: boolean;
+  /** Apply is disabled and this says why (e.g. unsaved edits elsewhere). */
+  applyBlockedReason?: string | null;
   now: number;
   /** A muted line under a change (sections: where the anchor was found). */
   note?: (c: DraftChange) => string | null;
@@ -176,7 +179,10 @@ export function ProposalCard({
         <button
           type="button"
           className="primary"
-          disabled={busy || selected.size === 0}
+          disabled={busy || selected.size === 0 || !!applyBlockedReason}
+          title={
+            applyBlockedReason ?? (selected.size === 0 ? 'Select a change to apply' : undefined)
+          }
           onClick={onApply}
         >
           Apply {selected.size} selected {selected.size === 1 ? 'change' : 'changes'}

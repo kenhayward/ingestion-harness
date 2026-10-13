@@ -24,12 +24,12 @@ describe('SampleText marks', () => {
     expect(mark).toHaveTextContent('▶ header starts here');
   });
 
-  it('keeps a line’s leading spaces and wraps long lines', async () => {
+  it('keeps a line’s leading spaces and scrolls long lines', async () => {
     show('intro\n        TEM-290\nend', [{ page: 1, line: 'TEM-290', label: 'item' }]);
     const note = await screen.findByRole('note', { name: 'item starts here' });
     const pre = note.closest('pre')!;
     expect(pre.textContent).toContain('\n        TEM-290\n');
-    expect(pre).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+    expect(pre).toHaveStyle({ whiteSpace: 'pre', overflowX: 'auto' });
   });
 
   it('scrolls the focused section start into view', async () => {
@@ -59,7 +59,7 @@ describe('SampleText marks', () => {
     show('intro\n        TEM-290\nend', []);
     const pre = (await screen.findByText(/TEM-290/)).closest('pre')!;
     expect(pre.textContent).toBe('intro\n        TEM-290\nend');
-    expect(pre).toHaveStyle({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+    expect(pre).toHaveStyle({ whiteSpace: 'pre', overflowX: 'auto' });
   });
 
   it('prefers an exact line match over an earlier line that merely starts with the mark', async () => {

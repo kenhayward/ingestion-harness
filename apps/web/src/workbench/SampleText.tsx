@@ -7,10 +7,21 @@ export type TextMark = { page: number; line: string; label: string; color?: stri
 /** With page markers on, a section starting at a page top reports this line. */
 const PAGE_MARKER = /^\[page \d+\]$/;
 
-/** Indentation matters when an anchor misses: show it, and wrap long lines. */
-const PRE_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const;
+/** Samples preview: wrap long lines. */
+const WRAP_STYLE = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } as const;
+/** Sections panel: indentation matters when an anchor misses, so never wrap it away; scroll. */
+const SCROLL_STYLE = { whiteSpace: 'pre', overflowX: 'auto' } as const;
 
-function PageBody({ text, marks }: { text: string; marks: Omit<TextMark, 'page'>[] }) {
+function PageBody({
+  text,
+  marks,
+  wrap,
+}: {
+  text: string;
+  marks: Omit<TextMark, 'page'>[];
+  wrap: boolean;
+}) {
+  const PRE_STYLE = wrap ? WRAP_STYLE : SCROLL_STYLE;
   if (!marks.length) return <pre style={PRE_STYLE}>{text}</pre>;
   const lines = text.split('\n');
   const used = new Set<string>();
@@ -118,6 +129,7 @@ export function SampleText({
               text={`[page ${current.number}]
 ${current.text}`}
               marks={(marks ?? []).filter((m) => m.page === current.number)}
+              wrap
             />
           </section>
         )}
@@ -132,7 +144,11 @@ ${current.text}`}
             Page {p.number}
             {p.ocr && <small className="badge"> OCR</small>}
           </h4>
-          <PageBody text={p.text} marks={(marks ?? []).filter((m) => m.page === p.number)} />
+          <PageBody
+            text={p.text}
+            marks={(marks ?? []).filter((m) => m.page === p.number)}
+            wrap={false}
+          />
         </section>
       ))}
     </div>

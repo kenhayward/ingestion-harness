@@ -126,4 +126,36 @@ describe('SegmentationGrid', () => {
     expect(legend).toHaveTextContent('Missing (required)');
     expect(legend).toHaveTextContent('Missing (optional)');
   });
+
+  it('keeps one column and unique DOM ids when section ids are empty or repeated', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repeated = [
+      { id: 'header', required: true },
+      { id: '', required: true },
+      { id: 'header', required: true },
+      { id: '', required: false },
+    ];
+    const { container } = render(
+      <SegmentationGrid result={result} sections={repeated} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    const ids = [...container.querySelectorAll('[id]')].map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(screen.getAllByRole('button', { name: 'a.pdf · header' })).toHaveLength(1);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(2); // Sample + header
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    errors.mockRestore();
+  });
+
+  it('shows a section the preview has not seen as pending, not as 0 hits', () => {
+    const renamed = [
+      { id: 'header', required: true },
+      { id: 'totalz', required: true },
+    ];
+    render(
+      <SegmentationGrid result={result} sections={renamed} samples={[a, b]} onOpen={vi.fn()} />,
+    );
+    const head = screen.getByRole('columnheader', { name: /totalz/ });
+    expect(head).toHaveAccessibleName('totalz, not in the preview yet');
+    expect(head.querySelector('.tone-text-danger')).toBeNull();
+  });
 });

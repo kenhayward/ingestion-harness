@@ -123,6 +123,48 @@ describe('SurveyTab', () => {
     expect(onBriefSaved).toHaveBeenCalledWith(saved);
   });
 
+  it('explains why Save answers and Run again are disabled', async () => {
+    tab({ listProposals: vi.fn(async () => [proposalView()]) });
+    const save = await screen.findByRole('button', { name: 'Save answers to brief (v3)' });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute('title', 'Type an answer first');
+    expect(screen.getByRole('button', { name: 'Run again' })).toBeEnabled();
+    await userEvent.type(screen.getByLabelText('Which copy should be extracted?'), 'Executed');
+    const again = screen.getByRole('button', { name: 'Run again' });
+    expect(again).toBeDisabled();
+    expect(again).toHaveAttribute('title', 'Save your answers first');
+    expect(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' })).not.toHaveAttribute(
+      'title',
+    );
+  });
+
+  it('clears a saved answer by saving it blank', async () => {
+    const answered = {
+      ...brief,
+      body: {
+        ...brief.body,
+        answers: [{ question: 'Which copy should be extracted?', answer: 'Executed' }],
+      },
+    };
+    const api = fakeApi({
+      listProposals: vi.fn(async () => [proposalView()]),
+      saveBrief: vi.fn(async () => ({ ...answered, version: 3 })),
+    });
+    render(
+      <SurveyTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        brief={answered}
+        onBriefSaved={vi.fn()}
+        pollMs={1}
+      />,
+    );
+    await userEvent.clear(await screen.findByLabelText('Which copy should be extracted?'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
+    expect(api.saveBrief).toHaveBeenCalledWith('letter', { ...answered.body, answers: [] });
+  });
+
   it('accepts a ready survey', async () => {
     const p = proposalView();
     const { api } = tab({

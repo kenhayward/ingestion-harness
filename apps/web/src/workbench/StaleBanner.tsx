@@ -12,6 +12,7 @@ export function StaleBanner({
   keepLabel = 'Keep',
   onPropose,
   busy = false,
+  keepBlockedReason,
 }: {
   children: ReactNode;
   tone?: 'alert' | 'info' | 'skip';
@@ -19,6 +20,8 @@ export function StaleBanner({
   keepLabel?: string;
   onPropose?: () => void;
   busy?: boolean;
+  /** Keep is disabled and this says why (e.g. unsaved edits). */
+  keepBlockedReason?: string | null;
 }) {
   return (
     <div className="stale-banner" role="note" data-tone={tone}>
@@ -28,7 +31,12 @@ export function StaleBanner({
       {(onKeep || onPropose) && (
         <div className="stale-banner-actions">
           {onKeep && (
-            <button type="button" disabled={busy} onClick={onKeep}>
+            <button
+              type="button"
+              disabled={busy || !!keepBlockedReason}
+              title={keepBlockedReason ?? undefined}
+              onClick={onKeep}
+            >
               {keepLabel}
             </button>
           )}

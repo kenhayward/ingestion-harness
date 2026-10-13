@@ -12,7 +12,7 @@ import { plural } from './samples.js';
 export interface AnswerProgress {
   answered: number;
   of: number;
-  /** Typed answers that differ from the brief's (trimmed): what Save writes. */
+  /** Typed answers that differ from the brief's (trimmed): what Save writes; blank = remove. */
   unsaved: { question: string; answer: string }[];
 }
 
@@ -28,8 +28,9 @@ export function answerProgress(
     answered: shown.filter((a) => a.trim() !== '').length,
     of: questions.length,
     unsaved: questions
+      .filter((q) => typed[q.question] !== undefined)
       .map((q) => ({ question: q.question, answer: (typed[q.question] ?? '').trim() }))
-      .filter((a) => a.answer !== '' && a.answer !== savedAnswer(a.question)),
+      .filter((a) => a.answer !== savedAnswer(a.question)),
   };
 }
 

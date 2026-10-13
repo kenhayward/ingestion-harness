@@ -346,6 +346,31 @@ describe('StagePanel', () => {
     expect(onApplied).not.toHaveBeenCalled();
   });
 
+  it('blocks Keep and Apply with a reason while the caller holds unsaved edits', async () => {
+    const stale = {
+      stage: 'sections' as const,
+      state: 'stale' as const,
+      status: 'Stale — Outputs changed',
+      metrics: [],
+    };
+    const { api } = panel(
+      { listProposals: vi.fn(async () => [changeProposalView({ stage: 'sections' })]) },
+      {
+        stage: 'sections',
+        title: 'Sections',
+        item: stale,
+        blockedReason: 'Save your anchors first',
+      },
+    );
+    const keep = await screen.findByRole('button', { name: 'Keep these anchors' });
+    expect(keep).toBeDisabled();
+    expect(keep).toHaveAttribute('title', 'Save your anchors first');
+    const apply = screen.getByRole('button', { name: /^Apply \d+ selected change/ });
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveAttribute('title', 'Save your anchors first');
+    expect(api.confirmStage).not.toHaveBeenCalled();
+  });
+
   it('says why keeping failed', async () => {
     panel(
       {
