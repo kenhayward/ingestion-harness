@@ -1,9 +1,15 @@
+import { createHash } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import {
+  EMPTY_BRIEF,
   draftingKey,
   exportKey,
   preparedTriageKey,
   type ExportView,
+  type ProjectSummary,
+  type ProjectView,
   type ProposalView,
   type SampleView,
 } from '@ih/shared';
@@ -304,5 +310,161 @@ describe('export of a local-only project', () => {
     });
     expect(policy.statusCode).toBe(200);
     expect((await ctx.start(user)).statusCode).toBe(202);
+  });
+});
+
+const pdfBytes = (n: number) => Buffer.from(`%PDF-1.7\n% bundle ${n}\n%%EOF\n`);
+const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+const memoYaml = 'id: memo\nversion: 3\nname: Memo\noutputs:\n  fields: []\n  tables: []\n';
+const samplePath = `samples/${sha(pdfBytes(1))}.pdf`;
+
+function bundleFiles(overrides: { manifest?: object; files?: Record<string, Uint8Array> } = {}) {
+  const pdf = pdfBytes(1);
+  const manifest = {
+    format: 'ih-workbench-bundle',
+    formatVersion: 1,
+    project: { id: 'memo', name: 'Memo' },
+    templateVersion: 3,
+    briefVersion: 2,
+    samples: [
+      { sampleId: 'x', filename: 'm1.pdf', sha256: sha(pdf), file: samplePath, inContext: true },
+    ],
+    stages: ['survey'],
+    ...overrides.manifest,
+  };
+  return {
+    'manifest.json': strToU8(JSON.stringify(manifest)),
+    'brief.json': strToU8(JSON.stringify({ purpose: 'Memos' })),
+    'template.yaml': strToU8(memoYaml),
+    [samplePath]: new Uint8Array(pdf),
+    ...overrides.files,
+  } as Record<string, Uint8Array>;
+}
+
+const bundle = (overrides: Parameters<typeof bundleFiles>[0] = {}) =>
+  Buffer.from(zipSync(bundleFiles(overrides)));
+
+/** A bundle with one entry left out. */
+function bundleWithout(name: string) {
+  const files = bundleFiles();
+  delete files[name];
+  return Buffer.from(zipSync(files));
+}
+
+const importBundle = (app: FastifyInstance, zip: Buffer, fields: Record<string, string> = {}) =>
+  app.inject({
+    method: 'POST',
+    url: '/api/workbench/projects/import',
+    ...multipart(fields, { filename: 'b.zip', content: zip, contentType: 'application/zip' }),
+  });
+
+describe('import', () => {
+  it('imports a bundle as a new project with a v1 draft, the brief and dev samples', async () => {
+    const { app, repo, store, templates } = await testApp();
+    const res = await importBundle(app, bundle());
+    expect(res.statusCode).toBe(201);
+    const view = res.json() as ProjectView;
+    expect(view.project).toMatchObject({ id: 'memo', name: 'Memo', dataPolicy: 'local' });
+    expect(view.draft).toBe(1);
+    expect(view.brief?.body).toEqual({ ...EMPTY_BRIEF, purpose: 'Memos' });
+
+    const record = await templates.get('memo', 1);
+    expect(record?.status).toBe('draft');
+    expect(record?.definition).toEqual({
+      id: 'memo',
+      version: 1,
+      name: 'Memo',
+      outputs: { fields: [], tables: [] },
+    });
+
+    const samples = (
+      await app.inject('/api/workbench/projects/memo/samples')
+    ).json() as SampleView[];
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toMatchObject({ filename: 'm1.pdf', role: 'dev', state: 'preparing' });
+    const job = repo.jobs.get(samples[0]!.prepareJobId!)!;
+    expect(job).toMatchObject({ task: 'prepare', status: 'queued' });
+    const doc = repo.documents.get(samples[0]!.documentId)!;
+    expect(await store.get(doc.bucket, doc.objectKey)).toEqual(pdfBytes(1));
+  });
+
+  it('takes the id and name fields over the manifest', async () => {
+    const { app, templates } = await testApp();
+    const res = await importBundle(app, bundle(), { id: 'memo2', name: 'Memo copy' });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as ProjectView).project).toMatchObject({ id: 'memo2', name: 'Memo copy' });
+    expect((await templates.get('memo2', 1))?.definition).toMatchObject({
+      id: 'memo2',
+      version: 1,
+    });
+    expect(await templates.get('memo', 1)).toBeNull();
+  });
+
+  it.each(['project', 'document type'])(
+    'refuses an id that is already a %s here, writing nothing',
+    async (kind) => {
+      const { app, repo, store, templates, workbench } = await testApp();
+      if (kind === 'project') await workbench.createProject('memo', 'Memo');
+      else await templates.create('memo', 1, { id: 'memo', version: 1, name: 'Memo' }, 'draft');
+      const counts = async () => ({
+        templates: (await templates.list()).length,
+        projects: (await workbench.listProjects()).length,
+        objects: store.objects.size,
+        jobs: repo.jobs.size,
+      });
+      const before = await counts();
+      const res = await importBundle(app, bundle());
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('memo already exists here; import under another id');
+      expect(await counts()).toEqual(before);
+    },
+  );
+
+  const otherPdf = new Uint8Array(Buffer.from('%PDF-1.7\n% not the listed bytes\n%%EOF\n'));
+  it.each<[string, () => Buffer, Record<string, string>, RegExp]>([
+    ['not a zip', () => Buffer.from('nope'), {}, /^not a valid bundle \(zip\)$/],
+    ['formatVersion 2', () => bundle({ manifest: { formatVersion: 2 } }), {}, /^manifest\.json: /],
+    ['no manifest.json', () => bundleWithout('manifest.json'), {}, /^manifest\.json: /],
+    [
+      'a PDF that does not match its sha256',
+      () => bundle({ files: { [samplePath]: otherPdf } }),
+      {},
+      /^sample m1\.pdf: /,
+    ],
+    [
+      'a listed sample missing from the zip',
+      () => bundleWithout(samplePath),
+      {},
+      /^sample m1\.pdf: /,
+    ],
+    [
+      'template.yaml that is not a mapping',
+      () => bundle({ files: { 'template.yaml': strToU8('- a\n- b\n') } }),
+      {},
+      /^template\.yaml is not a template mapping$/,
+    ],
+    ['an invalid id field', () => bundle(), { id: 'Bad Id' }, /^id: /],
+  ])('rejects %s with 400 and writes nothing', async (_label, zip, fields, error) => {
+    const { app, repo, store, templates } = await testApp();
+    const res = await importBundle(app, zip(), fields);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(error);
+    const projects = (await app.inject('/api/workbench/projects')).json() as ProjectSummary[];
+    expect(projects.map((p) => p.id)).not.toContain('memo');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+
+  it('rejects a bundle whose uncompressed size is past the limit', async () => {
+    const { app, store, templates } = await testApp({ maxUploadBytes: 1024 });
+    // The upload limit is 1024 * MAX_SAMPLES (12); unzipped, twice that: 24 KiB.
+    const zip = bundle({ files: { 'padding.bin': new Uint8Array(64 * 1024) } });
+    expect(zip.length).toBeLessThan(1024 * 12);
+    const res = await importBundle(app, zip);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle is too large');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
   });
 });
