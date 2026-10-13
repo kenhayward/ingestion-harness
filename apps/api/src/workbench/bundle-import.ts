@@ -45,9 +45,14 @@ export interface ReadBundleOptions {
   /** Bytes actually inflated across all entries. */
   maxInflated: number;
   maxEntries: number;
+  /** Bytes of metadata entries held in memory, in total (default `BUNDLE_TEXT_ALLOWANCE`). */
+  maxMetadata?: number;
   /** Where the temp dir is made (default: the OS temp dir). */
   tmpRoot?: string;
 }
+
+/** Room for the small text entries (manifest, brief, template, survey) beside the PDFs. */
+export const BUNDLE_TEXT_ALLOWANCE = 8 * 1024 * 1024;
 
 const METADATA = new Set(['manifest.json', 'brief.json', 'template.yaml', 'survey.json']);
 const SAMPLE = /^samples\/[^/]+\.pdf$/;
@@ -101,10 +106,17 @@ async function unzipInto(
     }
   };
 
+  const maxMetadata = opts.maxMetadata ?? BUNDLE_TEXT_ALLOWANCE;
+  /** Metadata bytes held in memory, across every metadata entry. */
+  let metadata = 0;
   const metadataSink = (name: string): Sink => {
     const chunks: Uint8Array[] = [];
     return {
-      write: (data) => chunks.push(data),
+      write: (data) => {
+        metadata += data.length;
+        if (metadata > maxMetadata) throw tooLarge;
+        chunks.push(data);
+      },
       end: () => text.set(name, Buffer.concat(chunks)),
       abort: () => {},
     };
@@ -145,8 +157,14 @@ async function unzipInto(
         samples.set(name, { path, sha256, size, head });
       },
       abort: () => {
-        if (fd !== null) closeSync(fd);
+        const open = fd;
         fd = null;
+        if (open === null) return;
+        try {
+          closeSync(open);
+        } catch {
+          // Already failing: the refusal (or I/O error) being thrown is the one to report.
+        }
       },
     };
   };

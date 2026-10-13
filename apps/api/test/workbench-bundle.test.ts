@@ -21,7 +21,7 @@ import { MemoryAccessRepo } from '../src/access/repo.js';
 import type { AppDeps } from '../src/app.js';
 import { TemplateConflictError } from '../src/templates/repo.js';
 import { WorkbenchConflictError } from '../src/workbench/repo.js';
-import { BundleError, readBundle } from '../src/workbench/bundle-import.js';
+import { BundleError, readBundle, type ReadBundleOptions } from '../src/workbench/bundle-import.js';
 import { acceptedSurvey } from '../src/routes/workbench.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -767,6 +767,33 @@ describe('import', () => {
     expect(await tmpEntries()).toEqual(before);
   });
 
+  it('refuses metadata entries past the text allowance with 400', async () => {
+    const { app, repo, store, templates } = await testApp();
+    // Whitespace before the JSON: valid, and tiny once compressed, but 9 MiB in memory.
+    const padded = strToU8(`${' '.repeat(9 * 1024 * 1024)}{}`);
+    const res = await importBundle(app, bundle({ files: { 'survey.json': padded } }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle is too large');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+
+  it('refuses an upload over the bundle limit with 400 and leaves no temp dir', async () => {
+    // The limit is maxUploadBytes * MAX_SAMPLES + 8 MiB. Busboy stops the file at that size and
+    // ends the stream as `truncated`; @fastify/multipart only throws RequestFileTooLargeError
+    // (413) from toBuffer(), which the streaming import does not use.
+    const { app, repo, store, templates } = await testApp({ maxUploadBytes: 1024 });
+    const before = await tmpEntries();
+    const res = await importBundle(app, Buffer.alloc(8 * 1024 * 1024 + 64 * 1024));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle is too large');
+    expect(await tmpEntries()).toEqual(before);
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+
   it('refuses a sample over the upload limit while streaming it', async () => {
     const { app, repo, store, templates } = await testApp({ maxUploadBytes: 1024 });
     const res = await importBundle(app, bundle({ samples: [pdf4KiB] }));
@@ -780,7 +807,7 @@ describe('import', () => {
 
 describe('readBundle', () => {
   const opts = { maxUploadBytes: 1024 * 1024, maxInflated: 64 * 1024 * 1024, maxEntries: 40 };
-  const read = (zip: Uint8Array, over: Partial<typeof opts> = {}) =>
+  const read = (zip: Uint8Array, over: Partial<ReadBundleOptions> = {}) =>
     readBundle(Readable.from([Buffer.from(zip)]), { ...opts, ...over });
 
   it('keeps the metadata in memory and each sample PDF in a temp file', async () => {
@@ -817,13 +844,19 @@ describe('readBundle', () => {
     }
   });
 
-  it.each<[string, Uint8Array, Partial<typeof opts>, string]>([
+  it.each<[string, Uint8Array, Partial<ReadBundleOptions>, string]>([
     ['not a zip', strToU8('nope'), {}, 'not a valid bundle (zip)'],
     ['too many entries', zipSync(bundleFiles()), { maxEntries: 2 }, 'bundle is too large'],
     [
       'too many inflated bytes',
       zipSync(bundleFiles()),
       { maxInflated: 100 },
+      'bundle is too large',
+    ],
+    [
+      'metadata past the text allowance',
+      zipSync(bundleFiles()),
+      { maxMetadata: 100 },
       'bundle is too large',
     ],
   ])('throws a BundleError for %s and leaves no temp dir', async (_l, zip, over, message) => {

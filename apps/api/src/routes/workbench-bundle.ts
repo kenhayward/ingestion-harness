@@ -27,6 +27,7 @@ import type { ProjectJob } from '../repositories/types.js';
 import { pinned } from '../templates/drafts.js';
 import { TemplateConflictError } from '../templates/repo.js';
 import {
+  BUNDLE_TEXT_ALLOWANCE,
   BundleError,
   firstIssue,
   jsonEntry,
@@ -62,14 +63,17 @@ const ExportedSamples = z.object({ samples: z.array(z.object({ sampleId: z.strin
 const SAMPLES_CHANGED = 'a sample changed since this export; export again';
 
 const MAX_BUNDLE_ENTRIES = MAX_SAMPLES + 32;
-/** Room for the small text entries (manifest, brief, template, context) beside the PDFs. */
-const BUNDLE_TEXT_ALLOWANCE = 8 * 1024 * 1024;
 /** Bytes read from the saved zip per step. */
 const READ_CHUNK = 64 * 1024;
 
-/** Saves the uploaded zip to `path`, refusing it past `limit` bytes. */
+/**
+ * Saves the uploaded zip to `path`, refusing it past `limit` bytes (400). Busboy stops the file at
+ * `limit` and ends the stream with `truncated` set: that check is the one that fires.
+ * (@fastify/multipart throws its 413 RequestFileTooLargeError only from `toBuffer()`.)
+ */
 async function saveUpload(file: MultipartFile, path: string, limit: number) {
   let received = 0;
+  // Defence in depth: unreachable while busboy enforces `limit`, kept in case it ever does not.
   const count = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       received += chunk.length;

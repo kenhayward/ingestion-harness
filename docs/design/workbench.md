@@ -208,14 +208,19 @@ template and brief versions, samples, stages, `completedStages`), `README.md`, `
   project exists names it; delete the project and import again.
 - **Import streams through temporary files.** The upload is saved to a temp dir under the size
   limit, then inflated as a stream: the metadata entries (`manifest.json`, `brief.json`,
-  `template.yaml`, `survey.json`) stay in memory, each sample PDF goes to its own temp file
-  (hashed as it is written), and other entries are inflated only to count toward the limits. The
+  `template.yaml`, `survey.json`) stay in memory (8 MiB in total at most), each sample PDF goes
+  to its own temp file (hashed as it is written), and other entries are inflated only to count
+  toward the limits. An upload or metadata past its limit is a 400 `bundle is too large`. The
   temp dir is always removed.
 - **Survey and stages:** `completedStages` lists the proposal stages accepted or skipped at
   export. Import accepts `survey.json` as a survey proposal (a finished `draft` job no worker
   claims, model `imported`) and records the other completed stages as skipped, in stage order so
   none is stale; a completed survey without `survey.json` is recorded as skipped. Bundles without
   `completedStages` import with every stage pending.
+- **Compatibility:** bundles exported by this version carry `completedStages` and still say
+  format version 1. A deployment running older code (before `completedStages`) refuses them,
+  because its manifest schema is strict about unknown keys; upgrade it before importing. Older
+  bundles import here unchanged.
 
 ### Deleting a project
 

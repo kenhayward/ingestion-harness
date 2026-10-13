@@ -15,7 +15,7 @@ import hashlib
 import io
 import json
 import zipfile
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import Field, ValidationError
@@ -59,8 +59,11 @@ class ExportParams(DraftParams):
     """jobs.params of an export job (written by the API): a drafting context plus the name."""
 
     project_name: str = Field(alias="projectName", min_length=1)
-    #: Proposal stages accepted or skipped at export time (import restores them).
-    completed_stages: list[str] = Field(default_factory=list, alias="completedStages")
+    #: Proposal stages accepted or skipped at export time (import restores them); only
+    #: `STAGE_ORDER` stages (packages/shared/src/drafting.ts), as the import's manifest schema.
+    completed_stages: list[Literal["survey", "outputs", "sections", "steps"]] = Field(
+        default_factory=list, alias="completedStages"
+    )
 
 
 def build_bundle(

@@ -183,6 +183,17 @@ def test_export_refuses_a_pdf_that_does_not_match_its_sha(fixture_specs_dir: Pat
         run_export(export_job(), deps, FakeQueue())
 
 
+@pytest.mark.parametrize("stage", ["revise", "references", "Survey", ""])
+def test_export_refuses_a_completed_stage_outside_stage_order(
+    fixture_specs_dir: Path, stage: str
+) -> None:
+    # STAGE_ORDER (packages/shared/src/drafting.ts): the import's BundleManifestSchema refuses
+    # anything else, so the export must not write it.
+    _, deps = make(fixture_specs_dir)
+    with pytest.raises(DocumentError, match="invalid export parameters"):
+        run_export(export_job(completedStages=["survey", stage]), deps, FakeQueue())
+
+
 def test_export_refuses_an_empty_project_name(fixture_specs_dir: Path) -> None:
     _, deps = make(fixture_specs_dir)
     with pytest.raises(DocumentError, match="invalid export parameters"):

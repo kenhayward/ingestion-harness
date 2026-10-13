@@ -79,6 +79,19 @@ describe('http api: workbench', () => {
     );
   });
 
+  it("shows the API's 400 for a bundle over its limit", async () => {
+    // What the API answers for an upload past maxUploadBytes * MAX_SAMPLES + 8 MiB.
+    const file = new File(['PK'], 'b.zip', { type: 'application/zip' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(400, { error: 'bundle is too large' })),
+    );
+    await expect(createHttpApi('/api').importBundle(file, {})).rejects.toMatchObject({
+      message: 'bundle is too large',
+      status: 400,
+    });
+  });
+
   it('deletes a workbench project', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
