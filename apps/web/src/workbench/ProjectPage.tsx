@@ -212,8 +212,8 @@ export function ProjectPage({
 
   const { project, draft, published } = view;
   const itemOf = (t: ProjectTab) => overview?.stages.find((s) => s.stage === t) ?? null;
-  const header = (t: Exclude<ProjectTab, 'overview'>) => (
-    <TabHeader title={TAB_TITLE[t]} item={itemOf(t)} />
+  const header = (t: Exclude<ProjectTab, 'overview'>, description?: string) => (
+    <TabHeader title={TAB_TITLE[t]} item={itemOf(t)} description={description} />
   );
   return (
     <section className="workbench project-page">
@@ -248,7 +248,10 @@ export function ProjectPage({
             ))}
           {tab === 'samples' && (
             <>
-              {header('samples')}
+              {header(
+                'samples',
+                'Develop with 3–8 dev samples and keep at least 2 holdout samples for the publish gate. Holdout text is never sent to a model.',
+              )}
               <SamplesTab
                 api={api}
                 projectId={project.id}

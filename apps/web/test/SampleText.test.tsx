@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SampleText, type TextMark } from '../src/workbench/SampleText.js';
 import { fakeApi } from './fake-api.js';
@@ -31,5 +32,27 @@ describe('SampleText marks', () => {
     show('intro\n\nbody', [{ page: 1, line: '', label: 'blank' }]);
     await screen.findByText(/intro/);
     expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('shows one page at a time with per-page chips in paged mode', async () => {
+    const api = fakeApi({
+      getSampleText: vi.fn(async () => ({
+        sha256: 'abc',
+        pages: [
+          { number: 1, text: 'HEADER', ocr: false },
+          { number: 2, text: 'scanned', ocr: true },
+        ],
+      })),
+    });
+    render(<SampleText api={api} projectId="letter" sampleId="s1" paged />);
+    const chips = await screen.findByRole('group', { name: 'Pages' });
+    expect(within(chips).getByRole('button', { name: 'Page 1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('region', { name: 'Page 1' })).toHaveTextContent('[page 1] HEADER');
+    expect(screen.queryByRole('region', { name: 'Page 2' })).toBeNull();
+    await userEvent.click(within(chips).getByRole('button', { name: 'Page 2 OCR' }));
+    expect(screen.getByRole('region', { name: 'Page 2' })).toHaveTextContent('[page 2] scanned');
   });
 });

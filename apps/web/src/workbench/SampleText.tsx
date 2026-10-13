@@ -51,15 +51,19 @@ export function SampleText({
   projectId,
   sampleId,
   marks,
+  paged = false,
 }: {
   api: Api;
   projectId: string;
   sampleId: string;
   /** Lines to flag with "<label> starts here" on the given page. */
   marks?: TextMark[];
+  /** One page at a time with page chips (Samples preview); off: every page (Sections). */
+  paged?: boolean;
 }) {
   const [text, setText] = useState<PreparedText | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     api.getSampleText(projectId, sampleId).then(setText, (err: Error) => setError(err.message));
@@ -67,6 +71,35 @@ export function SampleText({
 
   if (error) return <p role="alert">{error}</p>;
   if (!text) return <p>Loading text…</p>;
+  if (paged) {
+    const current = text.pages.find((p) => p.number === page) ?? text.pages[0];
+    return (
+      <div className="sample-text paged">
+        <div role="group" aria-label="Pages" className="page-chips">
+          {text.pages.map((p) => (
+            <button
+              key={p.number}
+              type="button"
+              aria-pressed={p.number === current?.number}
+              onClick={() => setPage(p.number)}
+            >
+              Page {p.number}
+              {p.ocr && <span className="ocr-flag"> OCR</span>}
+            </button>
+          ))}
+        </div>
+        {current && (
+          <section aria-label={`Page ${current.number}`}>
+            <PageBody
+              text={`[page ${current.number}]
+${current.text}`}
+              marks={(marks ?? []).filter((m) => m.page === current.number)}
+            />
+          </section>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="sample-text">
       {text.pages.map((p) => (
