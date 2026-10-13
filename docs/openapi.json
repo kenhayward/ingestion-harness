@@ -14993,6 +14993,404 @@
           }
         }
       }
+    },
+    "/api/workbench/projects/{id}/overview": {
+      "get": {
+        "operationId": "getProjectOverview",
+        "summary": "Get a project's overview",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "Everything the project page shows around its tabs, in one call: the project, each\ntab's state and status text (the ten stages, then Template and Test runs), the most\nurgent next step, and the publish gate. Poll it while any stage is running.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The overview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "project": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "dataPolicy": {
+                              "type": "string",
+                              "enum": [
+                                "local",
+                                "external"
+                              ]
+                            },
+                            "dataPolicyChangedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "dataPolicyChangedBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "publishThreshold": {
+                              "type": "number"
+                            },
+                            "thresholdSetBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "thresholdSetAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "createdAt",
+                            "dataPolicy",
+                            "dataPolicyChangedAt",
+                            "dataPolicyChangedBy",
+                            "publishThreshold",
+                            "thresholdSetBy",
+                            "thresholdSetAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "draft": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "published": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "brief": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "projectId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer"
+                                },
+                                "body": {
+                                  "type": "object",
+                                  "properties": {
+                                    "purpose": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "outputs": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "exampleOutput": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "glossary": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "variants": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "rules": {
+                                      "type": "string",
+                                      "default": ""
+                                    },
+                                    "answers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "question": {
+                                            "type": "string"
+                                          },
+                                          "answer": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "question",
+                                          "answer"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "default": []
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "projectId",
+                                "version",
+                                "body",
+                                "createdAt"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "project",
+                        "draft",
+                        "published",
+                        "brief"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "stages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stage": {
+                            "type": "string",
+                            "enum": [
+                              "samples",
+                              "brief",
+                              "survey",
+                              "outputs",
+                              "sections",
+                              "steps",
+                              "references",
+                              "evaluate",
+                              "revise",
+                              "publish",
+                              "template",
+                              "runs"
+                            ]
+                          },
+                          "state": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "running",
+                                  "proposed",
+                                  "accepted",
+                                  "skipped",
+                                  "stale",
+                                  "ready",
+                                  "locked",
+                                  "warn"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              }
+                            ]
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "stage",
+                          "state",
+                          "status"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "next": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "samples",
+                                "brief",
+                                "survey",
+                                "outputs",
+                                "sections",
+                                "steps",
+                                "references",
+                                "evaluate",
+                                "revise",
+                                "publish"
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "stage",
+                            "title",
+                            "reason"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gate": {
+                      "type": "object",
+                      "properties": {
+                        "threshold": {
+                          "type": "number"
+                        },
+                        "iterationId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "score": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "passes": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "threshold",
+                        "iterationId",
+                        "score",
+                        "passes",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "stages",
+                    "next",
+                    "gate"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The overview."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

@@ -21,6 +21,7 @@ import { reviewRoutes } from './routes/review.js';
 import { resultRoutes } from './routes/results.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
+import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
 
 export interface AppDeps {
@@ -80,6 +81,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(resultRoutes, { prefix: '/api' });
   await app.register(workbenchRoutes, { prefix: '/api' });
   await app.register(workbenchBundleRoutes, { prefix: '/api' });
+  await app.register(workbenchOverviewRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
 
   return app;
