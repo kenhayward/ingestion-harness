@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,6 +21,7 @@ import { MemoryAccessRepo } from '../src/access/repo.js';
 import type { AppDeps } from '../src/app.js';
 import { TemplateConflictError } from '../src/templates/repo.js';
 import { WorkbenchConflictError } from '../src/workbench/repo.js';
+import { BundleError, readBundle } from '../src/workbench/bundle-import.js';
 import { acceptedSurvey } from '../src/routes/workbench.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -374,6 +379,8 @@ const pdfBytes = (n: number) => Buffer.from(`%PDF-1.7\n% bundle ${n}\n%%EOF\n`);
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const memoYaml = 'id: memo\nversion: 3\nname: Memo\noutputs:\n  fields: []\n  tables: []\n';
 const samplePath = `samples/${sha(pdfBytes(1))}.pdf`;
+/** A 4 KiB PDF: over the per-file limit for `maxUploadBytes: 1024`. */
+const pdf4KiB = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0x41)]);
 
 /** A bundle's entries; `samples` are listed as m1.pdf, m2.pdf, … (default: one PDF). */
 function bundleFiles(
@@ -435,6 +442,10 @@ function bundleWithout(name: string) {
   delete files[name];
   return Buffer.from(zipSync(files));
 }
+
+/** The import temp dirs under the OS temp dir. */
+const tmpEntries = async () =>
+  (await readdir(tmpdir())).filter((name) => name.startsWith('ih-import-')).sort();
 
 const importBundle = (app: FastifyInstance, zip: Buffer, fields: Record<string, string> = {}) =>
   app.inject({
@@ -745,4 +756,81 @@ describe('import', () => {
       expect(res.json().error).toBe('memo already exists here; import under another id');
     },
   );
+
+  it('removes its temporary files after an import and after a refusal', async () => {
+    const { app } = await testApp();
+    const before = await tmpEntries();
+    expect((await importBundle(app, bundle())).statusCode).toBe(201);
+    expect((await importBundle(app, Buffer.from('nope'))).statusCode).toBe(400);
+    const refused = await importBundle(app, bundle({ manifest: { formatVersion: 2 } }));
+    expect(refused.statusCode).toBe(400);
+    expect(await tmpEntries()).toEqual(before);
+  });
+
+  it('refuses a sample over the upload limit while streaming it', async () => {
+    const { app, repo, store, templates } = await testApp({ maxUploadBytes: 1024 });
+    const res = await importBundle(app, bundle({ samples: [pdf4KiB] }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('sample m1.pdf: larger than the upload limit');
+    expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
+    expect(store.objects.size).toBe(0);
+    expect(repo.jobs.size).toBe(0);
+  });
+});
+
+describe('readBundle', () => {
+  const opts = { maxUploadBytes: 1024 * 1024, maxInflated: 64 * 1024 * 1024, maxEntries: 40 };
+  const read = (zip: Uint8Array, over: Partial<typeof opts> = {}) =>
+    readBundle(Readable.from([Buffer.from(zip)]), { ...opts, ...over });
+
+  it('keeps the metadata in memory and each sample PDF in a temp file', async () => {
+    const files = bundleFiles({ files: { 'context.md': strToU8('# Context') } });
+    const got = await read(zipSync(files));
+    try {
+      expect([...got.text.keys()].sort()).toEqual(['brief.json', 'manifest.json', 'template.yaml']);
+      expect(got.text.get('template.yaml')?.toString()).toBe(memoYaml);
+      expect([...got.samples.keys()]).toEqual([samplePath]);
+      const sample = got.samples.get(samplePath)!;
+      expect(sample).toMatchObject({
+        sha256: sha(pdfBytes(1)),
+        size: pdfBytes(1).length,
+        head: pdfBytes(1).subarray(0, 8),
+      });
+      expect(sample.path.startsWith(got.dir)).toBe(true);
+      expect(await readFile(sample.path)).toEqual(pdfBytes(1));
+    } finally {
+      const { rm } = await import('node:fs/promises');
+      await rm(got.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stops writing a sample once it passes the upload limit', async () => {
+    const zip = zipSync(bundleFiles({ samples: [pdf4KiB] }));
+    const got = await read(zip, { maxUploadBytes: 1024 });
+    try {
+      const sample = got.samples.get(`samples/${sha(pdf4KiB)}.pdf`)!;
+      expect(sample.size).toBeGreaterThan(1024);
+      expect(existsSync(sample.path)).toBe(false);
+    } finally {
+      const { rm } = await import('node:fs/promises');
+      await rm(got.dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each<[string, Uint8Array, Partial<typeof opts>, string]>([
+    ['not a zip', strToU8('nope'), {}, 'not a valid bundle (zip)'],
+    ['too many entries', zipSync(bundleFiles()), { maxEntries: 2 }, 'bundle is too large'],
+    [
+      'too many inflated bytes',
+      zipSync(bundleFiles()),
+      { maxInflated: 100 },
+      'bundle is too large',
+    ],
+  ])('throws a BundleError for %s and leaves no temp dir', async (_l, zip, over, message) => {
+    const before = await tmpEntries();
+    const err = await read(zip, over).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BundleError);
+    expect((err as Error).message).toBe(message);
+    expect(await tmpEntries()).toEqual(before);
+  });
 });

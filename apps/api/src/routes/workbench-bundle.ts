@@ -1,7 +1,11 @@
-import { createHash } from 'node:crypto';
-import type { FastifyPluginAsync } from 'fastify';
-import { Unzip, UnzipInflate, strFromU8 } from 'fflate';
-import { parse as parseYaml } from 'yaml';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { MultipartFile } from '@fastify/multipart';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   BriefBodySchema,
@@ -13,7 +17,6 @@ import {
   draftingKey,
   exportKey,
   type BriefBody,
-  type BundleManifest,
   type DraftResult,
   type DraftStage,
   type ExportView,
@@ -23,8 +26,17 @@ import {
 import type { ProjectJob } from '../repositories/types.js';
 import { pinned } from '../templates/drafts.js';
 import { TemplateConflictError } from '../templates/repo.js';
+import {
+  BundleError,
+  firstIssue,
+  jsonEntry,
+  readBundle,
+  sampleFiles,
+  templateEntry,
+  type ReadBundle,
+} from '../workbench/bundle-import.js';
 import { WorkbenchConflictError } from '../workbench/repo.js';
-import { isPdf, multipartField } from '../uploads.js';
+import { multipartField } from '../uploads.js';
 import {
   Id as ProjectId,
   acceptedSurvey,
@@ -52,111 +64,28 @@ const SAMPLES_CHANGED = 'a sample changed since this export; export again';
 const MAX_BUNDLE_ENTRIES = MAX_SAMPLES + 32;
 /** Room for the small text entries (manifest, brief, template, context) beside the PDFs. */
 const BUNDLE_TEXT_ALLOWANCE = 8 * 1024 * 1024;
-/** Compressed bytes inflated per step: bounds the work done between two size checks. */
-const UNZIP_CHUNK = 16 * 1024;
+/** Bytes read from the saved zip per step. */
+const READ_CHUNK = 64 * 1024;
 
-/**
- * Unzips with limits against zip bombs: the entry count, and the bytes actually inflated across
- * all entries. The sizes the headers claim are never trusted; inflating stops as soon as the
- * running total passes `maxBytes`.
- */
-export function unzipBundle(zip: Buffer, maxBytes: number): Record<string, Uint8Array> | string {
-  const tooLarge = new RangeError('bundle is too large');
-  const entries = new Map<string, Uint8Array[]>();
-  const finished = new Set<string>();
-  let total = 0;
-  const unzip = new Unzip((file) => {
-    if (entries.size >= MAX_BUNDLE_ENTRIES) throw tooLarge;
-    if (entries.has(file.name)) throw new Error(`duplicate entry ${file.name}`);
-    const chunks: Uint8Array[] = [];
-    entries.set(file.name, chunks);
-    file.ondata = (err, data, final) => {
-      // UnzipInflate catches a throw from here and calls back with it as `err`: rethrow it.
-      if (err) throw err;
-      total += data.length;
-      if (total > maxBytes) throw tooLarge;
-      chunks.push(data);
-      if (final) finished.add(file.name);
-    };
-    file.start();
+/** Saves the uploaded zip to `path`, refusing it past `limit` bytes. */
+async function saveUpload(file: MultipartFile, path: string, limit: number) {
+  let received = 0;
+  const count = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      received += chunk.length;
+      done(received > limit ? new BundleError('bundle is too large') : null, chunk);
+    },
   });
-  unzip.register(UnzipInflate);
-  try {
-    const bytes = new Uint8Array(zip.buffer, zip.byteOffset, zip.length);
-    for (let at = 0; at < bytes.length; at += UNZIP_CHUNK) {
-      unzip.push(bytes.subarray(at, at + UNZIP_CHUNK), at + UNZIP_CHUNK >= bytes.length);
-    }
-  } catch (err) {
-    return err === tooLarge ? 'bundle is too large' : 'not a valid bundle (zip)';
-  }
-  if (!entries.size || finished.size !== entries.size) return 'not a valid bundle (zip)';
-  return Object.fromEntries([...entries].map(([name, chunks]) => [name, Buffer.concat(chunks)]));
+  await pipeline(file.file, count, createWriteStream(path));
+  if (file.file.truncated) throw new BundleError('bundle is too large');
 }
 
-const firstIssue = (err: z.ZodError) => {
-  const issue = err.issues[0]!;
-  return issue.path.length ? `${issue.path.join('.')}: ${issue.message}` : issue.message;
-};
-
-/** A JSON entry of the bundle checked against `schema`. */
-function jsonEntry<S extends z.ZodTypeAny>(
-  files: Record<string, Uint8Array>,
-  name: string,
-  schema: S,
-): { ok: true; value: z.output<S> } | { ok: false; error: string } {
-  const entry = files[name];
-  if (!entry) return { ok: false, error: `${name}: missing from the bundle` };
-  let value: unknown;
-  try {
-    value = JSON.parse(strFromU8(entry));
-  } catch {
-    return { ok: false, error: `${name}: not valid JSON` };
-  }
-  const parsed = schema.safeParse(value);
-  return parsed.success
-    ? { ok: true, value: parsed.data }
-    : { ok: false, error: `${name}: ${firstIssue(parsed.error)}` };
+/** A status and body, sent by the import route once its temp files are removed. */
+interface Answer {
+  code: number;
+  body: unknown;
 }
-
-/** The template mapping in `template.yaml`, or null when it is not one. */
-function templateEntry(files: Record<string, Uint8Array>): Record<string, unknown> | null {
-  const entry = files['template.yaml'];
-  if (!entry) return null;
-  let value: unknown;
-  try {
-    value = parseYaml(strFromU8(entry));
-  } catch {
-    return null;
-  }
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/** Each manifest sample's PDF, checked; a string is the first problem. */
-function sampleFiles(
-  files: Record<string, Uint8Array>,
-  manifest: BundleManifest,
-  maxUploadBytes: number,
-): { filename: string; body: Buffer }[] | string {
-  const seen = new Set<string>();
-  const out: { filename: string; body: Buffer }[] = [];
-  for (const s of manifest.samples) {
-    const problem = (reason: string) => `sample ${s.filename}: ${reason}`;
-    const entry = files[s.file];
-    if (!entry) return problem(`${s.file} is missing from the bundle`);
-    const body = Buffer.from(entry);
-    if (!isPdf(body)) return problem('not a PDF');
-    if (body.length > maxUploadBytes) return problem('larger than the upload limit');
-    if (createHash('sha256').update(body).digest('hex') !== s.sha256) {
-      return problem('the file does not match its sha256');
-    }
-    if (seen.has(s.sha256)) return problem('the same PDF as another sample');
-    seen.add(s.sha256);
-    out.push({ filename: s.filename, body });
-  }
-  return out;
-}
+const answer = (code: number, body: unknown): Answer => ({ code, body });
 
 const exportView = (j: ProjectJob): ExportView => ({
   jobId: j.id,
@@ -215,41 +144,54 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     }
   };
 
-  /**
-   * Import a bundle as a new project (multipart: optional `id` and `name` fields, then the zip).
-   * Everything is checked before anything is written.
-   */
-  app.post('/workbench/projects/import', async (req, reply) => {
-    // One limit for the zip and for what it inflates to: every PDF at the upload limit, plus text.
-    const limit = app.deps.maxUploadBytes * MAX_SAMPLES + BUNDLE_TEXT_ALLOWANCE;
-    const file = await req.file({ limits: { fileSize: limit } });
-    if (!file) return reply.code(400).send({ error: 'bundle file part is required' });
-    const idField = multipartField(file, 'id')?.trim() || undefined; // blank = absent
-    const nameField = multipartField(file, 'name')?.trim() || undefined;
-    const zip = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
+  /** Saves the upload under `dir` and reads it; a refusal comes back as the BundleError. */
+  const readUpload = async (
+    file: MultipartFile,
+    dir: string,
+    limit: number,
+  ): Promise<ReadBundle | BundleError> => {
+    try {
+      const zipPath = join(dir, 'bundle.zip');
+      await saveUpload(file, zipPath, limit);
+      return await readBundle(createReadStream(zipPath, { highWaterMark: READ_CHUNK }), {
+        maxUploadBytes: app.deps.maxUploadBytes,
+        maxInflated: limit,
+        maxEntries: MAX_BUNDLE_ENTRIES,
+        tmpRoot: dir,
+      });
+    } catch (err) {
+      if (err instanceof BundleError) return err;
+      throw err;
+    }
+  };
 
-    const files = unzipBundle(zip, limit);
-    if (typeof files === 'string') return reply.code(400).send({ error: files });
+  /** Checks the read bundle, then writes the project; nothing is written before every check. */
+  const createFromBundle = async (
+    req: FastifyRequest,
+    input: { bundle: ReadBundle; idField?: string; nameField?: string },
+  ) => {
+    const { bundle, idField, nameField } = input;
+    const files = bundle.text;
     const manifest = jsonEntry(files, 'manifest.json', BundleManifestSchema);
-    if (!manifest.ok) return reply.code(400).send({ error: manifest.error });
+    if (!manifest.ok) return answer(400, { error: manifest.error });
     const definition = templateEntry(files);
     if (!definition) {
-      return reply.code(400).send({ error: 'template.yaml is not a template mapping' });
+      return answer(400, { error: 'template.yaml is not a template mapping' });
     }
     let brief: BriefBody | null = null; // a bundle without a brief saves none
-    if (files['brief.json']) {
+    if (files.has('brief.json')) {
       const parsed = jsonEntry(files, 'brief.json', BriefBodySchema);
-      if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+      if (!parsed.ok) return answer(400, { error: parsed.error });
       brief = parsed.value;
     }
     let survey: SurveyBody | null = null; // older bundles carry none
-    if (files['survey.json']) {
+    if (files.has('survey.json')) {
       const parsed = jsonEntry(files, 'survey.json', SurveyBodySchema);
-      if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
+      if (!parsed.ok) return answer(400, { error: parsed.error });
       survey = parsed.value;
     }
     const id = ProjectId.safeParse(idField ?? manifest.value.project.id);
-    if (!id.success) return reply.code(400).send({ error: `id: ${firstIssue(id.error)}` });
+    if (!id.success) return answer(400, { error: `id: ${firstIssue(id.error)}` });
     const projectId = id.data;
     const name = nameField ?? manifest.value.project.name;
     const taken = { error: `${projectId} already exists here; import under another id` };
@@ -257,17 +199,17 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       (await workbench.getProject(projectId)) ||
       (await templates.list()).some((r) => r.id === projectId)
     ) {
-      return reply.code(409).send(taken);
+      return answer(409, taken);
     }
-    const samples = sampleFiles(files, manifest.value, app.deps.maxUploadBytes);
-    if (typeof samples === 'string') return reply.code(400).send({ error: samples });
+    const samples = sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
+    if (typeof samples === 'string') return answer(400, { error: samples });
 
     // Only now write: the draft, the project, the brief, then the samples.
     try {
       await templates.create(projectId, 1, pinned(definition, projectId, 1), 'draft');
     } catch (err) {
       // Another import or project creation took the id after the check above.
-      if (err instanceof TemplateConflictError) return reply.code(409).send(taken);
+      if (err instanceof TemplateConflictError) return answer(409, taken);
       throw err;
     }
     let project: WorkbenchProject;
@@ -275,13 +217,13 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       project = await workbench.createProject(projectId, name);
     } catch (err) {
       await templates.deleteDraft(projectId, 1); // leave no draft without its project
-      if (err instanceof WorkbenchConflictError) return reply.code(409).send(taken);
+      if (err instanceof WorkbenchConflictError) return answer(409, taken);
       throw err;
     }
     // The project exists from here on; it cannot be deleted, so a failure names it.
     const failed = (detail: Record<string, unknown>) => {
       req.log.error({ projectId, ...detail }, 'bundle import failed');
-      return reply.code(500).send({
+      return answer(500, {
         error: `import failed after creating project ${projectId}; delete is not available, so import again under another id`,
       });
     };
@@ -292,7 +234,12 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           ? await workbench.saveBrief(projectId, brief)
           : null;
       for (const sample of samples) {
-        const added = await addSampleFile(app, project, { ...sample, role: 'dev' });
+        const body = await readFile(sample.path); // one PDF in memory at a time
+        const added = await addSampleFile(app, project, {
+          filename: sample.filename,
+          body,
+          role: 'dev',
+        });
         // Unexpected after validation.
         if ('error' in added) return failed({ filename: sample.filename, error: added.error });
       }
@@ -305,7 +252,33 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       return failed({ err });
     }
     req.log.info({ projectId, samples: samples.length }, 'bundle imported');
-    return reply.code(201).send(await projectView(app, project));
+    return answer(201, await projectView(app, project));
+  };
+
+  /**
+   * Import a bundle as a new project (multipart: optional `id` and `name` fields, then the zip).
+   * Everything is checked before anything is written.
+   */
+  app.post('/workbench/projects/import', async (req, reply) => {
+    // One limit for the zip and for what it inflates to: every PDF at the upload limit, plus text.
+    const limit = app.deps.maxUploadBytes * MAX_SAMPLES + BUNDLE_TEXT_ALLOWANCE;
+    const file = await req.file({ limits: { fileSize: limit } });
+    if (!file) return reply.code(400).send({ error: 'bundle file part is required' });
+    const idField = multipartField(file, 'id')?.trim() || undefined; // blank = absent
+    const nameField = multipartField(file, 'name')?.trim() || undefined;
+    const dir = await mkdtemp(join(tmpdir(), 'ih-import-'));
+    let out: Answer;
+    try {
+      const bundle = await readUpload(file, dir, limit);
+      out =
+        bundle instanceof BundleError
+          ? answer(400, { error: bundle.message })
+          : await createFromBundle(req, { bundle, idField, nameField });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+    // Answered only once the temp files are gone.
+    return reply.code(out.code).send(out.body);
   });
 
   app.post<{ Params: { id: string } }>('/workbench/projects/:id/export', async (req, reply) => {
