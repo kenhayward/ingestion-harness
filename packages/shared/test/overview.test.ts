@@ -457,6 +457,7 @@ describe('overviewItems', () => {
 
   it('says which brief version is saved', () => {
     expect(status(ctx(), 'brief').status).toBe('Saved v3');
+    expect(status(ctx({ briefVersion: null }), 'brief').status).toBe('Saved');
     expect(status(ctx({ briefVersion: null }, inputs({ briefSaved: false })), 'brief').status).toBe(
       'Not written yet',
     );
@@ -502,6 +503,11 @@ describe('overviewItems', () => {
     [inputs(), 'pending', 'Not run on holdout yet'],
     [inputs({ evaluation: { running: true } }), 'running', 'Running'],
     [inputs({ gate: gate({ iterationId: 'it1', score: 0.86 }) }), 'warn', 'Holdout 86%, below 90%'],
+    [
+      inputs({ gate: gate({ iterationId: 'it1', score: 0.896 }) }),
+      'warn',
+      'Holdout 89.6%, below 90.0%',
+    ],
     [
       inputs({ gate: gate({ iterationId: 'it1', score: 0.95, passes: false }) }),
       'warn',
@@ -551,6 +557,12 @@ describe('overviewItems', () => {
       status(ctx({ runs: { total: 6, unfinished: 0, awaitingReview: 0 } }), 'runs').status,
     ).toBe('6 finished');
     expect(status(ctx(), 'runs').status).toBe('No runs yet');
+  });
+
+  it('does not invent a published version', () => {
+    const items = overviewItems(ctx({}, inputs({ draft: null, published: null })));
+    expect(items.find((x) => x.stage === 'publish')!.status).toBe('Not published');
+    expect(items.find((x) => x.stage === 'template')!.status).toBe('Not published');
   });
 
   it('shows a fully published type as done', () => {
@@ -691,8 +703,33 @@ describe('overviewNext', () => {
       }),
       {
         stage: 'references',
-        title: 'Next: references running',
-        reason: 'References is running; this page updates when it finishes.',
+        title: 'Waiting for References',
+        reason: 'The References stage is running; this page updates when it finishes.',
+      },
+    ],
+    [
+      'falls back to samples preparing',
+      inputs({ samples: { total: 2, preparing: 1, failed: 0 } }),
+      {
+        stage: 'samples',
+        title: 'Waiting for Samples',
+        reason: 'Samples are being prepared; this page updates when they finish.',
+      },
+    ],
+    [
+      'stale names the stage that changed',
+      inputs({
+        stages: [
+          { stage: 'survey', state: 'accepted', completedAt: '2026-10-13T09:00:00Z' },
+          { stage: 'outputs', state: 'accepted', completedAt: '2026-10-13T11:00:00Z' },
+          { stage: 'sections', state: 'stale', completedAt: '2026-10-13T10:00:00Z' },
+          { stage: 'steps', state: 'pending', completedAt: null },
+        ],
+      }),
+      {
+        stage: 'sections',
+        title: 'Next: refresh Sections',
+        reason: 'Outputs changed after Sections was accepted.',
       },
     ],
   ] as const)('%s', (_, i, expected) => {

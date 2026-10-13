@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { STAGE_ORDER, type StageState, type StageView } from './drafting.js';
-import { GateViewSchema, type GateView } from './evaluation.js';
+import { GateViewSchema, percent, type GateView } from './evaluation.js';
 import { ProjectViewSchema, type Brief, type ProposalStatus } from './workbench.js';
 
 /**
@@ -288,7 +288,6 @@ export interface StatusContext {
   openFeedback: number;
 }
 
-const percent = (x: number) => `${Math.round(x * 100)}%`;
 /** "holdout score …" → "Holdout score ….": gate reasons are sentence fragments. */
 const sentence = (s: string) =>
   `${s.charAt(0).toUpperCase()}${s.slice(1)}${s.endsWith('.') ? '' : '.'}`;
@@ -303,20 +302,22 @@ const DRAFTED: Partial<Record<OverviewState, string>> = {
 };
 
 /** The latest-completed earlier stage that completed after `stage`: why `stage` is stale. */
-function staleCause(stages: OverviewInputs['stages'], stage: OverviewStage): string {
+function staleCauseLabel(stages: OverviewInputs['stages'], stage: OverviewStage): string | null {
   const order: readonly string[] = [...STAGE_ORDER, 'references'];
   const own = stages.find((s) => s.stage === stage)?.completedAt ?? null;
   const cause = stages
     .filter((s) => order.indexOf(s.stage) < order.indexOf(stage))
     .filter((s) => s.completedAt !== null && own !== null && s.completedAt > own)
     .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0];
-  const who = cause ? OVERVIEW_LABEL[cause.stage as OverviewStage] : 'an earlier stage';
-  return `Stale — ${who} changed after it was accepted`;
+  return cause ? OVERVIEW_LABEL[cause.stage as OverviewStage] : null;
 }
 
 function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusContext): string {
   const { inputs } = ctx;
-  if (inputs.draft === null) return stage === 'publish' ? `v${inputs.published} published` : 'Done';
+  if (inputs.draft === null) {
+    if (inputs.published === null) return 'Not published';
+    return stage === 'publish' ? `v${inputs.published} published` : 'Done';
+  }
   switch (stage) {
     case 'samples': {
       const { total, preparing, failed } = inputs.samples;
@@ -325,15 +326,21 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       return preparing > 0 ? `Preparing ${preparing} of ${total}` : 'Ready';
     }
     case 'brief':
-      return state === 'accepted' ? `Saved v${ctx.briefVersion ?? 1}` : 'Not written yet';
+      return state === 'accepted'
+        ? ctx.briefVersion === null
+          ? 'Saved'
+          : `Saved v${ctx.briefVersion}`
+        : 'Not written yet';
     case 'evaluate': {
       const { gate } = inputs;
       if (state === 'accepted') return `Holdout ${percent(gate.score ?? 0)} passes`;
       if (state === 'running') return 'Running';
       if (state === 'warn') {
-        return gate.score !== null && gate.score < gate.threshold
-          ? `Holdout ${percent(gate.score)}, below ${percent(gate.threshold)}`
-          : 'Re-run holdout';
+        if (gate.score !== null && gate.score < gate.threshold) {
+          const digits = percent(gate.score) === percent(gate.threshold) ? 1 : 0;
+          return `Holdout ${percent(gate.score, digits)}, below ${percent(gate.threshold, digits)}`;
+        }
+        return 'Re-run holdout';
       }
       return 'Not run on holdout yet';
     }
@@ -345,7 +352,9 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
     case 'publish':
       return state === 'ready' ? `Ready to publish v${inputs.draft}` : 'Locked by the gate';
     default:
-      if (state === 'stale') return staleCause(inputs.stages, stage);
+      if (state === 'stale') {
+        return `Stale — ${staleCauseLabel(inputs.stages, stage) ?? 'an earlier stage'} changed after it was accepted`;
+      }
       if (stage === 'references' && state === 'accepted') return 'Verified';
       return DRAFTED[state] ?? 'Not started';
   }
@@ -373,7 +382,12 @@ export function overviewItems(ctx: StatusContext): OverviewItem[] {
     {
       stage: 'template' as const,
       state: 'none' as const,
-      status: draft !== null ? `Draft v${draft}` : `v${published} published`,
+      status:
+        draft !== null
+          ? `Draft v${draft}`
+          : published !== null
+            ? `v${published} published`
+            : 'Not published',
     },
     { stage: 'runs' as const, state: runs, status: runsText },
   ];
@@ -397,7 +411,7 @@ export function overviewNext(
         return {
           stage: u.stage,
           title: `Next: refresh ${label}`,
-          reason: `An earlier stage changed after ${label} was accepted.`,
+          reason: `${staleCauseLabel(inputs.stages, u.stage) ?? 'An earlier stage'} changed after ${label} was accepted.`,
         };
       case 'proposed':
         return {
@@ -442,11 +456,17 @@ export function overviewNext(
   }
   const action = nextAction(inputs, entries);
   if (!action || action.stage === null) return null;
-  const reason =
-    action.kind === 'publish'
-      ? sentence(inputs.gate.reason)
-      : action.kind === 'running'
-        ? `${OVERVIEW_LABEL[action.stage]} is running; this page updates when it finishes.`
-        : '';
+  if (action.kind === 'running') {
+    const label = OVERVIEW_LABEL[action.stage];
+    return {
+      stage: action.stage,
+      title: `Waiting for ${label}`,
+      reason:
+        action.stage === 'samples'
+          ? 'Samples are being prepared; this page updates when they finish.'
+          : `The ${label} stage is running; this page updates when it finishes.`,
+    };
+  }
+  const reason = action.kind === 'publish' ? sentence(inputs.gate.reason) : '';
   return { stage: action.stage, title: `Next: ${lowerFirst(action.label)}`, reason };
 }
