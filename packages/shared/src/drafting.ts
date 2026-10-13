@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
 import { StepSchema, TableDefSchema, ValueDefSchema } from './template.js';
 import {
+  DRAFT_STAGES,
+  ProposalStatusSchema,
   SegmentationResultSchema,
+  SurveyBodySchema,
   type DraftStage,
   type ProposalStatus,
-  type ProposalView,
   type SurveyBody,
 } from './workbench.js';
 
@@ -54,6 +56,23 @@ export const ChangeBodySchema = z
   })
   .strict();
 export type ChangeBody = z.infer<typeof ChangeBodySchema>;
+
+export const ProposalViewSchema = z.object({
+  id: z.string().uuid(),
+  stage: z.enum(DRAFT_STAGES),
+  status: ProposalStatusSchema,
+  error: z.string().nullable(),
+  briefVersion: z.number().int().nullable(),
+  /** Resolved model that produced it (once ready). */
+  model: z.string().nullable(),
+  /** survey: SurveyBody; outputs/sections/steps/revise: ChangeBody. Null until ready. */
+  body: z.union([SurveyBodySchema, ChangeBodySchema]).nullable(),
+  /** Indexes of the changes applied to the draft (accepted / partially_accepted). */
+  acceptedChanges: z.array(z.number().int()).nullable(),
+  createdAt: z.string(),
+  decidedAt: z.string().nullable(),
+});
+export type ProposalView = z.infer<typeof ProposalViewSchema>;
 
 /** A stage body, or null if it is malformed or uses an op the stage may not. */
 export function parseChangeBody(stage: ChangeStage, body: unknown): ChangeBody | null {
@@ -191,14 +210,23 @@ export function applyChanges(definition: Def, changes: DraftChange[]): Def {
 /** Drafting stages in order (3b; `references` joins in phase 4). */
 export const STAGE_ORDER: readonly DraftStage[] = ['survey', 'outputs', 'sections', 'steps'];
 
-export type StageState = 'pending' | 'running' | 'proposed' | 'accepted' | 'skipped' | 'stale';
+export const StageStateSchema = z.enum([
+  'pending',
+  'running',
+  'proposed',
+  'accepted',
+  'skipped',
+  'stale',
+]);
+export type StageState = z.infer<typeof StageStateSchema>;
 
-export interface StageView {
-  stage: DraftStage;
-  state: StageState;
+export const StageViewSchema = z.object({
+  stage: z.enum(DRAFT_STAGES),
+  state: StageStateSchema,
   /** Last time the stage was accepted (fully or partly) or skipped; null if never. */
-  completedAt: string | null;
-}
+  completedAt: z.string().nullable(),
+});
+export type StageView = z.infer<typeof StageViewSchema>;
 
 export interface StageSkip {
   stage: DraftStage;

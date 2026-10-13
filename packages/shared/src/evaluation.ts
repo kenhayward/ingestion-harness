@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JobStatus } from './jobs.js';
+import { JobStatusSchema, type JobStatus } from './jobs.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
 
@@ -57,32 +57,35 @@ const FINISHED: readonly JobStatus[] = [
 export const finishedJob = (status: JobStatus | null): boolean =>
   status === null || FINISHED.includes(status);
 
-export interface Accuracy {
-  id: string;
-  matched: number;
-  total: number;
-  accuracy: number;
-}
+export const AccuracySchema = z.object({
+  id: z.string(),
+  matched: z.number().int(),
+  total: z.number().int(),
+  accuracy: z.number(),
+});
+export type Accuracy = z.infer<typeof AccuracySchema>;
 
-export interface SampleResult {
-  sampleId: string | null;
-  filename: string;
-  jobId: string | null;
-  status: JobStatus | null;
-  error: string | null;
-  comparison: Comparison | null;
-}
+export const SampleResultSchema = z.object({
+  sampleId: z.string().nullable(),
+  filename: z.string(),
+  jobId: z.string().nullable(),
+  status: JobStatusSchema.nullable(),
+  error: z.string().nullable(),
+  comparison: ComparisonSchema.nullable(),
+});
+export type SampleResult = z.infer<typeof SampleResultSchema>;
 
-export interface Scorecard {
+export const ScorecardSchema = z.object({
   /** Mean per-sample score over compared samples; null when none was compared. */
-  score: number | null;
-  completed: number;
-  total: number;
+  score: z.number().nullable(),
+  completed: z.number().int(),
+  total: z.number().int(),
   /** Worst first. */
-  fields: Accuracy[];
+  fields: z.array(AccuracySchema),
   /** `table.column`, worst first. */
-  columns: Accuracy[];
-}
+  columns: z.array(AccuracySchema),
+});
+export type Scorecard = z.infer<typeof ScorecardSchema>;
 
 function ranked(counts: Map<string, { matched: number; total: number }>): Accuracy[] {
   return [...counts.entries()]
@@ -120,36 +123,39 @@ export function buildScorecard(samples: SampleResult[]): Scorecard {
 export const EVALUATION_SETS = ['dev', 'holdout'] as const;
 export type EvaluationSet = (typeof EVALUATION_SETS)[number];
 
-export interface IterationSummary {
-  id: string;
-  projectId: string;
-  templateVersion: number;
-  briefVersion: number | null;
-  set: EvaluationSet;
+export const IterationSummarySchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string(),
+  templateVersion: z.number().int(),
+  briefVersion: z.number().int().nullable(),
+  set: z.enum(EVALUATION_SETS),
   /** Alias every step was overridden with; null = the template's own models. */
-  model: EvaluationModel | null;
+  model: z.enum(EVALUATION_MODELS).nullable(),
   /** Shared by the iterations of one model comparison. */
-  groupId: string | null;
+  groupId: z.string().uuid().nullable(),
   /** Every step called its model (the step cache was not read). */
-  uncached: boolean;
-  createdAt: string;
-  status: 'running' | 'complete';
-  score: number | null;
-  completed: number;
-  total: number;
-}
+  uncached: z.boolean(),
+  createdAt: z.string(),
+  status: z.enum(['running', 'complete']),
+  score: z.number().nullable(),
+  completed: z.number().int(),
+  total: z.number().int(),
+});
+export type IterationSummary = z.infer<typeof IterationSummarySchema>;
 
-export interface IterationView extends IterationSummary {
+export const IterationViewSchema = IterationSummarySchema.extend({
   /** Succeeded step runs of the iteration's jobs; `reused` were served from the step cache. */
-  cache: { reused: number; total: number };
-  scorecard: Scorecard;
-  samples: SampleResult[];
-}
+  cache: z.object({ reused: z.number().int(), total: z.number().int() }),
+  scorecard: ScorecardSchema,
+  samples: z.array(SampleResultSchema),
+});
+export type IterationView = z.infer<typeof IterationViewSchema>;
 
-export interface ComparisonView {
-  groupId: string;
-  iterations: IterationView[];
-}
+export const ComparisonViewSchema = z.object({
+  groupId: z.string().uuid(),
+  iterations: z.array(IterationViewSchema),
+});
+export type ComparisonView = z.infer<typeof ComparisonViewSchema>;
 
 export interface ComparisonRow {
   id: string;
@@ -178,29 +184,34 @@ export function comparisonRows(iterations: IterationView[]): ComparisonRow[] {
 }
 
 /** One dev sample on the References tab. */
-export interface ReferenceRow {
-  sampleId: string;
-  filename: string;
-  sha256: string;
-  reference: {
-    id: string;
-    name: string;
-    createdAt: string;
-    /** Version it is pinned to; null for an unpinned (legacy) reference. */
-    version: number | null;
-    /** Version it was carried forward from, when it is a copy. */
-    carriedFrom: number | null;
-    /** `outputChanges` against the version's outputs: non-empty means re-verify before use. */
-    outdated: string[];
-  } | null;
+export const ReferenceRowSchema = z.object({
+  sampleId: z.string().uuid(),
+  filename: z.string(),
+  sha256: z.string(),
+  reference: z
+    .object({
+      id: z.string().uuid(),
+      name: z.string(),
+      createdAt: z.string(),
+      /** Version it is pinned to; null for an unpinned (legacy) reference. */
+      version: z.number().int().nullable(),
+      /** Version it was carried forward from, when it is a copy. */
+      carriedFrom: z.number().int().nullable(),
+      /** `outputChanges` against the version's outputs: non-empty means re-verify before use. */
+      outdated: z.array(z.string()),
+    })
+    .nullable(),
   /** Latest test run of this sample that is not an evaluation run. */
-  run: {
-    jobId: string;
-    status: JobStatus;
-    error: string | null;
-    modelOverride: string | null;
-  } | null;
-}
+  run: z
+    .object({
+      jobId: z.string().uuid(),
+      status: JobStatusSchema,
+      error: z.string().nullable(),
+      modelOverride: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type ReferenceRow = z.infer<typeof ReferenceRowSchema>;
 
 export const FEEDBACK_TARGETS = ['field', 'table', 'step', 'section'] as const;
 /** Longest feedback body the API accepts (the UI caps its text boxes to match). */
@@ -217,18 +228,19 @@ export const FeedbackBodySchema = z
   })
   .strict();
 
-export interface FeedbackItem {
-  id: string;
-  projectId: string;
-  target: FeedbackTarget;
-  targetId: string;
-  sampleId: string | null;
-  iterationId: string | null;
-  body: string;
-  createdAt: string;
+export const FeedbackItemSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string(),
+  target: z.enum(FEEDBACK_TARGETS),
+  targetId: z.string(),
+  sampleId: z.string().uuid().nullable(),
+  iterationId: z.string().uuid().nullable(),
+  body: z.string(),
+  createdAt: z.string(),
   /** The revise proposal that answered it (accepted or partly accepted); null while open. */
-  resolvedBy: string | null;
-}
+  resolvedBy: z.string().uuid().nullable(),
+});
+export type FeedbackItem = z.infer<typeof FeedbackItemSchema>;
 
 export const MAX_FIELD_DIFFS = 20;
 export const MAX_ROW_DIFFS = 5;
@@ -302,13 +314,14 @@ export interface GateCandidate {
   holdoutSamples: number;
 }
 
-export interface GateView {
-  threshold: number;
-  iterationId: string | null;
-  score: number | null;
-  passes: boolean;
-  reason: string;
-}
+export const GateViewSchema = z.object({
+  threshold: z.number(),
+  iterationId: z.string().uuid().nullable(),
+  score: z.number().nullable(),
+  passes: z.boolean(),
+  reason: z.string(),
+});
+export type GateView = z.infer<typeof GateViewSchema>;
 
 const percent = (x: number, digits = 0) =>
   digits ? `${(x * 100).toFixed(digits)}%` : `${Math.round(x * 100)}%`;
@@ -366,15 +379,16 @@ export function publishGate({
   );
 }
 
-export interface Publication {
-  id: string;
-  projectId: string;
-  version: number;
-  iterationId: string | null;
-  score: number | null;
-  threshold: number;
-  overrideReason: string | null;
+export const PublicationSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string(),
+  version: z.number().int(),
+  iterationId: z.string().uuid().nullable(),
+  score: z.number().nullable(),
+  threshold: z.number(),
+  overrideReason: z.string().nullable(),
   /** Label of the session's token. */
-  publishedBy: string | null;
-  publishedAt: string;
-}
+  publishedBy: z.string().nullable(),
+  publishedAt: z.string(),
+});
+export type Publication = z.infer<typeof PublicationSchema>;

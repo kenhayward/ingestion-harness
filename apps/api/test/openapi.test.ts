@@ -154,39 +154,6 @@ describe('md', () => {
   });
 });
 
-/**
- * Routes not documented yet (docs/design/api-docs.md, rollout). This list only shrinks: an
- * entry that is documented, or no longer exists, fails the sweep. The last rollout PR deletes it.
- */
-const UNDOCUMENTED = new Set([
-  'DELETE /api/access/s3-keys/{id}',
-  'DELETE /api/workbench/projects/{id}/feedback/{fid}',
-  'GET /api/access/s3-keys',
-  'GET /api/workbench/projects/{id}/comparisons/{groupId}',
-  'GET /api/workbench/projects/{id}/feedback',
-  'GET /api/workbench/projects/{id}/iterations',
-  'GET /api/workbench/projects/{id}/iterations/{iid}',
-  'GET /api/workbench/projects/{id}/proposals',
-  'GET /api/workbench/projects/{id}/publications',
-  'GET /api/workbench/projects/{id}/publish-gate',
-  'GET /api/workbench/projects/{id}/references',
-  'GET /api/workbench/projects/{id}/segmentations/{jobId}',
-  'GET /api/workbench/projects/{id}/stages',
-  'POST /api/access/s3-keys',
-  'POST /api/access/s3-keys/keys/{keyId}/revoke',
-  'POST /api/access/s3-keys/{id}/rotate',
-  'POST /api/workbench/projects/{id}/evaluations',
-  'POST /api/workbench/projects/{id}/evaluations/compare',
-  'POST /api/workbench/projects/{id}/feedback',
-  'POST /api/workbench/projects/{id}/holdout/reference-runs',
-  'POST /api/workbench/projects/{id}/iterations/{iid}/restore',
-  'POST /api/workbench/projects/{id}/proposals/{pid}/decision',
-  'POST /api/workbench/projects/{id}/publish',
-  'POST /api/workbench/projects/{id}/segmentations',
-  'POST /api/workbench/projects/{id}/stages/{stage}',
-  'POST /api/workbench/projects/{id}/stages/{stage}/skip',
-]);
-
 const METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;
 type Operation = OpenAPIV3_1.OperationObject & { 'x-admin'?: boolean };
 
@@ -200,11 +167,10 @@ function operations(doc: Doc) {
 }
 
 describe('docs sweep', () => {
-  it('documents every route not on the undocumented list', async () => {
+  it('describes every documented route fully', async () => {
     const problems: string[] = [];
     const ids = new Set<string>();
     for (const { key, op } of operations(await openapi())) {
-      if (UNDOCUMENTED.has(key)) continue;
       const missing = [
         !op.tags?.length && 'tags',
         op.tags?.some((t) => !(t in TAGS)) && 'known tags',
@@ -220,7 +186,7 @@ describe('docs sweep', () => {
     expect(problems).toEqual([]);
   });
 
-  it('lists only routes that exist and are still undocumented', async () => {
+  it('documents every route (a route without tags is left out until it is)', async () => {
     const { app } = await accessApp();
     const doc = (await app.inject('/api/docs/openapi.json')).json<Doc>();
     const documented = new Set(operations(doc).map(({ key }) => key));
@@ -228,7 +194,7 @@ describe('docs sweep', () => {
       .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method) && !r.path.startsWith('/api/docs'))
       .map((r) => `${r.method} ${r.path.replace(/:([A-Za-z]+)/g, '{$1}')}`)
       .filter((key) => !documented.has(key));
-    expect([...UNDOCUMENTED].sort()).toEqual(undocumented.sort());
+    expect(undocumented, 'routes without docs: give each a schema with tags').toEqual([]);
   });
 
   it('leaves routes out of the document until they are documented', async () => {
@@ -243,7 +209,7 @@ describe('docs sweep', () => {
     for (const { key, path, method, op } of operations(doc)) {
       // Public routes are never admin-only (and logout would end the user's session).
       const isPublic = op.security?.length === 0;
-      if (UNDOCUMENTED.has(key) || !path.startsWith('/api/') || isPublic) continue;
+      if (!path.startsWith('/api/') || isPublic) continue;
       const reply = await app.inject({
         method: method.toUpperCase() as 'GET',
         url: path.replace(/\{[A-Za-z]+\}/g, '00000000-0000-4000-8000-000000000000'),

@@ -2,12 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
   ComparisonSchema,
   ExportViewSchema,
+  FeedbackItemSchema,
+  GateViewSchema,
+  IterationViewSchema,
   ModelInfoSchema,
   ProjectSummarySchema,
   ProjectViewSchema,
+  ProposalViewSchema,
+  PublicationSchema,
+  ReferenceRowSchema,
   ReferenceSchema,
   ReviewEditSchema,
   SampleViewSchema,
+  SegmentationViewSchema,
+  StageViewSchema,
   StepRunSchema,
 } from '../src/index.js';
 
@@ -139,6 +147,71 @@ const exportView = {
   updatedAt: '2026-10-13T09:00:01.000Z',
 };
 
+const at = '2026-10-13T09:00:00.000Z';
+const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+const iteration = {
+  id: id(10),
+  projectId: 'letter',
+  templateVersion: 2,
+  briefVersion: 1,
+  set: 'dev',
+  model: null,
+  groupId: null,
+  uncached: false,
+  createdAt: at,
+  status: 'complete',
+  score: 0.5,
+  completed: 1,
+  total: 1,
+  cache: { reused: 1, total: 2 },
+  scorecard: {
+    score: 0.5,
+    completed: 1,
+    total: 1,
+    fields: [{ id: 'sender', matched: 1, total: 1, accuracy: 1 }],
+    columns: [],
+  },
+  samples: [
+    {
+      sampleId: id(3),
+      filename: 'march.pdf',
+      jobId: id(11),
+      status: 'succeeded',
+      error: null,
+      comparison,
+    },
+  ],
+};
+
+const proposal = {
+  id: id(12),
+  stage: 'outputs',
+  status: 'ready',
+  error: null,
+  briefVersion: 1,
+  model: 'local/qwen',
+  body: { changes: [{ op: 'removeOutput', id: 'sender', reason: 'unused' }], notes: '' },
+  acceptedChanges: null,
+  createdAt: at,
+  decidedAt: null,
+};
+
+const referenceRow = {
+  sampleId: id(3),
+  filename: 'march.pdf',
+  sha256: 'ab'.repeat(32),
+  reference: {
+    id: id(1),
+    name: 'March',
+    createdAt: at,
+    version: 2,
+    carriedFrom: null,
+    outdated: [],
+  },
+  run: null,
+};
+
 describe.each([
   ['ReviewEdit', ReviewEditSchema, edit, 'at'],
   ['StepRun', StepRunSchema, step, 'trigger'],
@@ -154,6 +227,54 @@ describe.each([
   ['ProjectView', ProjectViewSchema, projectView, 'brief'],
   ['SampleView', SampleViewSchema, sample, 'state'],
   ['ExportView', ExportViewSchema, exportView, 'status'],
+  ['IterationView', IterationViewSchema, iteration, 'scorecard'],
+  ['ProposalView', ProposalViewSchema, proposal, 'stage'],
+  ['ReferenceRow', ReferenceRowSchema, referenceRow, 'reference'],
+  ['StageView', StageViewSchema, { stage: 'survey', state: 'accepted', completedAt: at }, 'state'],
+  [
+    'SegmentationView',
+    SegmentationViewSchema,
+    { jobId: id(13), status: 'running', error: null, result: null },
+    'status',
+  ],
+  [
+    'FeedbackItem',
+    FeedbackItemSchema,
+    {
+      id: id(14),
+      projectId: 'letter',
+      target: 'field',
+      targetId: 'sender',
+      sampleId: null,
+      iterationId: null,
+      body: 'Use the letterhead name.',
+      createdAt: at,
+      resolvedBy: null,
+    },
+    'body',
+  ],
+  [
+    'GateView',
+    GateViewSchema,
+    { threshold: 0.9, iterationId: null, score: null, passes: false, reason: 'no run' },
+    'passes',
+  ],
+  [
+    'Publication',
+    PublicationSchema,
+    {
+      id: id(15),
+      projectId: 'letter',
+      version: 2,
+      iterationId: id(10),
+      score: 0.95,
+      threshold: 0.9,
+      overrideReason: null,
+      publishedBy: 'Ken',
+      publishedAt: at,
+    },
+    'version',
+  ],
 ] as const)('%s schema', (_name, schema, example, required) => {
   it('accepts a full value', () => {
     expect(schema.parse(example)).toEqual(example);
