@@ -155,6 +155,19 @@ def test_export_refuses_a_pdf_that_does_not_match_its_sha(fixture_specs_dir: Pat
         run_export(export_job(), deps, FakeQueue())
 
 
+def test_export_refuses_an_empty_project_name(fixture_specs_dir: Path) -> None:
+    _, deps = make(fixture_specs_dir)
+    with pytest.raises(DocumentError, match="invalid export parameters"):
+        run_export(export_job(projectName=""), deps, FakeQueue())
+
+
+def test_readme_says_what_the_stages_read_and_what_revise_misses() -> None:
+    files = read_zip(build_bundle(manifest={}, context="", brief={}, draft=None, pdfs={}))
+    readme = files["README.md"].decode()
+    assert "survey, outputs, sections and steps" in readme
+    assert "revise" in readme and "feedback" in readme and "evaluation failures" in readme
+
+
 def test_only_the_first_samples_are_in_context(fixture_specs_dir: Path) -> None:
     store, deps = make(fixture_specs_dir)
     samples = []

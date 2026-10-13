@@ -1,8 +1,10 @@
 """Workbench drafting bundle (phase 6, ADR 0007).
 
-The export task writes exactly what the in-harness drafter sees: `context.md` comes from
-`drafting.build_context`, the same function every drafting stage uses, plus each stage's
-instructions and JSON Schema, the brief, the draft template and the dev sample PDFs. Holdout
+The export task writes what the in-harness drafter sees: `context.md` comes from
+`drafting.build_context`, the context the survey, outputs, sections and steps stages read
+(`revise` additionally sees feedback and evaluation failures, which bundles do not carry), plus
+each stage's instructions and JSON Schema, the brief, the draft template and the dev sample
+PDFs. Holdout
 samples are refused here as they are in drafting. The manifest is parsed by
 `BundleManifestSchema` (packages/shared/src/bundle.ts).
 """
@@ -37,8 +39,10 @@ _ZIP_TIME = (2020, 1, 1, 0, 0, 0)
 README = """\
 # Workbench drafting bundle
 
-- `context.md` is exactly what the harness's drafting model reads: harness rules, the brief,
-  the current draft, an example template and the dev samples' text (at most 8).
+- `context.md` is exactly what the harness's drafting model reads in the
+  survey, outputs, sections and steps stages: harness rules, the brief, the current draft, an
+  example template and the dev samples' text (at most 8). The revise stage additionally sees
+  feedback and evaluation failures, which bundles do not carry.
 - `stages/<stage>.md` is a stage's instructions and `stages/<stage>.schema.json` the JSON
   Schema its answer must satisfy. Give a model `context.md` followed by one stage's
   instructions, and ask for JSON matching the schema.
@@ -52,7 +56,7 @@ README = """\
 class ExportParams(DraftParams):
     """jobs.params of an export job (written by the API): a drafting context plus the name."""
 
-    project_name: str = Field(alias="projectName")
+    project_name: str = Field(alias="projectName", min_length=1)
 
 
 def build_bundle(
