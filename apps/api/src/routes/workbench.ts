@@ -17,6 +17,8 @@ import {
   FeedbackBodySchema,
   FeedbackItemSchema,
   GateViewSchema,
+  PublishGateViewSchema,
+  gateHints,
   IterationSummarySchema,
   KEEPABLE_STAGES,
   IterationViewSchema,
@@ -69,6 +71,7 @@ import {
   type FailureDiff,
   type FeedbackItem,
   type GateView,
+  type PublishGateView,
   type IterationSummary,
   type IterationView,
   type JobDetail,
@@ -1296,16 +1299,34 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           needs review, was cancelled or deleted fails it), and scored at or above the
           project's threshold. \`reason\` says why it passes or fails. Scores are recomputed
           from the models' raw output, so review edits cannot raise them.
+
+          \`hints\` (handoff EV1) are the deciding iteration's fields and \`table.column\`s
+          below the threshold, worst first, at most 5: \`no_step\` when no step of the draft
+          fills the output (fix on the Steps tab, \`stage: steps\`), else \`low_accuracy\`
+          (\`stage: revise\`). Empty without a deciding iteration. The overview's \`gate\`
+          carries no hints.
         `,
         params: ProjectIdParams,
-        response: { 200: res('The gate.', GateViewSchema), 404: PROJECT_NOT_FOUND },
+        response: {
+          200: res('The gate and what lowers its score.', PublishGateViewSchema),
+          404: PROJECT_NOT_FOUND,
+        },
       },
     },
-    async (req, reply): Promise<GateView> => {
+    async (req, reply): Promise<PublishGateView> => {
       const project = await workbench.getProject(req.params.id);
       if (!project) return reply.code(404).send({ error: 'project not found' });
-      const { threshold, iterationId, score, passes, reason } = await gateFor(app, project);
-      return { threshold, iterationId, score, passes, reason };
+      const { threshold, iterationId, score, passes, reason, definition } = await gateFor(
+        app,
+        project,
+      );
+      const gate = { threshold, iterationId, score, passes, reason };
+      if (iterationId === null || definition === null) return { ...gate, hints: [] };
+      const iteration = await workbench.getIteration(project.id, iterationId);
+      if (!iteration) return { ...gate, hints: [] };
+      // The same raw-output comparison the gate scored (holdout iterations ignore review edits).
+      const { scorecard } = await iterationView(app, iteration);
+      return { ...gate, hints: gateHints({ threshold, scorecard, definition }) };
     },
   );
 
