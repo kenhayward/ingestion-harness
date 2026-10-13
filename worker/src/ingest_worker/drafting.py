@@ -14,7 +14,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .draft_changes import apply_changes
-from .draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage
+from .draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage, resolve_answers
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
@@ -181,10 +181,10 @@ def build_context(
         blocks.append(f"<survey>\n{json.dumps(survey, indent=1, ensure_ascii=False)}\n</survey>")
     if feedback:
         lines = [
-            f"- [{f.get('target')} {f.get('targetId')}]"
+            f"- F{n} [{f.get('target')} {f.get('targetId')}]"
             + (f" (sample {f['sample']})" if f.get("sample") else "")
             + f": {f.get('body', '')}"
-            for f in feedback
+            for n, f in enumerate(feedback, 1)
         ]
         blocks.append("<feedback>\n" + "\n".join(lines) + "\n</feedback>")
     if failures:
@@ -260,6 +260,16 @@ def prepared_pages(deps: PipelineDeps, sha256: str) -> list[str]:
     return [str(p["text"]) for p in json.loads(raw)["pages"]]
 
 
+def select_failures(failures: list[dict[str, Any]], dev_files: set[str]) -> list[dict[str, Any]]:
+    """The failures a revision sends (TS revisionFailures; shared fixture revise-failures.json):
+    dev samples only, lowest score first (stable), at most MAX_CONTEXT_SAMPLES. The API sends
+    them already selected, so this is a defensive no-op on its input."""
+    return sorted(
+        (f for f in failures if f.get("sample") in dev_files),
+        key=lambda f: float(f.get("score", 0)),
+    )[:MAX_CONTEXT_SAMPLES]
+
+
 def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     """Run one drafting stage and write its result (TS: DraftResult) to the runs bucket."""
     try:
@@ -293,10 +303,9 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     names = {s.filename for s in params.samples if s.role == "dev"}
     dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
     # The worst-scoring failures are the most worth fixing; the cap keeps the prompt bounded.
-    dev_failures = sorted(
-        (f for f in params.failures if f.get("sample") in names),
-        key=lambda f: float(f.get("score", 0)),
-    )[:MAX_CONTEXT_SAMPLES]
+    dev_failures = select_failures(params.failures, names)
+    # The prompt labels feedback F1..Fn in this order; answers name those labels (RV2).
+    labels = {f"F{n}": str(f["id"]) for n, f in enumerate(dev_feedback, 1) if f.get("id")}
     context = build_context(
         brief=params.brief,
         draft=params.draft,
@@ -355,6 +364,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     prompt = f"{context}\n\n{stage.instructions}"
     result, body = propose(prompt, f"draft-{stage.id}")
+    if stage.id == "revise":
+        body = resolve_answers(body, labels)
     if stage.id == "survey":
         body = clamp_seen_in(body, len(samples))
     if stage.id == "sections":

@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
 from ingest_worker.drafting import (
     DRAFT_MAX_TOKENS,
@@ -19,6 +20,7 @@ from ingest_worker.drafting import (
     anchor_check,
     build_context,
     clamp_seen_in,
+    select_failures,
 )
 from ingest_worker.llm.base import LLMError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
@@ -474,6 +476,7 @@ def revise_response() -> dict[str, Any]:
     props = REVISE_SCHEMA["properties"]["changes"]["items"]["properties"]
     kinds: dict[str, Any] = {"string": "", "array": [], "integer": 0, "boolean": True}
     change: dict[str, Any] = {"op": "putStep", "reason": "feedback"}
+    change["answers"] = []
     for key in ("field", "table", "section", "step"):
         change[key] = {k: kinds[v["type"]] for k, v in props[key]["properties"].items()}
     change["step"] |= {
@@ -687,3 +690,47 @@ def test_survey_job_stores_seen_in_against_the_samples_sent(fixture_specs_dir: P
 
     result = json.loads(store.get("runs", drafting_key("letter", "job-d")))
     assert result["body"]["candidates"][0]["seenIn"] == {"n": 1, "of": 1}
+
+
+FAILURES_FIXTURE = REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "revise-failures.json"
+FAILURE_CASES: list[dict[str, Any]] = json.loads(FAILURES_FIXTURE.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case", FAILURE_CASES, ids=[c["name"] for c in FAILURE_CASES])
+def test_select_failures_matches_the_shared_fixture(case: dict[str, Any]) -> None:
+    picked = select_failures(case["failures"], set(case["dev"]))
+    assert [f["sample"] for f in picked] == case["expected"]
+
+
+def test_revise_labels_feedback_and_stores_the_ids_a_change_answers(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    response = revise_response()
+    response["changes"][0]["answers"] = ["F2", "f1", "F9", "F2"]
+    provider.responses = [response]
+    feedback = [
+        {"id": "fb-1", "target": "field", "targetId": "sender", "sample": None, "body": "one"},
+        {"id": "fb-2", "target": "step", "targetId": "head", "sample": None, "body": "two"},
+    ]
+    job = draft_job(
+        stage="revise", draft=REVISE_DRAFT, feedback=feedback, feedbackIds=["fb-1", "fb-2"]
+    )
+    queue = FakeQueue(jobs=[job])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    prompt = str(provider.calls[0][1].prompt)
+    assert "- F1 [field sender]: one" in prompt and "- F2 [step head]: two" in prompt
+    assert "'answers'" in str(provider.calls[0][1].json_schema)
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert body["changes"][0]["answers"] == ["fb-2", "fb-1"]
+
+
+def test_revise_change_without_answers_is_stored_without_them(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [revise_response()]
+    feedback = [{"id": "fb-1", "target": "field", "targetId": "sender", "body": "one"}]
+    queue = FakeQueue(jobs=[draft_job(stage="revise", draft=REVISE_DRAFT, feedback=feedback)])
+    run_once(queue, deps, "w1")
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert "answers" not in body["changes"][0]
