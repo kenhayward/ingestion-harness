@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { preparedTriageKey, type ProjectOverview, type SampleView } from '@ih/shared';
+import {
+  draftingKey,
+  preparedTriageKey,
+  type DraftStage,
+  type ProjectOverview,
+  type SampleView,
+} from '@ih/shared';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -39,8 +45,28 @@ async function project() {
     }
     return s;
   };
-  return { ...ctx, overview, item, addSample };
+  const metrics = async (stage: string) => (await item(stage)).metrics;
+  /** A proposal with its finished draft job and, unless null, its stored result. */
+  const proposal = async (stage: DraftStage, result: Buffer | null) => {
+    const job = await ctx.repo.createDraftJob('letter', {});
+    ctx.repo.draftJobs.set(job.id, { ...ctx.repo.draftJobs.get(job.id)!, status: 'succeeded' });
+    const p = await ctx.workbench.createProposal({
+      id: job.id,
+      projectId: 'letter',
+      stage,
+      briefVersion: null,
+    });
+    if (result)
+      await ctx.store.put('runs', draftingKey('letter', p.id), result, 'application/json');
+    return p;
+  };
+  const draftResult = (stage: DraftStage, body: unknown, model = 'local/big') =>
+    Buffer.from(JSON.stringify({ stage, model, body, usage: { inputTokens: 1, outputTokens: 2 } }));
+  return { ...ctx, overview, item, metrics, addSample, proposal, draftResult };
 }
+
+const removeStep = (id: string) => ({ op: 'removeStep', id, reason: 'not needed' });
+const removeOutput = (id: string) => ({ op: 'removeOutput', id, reason: 'not needed' });
 
 describe('GET /api/workbench/projects/:id/overview', () => {
   it('is 404 for an unknown project', async () => {
@@ -165,18 +191,192 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     });
   });
 
-  it('reads no prepared triage for its own sample counts', async () => {
+  it('reads prepared triage once per sample list it builds', async () => {
     const p = await project();
     const s = await p.addSample(1, true);
     const get = vi.spyOn(p.store, 'get');
     await p.overview();
     const triageReads = get.mock.calls.filter(([, key]) => String(key).startsWith('prepared/'));
-    // The publish gate and the references stage still read it through `sampleViews` (one read
-    // each; sharing their context is PR 6); the overview's own sample counts add none.
-    expect(triageReads).toEqual([
-      ['runs', preparedTriageKey(s.sha256)],
-      ['runs', preparedTriageKey(s.sha256)],
+    // Every `sampleViews` call reads each ready sample's triage once, and an overview makes five
+    // (sharing one list between them is PR 6): the publish gate, the references stage, the
+    // overview's own sample facts (OCR pages), and the dev and holdout reference figures
+    // (`referenceRows`).
+    expect(triageReads).toEqual(Array(5).fill(['runs', preparedTriageKey(s.sha256)]));
+  });
+
+  it('gives dashes and zeros for a new project', async () => {
+    const p = await project();
+    const o = await p.overview();
+    const metrics = Object.fromEntries(o.stages.map((s) => [s.stage, s.metrics]));
+    expect(metrics.samples).toEqual([
+      { label: 'Dev · holdout', value: '0 · 0', at: null },
+      { label: 'OCR pages', value: '—', at: null },
     ]);
+    expect(metrics.survey).toEqual([
+      { label: 'Questions', value: '—', at: null },
+      { label: 'Fields · tables', value: '—', at: null },
+    ]);
+    expect(metrics.publish).toEqual([
+      { label: 'Needs holdout', value: '≥ 90%', at: null },
+      { label: 'Live version', value: '—', at: null },
+    ]);
+    for (const s of o.stages) expect(s.metrics).toHaveLength(2);
+  });
+
+  it('counts samples, OCR pages and the brief', async () => {
+    const p = await project();
+    await p.addSample(1, true); // triage: pageCount 1, ocrPages []
+    const brief = await p.app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: {
+        purpose: 'Letters',
+        answers: [
+          { question: 'Who signs?', answer: 'The clerk' },
+          { question: 'Dates?', answer: ' ' },
+        ],
+      },
+    });
+    expect(brief.statusCode).toBe(201);
+    const o = await p.overview();
+    const of = (stage: string) => o.stages.find((s) => s.stage === stage)!.metrics;
+    expect(of('samples')).toEqual([
+      { label: 'Dev · holdout', value: '1 · 0', at: null },
+      { label: 'OCR pages', value: '0 of 1', at: null },
+    ]);
+    expect(of('brief')[0]).toEqual({ label: 'Answers', value: '1', at: null });
+    expect(of('brief')[1]!.at).toEqual(o.project.brief!.createdAt);
+    expect(of('survey')[0]).toEqual({ label: 'Questions', value: '1 of 2 answered', at: null });
+    expect(of('sections')[1]).toEqual({ label: 'Anchors found', value: '—', at: null });
+    expect(of('references')).toEqual([
+      { label: 'Dev', value: '0 / 1', at: null },
+      { label: 'Holdout', value: '0 / 0', at: null },
+    ]);
+  });
+
+  it('reads the template figures from the open draft', async () => {
+    const p = await project();
+    const o = await p.overview();
+    const template = o.stages.find((s) => s.stage === 'template')!.metrics;
+    // `letter`: one pipeline step, one section, one field.
+    expect(template[0]).toEqual({ label: 'Steps · sections', value: '1 · 1', at: null });
+    const record = (await p.templates.get('letter', 1))!;
+    expect(template[1]).toEqual({ label: 'Hand edit', value: '—', at: record.updatedAt });
+    expect(await p.metrics('outputs')).toEqual([
+      { label: 'Fields · tables', value: '1 · 0', at: null },
+      { label: 'Changes applied', value: '—', at: null },
+    ]);
+    expect((await p.metrics('sections'))[0]).toEqual({ label: 'Sections', value: '1', at: null });
+  });
+
+  it('survives a corrupt drafting body', async () => {
+    const p = await project();
+    const outputs = await p.proposal('outputs', Buffer.from('{not json'));
+    await p.workbench.decideProposal('letter', outputs.id, 'accepted');
+    await p.proposal('steps', p.draftResult('steps', { notes: 'not a change body' }));
+    const res = await p.app.inject('/api/workbench/projects/letter/overview');
+    expect(res.statusCode).toBe(200);
+    const of = (stage: string) =>
+      res.json<ProjectOverview>().stages.find((s) => s.stage === stage)!.metrics;
+    expect(of('outputs')[1]).toEqual({ label: 'Changes applied', value: '—', at: null });
+    expect(of('steps')).toEqual([
+      { label: 'Proposed changes', value: '—', at: null },
+      { label: 'Model', value: '—', at: null },
+    ]);
+  });
+
+  it('reads the drafting figures from the newest proposals', async () => {
+    const p = await project();
+    const older = await p.proposal(
+      'steps',
+      p.draftResult('steps', { notes: '', changes: [removeStep('a')] }),
+    );
+    await p.workbench.decideProposal('letter', older.id, 'rejected');
+    await p.proposal(
+      'steps',
+      p.draftResult(
+        'steps',
+        { notes: '', changes: ['a', 'b', 'c', 'd'].map(removeStep) },
+        'local/qwen3.8-27b-mtp',
+      ),
+    );
+    expect((await p.metrics('steps')).map((m) => [m.label, m.value])).toEqual([
+      ['Proposed changes', '4'],
+      ['Model', 'qwen3.8-27b-mtp'],
+    ]);
+
+    const outputs = await p.proposal(
+      'outputs',
+      p.draftResult('outputs', { notes: '', changes: [removeOutput('a'), removeOutput('b')] }),
+    );
+    await p.workbench.decideProposal('letter', outputs.id, 'partially_accepted', [1]);
+    expect((await p.metrics('outputs'))[1]).toEqual({
+      label: 'Changes applied',
+      value: '1 of 2',
+      at: null,
+    });
+
+    const sample = (sampleId: string, error: string | null, missingRequired: string[]) => ({
+      sampleId,
+      firstPage: 1,
+      pageCount: 1,
+      error,
+      missingRequired,
+      sections: [],
+    });
+    await p.proposal(
+      'sections',
+      p.draftResult('sections', {
+        notes: '',
+        changes: [],
+        anchorCheck: {
+          anchorErrors: {},
+          samples: [
+            sample('a', null, []),
+            sample('b', 'not prepared', []),
+            sample('c', null, ['all']),
+          ],
+        },
+      }),
+    );
+    await p.addSample(1, true);
+    expect((await p.metrics('sections'))[1]).toEqual({
+      label: 'Anchors found',
+      value: '1 / 1 dev',
+      at: null,
+    });
+
+    const revise = await p.proposal('revise', null);
+    expect((await p.metrics('revise'))[1]).toEqual({
+      label: 'Last revision',
+      value: '—',
+      at: revise.createdAt,
+    });
+  });
+
+  it("shows the newest finished dev evaluation's cached score", async () => {
+    const p = await project();
+    const definition = (await p.templates.get('letter', 1))!.definition;
+    const iteration = (model: 'fast' | null) =>
+      p.workbench.createIteration({
+        projectId: 'letter',
+        templateVersion: 1,
+        definition,
+        briefVersion: null,
+        set: 'dev',
+        model,
+        jobIds: [],
+      });
+    const own = await iteration(null);
+    await p.workbench.setIterationScores(own.id, { score: 0.75, completed: 1, total: 1 });
+    const fast = await iteration('fast');
+    await p.workbench.setIterationScores(fast.id, { score: 0.5, completed: 1, total: 1 });
+    await iteration(null); // still running: no cached score yet
+    expect((await p.metrics('evaluate'))[0]).toEqual({
+      label: 'Dev score',
+      value: '75%',
+      at: null,
+    });
   });
 
   it('counts test runs by status', async () => {

@@ -195,7 +195,7 @@ async function readJson(app: FastifyInstance, key: string): Promise<unknown | nu
 }
 
 /** Like `readJson`, but a corrupt object reads as `undefined` instead of throwing. */
-async function readJsonSafe(
+export async function readJsonSafe(
   app: FastifyInstance,
   key: string,
 ): Promise<unknown | null | undefined> {
@@ -207,7 +207,7 @@ async function readJsonSafe(
   }
 }
 
-function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | null {
+export function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | null {
   if (stage === 'survey') {
     const survey = SurveyBodySchema.safeParse(body);
     return survey.success ? survey.data : null;
@@ -487,7 +487,7 @@ async function currentReferences(app: FastifyInstance, projectId: string) {
  * Ready samples of one set with their newest reference (by PDF sha256) and newest
  * non-evaluation run.
  */
-async function referenceRows(
+export async function referenceRows(
   app: FastifyInstance,
   projectId: string,
   set: EvaluationSet = 'dev',
