@@ -35,6 +35,7 @@ export function EvaluateTab({
   draft,
   pollMs,
   onRestored,
+  onStarted,
 }: {
   api: Api;
   projectId: string;
@@ -44,6 +45,8 @@ export function EvaluateTab({
   draft: number | null;
   pollMs: number;
   onRestored: () => void;
+  /** Called after an evaluation or a model comparison has been started. */
+  onStarted?: () => void;
 }) {
   const [history, setHistory] = useState<IterationSummary[] | null>(null);
   const [current, setCurrent] = useState<IterationView | null>(null);
@@ -160,10 +163,12 @@ export function EvaluateTab({
       setCurrent(started);
       setOpen(null);
       setHistory((h) => [started, ...(h ?? [])]);
+      onStarted?.();
     });
   const compare = () =>
     act(async () => {
       setComparison(await api.startComparison(projectId, { uncached }));
+      onStarted?.();
     });
   const restore = (id: string) =>
     act(async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProjectOverview, ProjectView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import type { ProjectTab } from '../router.js';
@@ -99,10 +99,29 @@ export function ProjectPage({
   }, [api, projectId]);
   useEffect(load, [load]);
 
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  /** Numbers each overview request, so an older response never replaces a newer one. */
+  const overviewRequest = useRef(0);
+  const overviewInFlight = useRef(false);
   const loadOverview = useCallback(() => {
-    api.getProjectOverview(projectId).then(setOverview, () => undefined);
+    const request = ++overviewRequest.current;
+    overviewInFlight.current = true;
+    api.getProjectOverview(projectId).then(
+      (o) => {
+        if (request !== overviewRequest.current) return;
+        overviewInFlight.current = false;
+        setOverview(o);
+        setOverviewError(null);
+      },
+      (err: Error) => {
+        if (request !== overviewRequest.current) return;
+        overviewInFlight.current = false;
+        setOverviewError(err.message);
+      },
+    );
   }, [api, projectId]);
-  useEffect(loadOverview, [loadOverview]);
+  // Also on every tab change: the tabs' own actions change the stages.
+  useEffect(loadOverview, [loadOverview, tab]);
   useEffect(() => {
     window.addEventListener('focus', loadOverview);
     return () => window.removeEventListener('focus', loadOverview);
@@ -110,7 +129,9 @@ export function ProjectPage({
   const running = overview?.stages.some((s) => s.state === 'running') ?? false;
   useEffect(() => {
     if (!running || pollMs <= 0) return;
-    const timer = setInterval(loadOverview, pollMs);
+    const timer = setInterval(() => {
+      if (!overviewInFlight.current) loadOverview();
+    }, pollMs);
     return () => clearInterval(timer);
   }, [running, pollMs, loadOverview]);
 
@@ -173,17 +194,21 @@ export function ProjectPage({
   const { project, draft, published } = view;
   return (
     <section className="workbench project-page">
-      {overview ? (
-        <ProjectHeader
-          view={view}
-          gate={overview.gate}
-          role={role}
-          onTogglePolicy={() => void togglePolicy()}
-        />
-      ) : (
-        <h1>{project.name}</h1>
-      )}
+      <ProjectHeader
+        view={view}
+        gate={overview?.gate ?? null}
+        role={role}
+        onTogglePolicy={() => void togglePolicy()}
+      />
       {error && <p role="alert">{error}</p>}
+      {overviewError && (
+        <p role="alert">
+          Could not load the project status: {overviewError}{' '}
+          <button type="button" onClick={loadOverview}>
+            Retry
+          </button>
+        </p>
+      )}
       <div className="project-layout">
         <ProjectRail
           projectId={project.id}
@@ -196,9 +221,11 @@ export function ProjectPage({
             (overview ? (
               <OverviewTab projectId={project.id} overview={overview} />
             ) : (
-              <p>Loading…</p>
+              !overviewError && <p>Loading…</p>
             ))}
-          {tab === 'samples' && <SamplesTab api={api} projectId={project.id} pollMs={pollMs} />}
+          {tab === 'samples' && (
+            <SamplesTab api={api} projectId={project.id} pollMs={pollMs} onChanged={loadOverview} />
+          )}
           {tab === 'brief' && (
             <>
               <BriefTab
@@ -293,6 +320,7 @@ export function ProjectPage({
               draft={draft}
               pollMs={pollMs}
               onRestored={changed}
+              onStarted={loadOverview}
             />
           )}
           {tab === 'revise' && (

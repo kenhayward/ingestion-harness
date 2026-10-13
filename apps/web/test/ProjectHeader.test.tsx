@@ -39,6 +39,15 @@ describe('ProjectHeader', () => {
     );
   });
 
+  it('hides Publish while the gate is unknown but keeps the policy controls', () => {
+    render(
+      <ProjectHeader view={projectView()} gate={null} role="admin" onTogglePolicy={vi.fn()} />,
+    );
+    expect(screen.queryByRole('link', { name: /Publish/ })).toBeNull();
+    expect(screen.getByText('Local models only')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow external models…' })).toBeInTheDocument();
+  });
+
   it('offers Publish when the gate passes', () => {
     render(
       <ProjectHeader

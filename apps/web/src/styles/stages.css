@@ -245,6 +245,30 @@
   border-radius: var(--ih-radius-lg);
   background: var(--ih-surface);
 }
+.next-banner[data-tone] {
+  border-left-width: 4px;
+}
+.next-banner[data-tone='ok'] {
+  border-left-color: var(--ih-ok-fg);
+}
+.next-banner[data-tone='warn'] {
+  border-left-color: var(--ih-warn-fg);
+}
+.next-banner[data-tone='accent'] {
+  border-left-color: var(--ih-accent);
+}
+.next-banner[data-tone='alert'] {
+  border-left-color: var(--ih-alert-fg);
+}
+.next-banner[data-tone='skip'] {
+  border-left-color: var(--ih-skip-fg);
+}
+.next-banner[data-tone='lock'] {
+  border-left-color: var(--ih-lock-fg);
+}
+.next-banner[data-tone='neutral'] {
+  border-left-color: var(--ih-border-strong);
+}
 .next-banner p {
   margin: 4px 0 0;
   color: var(--ih-muted);

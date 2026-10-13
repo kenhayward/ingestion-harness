@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SampleText } from '../src/workbench/SampleText.js';
@@ -68,6 +68,36 @@ describe('SamplesTab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'two.pdf: this PDF is already a sample of the project',
     );
+  });
+
+  it('tells the page after a successful upload, role change or removal, not after a failed upload', async () => {
+    const good = sampleView({ filename: 'good.pdf' });
+    const uploadSample = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('this PDF is already a sample of the project'))
+      .mockResolvedValue(sampleView());
+    const api = fakeApi({
+      listSamples: vi.fn(async () => [good]),
+      uploadSample,
+      setSampleRole: vi.fn(async () => ({ ...good, role: 'holdout' as const })),
+    });
+    const onChanged = vi.fn();
+    render(<SamplesTab api={api} projectId="letter" pollMs={60_000} onChanged={onChanged} />);
+    await screen.findByRole('table', { name: 'Samples' });
+    const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
+
+    await userEvent.upload(screen.getByLabelText('Add sample PDFs'), file);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+
+    await userEvent.upload(screen.getByLabelText('Add sample PDFs'), file);
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+
+    await userEvent.selectOptions(screen.getByLabelText('Role of good.pdf'), 'holdout');
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(within(row('good.pdf')).getByRole('button', { name: 'Remove good.pdf' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(3));
   });
 
   it('changes a role, retries a failed preparation and removes a sample', async () => {

@@ -8,10 +8,13 @@ export function SamplesTab({
   api,
   projectId,
   pollMs,
+  onChanged,
 }: {
   api: Api;
   projectId: string;
   pollMs: number;
+  /** Called after a successful upload, retry, role change or removal. */
+  onChanged?: () => void;
 }) {
   const [samples, setSamples] = useState<SampleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export function SamplesTab({
     setError(null);
     try {
       await action();
+      onChanged?.();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -50,15 +54,18 @@ export function SamplesTab({
   const upload = async (files: File[]) => {
     setUploading(true);
     const failures: string[] = [];
+    let uploaded = 0;
     for (const file of files) {
       try {
         await api.uploadSample(projectId, file, 'dev');
+        uploaded += 1;
       } catch (err) {
         failures.push(`${file.name}: ${(err as Error).message}`);
       }
     }
     setUploading(false);
     setError(failures.length ? failures.join('; ') : null);
+    if (uploaded > 0) onChanged?.();
     await refresh();
   };
 

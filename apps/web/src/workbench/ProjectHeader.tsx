@@ -9,7 +9,8 @@ export function ProjectHeader({
   onTogglePolicy,
 }: {
   view: ProjectView;
-  gate: GateView;
+  /** Null while the overview is unknown: Publish is hidden until the gate is known. */
+  gate: GateView | null;
   role: 'admin' | 'user';
   onTogglePolicy: () => void;
 }) {
@@ -41,7 +42,7 @@ export function ProjectHeader({
             {external ? 'Restrict to local models' : 'Allow external models…'}
           </button>
         )}
-        {draft !== null && (
+        {draft !== null && gate && (
           <a
             className={gate.passes ? 'button' : 'button locked'}
             href={`#/workbench/${project.id}/evaluate`}

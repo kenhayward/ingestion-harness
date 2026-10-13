@@ -37,6 +37,60 @@ describe('EvaluateTab', () => {
     });
   });
 
+  it('tells the page once an evaluation or a comparison has started', async () => {
+    const it0 = iterationView({ status: 'running', score: null });
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listIterations: vi.fn(async () => []),
+      startEvaluation: vi.fn(async () => it0),
+      getIteration: vi.fn(async () => it0),
+      startComparison: vi.fn(async () => ({ groupId: 'g1', iterations: [] })),
+    });
+    const onStarted = vi.fn();
+    render(
+      <EvaluateTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        hasDraft
+        draft={2}
+        pollMs={60_000}
+        onRestored={vi.fn()}
+        onStarted={onStarted}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Compare models' }));
+    await waitFor(() => expect(onStarted).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Evaluate the draft' }));
+    await waitFor(() => expect(onStarted).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not tell the page when starting an evaluation fails', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listIterations: vi.fn(async () => []),
+      startEvaluation: vi.fn(async () => {
+        throw new Error('no ready dev samples');
+      }),
+    });
+    const onStarted = vi.fn();
+    render(
+      <EvaluateTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        hasDraft
+        draft={2}
+        pollMs={60_000}
+        onRestored={vi.fn()}
+        onStarted={onStarted}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Evaluate the draft' }));
+    expect(await screen.findByText('no ready dev samples')).toBeInTheDocument();
+    expect(onStarted).not.toHaveBeenCalled();
+  });
+
   it('evaluates the holdout set, which cannot be compared across models', async () => {
     const it0 = iterationView({ status: 'running', score: null, set: 'holdout' });
     const { api } = tab({

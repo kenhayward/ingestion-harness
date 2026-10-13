@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
@@ -114,6 +114,61 @@ describe('ProjectPage', () => {
     unmount();
     window.dispatchEvent(new Event('focus'));
     expect(getProjectOverview.mock.calls.length).toBe(calls + 1);
+  });
+
+  it('shows an overview failure, keeps the header and retries', async () => {
+    const getProjectOverview = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('service unavailable'))
+      .mockResolvedValue(projectOverview());
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()), getProjectOverview });
+    page(api);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not load the project status: service unavailable',
+    );
+    expect(screen.getByRole('button', { name: 'Allow external models…' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(getProjectOverview).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(await screen.findByRole('link', { name: 'Samples: Not started' })).toBeInTheDocument();
+  });
+
+  it('refetches the overview when the tab changes', async () => {
+    const getProjectOverview = vi.fn(async () => projectOverview());
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()), getProjectOverview });
+    const props = {
+      api,
+      projectId: 'letter',
+      onNavigate: vi.fn(),
+      pollMs: 60_000,
+      role: 'admin' as const,
+    };
+    const { rerender } = render(<ProjectPage {...props} tab="overview" />);
+    await screen.findByRole('navigation', { name: 'Project steps' });
+    await waitFor(() => expect(getProjectOverview).toHaveBeenCalledTimes(1));
+    rerender(<ProjectPage {...props} tab="brief" />);
+    await waitFor(() => expect(getProjectOverview).toHaveBeenCalledTimes(2));
+  });
+
+  it('ignores an older overview that arrives after a newer one', async () => {
+    let resolveFirst: (o: ReturnType<typeof projectOverview>) => void = () => undefined;
+    const getProjectOverview = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValue(overviewWith({ samples: { state: 'accepted', status: 'Ready: 3 dev' } }));
+    const api = fakeApi({ getProject: vi.fn(async () => projectView()), getProjectOverview });
+    page(api);
+    await screen.findByRole('navigation', { name: 'Project steps' });
+    window.dispatchEvent(new Event('focus'));
+    await screen.findByRole('link', { name: 'Samples: Ready: 3 dev' });
+    resolveFirst(projectOverview());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByRole('link', { name: 'Samples: Ready: 3 dev' })).toBeInTheDocument();
   });
 
   it('offers the drafting bundle export on the Brief tab', async () => {
