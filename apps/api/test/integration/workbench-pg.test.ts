@@ -1018,4 +1018,223 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       }
     });
   });
+  describe('project list support', () => {
+    const fingerprintOf = async (id: string) =>
+      (await workbench.projectFingerprints()).find((f) => f.id === id)!;
+
+    it('moves the fingerprint on every input the overview reads, and only for that project', async () => {
+      const projectId = await newProject();
+      const other = await newProject();
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
+        [projectId],
+      );
+      const prepare = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+      const sample = await workbench.addSample({
+        projectId,
+        documentId: prepare.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      const otherBefore = await fingerprintOf(other);
+      expect(await fingerprintOf(projectId)).toEqual(await fingerprintOf(projectId));
+
+      // Each input applied in turn; every one must move the fingerprint.
+      const inputs: [string, () => Promise<unknown>][] = [];
+      const add = (label: string, change: () => Promise<unknown>) => inputs.push([label, change]);
+      // A worker status write; this one deliberately leaves updated_at alone.
+      add('job status', () =>
+        pool.query(`UPDATE jobs SET status = 'succeeded' WHERE id = $1`, [prepare.id]),
+      );
+      add('job updated_at', () =>
+        pool.query(`UPDATE jobs SET updated_at = now() WHERE id = $1`, [prepare.id]),
+      );
+      let draftJobId = '';
+      add('draft job created', async () => {
+        draftJobId = (await repo.createDraftJob(projectId, { stage: 'survey' })).id;
+      });
+      add('draft job status', () =>
+        pool.query(`UPDATE jobs SET status = 'running' WHERE id = $1`, [draftJobId]),
+      );
+      let extraDoc = '';
+      add('prepare job created', async () => {
+        const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+        extraDoc = job.documentId;
+      });
+      add('sample added', () =>
+        workbench.addSample({ projectId, documentId: extraDoc, role: 'dev', addedForVersion: 1 }),
+      );
+      add('sample role', () => workbench.setSampleRole(projectId, sample.id, 'holdout'));
+      add('sample role back', () => workbench.setSampleRole(projectId, sample.id, 'dev'));
+      add('brief saved', () => workbench.saveBrief(projectId, EMPTY_BRIEF));
+      add('template draft edit', () =>
+        pool.query(
+          `UPDATE templates SET definition = '{"x":1}', updated_at = now() WHERE id = $1`,
+          [projectId],
+        ),
+      );
+      add('threshold', () => workbench.setPublishThreshold(projectId, 0.75, 'me'));
+      add('data policy', () => workbench.setDataPolicy(projectId, 'external', 'me'));
+      add('name', () =>
+        pool.query(`UPDATE workbench_projects SET name = 'Renamed' WHERE id = $1`, [projectId]),
+      );
+      add('stage skip', () => workbench.addSkip(projectId, 'survey'));
+      add('stage skip deleted', () =>
+        pool.query('DELETE FROM workbench_stage_skips WHERE project_id = $1', [projectId]),
+      );
+      add('proposal created', () =>
+        workbench.createProposal({
+          id: draftJobId,
+          projectId,
+          stage: 'survey',
+          briefVersion: null,
+        }),
+      );
+      add('proposal decided', () => workbench.decideProposal(projectId, draftJobId, 'accepted'));
+      let iterationId = '';
+      add('iteration created', async () => {
+        const iteration = await workbench.createIteration({
+          projectId,
+          templateVersion: 1,
+          definition: {},
+          briefVersion: null,
+          set: 'holdout',
+          model: null,
+          jobIds: [],
+        });
+        iterationId = iteration.id;
+      });
+      add('iteration scored', () =>
+        workbench.setIterationScores(iterationId, { score: 1, completed: 0, total: 0 }),
+      );
+      add('gate cache', () =>
+        workbench.setGateCache(iterationId, { fingerprint: 'f', score: 1, completed: 0, total: 0 }),
+      );
+      const feedback = (targetId: string) =>
+        workbench.createFeedback({
+          projectId,
+          target: 'field',
+          targetId,
+          sampleId: null,
+          iterationId: null,
+          body: 'wrong',
+        });
+      let resolvedId = '';
+      let openId = '';
+      add('feedback added', async () => {
+        resolvedId = (await feedback('x')).id;
+      });
+      add('feedback resolved', () =>
+        workbench.resolveFeedback(projectId, [resolvedId], draftJobId),
+      );
+      add('more feedback added', async () => {
+        openId = (await feedback('y')).id;
+      });
+      add('feedback deleted', () => workbench.deleteFeedback(projectId, openId));
+      let referenceId = '';
+      add('reference saved', async () => {
+        const reference = await repo.createReference({
+          templateId: projectId,
+          name: 'a',
+          documentId: prepare.documentId,
+          sourceJobId: prepare.id,
+          expected: { fields: {}, tables: {} },
+          templateVersion: 1,
+          verifiedOutputs: {},
+        });
+        referenceId = reference.id;
+      });
+      add('reference superseded', () => repo.deleteReference(projectId, referenceId));
+      add('publication', () =>
+        workbench.recordPublication({
+          projectId,
+          version: 1,
+          iterationId: null,
+          score: null,
+          threshold: 0.9,
+          overrideReason: null,
+          publishedBy: null,
+        }),
+      );
+      add('template published', () =>
+        pool.query(`UPDATE templates SET status = 'published' WHERE id = $1`, [projectId]),
+      );
+      add('sample removed', () => workbench.removeSample(projectId, sample.id));
+      add('job deleted', () => pool.query('DELETE FROM jobs WHERE id = $1', [prepare.id]));
+
+      const moved: string[] = [];
+      for (const [label, change] of inputs) {
+        const before = (await fingerprintOf(projectId)).fingerprint;
+        await change();
+        if ((await fingerprintOf(projectId)).fingerprint !== before) moved.push(label);
+      }
+      expect(moved).toEqual(inputs.map(([label]) => label));
+      expect(await fingerprintOf(other)).toEqual(otherBefore);
+    });
+
+    it('moves lastActivityAt forward after adding a sample', async () => {
+      const projectId = await newProject();
+      const before = (await fingerprintOf(projectId)).lastActivityAt;
+      expect(before).toBe((await workbench.getProject(projectId))!.createdAt);
+      const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+      // Only the sample's own time counts here.
+      await pool.query(`UPDATE jobs SET updated_at = '2000-01-01T00:00:00Z' WHERE id = $1`, [
+        job.id,
+      ]);
+      await workbench.addSample({
+        projectId,
+        documentId: job.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      expect((await fingerprintOf(projectId)).lastActivityAt > before).toBe(true);
+    });
+
+    it('upserts the list cache and ignores an unknown project', async () => {
+      const projectId = await newProject();
+      await workbench.putListCache(projectId, 'f1', { name: 'one' });
+      await workbench.putListCache(projectId, 'f2', { name: 'two' });
+      await workbench.putListCache('it-missing-project', 'f1', {});
+      const cache = await workbench.listCache();
+      expect(cache.get(projectId)).toEqual({ fingerprint: 'f2', item: { name: 'two' } });
+      expect(cache.has('it-missing-project')).toBe(false);
+      const { rows } = await pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM workbench_list_cache WHERE project_id = $1',
+        [projectId],
+      );
+      expect(rows[0]!.n).toBe(1);
+    });
+
+    it('pins per owner, newest first, and unpins idempotently', async () => {
+      const a = await newProject();
+      const b = await newProject();
+      const owner = `owner-${randomUUID()}`;
+      expect(await workbench.listPins(owner)).toEqual([]);
+      expect(await workbench.pin(owner, a)).toBe(true);
+      expect(await workbench.pin(owner, b)).toBe(true);
+      expect(await workbench.pin(owner, 'it-missing-project')).toBe(false);
+      expect(await workbench.pin(`${owner}-2`, a)).toBe(true);
+      expect(await workbench.listPins(owner)).toEqual([b, a]);
+      await workbench.unpin(owner, b);
+      await workbench.unpin(owner, b);
+      expect(await workbench.listPins(owner)).toEqual([a]);
+      expect(await workbench.listPins(`${owner}-2`)).toEqual([a]);
+    });
+
+    it('drops the cache row and pins with the project', async () => {
+      const projectId = await newProject();
+      const keep = await newProject();
+      const owner = `owner-${randomUUID()}`;
+      await workbench.putListCache(projectId, 'f', {});
+      await workbench.putListCache(keep, 'f', {});
+      await workbench.pin(owner, projectId);
+      await workbench.pin(owner, keep);
+      expect(await workbench.deleteProject(projectId)).not.toBeNull();
+      const cache = await workbench.listCache();
+      expect(cache.has(projectId)).toBe(false);
+      expect(cache.has(keep)).toBe(true);
+      expect(await workbench.listPins(owner)).toEqual([keep]);
+      expect((await workbench.projectFingerprints()).some((f) => f.id === projectId)).toBe(false);
+    });
+  });
 });
