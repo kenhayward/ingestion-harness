@@ -277,10 +277,13 @@ export const FEEDBACK_TARGETS = ['field', 'table', 'step', 'section'] as const;
 export const FEEDBACK_MAX_CHARS = 2000;
 export type FeedbackTarget = (typeof FEEDBACK_TARGETS)[number];
 
+/** A feedback target id: a lowercase output, step or section id (what `FeedbackBodySchema` takes). */
+export const FEEDBACK_TARGET_ID = /^[a-z][a-z0-9_-]*$/;
+
 export const FeedbackBodySchema = z
   .object({
     target: z.enum(FEEDBACK_TARGETS),
-    targetId: z.string().regex(/^[a-z][a-z0-9_-]*$/),
+    targetId: z.string().regex(FEEDBACK_TARGET_ID),
     body: z.string().trim().min(1).max(FEEDBACK_MAX_CHARS),
     sampleId: z.string().uuid().optional(),
     iterationId: z.string().uuid().optional(),
@@ -348,6 +351,102 @@ export function failureDiffs(
     ];
   });
 }
+
+/** Most dev samples a drafting call sees, and most failures a revision sends (worker drafting.MAX_CONTEXT_SAMPLES). */
+export const MAX_CONTEXT_SAMPLES = 8;
+
+/**
+ * The failures a revision sends (mirrors worker drafting.select_failures; shared fixture
+ * revise-failures.json): dev files only, lowest score first (ties keep their order), at most
+ * MAX_CONTEXT_SAMPLES. The API applies it before writing the job, so the worker's own pass is a no-op.
+ */
+export function revisionFailures(
+  failures: readonly FailureDiff[],
+  devFiles: ReadonlySet<string>,
+): FailureDiff[] {
+  return failures
+    .filter((f) => devFiles.has(f.sample))
+    .sort((a, b) => a.score - b.score) // Array.prototype.sort is stable
+    .slice(0, MAX_CONTEXT_SAMPLES);
+}
+
+/** `FailureDiff` as documented in the API (expected and actual are any JSON value). */
+export const FailureDiffSchema = z.object({
+  sample: z.string(),
+  score: z.number(),
+  fields: z.array(z.object({ id: z.string(), expected: z.unknown(), actual: z.unknown() })),
+  tables: z.array(
+    z.object({
+      id: z.string(),
+      missing: z.number().int(),
+      extra: z.number().int(),
+      changed: z.array(
+        z.object({
+          expected: z.record(z.unknown()),
+          actual: z.record(z.unknown()),
+          columns: z.array(z.string()),
+        }),
+      ),
+    }),
+  ),
+});
+export type SentFailure = z.infer<typeof FailureDiffSchema>;
+
+/** One open feedback item as a revise job's `params.feedback` carries it (RV2: with its id). */
+export const RevisionFeedbackSchema = z.object({
+  id: z.string().uuid(),
+  target: z.enum(FEEDBACK_TARGETS),
+  targetId: z.string(),
+  /** The dev sample's file name, when the feedback names one. */
+  sample: z.string().nullable(),
+  body: z.string(),
+});
+export type RevisionFeedback = z.infer<typeof RevisionFeedbackSchema>;
+
+/** `GET …/stages/revise/preview` (handoff RV1): what the next revise call sends, and what it never does. */
+export const RevisePreviewSchema = z.object({
+  feedback: z.array(RevisionFeedbackSchema),
+  /** Already trimmed with `revisionFailures`. */
+  failures: z.array(FailureDiffSchema),
+  /** Failing dev samples before the MAX_CONTEXT_SAMPLES cap. */
+  failuresTotal: z.number().int(),
+  /** The latest complete dev iteration the failures come from; null when there is none. */
+  failuresFrom: z
+    .object({
+      iterationId: z.string().uuid(),
+      templateVersion: z.number().int(),
+      model: z.string().nullable(),
+      createdAt: z.string(),
+      /** Current dev samples it compared. */
+      compared: z.number().int(),
+    })
+    .nullable(),
+  /** The drafting model setting (`endpoint/model-id`); null when unset. */
+  model: z.string().nullable(),
+  /** The open draft sent as `<current_draft>`; null without one (a revision needs one). */
+  draft: z.object({ version: z.number().int(), definition: z.record(z.unknown()) }).nullable(),
+  /** Dev sample files whose text is sent (at most MAX_CONTEXT_SAMPLES). */
+  samples: z.array(z.string()),
+  limits: z.object({
+    samples: z.number().int(),
+    fieldDiffs: z.number().int(),
+    rowDiffs: z.number().int(),
+  }),
+  /** Never sent (the holdout rule): shown so the user knows. */
+  notSent: z.object({
+    /** Ready holdout samples. */
+    holdoutSamples: z.number().int(),
+    /** The newest holdout iteration. */
+    holdoutRun: z
+      .object({
+        iterationId: z.string().uuid(),
+        status: z.enum(['running', 'complete']),
+        score: z.number().nullable(),
+      })
+      .nullable(),
+  }),
+});
+export type RevisePreview = z.infer<typeof RevisePreviewSchema>;
 
 export const PublishBodySchema = z
   .object({ overrideReason: z.string().trim().min(10).max(1000).optional() })

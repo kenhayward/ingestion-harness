@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  FailureDiffSchema,
+  FEEDBACK_TARGET_ID,
+  MAX_CONTEXT_SAMPLES,
+  revisionFailures,
   buildScorecard,
   gateHints,
   MAX_GATE_HINTS,
@@ -529,5 +534,48 @@ describe('gateHints (EV1)', () => {
     const fields = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => acc(id, 0, 1));
     const hints = gateHints({ threshold: 0.9, scorecard: { fields, columns: [] }, definition });
     expect(hints.map((h) => h.key)).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+});
+
+const failureCases = JSON.parse(
+  readFileSync(new URL('./fixtures/revise-failures.json', import.meta.url), 'utf8'),
+) as {
+  name: string;
+  dev: string[];
+  failures: { sample: string; score: number }[];
+  expected: string[];
+}[];
+
+describe('revisionFailures (fixture shared with worker/tests/test_drafting.py)', () => {
+  it.each(failureCases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    const failures = c.failures.map((f) => ({ ...f, fields: [], tables: [] }));
+    expect(revisionFailures(failures, new Set(c.dev)).map((f) => f.sample)).toEqual(c.expected);
+  });
+
+  it('caps at the worker limit (drafting.MAX_CONTEXT_SAMPLES)', () => {
+    expect(MAX_CONTEXT_SAMPLES).toBe(8);
+  });
+});
+
+describe('FailureDiffSchema / FEEDBACK_TARGET_ID', () => {
+  it('describes what failureDiffs produces', () => {
+    expect(
+      FailureDiffSchema.safeParse({
+        sample: 'a.pdf',
+        score: 0.5,
+        fields: [{ id: 'total', expected: '4694.40', actual: null }],
+        tables: [{ id: 'lines', missing: 1, extra: 0, changed: [] }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ['sent_on', true],
+    ['line-items', true],
+    ['Total', false],
+    ['1st', false],
+    ['', false],
+  ] as const)('%j is a feedback target id: %s', (id, ok) => {
+    expect(FEEDBACK_TARGET_ID.test(id)).toBe(ok);
   });
 });

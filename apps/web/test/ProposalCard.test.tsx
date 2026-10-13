@@ -134,4 +134,22 @@ describe('ProposalCard', () => {
     expect(screen.queryByRole('link', { name: 'Go to Sections' })).toBeNull();
     expect(screen.getAllByText('Not applied')).toHaveLength(2);
   });
+
+  it('draws a badge beside each change and a footer note', () => {
+    card(changeProposalView(), {
+      badge: (_c, i) => (i === 0 ? <span>Answers 1</span> : null),
+      footerNote: 'Feedback a change answers is marked answered when you apply it.',
+    });
+    const [first, second] = within(screen.getByRole('region', { name: 'Proposal' })).getAllByRole(
+      'listitem',
+    );
+    if (!first || !second) throw new Error('expected two changes');
+    expect(first).toHaveTextContent('Answers 1');
+    expect(within(first).getByText('Answers 1').parentElement).toHaveClass('proposal-badge');
+    expect(second.querySelector('.proposal-badge')).toBeNull();
+    expect(second).not.toHaveTextContent('Answers');
+    expect(
+      screen.getByText('Feedback a change answers is marked answered when you apply it.'),
+    ).toBeInTheDocument();
+  });
 });

@@ -6,7 +6,15 @@ from typing import Any
 
 import pytest
 
-from ingest_worker.draft_stages import OUTPUTS, REVISE, REVISE_SCHEMA, SECTIONS, STEPS, Stage
+from ingest_worker.draft_stages import (
+    OUTPUTS,
+    REVISE,
+    REVISE_SCHEMA,
+    SECTIONS,
+    STEPS,
+    Stage,
+    resolve_answers,
+)
 from ingest_worker.drafting import SURVEY_SCHEMA
 
 DRAFT: dict[str, Any] = {
@@ -254,10 +262,12 @@ def _empty(schema: dict[str, Any]) -> dict[str, Any]:
     return {k: kinds[v["type"]] for k, v in schema["properties"].items()}
 
 
-def nested(op: str, key: str, item: dict[str, Any]) -> dict[str, Any]:
+def nested(
+    op: str, key: str, item: dict[str, Any], answers: list[str] | None = None
+) -> dict[str, Any]:
     """A revise change: the chosen payload from a flat item, the rest filled with empties."""
     schema = REVISE_SCHEMA["properties"]["changes"]["items"]["properties"]
-    change: dict[str, Any] = {"op": op, "reason": "r"}
+    change: dict[str, Any] = {"op": op, "reason": "r", "answers": answers or []}
     for k in ("field", "table", "section", "step"):
         change[k] = _empty(schema[k])
     for k, v in item.items():
@@ -351,3 +361,42 @@ def test_revise_set_preamble_with_empty_text_clears_the_preamble() -> None:
     body, errors = run(REVISE, {"notes": "", "changes": [clear]}, REVISE_DRAFT)
     assert errors == []
     assert body["changes"] == [{"op": "setPreamble", "preamble": "", "reason": "r"}]
+
+
+def test_revise_answers_are_a_required_plain_string_array() -> None:
+    item = REVISE_SCHEMA["properties"]["changes"]["items"]
+    assert item["properties"]["answers"] == {"type": "array", "items": {"type": "string"}}
+    assert "answers" in item["required"]
+
+
+def test_revise_carries_answer_labels_trimmed_and_once() -> None:
+    assert REVISE.convert is not None
+    change = nested("putField", "field", output_item(id="ref"), answers=[" F1 ", "", "F1", "F2"])
+    body, errors = REVISE.convert({"notes": "", "changes": [change]})
+    assert errors == []
+    assert body["changes"][0]["answers"] == ["F1", "F2"]
+
+
+def test_revise_change_that_answers_nothing_has_no_answers_key() -> None:
+    assert REVISE.convert is not None
+    body, _ = REVISE.convert({"notes": "", "changes": [nested("setPreamble", "step", {})]})
+    assert "answers" not in body["changes"][0]
+
+
+@pytest.mark.parametrize(
+    ("answers", "expected"),
+    [
+        (["F2", "F1"], ["fb-2", "fb-1"]),
+        (["f1"], ["fb-1"]),  # labels are case-insensitive
+        (["F1", "F1"], ["fb-1"]),
+        (["fb-2"], ["fb-2"]),  # an exact id is accepted
+        (["F9", "nonsense"], None),  # unknown labels are dropped, and so is the key
+    ],
+)
+def test_resolve_answers_maps_labels_to_feedback_ids(
+    answers: list[str], expected: list[str] | None
+) -> None:
+    change = {"op": "removeStep", "id": "s", "reason": "r", "answers": answers}
+    body = resolve_answers({"notes": "", "changes": [change]}, {"F1": "fb-1", "F2": "fb-2"})
+    assert body["changes"][0].get("answers") == expected
+    assert body["changes"][0]["id"] == "s"

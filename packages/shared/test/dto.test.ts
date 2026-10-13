@@ -6,6 +6,7 @@ import {
   FeedbackItemSchema,
   GateViewSchema,
   PublishGateViewSchema,
+  RevisePreviewSchema,
   IterationViewSchema,
   ModelInfoSchema,
   isOffered,
@@ -336,6 +337,43 @@ describe.each([
       hints: [{ key: 'sender', accuracy: 0, cause: 'no_step', stage: 'steps' }],
     },
     'hints',
+  ],
+  [
+    'RevisePreview',
+    RevisePreviewSchema,
+    {
+      feedback: [
+        {
+          id: '9b7c0c1e-0000-4000-8000-000000000001',
+          target: 'field',
+          targetId: 'total',
+          sample: 'a.pdf',
+          body: 'Take the TOTAL DUE line',
+        },
+      ],
+      failures: [{ sample: 'a.pdf', score: 0.85, fields: [], tables: [] }],
+      failuresTotal: 1,
+      failuresFrom: {
+        iterationId: '9b7c0c1e-0000-4000-8000-000000000002',
+        templateVersion: 4,
+        model: null,
+        createdAt: '2026-10-12T09:02:00.000Z',
+        compared: 6,
+      },
+      model: 'local/qwen3.8-27b-mtp',
+      draft: { version: 4, definition: { id: 'letter' } },
+      samples: ['a.pdf'],
+      limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
+      notSent: {
+        holdoutSamples: 2,
+        holdoutRun: {
+          iterationId: '9b7c0c1e-0000-4000-8000-000000000003',
+          status: 'complete',
+          score: 0.88,
+        },
+      },
+    },
+    'notSent',
   ],
   [
     'Publication',

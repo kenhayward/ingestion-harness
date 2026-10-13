@@ -21,16 +21,23 @@ export const isChangeStage = (stage: DraftStage): stage is ChangeStage =>
   (CHANGE_STAGES as readonly string[]).includes(stage);
 
 const reason = z.string();
+/**
+ * Revise (handoff RV2): the ids of the feedback items a change answers. Optional, so bodies
+ * stored before RV2 parse; `parseChangeBody` refuses it on the other stages.
+ */
+const answers = z.array(z.string().min(1)).optional();
 export const DraftChangeSchema = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('putField'), field: ValueDefSchema, reason }).strict(),
-  z.object({ op: z.literal('putTable'), table: TableDefSchema, reason }).strict(),
-  z.object({ op: z.literal('removeOutput'), id: z.string(), reason }).strict(),
-  z.object({ op: z.literal('putSection'), section: SectionSchema, reason }).strict(),
-  z.object({ op: z.literal('removeSection'), id: z.string(), reason }).strict(),
-  z.object({ op: z.literal('setCopies'), copies: CopySelectionSchema.nullable(), reason }).strict(),
-  z.object({ op: z.literal('putStep'), step: StepSchema, reason }).strict(),
-  z.object({ op: z.literal('removeStep'), id: z.string(), reason }).strict(),
-  z.object({ op: z.literal('setPreamble'), preamble: z.string(), reason }).strict(),
+  z.object({ op: z.literal('putField'), field: ValueDefSchema, reason, answers }).strict(),
+  z.object({ op: z.literal('putTable'), table: TableDefSchema, reason, answers }).strict(),
+  z.object({ op: z.literal('removeOutput'), id: z.string(), reason, answers }).strict(),
+  z.object({ op: z.literal('putSection'), section: SectionSchema, reason, answers }).strict(),
+  z.object({ op: z.literal('removeSection'), id: z.string(), reason, answers }).strict(),
+  z
+    .object({ op: z.literal('setCopies'), copies: CopySelectionSchema.nullable(), reason, answers })
+    .strict(),
+  z.object({ op: z.literal('putStep'), step: StepSchema, reason, answers }).strict(),
+  z.object({ op: z.literal('removeStep'), id: z.string(), reason, answers }).strict(),
+  z.object({ op: z.literal('setPreamble'), preamble: z.string(), reason, answers }).strict(),
 ]);
 export type DraftChange = z.infer<typeof DraftChangeSchema>;
 
@@ -74,11 +81,29 @@ export const ProposalViewSchema = z.object({
 });
 export type ProposalView = z.infer<typeof ProposalViewSchema>;
 
-/** A stage body, or null if it is malformed or uses an op the stage may not. */
+/** A stage body, or null if it is malformed, uses an op the stage may not, or answers feedback outside revise. */
 export function parseChangeBody(stage: ChangeStage, body: unknown): ChangeBody | null {
   const parsed = ChangeBodySchema.safeParse(body);
   if (!parsed.success) return null;
-  return parsed.data.changes.every((c) => STAGE_OPS[stage].includes(c.op)) ? parsed.data : null;
+  const { changes } = parsed.data;
+  if (!changes.every((c) => STAGE_OPS[stage].includes(c.op))) return null;
+  if (stage !== 'revise' && changes.some((c) => c.answers !== undefined)) return null;
+  return parsed.data;
+}
+
+/**
+ * The feedback an accepted revise proposal resolves (RV2). When any change names the feedback
+ * it answers, only the `sent` ids named by the applied changes (indexes into `changes`); when
+ * none does (stored before RV2, or the model named none), everything it was sent. In `sent` order.
+ */
+export function answeredFeedback(
+  changes: readonly DraftChange[],
+  applied: readonly number[],
+  sent: readonly string[],
+): string[] {
+  if (!changes.some((c) => c.answers?.length)) return [...sent];
+  const named = new Set(applied.flatMap((i) => changes[i]?.answers ?? []));
+  return sent.filter((id) => named.has(id));
 }
 
 export type ProposalDecision = 'accepted' | 'partially_accepted' | 'rejected';

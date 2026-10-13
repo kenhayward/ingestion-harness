@@ -17264,6 +17264,385 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/stages/revise/preview": {
+      "get": {
+        "operationId": "previewRevision",
+        "summary": "Preview what a revision would send",
+        "tags": [
+          "Feedback & revise"
+        ],
+        "description": "Exactly what `POST …/stages/revise` would send to the drafting model now (handoff\nRV1): the open `feedback` (with ids, which the model's `answers` name), the failure\ndiffs of the latest complete dev iteration (the template's own run first, else a\nmodel-comparison member; `failuresFrom`) restricted to the current ready dev samples,\nlowest score first and at most `limits.samples` (`failuresTotal` counts them before\nthat cap; each diff keeps at most `limits.fieldDiffs` fields and `limits.rowDiffs`\nchanged rows per table), the open `draft`, the dev sample files whose text goes along\n(`samples`), and the drafting `model` setting (null when unset).\n\n`notSent` is what the holdout rule keeps out of every model call: the ready holdout\nsamples and the newest holdout iteration (its score is shown here, never sent). A\nrevision needs open feedback and an open draft; the preview is available without them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the next revision would send.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "feedback": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "target": {
+                            "type": "string",
+                            "enum": [
+                              "field",
+                              "table",
+                              "step",
+                              "section"
+                            ]
+                          },
+                          "targetId": {
+                            "type": "string"
+                          },
+                          "sample": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "body": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "target",
+                          "targetId",
+                          "sample",
+                          "body"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "failures": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sample": {
+                            "type": "string"
+                          },
+                          "score": {
+                            "type": "number"
+                          },
+                          "fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "expected": {},
+                                "actual": {}
+                              },
+                              "required": [
+                                "id"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "tables": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "missing": {
+                                  "type": "integer"
+                                },
+                                "extra": {
+                                  "type": "integer"
+                                },
+                                "changed": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "expected": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "actual": {
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      },
+                                      "columns": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "expected",
+                                      "actual",
+                                      "columns"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "missing",
+                                "extra",
+                                "changed"
+                              ],
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "required": [
+                          "sample",
+                          "score",
+                          "fields",
+                          "tables"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "failuresTotal": {
+                      "type": "integer"
+                    },
+                    "failuresFrom": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "iterationId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "templateVersion": {
+                              "type": "integer"
+                            },
+                            "model": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "compared": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "iterationId",
+                            "templateVersion",
+                            "model",
+                            "createdAt",
+                            "compared"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "integer"
+                            },
+                            "definition": {
+                              "type": "object",
+                              "additionalProperties": {}
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "definition"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "samples": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "samples": {
+                          "type": "integer"
+                        },
+                        "fieldDiffs": {
+                          "type": "integer"
+                        },
+                        "rowDiffs": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "samples",
+                        "fieldDiffs",
+                        "rowDiffs"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "notSent": {
+                      "type": "object",
+                      "properties": {
+                        "holdoutSamples": {
+                          "type": "integer"
+                        },
+                        "holdoutRun": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "iterationId": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "running",
+                                    "complete"
+                                  ]
+                                },
+                                "score": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "iterationId",
+                                "status",
+                                "score"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "holdoutSamples",
+                        "holdoutRun"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "feedback",
+                    "failures",
+                    "failuresTotal",
+                    "failuresFrom",
+                    "model",
+                    "draft",
+                    "samples",
+                    "limits",
+                    "notSent"
+                  ],
+                  "additionalProperties": true,
+                  "description": "What the next revision would send."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/stages/{stage}": {
       "post": {
         "operationId": "startStage",
@@ -17707,6 +18086,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17790,6 +18176,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17813,6 +18206,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17858,6 +18258,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17881,6 +18288,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -17929,6 +18343,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -18081,6 +18502,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -18104,6 +18532,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -18127,6 +18562,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -20295,6 +20737,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20378,6 +20827,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20401,6 +20857,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20446,6 +20909,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20469,6 +20939,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20517,6 +20994,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20669,6 +21153,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20692,6 +21183,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20715,6 +21213,13 @@
                                             },
                                             "reason": {
                                               "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
                                             }
                                           },
                                           "required": [
@@ -20981,7 +21486,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback it answered.",
+        "description": "Decides a ready proposal. Rejecting, or accepting a survey, records the decision.\nAccepting a change proposal applies the chosen `changes` (indexes into its list;\nall of them for `accepted`, some for `partially_accepted`) to the open draft.\nIt is refused when the draft version changed since the proposal, or when the draft\nwas edited where a chosen change applies (accept the others, or run the stage again).\nAccepting a `revise` proposal, fully or partly, resolves the feedback its applied\nchanges answer (their `answers`); a proposal whose changes name none resolves all the\nfeedback it was sent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21267,6 +21772,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21350,6 +21862,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21373,6 +21892,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21418,6 +21944,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21441,6 +21974,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21489,6 +22029,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21641,6 +22188,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21664,6 +22218,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [
@@ -21687,6 +22248,13 @@
                                           },
                                           "reason": {
                                             "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
                                           }
                                         },
                                         "required": [

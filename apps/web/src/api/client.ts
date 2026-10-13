@@ -37,6 +37,7 @@ import type {
   RerunRequest,
   ResultDetail,
   ResultSummary,
+  RevisePreview,
   ReviewEdit,
   SampleRole,
   SampleView,
@@ -417,6 +418,8 @@ export interface Api {
     },
   ): Promise<FeedbackItem>;
   deleteFeedback(projectId: string, feedbackId: string): Promise<void>;
+  /** RV1: exactly what the next revision would send, and what it never sends. */
+  getRevisePreview(projectId: string): Promise<RevisePreview>;
   listStages(projectId: string): Promise<StageView[]>;
   listSamples(projectId: string): Promise<SampleView[]>;
   uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
@@ -762,6 +765,8 @@ export function createHttpApi(base = '/api'): Api {
       post<FeedbackItem>(`${base}/workbench/projects/${id}/feedback`, body),
     deleteFeedback: (id, fid) =>
       noContent(apiFetch(`${base}/workbench/projects/${id}/feedback/${fid}`, { method: 'DELETE' })),
+    getRevisePreview: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/stages/revise/preview`).then(json<RevisePreview>),
     restoreIteration: (id, iid) =>
       post<ProjectView>(`${base}/workbench/projects/${id}/iterations/${iid}/restore`, {}),
     listStages: (id) => apiFetch(`${base}/workbench/projects/${id}/stages`).then(json<StageView[]>),

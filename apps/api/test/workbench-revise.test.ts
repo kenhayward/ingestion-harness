@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   draftingKey,
+  MAX_CONTEXT_SAMPLES,
   outputKey,
   preparedTriageKey,
   type FeedbackItem,
+  type RevisePreview,
   type SampleView,
 } from '@ih/shared';
+import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -243,6 +246,28 @@ describe('feedback', () => {
     expect((await del(open.id)).statusCode).toBe(404);
     expect((await del('not-a-uuid')).statusCode).toBe(404);
   });
+
+  it('refuses a holdout iteration made through the routes (RV3)', async () => {
+    const { app, add, setRole, verify, evaluate } = await project();
+    const h = await add(1);
+    await setRole(h.id, 'holdout');
+    await verify(h, 'Acme');
+    const run = await evaluate({ set: 'holdout' });
+    expect(run.statusCode).toBe(201);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/feedback',
+      payload: {
+        target: 'field',
+        targetId: 'sender',
+        body: 'x',
+        iterationId: (run.json() as { id: string }).id,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('feedback can only refer to dev iterations');
+    expect((await app.inject('/api/workbench/projects/letter/feedback')).json()).toEqual([]);
+  });
 });
 
 describe('revise', () => {
@@ -272,11 +297,16 @@ describe('revise', () => {
       .map((r) => r.job);
     for (const job of runs) await finish(job.id, 'Wrong');
     await setRole(b.id, 'holdout'); // switched after the evaluation: must not be sent
-    await feedback({ target: 'field', targetId: 'sender', body: 'Letterhead', sampleId: a.id });
+    const fb = await feedback({
+      target: 'field',
+      targetId: 'sender',
+      body: 'Letterhead',
+      sampleId: a.id,
+    });
     const res = await start('revise');
     const params = paramsOf(ctx, res.json().id);
     expect(params.feedback).toEqual([
-      { target: 'field', targetId: 'sender', sample: 's1.pdf', body: 'Letterhead' },
+      { id: fb.id, target: 'field', targetId: 'sender', sample: 's1.pdf', body: 'Letterhead' },
     ]);
     expect((params.failures as { sample: string }[]).map((f) => f.sample)).toEqual(['s1.pdf']);
     expect(params.feedbackIds).toHaveLength(1);
@@ -456,5 +486,131 @@ describe('revise', () => {
       url: '/api/workbench/projects/letter/stages/revise/skip',
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it(`sends at most ${MAX_CONTEXT_SAMPLES} failures`, async () => {
+    const ctx = await project();
+    for (let n = 1; n <= MAX_CONTEXT_SAMPLES + 1; n++) await ctx.verify(await ctx.add(n), 'Acme');
+    await ctx.evaluate();
+    for (const r of await ctx.repo.listProjectRuns('letter')) {
+      if (r.job.referenceId) await ctx.finish(r.job.id, 'Wrong');
+    }
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(params.failures as unknown[]).toHaveLength(MAX_CONTEXT_SAMPLES);
+  });
+
+  it('keeps the answers and resolves only the feedback its applied changes answer (RV2)', async () => {
+    const { app, start, feedback, finishDraft, decide } = await project();
+    const one = await feedback({ target: 'field', targetId: 'sender', body: 'Describe it' });
+    const two = await feedback({ target: 'step', targetId: 'head', body: 'Say what letters are' });
+    const { id } = (await start('revise')).json();
+    await finishDraft(id, 'revise', {
+      notes: '',
+      changes: [
+        {
+          op: 'putField',
+          field: { id: 'sender', type: 'text', description: 'Who' },
+          reason: 'feedback 1',
+          answers: [one.id],
+        },
+        { op: 'setPreamble', preamble: 'Letters.', reason: 'feedback 2', answers: [two.id] },
+      ],
+    });
+    const [listed] = (await app.inject('/api/workbench/projects/letter/proposals')).json() as {
+      body: { changes: { answers?: string[] }[] };
+    }[];
+    expect(listed!.body.changes.map((c) => c.answers)).toEqual([[one.id], [two.id]]);
+    expect((await decide(id, { decision: 'accepted', changes: [0] })).statusCode).toBe(200);
+    const items = (
+      await app.inject('/api/workbench/projects/letter/feedback')
+    ).json() as FeedbackItem[];
+    expect(items.find((f) => f.id === one.id)!.resolvedBy).toBe(id);
+    expect(items.find((f) => f.id === two.id)!.resolvedBy).toBeNull();
+  });
+});
+
+describe('revise preview (RV1)', () => {
+  const preview = async (ctx: Awaited<ReturnType<typeof project>>) => {
+    const res = await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview');
+    expect(res.statusCode).toBe(200);
+    return res.json() as RevisePreview;
+  };
+
+  it('is a 404 for an unknown project', async () => {
+    const { app } = await project();
+    expect(
+      (await app.inject('/api/workbench/projects/nope/stages/revise/preview')).statusCode,
+    ).toBe(404);
+  });
+
+  it('shows the draft and the limits before any feedback or evaluation', async () => {
+    const ctx = await project();
+    // No drafting model set: the preview says so (null) rather than guessing one.
+    (ctx.app.deps.llm as MemoryLlmConfigRepo).seedSettings({ drafting_model: undefined });
+    expect(await preview(ctx)).toEqual({
+      feedback: [],
+      failures: [],
+      failuresTotal: 0,
+      failuresFrom: null,
+      model: null,
+      draft: { version: 1, definition: (await ctx.templates.get('letter', 1))!.definition },
+      samples: [],
+      limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
+      notSent: { holdoutSamples: 0, holdoutRun: null },
+    });
+  });
+
+  it('is exactly what the next revision sends, and names what it never sends', async () => {
+    const ctx = await project();
+    await ctx.app.deps.llm.setSettings({ draftingModel: 'local/qwen' }, null);
+    const a = await ctx.add(1);
+    const h = await ctx.add(2);
+    await ctx.verify(a, 'Acme');
+    await ctx.setRole(h.id, 'holdout');
+    await ctx.verify(h, 'Globex');
+    const dev = (await ctx.evaluate()).json() as { id: string };
+    await ctx.evaluate({ set: 'holdout' });
+    for (const r of await ctx.repo.listProjectRuns('letter')) {
+      if (r.job.referenceId) await ctx.finish(r.job.id, 'Wrong');
+    }
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead', sampleId: a.id });
+
+    const shown = await preview(ctx);
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(shown.feedback).toEqual(params.feedback);
+    expect(shown.failures).toEqual(params.failures);
+    expect(shown.failures.map((f) => f.sample)).toEqual(['s1.pdf']);
+    expect(shown.samples).toEqual(
+      (params.samples as { filename: string }[]).map((s) => s.filename),
+    );
+    expect(shown.draft!.definition).toEqual(params.draft);
+    expect(shown).toMatchObject({
+      model: 'local/qwen',
+      failuresTotal: 1,
+      failuresFrom: { iterationId: dev.id, templateVersion: 1, model: null, compared: 1 },
+      notSent: { holdoutSamples: 1, holdoutRun: { status: 'complete', score: 0 } },
+    });
+    expect(params.failuresFrom).toEqual({ templateVersion: 1, model: null });
+  });
+
+  it('sends the same capped sample list the start route does', async () => {
+    const ctx = await project();
+    for (let n = 1; n <= MAX_CONTEXT_SAMPLES + 1; n++) await ctx.add(n);
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
+    const shown = await preview(ctx);
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(shown.samples).toHaveLength(MAX_CONTEXT_SAMPLES);
+    expect(shown.samples).toEqual(
+      (params.samples as { filename: string }[])
+        .slice(0, MAX_CONTEXT_SAMPLES)
+        .map((s) => s.filename),
+    );
+  });
+
+  it('has no draft once the version is published', async () => {
+    const ctx = await project();
+    await ctx.templates.publish('letter', 1);
+    expect((await preview(ctx)).draft).toBeNull();
   });
 });

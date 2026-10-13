@@ -382,9 +382,10 @@ export function ProjectPage({
               api={api}
               projectId={project.id}
               dataPolicy={project.dataPolicy}
-              hasDraft={draft !== null}
+              draft={draft}
               pollMs={pollMs}
               onApplied={changed}
+              onChanged={loadOverview}
             />
           )}
           {tab === 'runs' && header('runs')}

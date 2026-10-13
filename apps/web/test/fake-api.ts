@@ -15,6 +15,7 @@ import type {
   ReferenceDetail,
   ReferenceInfo,
   ReferenceRow,
+  RevisePreview,
   SampleView,
   SegmentationView,
 } from '@ih/shared';
@@ -395,6 +396,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     deleteFeedback: vi.fn(async () => {
       throw new Error('deleteFeedback not stubbed');
     }),
+    getRevisePreview: vi.fn(async () => revisePreview()),
     getIteration: vi.fn(async () => {
       throw new Error('getIteration not stubbed');
     }),
@@ -637,4 +639,61 @@ export function proposalView(overrides: Partial<ProposalView> = {}): ProposalVie
 
 export function publishGateView(overrides: Partial<PublishGateView> = {}): PublishGateView {
   return { ...gateView(), hints: [], ...overrides };
+}
+export function revisePreview(overrides: Partial<RevisePreview> = {}): RevisePreview {
+  return {
+    feedback: [
+      {
+        id: '9b7c0c1e-0000-4000-8000-000000000001',
+        target: 'field',
+        targetId: 'total',
+        sample: 'a.pdf',
+        body: 'Take the TOTAL DUE line',
+      },
+    ],
+    failures: [],
+    failuresTotal: 0,
+    failuresFrom: null,
+    model: 'local/qwen',
+    draft: {
+      version: 4,
+      definition: {
+        id: 'letter',
+        version: 4,
+        name: 'Letter',
+        document: { sections: [{ id: 'all', anchor: '\\A' }] },
+        outputs: {
+          fields: [
+            { id: 'sender', type: 'text' },
+            { id: 'total', type: 'decimal' },
+          ],
+          tables: [{ id: 'line_items', columns: [{ id: 'qty', type: 'integer' }] }],
+        },
+        pipeline: [{ type: 'extract', id: 'head', fields: ['sender', 'total'], sections: ['all'] }],
+      },
+    },
+    samples: ['a.pdf'],
+    limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
+    notSent: { holdoutSamples: 0, holdoutRun: null },
+    ...overrides,
+  };
+}
+
+/** A ready revise proposal with two changes (no answers unless the body is overridden). */
+export function reviseProposal(overrides: Partial<ProposalView> = {}): ProposalView {
+  return changeProposalView({
+    stage: 'revise',
+    body: {
+      notes: '',
+      changes: [
+        {
+          op: 'putField',
+          field: { id: 'total', type: 'decimal', description: 'The TOTAL DUE line' },
+          reason: 'feedback 1',
+        },
+        { op: 'setPreamble', preamble: 'Supplier invoices.', reason: 'feedback 2' },
+      ],
+    },
+    ...overrides,
+  });
 }

@@ -439,6 +439,7 @@ REVISE_SCHEMA = _body(
             "table": _OUTPUT_ITEM,
             "section": _SECTION_ITEM,
             "step": _STEP_ITEM,
+            "answers": {"type": "array", "items": _S},
             "reason": _S,
         }
     )
@@ -461,6 +462,12 @@ def _compact(value: Any) -> Any:
     return value
 
 
+def _answers(value: Any) -> list[str]:
+    """The feedback labels a revise change answers: trimmed, non-empty, each once, in order."""
+    items = value if isinstance(value, list) else []
+    return list(dict.fromkeys(a.strip() for a in items if isinstance(a, str) and a.strip()))
+
+
 def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -477,7 +484,8 @@ def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             {"notes": "", "changes": [{**payload, "op": c["op"], "reason": c["reason"]}]}
         )
         errors += [e.replace("changes[0]", f"changes[{i}]", 1) for e in errs]
-        changes += body["changes"]
+        answers = _answers(c.get("answers"))
+        changes += [{**ch, "answers": answers} if answers else ch for ch in body["changes"]]
     return {"notes": data["notes"], "changes": changes}, errors
 
 
@@ -488,6 +496,26 @@ def check_revise(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
     for check in (check_outputs, check_sections, check_steps):
         errors += [e for e in check(body, draft) if e not in errors]
     return errors
+
+
+def resolve_answers(body: dict[str, Any], labels: dict[str, str]) -> dict[str, Any]:
+    """Map the model's feedback labels (F1, F2, ...) to feedback ids (RV2, TS DraftChange.answers).
+
+    Labels are case-insensitive and an exact id is accepted too. Unknown labels are dropped: an
+    answer only decides which feedback an accept resolves, and dropping one leaves it open. A
+    change left with no answers carries no `answers` key."""
+    by_label = {k.upper(): v for k, v in labels.items()}
+    ids = set(labels.values())
+    changes: list[dict[str, Any]] = []
+    for change in body["changes"]:
+        rest = {k: v for k, v in change.items() if k != "answers"}
+        mapped = [
+            by_label.get(a.upper()) or (a if a in ids else None)
+            for a in change.get("answers") or []
+        ]
+        found = list(dict.fromkeys(m for m in mapped if m))
+        changes.append({**rest, "answers": found} if found else rest)
+    return {**body, "changes": changes}
 
 
 REVISE = Stage(
@@ -508,6 +536,8 @@ failures (expected vs actual values on the dev samples).
   use existing sections; context only from earlier steps.
 - Prefer clearer instructions, better anchors or more precise field descriptions over adding
   outputs. reason: which feedback item or failure the change addresses.
+- answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);
+  [] when it only fixes evaluation failures.
 - notes: anything you could not fix and why.
 Return JSON only.""",
     REVISE_SCHEMA,
