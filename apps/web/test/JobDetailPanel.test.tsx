@@ -1,5 +1,5 @@
 import type { JobOutput, JobSummary, StepRun } from '@ih/shared';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { JobDetailPanel } from '../src/jobs/JobDetailPanel.js';
 import { fakeApi, job } from './fake-api.js';
@@ -41,7 +41,7 @@ const defaults = {
 const panel = () => screen.getByRole('complementary', { name: 'Job details' });
 
 describe('JobDetailPanel', () => {
-  it('shows the reviewer callout, progress, meta and draft outputs for a job awaiting review', async () => {
+  it('shows the reviewer callout, progress and meta, and no downloads of draft outputs', async () => {
     const j = job({
       id: 'a',
       filename: 'inv.pdf',
@@ -51,10 +51,8 @@ describe('JobDetailPanel', () => {
       specVersion: 3,
       attempts: 1,
     });
-    const api = fakeApi({
-      getJob: vi.fn(async () => ({ ...j, outputs: [output({})] })),
-      getStepRuns: vi.fn(async () => [run()]),
-    });
+    const getJob = vi.fn(async () => ({ ...j, outputs: [output({})] }));
+    const api = fakeApi({ getJob, getStepRuns: vi.fn(async () => [run()]) });
     render(
       <JobDetailPanel
         api={api}
@@ -72,12 +70,12 @@ describe('JobDetailPanel', () => {
     expect(within(progress).getAllByRole('listitem')).toHaveLength(5);
     expect(within(progress).getByText('Waiting for you')).toBeInTheDocument();
     expect(within(panel()).getByText('Supplier invoice v3')).toBeInTheDocument();
-    expect(await within(panel()).findByText('Draft outputs')).toBeInTheDocument();
-    expect(within(panel()).getByRole('link', { name: /line_items\.csv/ })).toHaveAttribute(
-      'href',
-      '/api/jobs/a/outputs/line_items?stage=draft',
-    );
-    expect(within(panel()).getByText('14 rows')).toBeInTheDocument();
+    await vi.waitFor(() => expect(getJob).toHaveBeenCalled());
+    await act(async () => {}); // let the loaded outputs render
+    // Drafts are not deliverables: only published outputs are offered for download.
+    expect(within(panel()).queryByRole('region', { name: /outputs/i })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
+    expect(within(panel()).queryByText('line_items.csv')).not.toBeInTheDocument();
     expect(within(panel()).getByRole('link', { name: 'Review & approve' })).toHaveAttribute(
       'href',
       '#/review/a',
@@ -88,7 +86,7 @@ describe('JobDetailPanel', () => {
     );
   });
 
-  it('prefers published outputs once published', async () => {
+  it('offers every published output as one ZIP download', async () => {
     const j = job({ id: 'a', filename: 'inv.pdf', status: 'succeeded' });
     const api = fakeApi({
       getJob: vi.fn(async () => ({
@@ -96,16 +94,39 @@ describe('JobDetailPanel', () => {
         outputs: [
           output({}),
           output({ stage: 'published', key: 'pub/line_items.csv' }),
+          output({ stage: 'published', outputId: 'totals', key: 'pub/totals.csv' }),
+          output({
+            stage: 'published',
+            outputId: 'doc',
+            format: 'json',
+            key: 'pub/doc.json',
+            rowCount: null,
+          }),
           output({ outputId: 'doc', format: 'json', key: 'x/doc.json', rowCount: null }),
         ],
       })),
     });
     render(<JobDetailPanel api={api} job={j} {...defaults} />);
-    expect(await within(panel()).findByText('Published outputs')).toBeInTheDocument();
-    const links = within(panel()).getAllByRole('link', { name: /\.csv|\.json/ });
-    expect(links.map((l) => l.getAttribute('href'))).toEqual([
-      '/api/jobs/a/outputs/line_items?stage=published',
-    ]);
+    const section = await within(panel()).findByRole('region', { name: 'Published outputs' });
+    const links = within(section).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName('Download inv.pdf outputs as ZIP');
+    expect(links[0]).toHaveAttribute('href', '/api/results/a/archive');
+    expect(links[0]).toHaveTextContent('Download outputs (ZIP)');
+    expect(within(section).getByText('3 files: 2 CSV, 1 JSON')).toBeInTheDocument();
+    expect(within(panel()).queryByText('line_items.csv')).not.toBeInTheDocument();
+  });
+
+  it('says "1 file" for a single published output', async () => {
+    const j = job({ id: 'a', filename: 'inv.pdf', status: 'succeeded' });
+    const api = fakeApi({
+      getJob: vi.fn(async () => ({
+        ...j,
+        outputs: [output({ stage: 'published', format: 'json', rowCount: null })],
+      })),
+    });
+    render(<JobDetailPanel api={api} job={j} {...defaults} />);
+    expect(await within(panel()).findByText('1 file: 1 JSON')).toBeInTheDocument();
   });
 
   it('reloads when the job changes status', async () => {
