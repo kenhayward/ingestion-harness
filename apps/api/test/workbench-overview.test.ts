@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { preparedTriageKey, type ProjectOverview, type SampleView } from '@ih/shared';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -99,11 +99,12 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     });
     await p.addSample(2, true);
     expect((await p.item('samples')).status).toBe('Preparing 1 of 2');
-    await p.app.inject({
+    const brief = await p.app.inject({
       method: 'PUT',
       url: '/api/workbench/projects/letter/brief',
       payload: { purpose: 'Letters to customers' },
     });
+    expect(brief.statusCode).toBe(201);
     expect(await p.item('brief')).toEqual({
       stage: 'brief',
       state: 'accepted',
@@ -123,6 +124,55 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       state: 'skipped',
       status: 'Skipped',
     });
+  });
+
+  it('does not count sample preparation as test runs', async () => {
+    const p = await project();
+    await p.addSample(1, false);
+    expect(await p.item('runs')).toEqual({
+      stage: 'runs',
+      state: 'pending',
+      status: 'No runs yet',
+    });
+  });
+
+  it('shows an evaluation of the open draft as running while its jobs are queued', async () => {
+    const p = await project();
+    await p.addSample(1, true);
+    const run = await p.app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects/letter/test-runs',
+      payload: {},
+    });
+    const { jobs } = run.json<{ jobs: { id: string }[] }>();
+    await p.workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: (await p.templates.get('letter', 1))!.definition,
+      briefVersion: null,
+      set: 'dev',
+      model: null,
+      jobIds: jobs.map((j) => j.id),
+    });
+    expect(await p.item('evaluate')).toEqual({
+      stage: 'evaluate',
+      state: 'running',
+      status: 'Running',
+    });
+  });
+
+  it('reads no prepared triage for its own sample counts', async () => {
+    const p = await project();
+    const s = await p.addSample(1, true);
+    const get = vi.spyOn(p.store, 'get');
+    await p.overview();
+    const triageReads = get.mock.calls.filter(([, key]) => String(key).startsWith('prepared/'));
+    // The publish gate and the references stage still read it through `sampleViews` (one read
+    // each; sharing their context is PR 6); the overview's own sample counts add none.
+    expect(triageReads).toEqual([
+      ['runs', preparedTriageKey(s.sha256)],
+      ['runs', preparedTriageKey(s.sha256)],
+    ]);
   });
 
   it('counts test runs by status', async () => {

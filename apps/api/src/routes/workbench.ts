@@ -289,6 +289,21 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
   );
 }
 
+/**
+ * Each sample's state alone, as `sampleViews` derives it, without reading triage from the store
+ * or counting holdout runs (overview counts).
+ */
+export async function sampleStates(app: FastifyInstance, projectId: string) {
+  const [jobs, records] = await Promise.all([
+    app.deps.repo.listProjectJobs(projectId),
+    app.deps.workbench.listSamples(projectId),
+  ]);
+  const prepares = jobs.filter((j) => j.task === 'prepare');
+  return records.map((record) =>
+    stateOf(prepares.find((j) => j.documentId === record.documentId) ?? null),
+  );
+}
+
 /** The sha256 of each project job's PDF, by job id (deleted jobs are missing). */
 async function jobShas(app: FastifyInstance, projectId: string): Promise<Map<string, string>> {
   return new Map((await app.deps.repo.listProjectRuns(projectId)).map((r) => [r.job.id, r.sha256]));

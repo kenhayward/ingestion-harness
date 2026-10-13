@@ -15,14 +15,15 @@ import {
   allStages,
   gateFor,
   projectView,
-  sampleViews,
+  sampleStates,
   statusOf,
 } from './workbench.js';
 
 /**
  * Everything the project page's rail, header and Overview tab show, in one call (handoff W2).
  * Revise counts only proposals made since the latest publication: an older one answered an
- * earlier version.
+ * earlier version. The cut-off is strict: a proposal created at exactly the publication time
+ * counts as earlier.
  */
 export async function projectOverview(
   app: FastifyInstance,
@@ -43,7 +44,7 @@ export async function projectOverview(
     publications,
   ] = await Promise.all([
     projectView(app, project),
-    sampleViews(app, id),
+    sampleStates(app, id),
     allStages(app, id),
     gateFor(app, project),
     workbench.listProposals(id),
@@ -74,8 +75,8 @@ export async function projectOverview(
     briefSaved: briefSaved(view.brief),
     samples: {
       total: samples.length,
-      preparing: samples.filter((s) => s.view.state === 'preparing').length,
-      failed: samples.filter((s) => s.view.state === 'failed').length,
+      preparing: samples.filter((s) => s === 'preparing').length,
+      failed: samples.filter((s) => s === 'failed').length,
     },
     stages,
     revise: revise ? statusOf(revise, draftJob.get(revise.id) ?? null) : null,
