@@ -5,6 +5,7 @@ import {
   outputKey,
   preparedTriageKey,
   type FeedbackItem,
+  type RevisePreview,
   type SampleView,
 } from '@ih/shared';
 import { letter, multipart, testApp } from './helpers.js';
@@ -524,5 +525,74 @@ describe('revise', () => {
     ).json() as FeedbackItem[];
     expect(items.find((f) => f.id === one.id)!.resolvedBy).toBe(id);
     expect(items.find((f) => f.id === two.id)!.resolvedBy).toBeNull();
+  });
+});
+
+describe('revise preview (RV1)', () => {
+  const preview = async (ctx: Awaited<ReturnType<typeof project>>) => {
+    const res = await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview');
+    expect(res.statusCode).toBe(200);
+    return res.json() as RevisePreview;
+  };
+
+  it('is a 404 for an unknown project', async () => {
+    const { app } = await project();
+    expect(
+      (await app.inject('/api/workbench/projects/nope/stages/revise/preview')).statusCode,
+    ).toBe(404);
+  });
+
+  it('shows the draft and the limits before any feedback or evaluation', async () => {
+    const ctx = await project();
+    expect(await preview(ctx)).toEqual({
+      feedback: [],
+      failures: [],
+      failuresTotal: 0,
+      failuresFrom: null,
+      model: null,
+      draft: { version: 1, definition: (await ctx.templates.get('letter', 1))!.definition },
+      samples: [],
+      limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
+      notSent: { holdoutSamples: 0, holdoutRun: null },
+    });
+  });
+
+  it('is exactly what the next revision sends, and names what it never sends', async () => {
+    const ctx = await project();
+    await ctx.app.deps.llm.setSettings({ draftingModel: 'local/qwen' }, null);
+    const a = await ctx.add(1);
+    const h = await ctx.add(2);
+    await ctx.verify(a, 'Acme');
+    await ctx.setRole(h.id, 'holdout');
+    await ctx.verify(h, 'Globex');
+    const dev = (await ctx.evaluate()).json() as { id: string };
+    await ctx.evaluate({ set: 'holdout' });
+    for (const r of await ctx.repo.listProjectRuns('letter')) {
+      if (r.job.referenceId) await ctx.finish(r.job.id, 'Wrong');
+    }
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Letterhead', sampleId: a.id });
+
+    const shown = await preview(ctx);
+    const params = paramsOf(ctx, (await ctx.start('revise')).json().id);
+    expect(shown.feedback).toEqual(params.feedback);
+    expect(shown.failures).toEqual(params.failures);
+    expect(shown.failures.map((f) => f.sample)).toEqual(['s1.pdf']);
+    expect(shown.samples).toEqual(
+      (params.samples as { filename: string }[]).map((s) => s.filename),
+    );
+    expect(shown.draft!.definition).toEqual(params.draft);
+    expect(shown).toMatchObject({
+      model: 'local/qwen',
+      failuresTotal: 1,
+      failuresFrom: { iterationId: dev.id, templateVersion: 1, model: null, compared: 1 },
+      notSent: { holdoutSamples: 1, holdoutRun: { status: 'complete', score: 0 } },
+    });
+    expect(params.failuresFrom).toEqual({ templateVersion: 1, model: null });
+  });
+
+  it('has no draft once the version is published', async () => {
+    const ctx = await project();
+    await ctx.templates.publish('letter', 1);
+    expect((await preview(ctx)).draft).toBeNull();
   });
 });

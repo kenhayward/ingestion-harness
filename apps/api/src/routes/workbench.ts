@@ -103,6 +103,11 @@ import {
   referenceCorrections,
   type ReferenceDetail,
   type ReferenceInfo,
+  MAX_CONTEXT_SAMPLES,
+  MAX_FIELD_DIFFS,
+  MAX_ROW_DIFFS,
+  RevisePreviewSchema,
+  type RevisePreview,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { listProjectsPage } from '../workbench/list.js';
@@ -2133,6 +2138,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     };
   }
 
+  /** The newest holdout iteration, for "Not sent" (RV1); its score is shown, never sent. */
+  async function latestHoldoutRun(projectId: string) {
+    const latest = (await workbench.listIterations(projectId)).find((i) => i.set === 'holdout');
+    if (!latest) return null;
+    if (latest.scores) {
+      return { iterationId: latest.id, status: 'complete' as const, score: latest.scores.score };
+    }
+    const view = await iterationView(app, latest);
+    return { iterationId: latest.id, status: view.status, score: view.score };
+  }
+
   app.get<{ Params: ProjectParams }>(
     '/workbench/projects/:id/feedback',
     {
@@ -2249,6 +2265,79 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       }
       if (result === 'not-found') return reply.code(404).send({ error: 'feedback not found' });
       return reply.code(204).send();
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/stages/revise/preview',
+    {
+      schema: {
+        tags: ['Feedback & revise'],
+        operationId: 'previewRevision',
+        summary: 'Preview what a revision would send',
+        description: md`
+          Exactly what \`POST …/stages/revise\` would send to the drafting model now (handoff
+          RV1): the open \`feedback\` (with ids, which the model's \`answers\` name), the failure
+          diffs of the latest complete dev iteration (the template's own run first, else a
+          model-comparison member; \`failuresFrom\`) restricted to the current ready dev samples,
+          lowest score first and at most \`limits.samples\` (\`failuresTotal\` counts them before
+          that cap; each diff keeps at most \`limits.fieldDiffs\` fields and \`limits.rowDiffs\`
+          changed rows per table), the open \`draft\`, the dev sample files whose text goes along
+          (\`samples\`), and the drafting \`model\` setting (null when unset).
+
+          \`notSent\` is what the holdout rule keeps out of every model call: the ready holdout
+          samples and the newest holdout iteration (its score is shown here, never sent). A
+          revision needs open feedback and an open draft; the preview is available without them.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('What the next revision would send.', RevisePreviewSchema),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply): Promise<RevisePreview> => {
+      const projectId = req.params.id;
+      if (!(await workbench.getProject(projectId))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const views = await sampleViews(app, projectId);
+      const dev = devSamplesOf(views);
+      const [inputs, { draft }, settings, holdoutRun] = await Promise.all([
+        reviseInputs(projectId, dev),
+        versionsOf(templates, projectId),
+        app.deps.llm.getSettings(),
+        latestHoldoutRun(projectId),
+      ]);
+      const record = draft === null ? null : await templates.get(projectId, draft);
+      const { source } = inputs;
+      return {
+        feedback: inputs.params.feedback,
+        failures: inputs.params.failures,
+        failuresTotal: inputs.failuresTotal,
+        failuresFrom: source
+          ? {
+              iterationId: source.iteration.id,
+              templateVersion: source.iteration.templateVersion,
+              model: source.iteration.model,
+              createdAt: source.iteration.createdAt,
+              compared: source.compared,
+            }
+          : null,
+        model: settings.draftingModel,
+        draft: record ? { version: record.version, definition: record.definition } : null,
+        samples: dev.slice(0, MAX_CONTEXT_SAMPLES).map((s) => s.filename),
+        limits: {
+          samples: MAX_CONTEXT_SAMPLES,
+          fieldDiffs: MAX_FIELD_DIFFS,
+          rowDiffs: MAX_ROW_DIFFS,
+        },
+        notSent: {
+          holdoutSamples: views.filter((s) => s.view.role === 'holdout' && s.view.state === 'ready')
+            .length,
+          holdoutRun,
+        },
+      };
     },
   );
 
