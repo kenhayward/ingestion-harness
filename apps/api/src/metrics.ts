@@ -1,4 +1,5 @@
 import type { JobSummary, StepRun } from '@ih/shared';
+import { z } from 'zod';
 
 /** Raw rows for one document type, from the repository. */
 export interface MetricsData {
@@ -7,34 +8,43 @@ export interface MetricsData {
   stepRuns: (StepRun & { jobId: string })[];
 }
 
-export interface TemplateMetrics {
-  templateId: string;
-  versions: {
-    version: number;
-    /** Real documents (test runs are counted separately). */
-    jobs: number;
-    testJobs: number;
-    byStatus: Record<string, number>;
-    /** Documents that needed review (policy or warnings). */
-    reviewed: number;
-    reviewRate: number | null;
-    editsPerReviewed: number | null;
-    /** Upload to finish, for succeeded documents. */
-    avgProcessingSeconds: number | null;
-  }[];
+const Average = z.number().nullable();
+
+export const TemplateMetricsSchema = z.object({
+  templateId: z.string(),
+  versions: z.array(
+    z.object({
+      version: z.number().int(),
+      /** Real documents (test runs are counted separately). */
+      jobs: z.number().int().describe('Real documents; test runs are counted separately.'),
+      testJobs: z.number().int(),
+      byStatus: z.record(z.string(), z.number().int()),
+      /** Documents that needed review (policy or warnings). */
+      reviewed: z.number().int().describe('Documents that needed review.'),
+      reviewRate: Average,
+      editsPerReviewed: Average,
+      /** Upload to finish, for succeeded documents. */
+      avgProcessingSeconds: Average.describe('Upload to finish, for succeeded documents.'),
+    }),
+  ),
   /** Model calls per step; cached step runs are left out. */
-  steps: {
-    stepId: string;
-    runs: number;
-    reruns: number;
-    failures: number;
-    avgAttempts: number;
-    avgOutputTokens: number | null;
-    avgSeconds: number | null;
-  }[];
+  steps: z.array(
+    z.object({
+      stepId: z.string(),
+      runs: z.number().int(),
+      reruns: z.number().int(),
+      failures: z.number().int(),
+      avgAttempts: z.number(),
+      avgOutputTokens: Average,
+      avgSeconds: Average,
+    }),
+  ),
   /** Where reviewers correct most: field id or table.column. */
-  topEdited: { target: string; edits: number }[];
-}
+  topEdited: z
+    .array(z.object({ target: z.string(), edits: z.number().int() }))
+    .describe('Where reviewers correct most: a field id or `table.column`.'),
+});
+export type TemplateMetrics = z.infer<typeof TemplateMetricsSchema>;
 
 const mean = (values: number[]) =>
   values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;

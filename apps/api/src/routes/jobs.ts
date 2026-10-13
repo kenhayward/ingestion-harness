@@ -1,16 +1,25 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { JobStatusSchema, pagePreviewKey, type JobSummary } from '@ih/shared';
+import {
+  JobDetailSchema,
+  JobStatusSchema,
+  JobSummarySchema,
+  pagePreviewKey,
+  type JobSummary,
+} from '@ih/shared';
 import { z } from 'zod';
+import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
 import { draftOutputsSnapshot, resolveDefinition } from '../templates/definitions.js';
 import { storeFor } from '../storage/stage.js';
 
 const ListQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(500).default(50),
-  status: JobStatusSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(50).describe('At most 500.'),
+  status: JobStatusSchema.optional().describe('Only jobs in this status.'),
 });
 
 const UUID = z.string().uuid();
+const JobParams = z.object({ id: z.string().uuid().describe('The job id.') });
+const NOT_FOUND = error('`not found`: no job with this id.');
 
 /**
  * Content-Disposition for a user-supplied file name: an ASCII fallback that can't break out of
@@ -29,7 +38,14 @@ export function contentDisposition(name: string, type: 'inline' | 'attachment' =
 }
 
 /** model: a ref sets the job's override, null clears it (spec default), absent keeps it. */
-const RetryBody = z.object({ model: z.string().min(1).nullable().optional() });
+const RetryBody = z.object({
+  model: z
+    .string()
+    .min(1)
+    .nullable()
+    .optional()
+    .describe("A model ref to use, null for the document type's model, absent to keep the job's."),
+});
 
 const CleanupBody = z.object({
   olderThanDays: z.number().int().min(1).max(3650),
@@ -43,17 +59,56 @@ const CleanupBody = z.object({
 });
 
 export const jobRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/jobs', async (req, reply) => {
-    const query = ListQuery.safeParse(req.query);
-    if (!query.success) return reply.code(400).send({ error: query.error.issues });
-    return app.deps.repo.listJobs(query.data);
-  });
+  app.get(
+    '/jobs',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'listJobs',
+        summary: 'List jobs',
+        description: md`
+          The newest jobs first, optionally of one status. Lists the jobs of uploaded documents
+          (production, test and regression runs); the Workbench's preparation, preview, drafting
+          and export jobs are not listed.
+        `,
+        querystring: ListQuery,
+        response: {
+          200: res('The jobs.', z.array(JobSummarySchema)),
+          400: error('Zod issues for an invalid `limit` or `status`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const query = ListQuery.safeParse(req.query);
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      return app.deps.repo.listJobs(query.data);
+    },
+  );
 
-  app.get<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const job = await app.deps.repo.getJob(req.params.id);
-    return job ?? reply.code(404).send({ error: 'not found' });
-  });
+  app.get<{ Params: { id: string } }>(
+    '/jobs/:id',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getJob',
+        summary: 'Get a job',
+        description: md`
+          A job with its outputs: the drafts written before review (\`stage: draft\`, outputs
+          bucket) and the copies delivered to the final target (\`stage: published\`).
+          Download one with \`GET /api/jobs/{id}/outputs/{outputId}\`.
+        `,
+        params: JobParams,
+        response: { 200: res('The job.', JobDetailSchema), 404: NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const job = await app.deps.repo.getJob(req.params.id);
+      return job ?? reply.code(404).send({ error: 'not found' });
+    },
+  );
 
   /**
    * The version a retry re-processes with: the latest published (or newest file) version.
@@ -78,149 +133,338 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     return record?.status === 'draft' ? draftOutputsSnapshot(record.definition) : {};
   }
 
-  app.post<{ Params: { id: string } }>('/jobs/:id/retry', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const body = RetryBody.safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: 'model must be a model ref or null' });
-    const { model } = body.data;
-    if (model) {
-      const known = (await app.deps.repo.listModels()).some((m) => m.enabled && m.ref === model);
-      if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
-    }
-    const current = await app.deps.repo.getJob(req.params.id);
-    const job = await app.deps.repo.retryJob(req.params.id, {
-      model,
-      specVersion: current ? await latestVersionFor(current) : undefined,
-      ...(current ? await draftSnapshotFor(current) : {}),
-    });
-    return job ?? reply.code(409).send({ error: 'job not found or not in a retryable state' });
-  });
+  app.post<{ Params: { id: string } }>(
+    '/jobs/:id/retry',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'retryJob',
+        summary: 'Retry a job',
+        description: md`
+          Queues a \`failed\`, \`needs_review\`, \`cancelled\` or \`succeeded\` job again with
+          its attempts reset. It re-processes with the document type's latest published version,
+          except test runs, regression runs and cancelled publish or re-run tasks, which keep
+          their version. A cancelled publish or step re-run resumes as that task; any other job
+          is processed from scratch. Retrying a \`succeeded\` job re-extracts it: its review and
+          edits are cleared.
+        `,
+        params: JobParams,
+        body: RetryBody,
+        response: {
+          200: res('The queued job.', JobSummarySchema),
+          400: error('`model must be a model ref or null`, or an unknown or disabled model.'),
+          404: NOT_FOUND,
+          409: error('`job not found or not in a retryable state`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      const body = RetryBody.safeParse(req.body ?? {});
+      if (!body.success)
+        return reply.code(400).send({ error: 'model must be a model ref or null' });
+      const { model } = body.data;
+      if (model) {
+        const known = (await app.deps.repo.listModels()).some((m) => m.enabled && m.ref === model);
+        if (!known) return reply.code(400).send({ error: `unknown or disabled model ${model}` });
+      }
+      const current = await app.deps.repo.getJob(req.params.id);
+      const job = await app.deps.repo.retryJob(req.params.id, {
+        model,
+        specVersion: current ? await latestVersionFor(current) : undefined,
+        ...(current ? await draftSnapshotFor(current) : {}),
+      });
+      return job ?? reply.code(409).send({ error: 'job not found or not in a retryable state' });
+    },
+  );
 
-  app.post<{ Params: { id: string } }>('/jobs/:id/cancel', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    if (!(await app.deps.repo.getJob(req.params.id))) {
-      return reply.code(404).send({ error: 'not found' });
-    }
-    const job = await app.deps.repo.cancelJob(req.params.id);
-    return job ?? reply.code(409).send({ error: 'only queued or running jobs can be cancelled' });
-  });
+  app.post<{ Params: { id: string } }>(
+    '/jobs/:id/cancel',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'cancelJob',
+        summary: 'Cancel a queued or running job',
+        description: md`
+          Marks a \`queued\` or \`running\` job \`cancelled\`. A running job stops at the
+          worker's next safe point, and nothing it does afterwards changes the job's status.
+          Retry resumes it. See
+          [ADR 0005](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0005-job-cancellation-and-deletion.md).
+        `,
+        params: JobParams,
+        response: {
+          200: res('The cancelled job.', JobSummarySchema),
+          404: NOT_FOUND,
+          409: error('`only queued or running jobs can be cancelled`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      if (!(await app.deps.repo.getJob(req.params.id))) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const job = await app.deps.repo.cancelJob(req.params.id);
+      return job ?? reply.code(409).send({ error: 'only queued or running jobs can be cancelled' });
+    },
+  );
 
-  app.delete<{ Params: { id: string } }>('/jobs/:id', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const res = await app.deps.repo.deleteJob(req.params.id);
-    if (res.result === 'not_found') return reply.code(404).send({ error: 'not found' });
-    if (res.result === 'conflict') {
-      return reply
-        .code(409)
-        .send({ error: `a ${res.status} job cannot be deleted: cancel or review it first` });
-    }
-    await removeJobFiles(app.deps, res.removed, req.log);
-    return reply.code(204).send();
-  });
+  app.delete<{ Params: { id: string } }>(
+    '/jobs/:id',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'deleteJob',
+        summary: 'Delete a finished job',
+        description: md`
+          Deletes a \`succeeded\`, \`failed\`, \`needs_review\`, \`rejected\` or \`cancelled\`
+          job with its history, its draft outputs and its files in the runs bucket, and the
+          uploaded PDF when no other job or Workbench sample uses it. Copies already delivered to
+          the final target are kept. Queued and running jobs must be cancelled first, and jobs
+          awaiting review decided.
+        `,
+        params: JobParams,
+        response: {
+          204: noContent('Deleted.'),
+          404: NOT_FOUND,
+          409: error('`a {status} job cannot be deleted: cancel or review it first`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      const res = await app.deps.repo.deleteJob(req.params.id);
+      if (res.result === 'not_found') return reply.code(404).send({ error: 'not found' });
+      if (res.result === 'conflict') {
+        return reply
+          .code(409)
+          .send({ error: `a ${res.status} job cannot be deleted: cancel or review it first` });
+      }
+      await removeJobFiles(app.deps, res.removed, req.log);
+      return reply.code(204).send();
+    },
+  );
 
   /** Bulk delete of finished jobs older than N days (dryRun: count only). */
-  app.post('/jobs/cleanup', async (req, reply) => {
-    const body = CleanupBody.safeParse(req.body);
-    if (!body.success) {
-      const error = body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-      return reply.code(400).send({ error });
-    }
-    const { olderThanDays, dryRun, includeRegression, limit } = body.data;
-    const cutoff =
-      body.data.cutoff ?? new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
-    const ids = await app.deps.repo.finishedJobIdsBefore(cutoff, includeRegression);
-    if (dryRun) return { count: ids.length, cutoff };
-    let deleted = 0;
-    for (const id of ids.slice(0, limit)) {
-      const res = await app.deps.repo.deleteJob(id);
-      if (res.result !== 'deleted') continue; // status changed meanwhile: skip it
-      deleted++;
-      await removeJobFiles(app.deps, res.removed, req.log);
-    }
-    return { deleted, remaining: Math.max(0, ids.length - limit), cutoff };
-  });
+  app.post(
+    '/jobs/cleanup',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'cleanupJobs',
+        summary: 'Delete finished jobs older than N days',
+        description: md`
+          Bulk version of \`DELETE /api/jobs/{id}\` for finished jobs last updated before a
+          cutoff (now minus \`olderThanDays\`). Regression runs are kept unless
+          \`includeRegression\` is true, since scores and metrics are computed from them.
+
+          Run it with \`dryRun: true\` first: the response counts the jobs and returns the
+          \`cutoff\`. Then delete with \`dryRun: false\`, passing that \`cutoff\` so the
+          delete matches what was previewed. Each request deletes at most \`limit\` jobs and
+          reports how many are \`remaining\`; repeat while it is above 0. A job whose status
+          changed in between is skipped.
+        `,
+        body: CleanupBody,
+        response: {
+          200: res(
+            'The dry-run count, or what was deleted.',
+            z.union([
+              z.object({ count: z.number().int(), cutoff: z.string() }),
+              z.object({
+                deleted: z.number().int(),
+                remaining: z.number().int(),
+                cutoff: z.string(),
+              }),
+            ]),
+          ),
+          400: error('The invalid fields, e.g. `olderThanDays: Number must be at least 1`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = CleanupBody.safeParse(req.body);
+      if (!body.success) {
+        const error = body.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+        return reply.code(400).send({ error });
+      }
+      const { olderThanDays, dryRun, includeRegression, limit } = body.data;
+      const cutoff =
+        body.data.cutoff ?? new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
+      const ids = await app.deps.repo.finishedJobIdsBefore(cutoff, includeRegression);
+      if (dryRun) return { count: ids.length, cutoff };
+      let deleted = 0;
+      for (const id of ids.slice(0, limit)) {
+        const res = await app.deps.repo.deleteJob(id);
+        if (res.result !== 'deleted') continue; // status changed meanwhile: skip it
+        deleted++;
+        await removeJobFiles(app.deps, res.removed, req.log);
+      }
+      return { deleted, remaining: Math.max(0, ids.length - limit), cutoff };
+    },
+  );
 
   app.get<{
     Params: { id: string; outputId: string };
     Querystring: { stage?: string; inline?: string };
-  }>('/jobs/:id/outputs/:outputId', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const { stage, inline } = req.query;
-    if (stage !== undefined && stage !== 'draft' && stage !== 'published') {
-      return reply.code(400).send({ error: 'stage must be draft or published' });
-    }
-    const job = await app.deps.repo.getJob(req.params.id);
-    const matches = (job?.outputs ?? []).filter(
-      (o) => o.outputId === req.params.outputId && (stage === undefined || o.stage === stage),
-    );
-    // A reviewed job has a draft and a published copy: default to what was delivered.
-    const output = matches.find((o) => o.stage === 'published') ?? matches[0];
-    if (!output) return reply.code(404).send({ error: 'output not found' });
+  }>(
+    '/jobs/:id/outputs/:outputId',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'downloadJobOutput',
+        summary: 'Download a job output',
+        description: md`
+          One output file of a job, as CSV or JSON. A reviewed job has two copies of each
+          output: the draft and the published one. The published copy is served unless
+          \`stage=draft\` asks for the draft. Published copies are read from the final target.
+          \`inline=1\` asks the browser to show the file instead of downloading it.
+        `,
+        params: z.object({
+          id: z.string().uuid().describe('The job id.'),
+          outputId: z.string().describe('The output id, e.g. `document` or a table id.'),
+        }),
+        querystring: z.object({
+          stage: z.enum(['draft', 'published']).optional(),
+          inline: z.enum(['1']).optional(),
+        }),
+        response: {
+          200: binary('The output file.', 'text/csv', 'application/json'),
+          400: error('`stage must be draft or published`.'),
+          404: error(
+            '`not found`, `output not found`, or the object is missing from storage or the target.',
+          ),
+          502: error('The outputs storage or the target storage is unreachable.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      const { stage, inline } = req.query;
+      if (stage !== undefined && stage !== 'draft' && stage !== 'published') {
+        return reply.code(400).send({ error: 'stage must be draft or published' });
+      }
+      const job = await app.deps.repo.getJob(req.params.id);
+      const matches = (job?.outputs ?? []).filter(
+        (o) => o.outputId === req.params.outputId && (stage === undefined || o.stage === stage),
+      );
+      // A reviewed job has a draft and a published copy: default to what was delivered.
+      const output = matches.find((o) => o.stage === 'published') ?? matches[0];
+      if (!output) return reply.code(404).send({ error: 'output not found' });
 
-    const where = output.stage === 'published' ? 'target' : 'storage';
-    let body: Buffer | null;
-    try {
-      body = await storeFor(app.deps, output.stage).get(output.bucket, output.key);
-    } catch (err) {
-      req.log.warn({ err, bucket: output.bucket }, 'output read failed');
-      return reply
-        .code(502)
-        .send({ error: `${where === 'target' ? 'target ' : ''}storage unavailable` });
-    }
-    if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
-    const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
-    return (
-      reply
-        .header(
-          'content-type',
-          output.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json',
-        )
-        .header(
-          'content-disposition',
-          `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,
-        )
-        // Output bodies are LLM-derived: never let a browser sniff them into another type.
-        .header('x-content-type-options', 'nosniff')
-        .send(body)
-    );
-  });
+      const where = output.stage === 'published' ? 'target' : 'storage';
+      let body: Buffer | null;
+      try {
+        body = await storeFor(app.deps, output.stage).get(output.bucket, output.key);
+      } catch (err) {
+        req.log.warn({ err, bucket: output.bucket }, 'output read failed');
+        return reply
+          .code(502)
+          .send({ error: `${where === 'target' ? 'target ' : ''}storage unavailable` });
+      }
+      if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
+      const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
+      return (
+        reply
+          .header(
+            'content-type',
+            output.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json',
+          )
+          .header(
+            'content-disposition',
+            `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,
+          )
+          // Output bodies are LLM-derived: never let a browser sniff them into another type.
+          .header('x-content-type-options', 'nosniff')
+          .send(body)
+      );
+    },
+  );
 
   /** The uploaded PDF (Jobs "Open PDF"), served inline from the inbox bucket. */
-  app.get<{ Params: { id: string } }>('/jobs/:id/document', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const doc = await app.deps.repo.getDocumentObject(req.params.id);
-    if (!doc) return reply.code(404).send({ error: 'not found' });
-    let body: Buffer | null;
-    try {
-      body = await app.deps.store.get(doc.bucket, doc.key);
-    } catch (err) {
-      req.log.warn({ err, bucket: doc.bucket }, 'document read failed');
-      return reply.code(502).send({ error: 'storage unavailable' });
-    }
-    if (!body) return reply.code(404).send({ error: 'document missing from storage' });
-    return reply
-      .header('content-type', 'application/pdf')
-      .header('content-disposition', contentDisposition(doc.filename))
-      .header('x-content-type-options', 'nosniff')
-      .header('cache-control', 'private, max-age=300')
-      .send(body);
-  });
+  app.get<{ Params: { id: string } }>(
+    '/jobs/:id/document',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getJobDocument',
+        summary: 'Download the uploaded PDF',
+        description: md`
+          The PDF the job processes, from the inbox bucket, served inline under its original
+          file name.
+        `,
+        params: JobParams,
+        response: {
+          200: binary('The PDF.', 'application/pdf'),
+          404: error('`not found`, or `document missing from storage`.'),
+          502: error('`storage unavailable`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      const doc = await app.deps.repo.getDocumentObject(req.params.id);
+      if (!doc) return reply.code(404).send({ error: 'not found' });
+      let body: Buffer | null;
+      try {
+        body = await app.deps.store.get(doc.bucket, doc.key);
+      } catch (err) {
+        req.log.warn({ err, bucket: doc.bucket }, 'document read failed');
+        return reply.code(502).send({ error: 'storage unavailable' });
+      }
+      if (!body) return reply.code(404).send({ error: 'document missing from storage' });
+      return reply
+        .header('content-type', 'application/pdf')
+        .header('content-disposition', contentDisposition(doc.filename))
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'private, max-age=300')
+        .send(body);
+    },
+  );
 
   /** JPEG page preview rendered by the worker (review screen). */
-  app.get<{ Params: { id: string; n: string } }>('/jobs/:id/pages/:n', async (req, reply) => {
-    if (!UUID.safeParse(req.params.id).success) return reply.code(404).send({ error: 'not found' });
-    const page = Number(req.params.n);
-    if (!Number.isInteger(page) || page < 1 || page > 5000) {
-      return reply.code(400).send({ error: 'page must be a positive integer' });
-    }
-    const body = await app.deps.store.get(
-      app.deps.buckets.runs,
-      pagePreviewKey(req.params.id, page),
-    );
-    if (!body) return reply.code(404).send({ error: 'page preview not found' });
-    return reply
-      .header('content-type', 'image/jpeg')
-      .header('cache-control', 'private, max-age=3600')
-      .send(body);
-  });
+  app.get<{ Params: { id: string; n: string } }>(
+    '/jobs/:id/pages/:n',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getJobPage',
+        summary: 'Get a page preview image',
+        description: md`
+          A JPEG of one page of the job's document, rendered by the worker for the review
+          screen. Pages are numbered from 1.
+        `,
+        params: z.object({
+          id: z.string().uuid().describe('The job id.'),
+          n: z.string().describe('The 1-based page number.'),
+        }),
+        response: {
+          200: binary('The page image.', 'image/jpeg'),
+          400: error('`page must be a positive integer`.'),
+          404: error('`not found`, or `page preview not found`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      const page = Number(req.params.n);
+      if (!Number.isInteger(page) || page < 1 || page > 5000) {
+        return reply.code(400).send({ error: 'page must be a positive integer' });
+      }
+      const body = await app.deps.store.get(
+        app.deps.buckets.runs,
+        pagePreviewKey(req.params.id, page),
+      );
+      if (!body) return reply.code(404).send({ error: 'page preview not found' });
+      return reply
+        .header('content-type', 'image/jpeg')
+        .header('cache-control', 'private, max-age=3600')
+        .send(body);
+    },
+  );
 };

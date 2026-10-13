@@ -1,12 +1,14 @@
 import { TemplateSchema, type Template } from '@ih/shared';
+import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
 import type { TemplateRecord } from './repo.js';
 
-export interface TemplateIssue {
-  path: string;
-  message: string;
-}
+export const TemplateIssueSchema = z.object({
+  path: z.string().describe('Where in the definition, e.g. `outputs.fields.0.type`.'),
+  message: z.string(),
+});
+export type TemplateIssue = z.infer<typeof TemplateIssueSchema>;
 
 /**
  * Validate a template definition for database storage: the shared schema, plus no custom prompt

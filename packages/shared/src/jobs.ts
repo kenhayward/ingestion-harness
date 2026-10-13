@@ -112,18 +112,21 @@ export const EditRequestSchema = z.union([
 ]);
 export type EditRequest = z.infer<typeof EditRequestSchema>;
 
-export interface ReviewEdit {
-  id: number;
-  at: string;
-  field: string | null;
-  table: string | null;
-  row: number | null;
-  column: string | null;
-  oldValue: unknown;
-  newValue: unknown;
-  editor: string | null;
-  reason: string | null;
-}
+/** A recorded reviewer edit: a field, or a table cell (`table`, 1-based `row`, `column`). */
+export const ReviewEditSchema = z.object({
+  id: z.number().int(),
+  at: z.string(),
+  field: z.string().nullable(),
+  table: z.string().nullable(),
+  row: z.number().int().nullable(),
+  column: z.string().nullable(),
+  /** The value before this edit: the previous edit's value, or the draft's. */
+  oldValue: z.unknown(),
+  newValue: z.unknown(),
+  editor: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type ReviewEdit = z.infer<typeof ReviewEditSchema>;
 
 export const ApproveRequestSchema = z
   .object({ reviewer: z.string().optional(), note: z.string().optional() })
@@ -133,21 +136,22 @@ export const RejectRequestSchema = z
   .strict();
 
 /** One extract step execution recorded by the worker (step_runs). */
-export interface StepRun {
-  id: number;
-  stepId: string;
-  trigger: 'process' | 'rerun';
-  model: string | null;
-  attempts: number;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  status: 'succeeded' | 'failed';
+export const StepRunSchema = z.object({
+  id: z.number().int(),
+  stepId: z.string(),
+  trigger: z.enum(['process', 'rerun']),
+  model: z.string().nullable(),
+  attempts: z.number().int(),
+  inputTokens: z.number().int().nullable(),
+  outputTokens: z.number().int().nullable(),
+  status: z.enum(['succeeded', 'failed']),
   /** Served from the workbench step cache (no model call). */
-  cached: boolean;
-  error: string | null;
-  startedAt: string;
-  finishedAt: string;
-}
+  cached: z.boolean(),
+  error: z.string().nullable(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+});
+export type StepRun = z.infer<typeof StepRunSchema>;
 
 export const RerunRequestSchema = z
   .object({
@@ -160,20 +164,24 @@ export const RerunRequestSchema = z
 export type RerunRequest = z.infer<typeof RerunRequestSchema>;
 
 /** A reference document of a document type: approved values used as the expected result. */
-export interface Reference {
-  id: string;
-  templateId: string;
+export const ReferenceSchema = z.object({
+  id: z.string().uuid(),
+  templateId: z.string(),
   /** Workbench types: the template version it belongs to. Null: every version (other types). */
-  templateVersion: number | null;
-  name: string;
-  documentId: string;
-  sourceJobId: string | null;
+  templateVersion: z.number().int().nullable(),
+  name: z.string(),
+  documentId: z.string().uuid(),
+  sourceJobId: z.string().uuid().nullable(),
   /** The reference it was carried forward from (a copy for the next version). */
-  copiedFrom: string | null;
+  copiedFrom: z.string().uuid().nullable(),
   /** The outputs definition the expected values were verified against (null: unpinned). */
-  verifiedOutputs: unknown;
+  verifiedOutputs: z.unknown(),
   /** Set when a re-verified reference replaced this one; kept for older iterations. */
-  supersededAt: string | null;
-  expected: { fields: Record<string, unknown>; tables: Record<string, Record<string, unknown>[]> };
-  createdAt: string;
-}
+  supersededAt: z.string().nullable(),
+  expected: z.object({
+    fields: z.record(z.string(), z.unknown()),
+    tables: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))),
+  }),
+  createdAt: z.string(),
+});
+export type Reference = z.infer<typeof ReferenceSchema>;
