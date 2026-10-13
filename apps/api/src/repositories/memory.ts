@@ -11,7 +11,7 @@ import type {
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
-import { DELETABLE_STATUSES } from '@ih/shared';
+import { DELETABLE_STATUSES, sourceContentType } from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -89,6 +89,7 @@ export class MemoryRepo implements IngestionRepo {
       id: randomUUID(),
       documentId: doc.id,
       filename: doc.filename,
+      contentType: sourceContentType(doc.objectKey),
       specId: doc.specId,
       specVersion: doc.specVersion,
       status: 'queued',
@@ -291,6 +292,7 @@ export class MemoryRepo implements IngestionRepo {
             jobId: j.id,
             documentId: j.documentId,
             filename: j.filename,
+            contentType: j.contentType,
             specId: j.specId,
             specVersion: j.specVersion,
             publishedAt: at,

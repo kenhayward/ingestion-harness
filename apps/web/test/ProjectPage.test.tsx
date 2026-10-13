@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
 import { ProjectPage } from '../src/workbench/ProjectPage.js';
-import type { OverviewItem } from '@ih/shared';
+import { OVERVIEW_TABS, type OverviewItem } from '@ih/shared';
 import { fakeApi, projectOverview, projectView } from './fake-api.js';
 
 /** The fixture overview with some items replaced. */
@@ -29,6 +29,83 @@ const page = (api = fakeApi(), tab: 'samples' | 'brief' | 'template' | 'runs' = 
     />,
   );
 
+const TAB_TITLES = [
+  ['samples', 'Samples'],
+  ['brief', 'Brief'],
+  ['survey', 'Survey'],
+  ['outputs', 'Outputs'],
+  ['sections', 'Section anchors'],
+  ['steps', 'Extraction steps'],
+  ['references', 'References'],
+  ['evaluate', 'Evaluate'],
+  ['revise', 'Revise'],
+  ['template', 'Template'],
+  ['runs', 'Test runs'],
+] as const;
+
+describe('ProjectPage tab headers', () => {
+  it.each(TAB_TITLES)('opens the %s tab with the H2 %s and its status', async (tab, title) => {
+    const stages = OVERVIEW_TABS.filter((s) => s !== 'template').map((stage) => [
+      stage,
+      { state: 'accepted' as const, status: 'Accepted' },
+    ]);
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1 })),
+      getProjectOverview: vi.fn(async () => overviewWith(Object.fromEntries(stages))),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab={tab}
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    expect(await screen.findByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 2, name: title })).toHaveLength(1);
+    if (tab !== 'template') {
+      await waitFor(() => {
+        const header = screen.getByRole('heading', { level: 2, name: title }).closest('header')!;
+        expect(within(header).getByText('Accepted')).toBeInTheDocument();
+      });
+    }
+  });
+
+  it('has one Propose button and no Skip on the Revise tab', async () => {
+    const api = fakeApi({ getProject: vi.fn(async () => projectView({ draft: 1 })) });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="revise"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    await screen.findByRole('heading', { level: 2, name: 'Revise' });
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /^Propose (a revision|again)$/ })).toHaveLength(
+        1,
+      ),
+    );
+    expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
+  });
+
+  it('still shows the Samples title when the overview cannot load', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      getProjectOverview: vi.fn(async () => {
+        throw new Error('overview down');
+      }),
+    });
+    page(api);
+    expect(await screen.findByRole('heading', { level: 2, name: 'Samples' })).toBeInTheDocument();
+  });
+});
+
 describe('ProjectPage', () => {
   it('shows the project with tab links', async () => {
     page(fakeApi({ getProject: vi.fn(async () => projectView({ draft: 2, published: 1 })) }));
@@ -53,7 +130,7 @@ describe('ProjectPage', () => {
         projectOverview({
           next: {
             stage: 'samples',
-            title: 'Next: add sample PDFs',
+            title: 'Next: add sample documents',
             reason: 'Upload 3–8 dev samples and a few holdout samples.',
           },
         }),
@@ -69,7 +146,7 @@ describe('ProjectPage', () => {
         role="admin"
       />,
     );
-    expect(await screen.findByText('Next: add sample PDFs')).toBeInTheDocument();
+    expect(await screen.findByText('Next: add sample documents')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   });
 

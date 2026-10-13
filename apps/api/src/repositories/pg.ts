@@ -13,7 +13,7 @@ import type {
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, modelRef } from '@ih/shared';
+import { DELETABLE_STATUSES, modelRef, sourceContentType } from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -35,7 +35,7 @@ import {
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
 // Any query on `jobs` that does not go through JOB_SELECT must exclude `document_id IS NULL` rows.
 const JOB_SELECT = `
-  SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.status,
+  SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
          array(SELECT model FROM step_runs
@@ -65,6 +65,7 @@ interface JobRow {
   id: string;
   document_id: string;
   filename: string;
+  object_key: string;
   spec_id: string;
   spec_version: number;
   status: JobStatus;
@@ -89,6 +90,7 @@ function toSummary(r: JobRow): JobSummary {
     id: r.id,
     documentId: r.document_id,
     filename: r.filename,
+    contentType: sourceContentType(r.object_key),
     specId: r.spec_id,
     specVersion: r.spec_version,
     status: r.status,
@@ -459,6 +461,7 @@ export class PgRepo implements IngestionRepo {
       id: string;
       document_id: string;
       filename: string;
+      object_key: string;
       spec_id: string;
       spec_version: number;
       reviewer: string | null;
@@ -468,7 +471,7 @@ export class PgRepo implements IngestionRepo {
       issue_count: number | null;
       outputs: { outputId: string; format: 'csv' | 'json'; key: string; rowCount: number | null }[];
     }>(
-      `SELECT j.id, j.document_id, d.filename, d.spec_id, d.spec_version, j.reviewer, j.reviewed_at,
+      `SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.reviewer, j.reviewed_at,
               date_trunc('milliseconds', max(o.created_at)) AS published_at,
               count(*)::int AS output_count,
               max(o.row_count) FILTER (WHERE o.output_id = 'issues') AS issue_count,
@@ -501,6 +504,7 @@ export class PgRepo implements IngestionRepo {
       jobId: r.id,
       documentId: r.document_id,
       filename: r.filename,
+      contentType: sourceContentType(r.object_key),
       specId: r.spec_id,
       specVersion: r.spec_version,
       publishedAt: r.published_at.toISOString(),

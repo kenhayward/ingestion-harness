@@ -1,15 +1,15 @@
 import { useId, useState } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { relativeTime } from '../jobs/derive.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { recentTestRuns } from './editor-derive.js';
 
-const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-
 /**
- * "Test this draft" (UI handoff §5): run the version on a sample PDF and see recent test runs,
+ * "Test this draft" (UI handoff §5): run the version on a sample PDF or Word document and see
+ * recent test runs,
  * each a click from its review. Test runs are reviewable but never published.
  */
 export function TestRail({
@@ -32,9 +32,9 @@ export function TestRail({
 
   const choose = (file: File | undefined) => {
     if (!file) return; // picker cancelled: keep the current sample
-    if (!isPdf(file)) {
+    if (!isSourceFile(file)) {
       setSample(null);
-      setStatus('Choose a PDF');
+      setStatus('Choose a PDF or Word document');
       return;
     }
     setSample(file);
@@ -70,7 +70,7 @@ export function TestRail({
           <Icon name="upload" size={18} />
         </span>
         <span>
-          <strong>{sample ? sample.name : 'Drop a sample PDF'}</strong> or{' '}
+          <strong>{sample ? sample.name : 'Drop a sample PDF or Word document'}</strong> or{' '}
           <span className="link-text">browse</span>
         </span>
         <small>Test runs are reviewable but never published</small>
@@ -79,8 +79,8 @@ export function TestRail({
         id={inputId}
         className="visually-hidden"
         type="file"
-        accept="application/pdf"
-        aria-label="Sample PDF"
+        accept={SOURCE_ACCEPT}
+        aria-label="Sample document"
         onChange={(e) => {
           choose(e.target.files?.[0]);
           e.target.value = '';

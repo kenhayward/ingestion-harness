@@ -6,7 +6,6 @@ PreparedTriage)."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import multiprocessing
 import re
@@ -23,6 +22,7 @@ from .pipeline import (
     JobCancelled,
     PipelineDeps,
     check_cancelled,
+    load_source,
     mark_pages,
     ocr_pages,
 )
@@ -36,15 +36,16 @@ LINE_LIMIT = 200
 
 
 def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
-    """Extract and OCR (mode auto) one sample PDF; write its text and triage to the runs bucket.
-    Returns the triage."""
-    pdf = deps.store.get(job.bucket, job.object_key)
-    sha256 = hashlib.sha256(pdf).hexdigest()
+    """Extract and OCR (mode auto) one sample (a PDF, or a .docx converted to PDF); write its
+    text and triage to the runs bucket, keyed by the sha256 of the uploaded file. Returns the
+    triage."""
+    source = load_source(job, deps, queue)
+    pdf, sha256 = source.pdf, source.sha256
     pages = deps.extract_text(pdf)
     ocr_numbers = (
         [i + 1 for i in pages_needing_ocr(pages, "auto", deps.ocr.min_chars)] if deps.ocr else []
     )
-    pages = ocr_pages(job, deps, queue, pdf, pages, "auto")
+    pages = ocr_pages(job, deps, queue, pdf, pages, "auto", sha256=sha256)
     if not any(p.strip() for p in pages):
         hint = "OCR is not configured" if deps.ocr is None else "OCR returned no text"
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")

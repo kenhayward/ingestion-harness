@@ -228,7 +228,7 @@ export function SectionsTab({
         Add section
       </button>
       <fieldset className="copies">
-        <legend>Several copies in one PDF</legend>
+        <legend>Several copies in one document</legend>
         <label>
           Copy anchor
           <input

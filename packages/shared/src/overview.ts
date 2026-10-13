@@ -562,7 +562,7 @@ export function overviewNext(
         return samples.total === 0
           ? {
               stage: u.stage,
-              title: 'Next: add sample PDFs',
+              title: 'Next: add sample documents',
               reason: 'Upload 3–8 dev samples and a few holdout samples.',
             }
           : {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start only Postgres + SeaweedFS for host-side development, then migrate and create buckets
+# Start only Postgres + SeaweedFS (+ the Word converter) for host-side development, then migrate and create buckets
 # from the host toolchains.
 #   deploy/scripts/dev-infra.sh up | down | reset
 set -euo pipefail
@@ -19,13 +19,14 @@ export S3_ENDPOINT="http://localhost:${S3_PUBLIC_PORT:-8335}"
 
 case "${1:-up}" in
   up)
-    compose up -d --wait postgres seaweedfs
+    compose up -d --wait postgres seaweedfs converter
     (cd "$REPO_ROOT" && npm run migrate)
     (cd "$REPO_ROOT/worker" && uv run python -m ingest_worker.admin init-buckets)
     cat <<EOF
 Infra ready. Export these for npm run dev:api / uv run ingest-worker:
   export DATABASE_URL=$DATABASE_URL
   export S3_ENDPOINT=$S3_ENDPOINT S3_ACCESS_KEY=$S3_ACCESS_KEY S3_SECRET_KEY=<from $ENV_FILE>
+  export CONVERTER_URL=http://localhost:${CONVERTER_PORT:-3010}
 EOF
     ;;
   down) compose down ;;

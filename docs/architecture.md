@@ -5,10 +5,11 @@
 | Service | Tech | Responsibility |
 | --- | --- | --- |
 | `app` | React 19 + Vite, served by nginx | Upload UI, job list, retry, output download. nginx proxies `/api`. |
-| `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs, enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
+| `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs and Word documents (`.docx`), enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
 | `worker` | Python 3.13, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
 | `postgres` | Postgres 17 | `documents`, `jobs` (queue), `job_events`, `job_outputs`, `llm_models`. |
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`. |
+| `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
 
 ## Job lifecycle
 
@@ -44,8 +45,10 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    transaction.
 2. **Claim**: worker runs a `FOR UPDATE SKIP LOCKED` CTE, sets `running`, increments `attempts`,
    records `locked_by/locked_at`. Idle workers `LISTEN` on `ih_jobs` (a trigger `NOTIFY`s on insert/requeue, migration 0009) and wake immediately; the poll interval is only the fallback and drives retry backoff. Stale locks (crashed worker) are re-queued after `STALE_LOCK_S`.
-3. **Extract text**: `pypdf` text layer, one string per page. Page count checked against
-   `spec.document.pages`.
+3. **Extract text**: a Word (`.docx`) source is first converted to PDF by the `converter`
+   service and cached at `runs/converted/{sourceSha256}/{converterFingerprint}.pdf` (ADR 0009);
+   a rejected document goes to `needs_review`, a converter outage is retried. Then the `pypdf`
+   text layer, one string per page. Page count checked against `spec.document.pages`.
    **OCR** (`document.ocr: auto` by default): pages with fewer than `ocr.minChars` non-space
    characters are rendered with pypdfium2 (longest side 1288px) and transcribed by the OCR
    vision model (default `local/olmocr-2-7b-1025`; on its own server/key when `OCR_BASE_URL`/`OCR_API_KEY` are set)
@@ -53,7 +56,7 @@ outputs back from the target. The API resolves `TARGET_S3_*` like the worker
    is parsed: if the page is reported rotated, it is re-rendered with the suggested clockwise
    correction and retried once. HTML tables are flattened to text rows. Raw output goes to
    `runs/{jobId}/ocr/page-N.md` and to a shared cache,
-   `runs/ocr-cache/{pdfSha256}/{settingsFingerprint}/page-N.md` (fingerprint = OCR model +
+   `runs/ocr-cache/{sourceSha256}/{settingsFingerprint}/page-N.md` (the uploaded file's sha256; fingerprint = OCR model +
    longest side + max tokens + temperature). Later jobs of the same PDF (re-runs, regressions,
    new template versions) reuse it: OCR servers aren't deterministic even at temperature 0, so
    without it extraction would be compared on different text. Turn off with `ocr.cache: false`;

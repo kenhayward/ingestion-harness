@@ -78,7 +78,9 @@ export function JobsPage({
       <div className="page-header">
         <div>
           <h1>Jobs</h1>
-          <p className="muted">Upload a PDF, watch it run, review what was extracted.</p>
+          <p className="muted">
+            Upload a PDF or Word document, watch it run, review what was extracted.
+          </p>
         </div>
         {pollMs > 0 && (
           <span className={error ? 'live live-warn' : 'live'}>

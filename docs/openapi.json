@@ -2064,11 +2064,11 @@
     "/api/documents": {
       "post": {
         "operationId": "uploadDocument",
-        "summary": "Upload a PDF to process",
+        "summary": "Upload a PDF or Word document to process",
         "tags": [
           "Documents"
         ],
-        "description": "Stores the PDF in the inbox bucket, records the document and queues a `process` job\nfor it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft template version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step (a ref listed by\n  `GET /api/models` and enabled).\n\nThe file must start with `%PDF-` and fit the upload limit (`MAX_UPLOAD_MB`).",
+        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft template version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step (a ref listed by\n  `GET /api/models` and enabled).\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2127,6 +2127,9 @@
                       "format": "uuid"
                     },
                     "filename": {
+                      "type": "string"
+                    },
+                    "contentType": {
                       "type": "string"
                     },
                     "specId": {
@@ -2238,6 +2241,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -2381,7 +2385,7 @@
             }
           },
           "415": {
-            "description": "`file is not a PDF`.",
+            "description": "`file is not a PDF or Word document (.docx)`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2407,7 +2411,39 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`file is not a PDF`."
+                  "description": "`file is not a PDF or Word document (.docx)`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or `the Word document is too large to check (over 64 MiB unpacked)`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or `the Word document is too large to check (over 64 MiB unpacked)`."
                 }
               }
             }
@@ -2475,6 +2511,9 @@
                         "format": "uuid"
                       },
                       "filename": {
+                        "type": "string"
+                      },
+                      "contentType": {
                         "type": "string"
                       },
                       "specId": {
@@ -2586,6 +2625,7 @@
                       "id",
                       "documentId",
                       "filename",
+                      "contentType",
                       "specId",
                       "specVersion",
                       "status",
@@ -2705,6 +2745,9 @@
                       "format": "uuid"
                     },
                     "filename": {
+                      "type": "string"
+                    },
+                    "contentType": {
                       "type": "string"
                     },
                     "specId": {
@@ -2866,6 +2909,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -3123,6 +3167,9 @@
                     "filename": {
                       "type": "string"
                     },
+                    "contentType": {
+                      "type": "string"
+                    },
                     "specId": {
                       "type": "string"
                     },
@@ -3232,6 +3279,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -3416,6 +3464,9 @@
                     "filename": {
                       "type": "string"
                     },
+                    "contentType": {
+                      "type": "string"
+                    },
                     "specId": {
                       "type": "string"
                     },
@@ -3525,6 +3576,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -3985,11 +4037,11 @@
     "/api/jobs/{id}/document": {
       "get": {
         "operationId": "getJobDocument",
-        "summary": "Download the uploaded PDF",
+        "summary": "Download the uploaded document",
         "tags": [
           "Jobs"
         ],
-        "description": "The PDF the job processes, from the inbox bucket, served inline under its original\nfile name.",
+        "description": "The file the job processes, from the inbox bucket, under its original file name. A\nPDF is served inline; a Word document (`.docx`) as an attachment with its own\ncontent type. The job's `contentType` says which it is.",
         "parameters": [
           {
             "schema": {
@@ -4004,7 +4056,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The PDF.",
+            "description": "The uploaded file: a PDF or a Word document.",
             "content": {
               "application/pdf": {
                 "schema": {
@@ -4379,6 +4431,9 @@
                         "filename": {
                           "type": "string"
                         },
+                        "contentType": {
+                          "type": "string"
+                        },
                         "specId": {
                           "type": "string"
                         },
@@ -4538,6 +4593,7 @@
                         "id",
                         "documentId",
                         "filename",
+                        "contentType",
                         "specId",
                         "specVersion",
                         "status",
@@ -5480,6 +5536,9 @@
                     "filename": {
                       "type": "string"
                     },
+                    "contentType": {
+                      "type": "string"
+                    },
                     "specId": {
                       "type": "string"
                     },
@@ -5589,6 +5648,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -5796,6 +5856,9 @@
                     "filename": {
                       "type": "string"
                     },
+                    "contentType": {
+                      "type": "string"
+                    },
                     "specId": {
                       "type": "string"
                     },
@@ -5905,6 +5968,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -6301,6 +6365,9 @@
                     "filename": {
                       "type": "string"
                     },
+                    "contentType": {
+                      "type": "string"
+                    },
                     "specId": {
                       "type": "string"
                     },
@@ -6410,6 +6477,7 @@
                     "id",
                     "documentId",
                     "filename",
+                    "contentType",
                     "specId",
                     "specVersion",
                     "status",
@@ -8869,6 +8937,9 @@
                           "filename": {
                             "type": "string"
                           },
+                          "contentType": {
+                            "type": "string"
+                          },
                           "specId": {
                             "type": "string"
                           },
@@ -8978,6 +9049,7 @@
                           "id",
                           "documentId",
                           "filename",
+                          "contentType",
                           "specId",
                           "specVersion",
                           "status",
@@ -9825,6 +9897,9 @@
                       "filename": {
                         "type": "string"
                       },
+                      "contentType": {
+                        "type": "string"
+                      },
                       "specId": {
                         "type": "string"
                       },
@@ -9902,6 +9977,7 @@
                       "jobId",
                       "documentId",
                       "filename",
+                      "contentType",
                       "specId",
                       "specVersion",
                       "publishedAt",
@@ -10017,6 +10093,9 @@
                         "filename": {
                           "type": "string"
                         },
+                        "contentType": {
+                          "type": "string"
+                        },
                         "specId": {
                           "type": "string"
                         },
@@ -10126,6 +10205,7 @@
                         "id",
                         "documentId",
                         "filename",
+                        "contentType",
                         "specId",
                         "specVersion",
                         "status",
@@ -13169,11 +13249,11 @@
       },
       "post": {
         "operationId": "addSample",
-        "summary": "Upload a sample PDF",
+        "summary": "Upload a sample document",
         "tags": [
           "Samples & brief"
         ],
-        "description": "Adds a sample PDF to the project and queues its preparation (text extraction, with\nOCR for pages without a text layer). Send `role` **before** the file. **Dev**\nsamples are what drafting sees; **holdout** samples are only used to score the draft\nbefore publishing, never shown to a drafting model. A project holds at most 12\nsamples, each PDF once.",
+        "description": "Adds a sample to the project and queues its preparation (text extraction, with OCR\nfor pages without a text layer). A sample is a PDF or a Word document (`.docx`,\nwithout tracked changes), which the worker converts to PDF first. Send `role`\n**before** the file. **Dev** samples are what drafting sees; **holdout** samples are\nonly used to score the draft before publishing, never shown to a drafting model. A\nproject holds at most 12 samples, each file once.",
         "requestBody": {
           "required": true,
           "content": {
@@ -13468,7 +13548,7 @@
             }
           },
           "409": {
-            "description": "`a project holds at most 12 samples`, or `this PDF is already a sample of the project`.",
+            "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13494,7 +13574,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a project holds at most 12 samples`, or `this PDF is already a sample of the project`."
+                  "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`."
                 }
               }
             }
@@ -13532,7 +13612,7 @@
             }
           },
           "415": {
-            "description": "`file is not a PDF`.",
+            "description": "`file is not a PDF or Word document (.docx)`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13558,7 +13638,39 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`file is not a PDF`."
+                  "description": "`file is not a PDF or Word document (.docx)`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or the Word document is too large to check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or the Word document is too large to check."
                 }
               }
             }
@@ -14462,6 +14574,9 @@
                           "filename": {
                             "type": "string"
                           },
+                          "contentType": {
+                            "type": "string"
+                          },
                           "specId": {
                             "type": "string"
                           },
@@ -14571,6 +14686,7 @@
                           "id",
                           "documentId",
                           "filename",
+                          "contentType",
                           "specId",
                           "specVersion",
                           "status",
@@ -14769,6 +14885,9 @@
                       "filename": {
                         "type": "string"
                       },
+                      "contentType": {
+                        "type": "string"
+                      },
                       "specId": {
                         "type": "string"
                       },
@@ -14878,6 +14997,7 @@
                       "id",
                       "documentId",
                       "filename",
+                      "contentType",
                       "specId",
                       "specVersion",
                       "status",
@@ -16424,6 +16544,9 @@
                           "filename": {
                             "type": "string"
                           },
+                          "contentType": {
+                            "type": "string"
+                          },
                           "specId": {
                             "type": "string"
                           },
@@ -16533,6 +16656,7 @@
                           "id",
                           "documentId",
                           "filename",
+                          "contentType",
                           "specId",
                           "specVersion",
                           "status",
@@ -17922,6 +18046,9 @@
                           "filename": {
                             "type": "string"
                           },
+                          "contentType": {
+                            "type": "string"
+                          },
                           "specId": {
                             "type": "string"
                           },
@@ -18031,6 +18158,7 @@
                           "id",
                           "documentId",
                           "filename",
+                          "contentType",
                           "specId",
                           "specVersion",
                           "status",
@@ -22889,7 +23017,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Creates a project from an exported bundle: a v1 draft of its template, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, template, brief,\nevery PDF and its sha256) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
+        "description": "Creates a project from an exported bundle: a v1 draft of its template, a `local`\nproject, its brief, its accepted survey and completed stages, and its dev samples\n(prepared again). Send the optional `id` and `name` fields **before** the\n`bundle` file; blank means the bundle's own. Everything (manifest, template, brief,\nevery sample file and its sha256: a PDF, or a Word document without tracked changes,\nas an upload) is checked before anything is written. The zip and what it\ninflates to are capped at 12 samples at the upload limit plus 8 MiB. See the\n[bundle layout](https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -23257,7 +23385,7 @@
         "tags": [
           "Bundles"
         ],
-        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft template, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev sample PDFs. Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
+        "description": "Queues an export job that builds the project's bundle: a zip with a manifest, the\nbrief, the draft template, the accepted survey and completed stages, the drafting\ncontext (the same text a drafting model sees) and the ready dev samples as uploaded\n(PDFs, or Word documents as `.docx`). Holdout\nsamples never leave. A new export replaces the previous one. Poll\n`GET …/exports`, then download the zip. Exporting a `local` project needs the\nadmin token, since the bundle takes the samples out of the harness.",
         "parameters": [
           {
             "schema": {

@@ -433,6 +433,7 @@ the Next banner and the process map (`OverviewMap`, a fixed 1020×640 canvas of 
 connectors; `OverviewStack` below 760 px, with the caption). Each overview item carries two `metrics`
 per tab (`boxMetrics` in `packages/shared/src/overview.ts` over the `MetricFacts` that `gatherFacts`
 gathers in `apps/api/src/routes/workbench-overview.ts`); a metric's `at` time renders as relative time.
+Every tab opens with `TabHeader` (H2 + status), and drafting proposals are cards (`StagePanel`: kind tags, Apply N selected changes).
 
 ### Project list (redesign)
 

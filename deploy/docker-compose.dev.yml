@@ -11,3 +11,11 @@ services:
   seaweedfs:
     ports:
       - 127.0.0.1:8888:8888 # filer UI (browse buckets)
+
+  converter:
+    # For a worker on the host (CONVERTER_URL=http://localhost:3010). A container only on an
+    # internal network cannot publish ports, so in dev it also joins the default network; the
+    # LibreOffice deny flags still stop documents fetching anything.
+    networks: [default, converter]
+    ports:
+      - 127.0.0.1:${CONVERTER_PORT:-3010}:3000

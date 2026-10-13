@@ -191,7 +191,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         if (!body) return reply.code(404).send({ error: 'output object missing from target' });
         entries[`${o.outputId}.${o.format}`] = new Uint8Array(body);
       }
-      const name = `${job.filename.replace(/\.pdf$/i, '')}.zip`;
+      const name = `${job.filename.replace(/\.(pdf|docx)$/i, '')}.zip`;
       return reply
         .header('content-type', 'application/zip')
         .header('content-disposition', contentDisposition(name, 'attachment'))

@@ -25,12 +25,13 @@ export const BundleManifestSchema = z
             sampleId: z.string(),
             filename: z.string().min(1).max(255),
             sha256: Sha256,
-            file: z.string().regex(/^samples\/[0-9a-f]{64}\.pdf$/),
+            /** `samples/<sha256>.pdf`, or `.docx` for a Word sample (named by its bytes). */
+            file: z.string().regex(/^samples\/[0-9a-f]{64}\.(pdf|docx)$/),
             /** Its text is in context.md (the drafter reads at most 8 samples). */
             inContext: z.boolean(),
           })
           .strict()
-          .refine((s) => s.file === `samples/${s.sha256}.pdf`, {
+          .refine((s) => s.file.startsWith(`samples/${s.sha256}.`), {
             message: 'file must match sha256',
           }),
       )

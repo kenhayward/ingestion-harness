@@ -16,6 +16,21 @@ import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
 import { StagePanel } from './StagePanel.js';
 import { SurveyTab } from './SurveyTab.js';
+import { TabHeader } from './TabHeader.js';
+
+const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
+  samples: 'Samples',
+  brief: 'Brief',
+  survey: 'Survey',
+  outputs: 'Outputs',
+  sections: 'Section anchors',
+  steps: 'Extraction steps',
+  references: 'References',
+  evaluate: 'Evaluate',
+  revise: 'Revise',
+  template: 'Template',
+  runs: 'Test runs',
+};
 
 /** Deletes a never-published project after its id is typed; the caller shows a refusal. */
 function DeleteProject({
@@ -192,6 +207,10 @@ export function ProjectPage({
   if (!view) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
 
   const { project, draft, published } = view;
+  const itemOf = (t: ProjectTab) => overview?.stages.find((s) => s.stage === t) ?? null;
+  const header = (t: Exclude<ProjectTab, 'overview'>) => (
+    <TabHeader title={TAB_TITLE[t]} item={itemOf(t)} />
+  );
   return (
     <section className="workbench project-page">
       <ProjectHeader
@@ -224,10 +243,19 @@ export function ProjectPage({
               !overviewError && <p>Loading…</p>
             ))}
           {tab === 'samples' && (
-            <SamplesTab api={api} projectId={project.id} pollMs={pollMs} onChanged={loadOverview} />
+            <>
+              {header('samples')}
+              <SamplesTab
+                api={api}
+                projectId={project.id}
+                pollMs={pollMs}
+                onChanged={loadOverview}
+              />
+            </>
           )}
           {tab === 'brief' && (
             <>
+              {header('brief')}
               <BriefTab
                 api={api}
                 projectId={project.id}
@@ -246,6 +274,7 @@ export function ProjectPage({
               />
             </>
           )}
+          {tab === 'survey' && header('survey')}
           {tab === 'survey' && (
             <SurveyTab
               api={api}
@@ -261,22 +290,19 @@ export function ProjectPage({
             />
           )}
           {(tab === 'outputs' || tab === 'steps') && (
-            <>
-              <StagePanel
-                key={`${tab}-${revision}`}
-                api={api}
-                projectId={project.id}
-                stage={tab}
-                dataPolicy={project.dataPolicy}
-                hasDraft={draft !== null}
-                pollMs={pollMs}
-                onApplied={changed}
-                onSkipped={changed}
-              />
-              <p className="muted">
-                Edit by hand on the <a href={`#/workbench/${project.id}/template`}>Template</a> tab.
-              </p>
-            </>
+            <StagePanel
+              key={`${tab}-${revision}`}
+              api={api}
+              projectId={project.id}
+              stage={tab}
+              title={TAB_TITLE[tab]}
+              item={itemOf(tab)}
+              dataPolicy={project.dataPolicy}
+              hasDraft={draft !== null}
+              pollMs={pollMs}
+              onApplied={changed}
+              onSkipped={changed}
+            />
           )}
           {tab === 'sections' && (
             <>
@@ -285,6 +311,8 @@ export function ProjectPage({
                 api={api}
                 projectId={project.id}
                 stage="sections"
+                title={TAB_TITLE.sections}
+                item={itemOf('sections')}
                 dataPolicy={project.dataPolicy}
                 hasDraft={draft !== null}
                 pollMs={pollMs}
@@ -300,6 +328,7 @@ export function ProjectPage({
               />
             </>
           )}
+          {tab === 'references' && header('references')}
           {tab === 'references' && (
             <ReferencesTab
               key={`references-${revision}`}
@@ -311,6 +340,7 @@ export function ProjectPage({
               onChanged={changed}
             />
           )}
+          {tab === 'evaluate' && header('evaluate')}
           {tab === 'evaluate' && (
             <EvaluateTab
               api={api}
@@ -323,6 +353,7 @@ export function ProjectPage({
               onStarted={loadOverview}
             />
           )}
+          {tab === 'revise' && header('revise')}
           {tab === 'revise' && (
             <ReviseTab
               api={api}
@@ -333,9 +364,11 @@ export function ProjectPage({
               onApplied={changed}
             />
           )}
+          {tab === 'runs' && header('runs')}
           {tab === 'runs' && (
             <RunsTab api={api} projectId={project.id} draft={draft} pollMs={pollMs} />
           )}
+          {tab === 'template' && header('template')}
           {tab === 'template' &&
             (draft !== null ? (
               <TemplateEditor

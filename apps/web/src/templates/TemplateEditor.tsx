@@ -262,7 +262,7 @@ export function TemplateEditor({
                 </label>
                 <Text
                   label="Copy anchor"
-                  hint="Regex marking the start of each copy in multi-copy PDFs (keeps one copy)."
+                  hint="Regex marking the start of each copy in multi-copy documents (keeps one copy). Pages of a Word document are those of its converted PDF."
                   value={getIn(def, ['document', 'copies', 'anchor'])}
                   onChange={(v) =>
                     update(

@@ -34,7 +34,7 @@ describe('UploadStrip', () => {
     await screen.findByRole('option', { name: /Claude Opus 5.5/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), 'anthropic/claude-opus-5-5');
     const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
-    await userEvent.upload(screen.getByLabelText('PDF files'), file);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), file);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
 
     expect(api.upload).toHaveBeenCalledWith({
@@ -85,7 +85,7 @@ describe('UploadStrip remembers the model', () => {
     await screen.findByRole('option', { name: /Claude Opus 5.5/ });
     await userEvent.selectOptions(screen.getByLabelText('Model'), opus.ref);
     const file = new File(['%PDF-1.7'], 'inv.pdf', { type: 'application/pdf' });
-    await userEvent.upload(screen.getByLabelText('PDF files'), file);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), file);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
     expect(await screen.findByText('Queued')).toBeInTheDocument();
     expect(screen.getByLabelText('Model')).toHaveValue(opus.ref);
@@ -134,7 +134,10 @@ describe('UploadStrip with several files', () => {
     const onUploaded = vi.fn();
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={onUploaded} />);
     await ready();
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf'), pdf('b.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [
+      pdf('a.pdf'),
+      pdf('b.pdf'),
+    ]);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 2 files' }));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(upload.mock.calls.map((c) => c[0].file.name)).toEqual(['a.pdf', 'b.pdf']);
@@ -151,7 +154,10 @@ describe('UploadStrip with several files', () => {
     });
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
     await ready();
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('bad.pdf'), pdf('ok.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [
+      pdf('bad.pdf'),
+      pdf('ok.pdf'),
+    ]);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 2 files' }));
     const list = screen.getByRole('list', { name: 'Uploads' });
     expect(
@@ -166,15 +172,28 @@ describe('UploadStrip with several files', () => {
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
     await ready();
     const notes = new File(['x'], 'notes.txt', { type: 'text/plain' });
-    fireEvent.drop(screen.getByText('Drop PDFs here'), {
+    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), {
       dataTransfer: { files: [pdf('a.pdf'), notes], types: ['Files'] },
     });
     const list = screen.getByRole('list', { name: 'Uploads' });
     expect(within(list).getByText('notes.txt')).toBeInTheDocument();
-    expect(within(list).getByText('Not a PDF')).toBeInTheDocument();
+    expect(within(list).getByText('Not a PDF or Word document')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     expect(upload.mock.calls[0]![0].file.name).toBe('a.pdf');
+  });
+
+  it('takes Word documents, even without a browser type', async () => {
+    const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    const word = new File(['PK'], 'REPORT.DOCX');
+    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), {
+      dataTransfer: { files: [word], types: ['Files'] },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    expect(upload.mock.calls[0]![0].file.name).toBe('REPORT.DOCX');
   });
 
   it('keeps in-progress rows when files are added during an upload', async () => {
@@ -187,10 +206,10 @@ describe('UploadStrip with several files', () => {
     );
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
     await ready();
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [pdf('a.pdf')]);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
     await screen.findByText('Uploading…');
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('b.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [pdf('b.pdf')]);
     const list = screen.getByRole('list', { name: 'Uploads' });
     expect(within(list).getByText('a.pdf')).toBeInTheDocument();
     expect(within(list).getByText('b.pdf')).toBeInTheDocument();
@@ -202,10 +221,10 @@ describe('UploadStrip with several files', () => {
   it('starts a fresh selection after a finished batch', async () => {
     render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
     await ready();
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('a.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [pdf('a.pdf')]);
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
     await screen.findByText('Queued');
-    await userEvent.upload(screen.getByLabelText('PDF files'), [pdf('b.pdf')]);
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [pdf('b.pdf')]);
     const list = screen.getByRole('list', { name: 'Uploads' });
     expect(within(list).queryByText('a.pdf')).not.toBeInTheDocument();
     expect(within(list).getByText('b.pdf')).toBeInTheDocument();

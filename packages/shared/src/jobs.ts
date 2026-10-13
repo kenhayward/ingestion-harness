@@ -42,6 +42,8 @@ export const JobSummarySchema = z.object({
   id: z.string().uuid(),
   documentId: z.string().uuid(),
   filename: z.string(),
+  /** The uploaded file's type: `application/pdf`, or the .docx type for a Word document. */
+  contentType: z.string(),
   specId: z.string(),
   specVersion: z.number().int(),
   status: JobStatusSchema,

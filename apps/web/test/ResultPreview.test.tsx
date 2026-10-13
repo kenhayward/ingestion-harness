@@ -11,6 +11,7 @@ const summary = (o: Partial<ResultSummary> = {}): ResultSummary => ({
   jobId: 'j1',
   documentId: 'd',
   filename: 'protocol.pdf',
+  contentType: 'application/pdf',
   specId: 'pvp',
   specVersion: 3,
   publishedAt: '2026-10-02T08:00:01.000Z',

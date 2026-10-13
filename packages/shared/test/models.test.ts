@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { modelRef, parseModelRef } from '../src/models.js';
-import { inboxKey, outputKey, pagePreviewKey } from '../src/storage-keys.js';
+import {
+  DOCX_MIME,
+  inboxKey,
+  outputKey,
+  pagePreviewKey,
+  sourceContentType,
+} from '../src/storage-keys.js';
 import { isTerminal } from '../src/jobs.js';
 
 describe('model refs', () => {
@@ -19,6 +25,9 @@ describe('model refs', () => {
 describe('storage keys', () => {
   it('builds inbox and output keys by convention', () => {
     expect(inboxKey('invoice', 2, 'doc-1')).toBe('invoice/v2/doc-1.pdf');
+    expect(inboxKey('invoice', 2, 'doc-1', 'docx')).toBe('invoice/v2/doc-1.docx');
+    expect(sourceContentType('invoice/v2/doc-1.docx')).toBe(DOCX_MIME);
+    expect(sourceContentType('invoice/v2/doc-1.pdf')).toBe('application/pdf');
     expect(outputKey('invoice', 2, 'lines', 'doc-1', 'csv')).toBe('invoice/v2/lines/doc-1.csv');
     expect(pagePreviewKey('job-1', 3)).toBe('job-1/pages/page-3.jpg');
   });

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ingest_worker.convert import DOCX_MIME
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ocr import OcrSettings
@@ -15,7 +16,8 @@ from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, prepared_text_key, prepared_triage_key
 
-from .fakes import FakeProvider, FakeQueue
+from .fakes import FakeConverter, FakeProvider, FakeQueue
+from .test_convert import DOCX
 
 PDF = b"%PDF-workbench-sample"
 SHA = hashlib.sha256(PDF).hexdigest()
@@ -117,3 +119,18 @@ def test_image_only_pdf_without_ocr_needs_review_and_writes_nothing(
     [(_, reason)] = queue.reviewed
     assert "OCR" in reason
     assert deps.store.get_optional("runs", prepared_text_key(SHA)) is None
+
+
+def test_a_word_sample_is_prepared_from_its_pdf_under_its_own_sha(fixture_specs_dir: Path) -> None:
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE])
+    deps.store.put("inbox", "letter/v1/doc-s.pdf", DOCX, DOCX_MIME)
+    deps.converter = FakeConverter()
+    seen: list[bytes] = []
+    deps.extract_text = lambda pdf: seen.append(pdf) or [TEXT_PAGE]
+
+    run_once(FakeQueue(jobs=[prepare_job()]), deps, "w1")
+
+    sha = hashlib.sha256(DOCX).hexdigest()  # the uploaded file, which the API records
+    assert seen == [b"%PDF-converted"]
+    assert stored(deps, prepared_text_key(sha))["sha256"] == sha
+    assert stored(deps, prepared_triage_key(sha))["pageCount"] == 1

@@ -104,7 +104,7 @@ function SignedInApp({
     setQuerySection(section);
     setQuery('');
   }
-  /** Upload PDF was pressed: the Jobs page opens the file picker once, then clears this. */
+  /** Upload document was pressed: the Jobs page opens the file picker once, then clears this. */
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {

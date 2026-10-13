@@ -3,8 +3,8 @@
 The export task writes what the in-harness drafter sees: `context.md` comes from
 `drafting.build_context`, the context the survey, outputs, sections and steps stages read
 (`revise` additionally sees feedback and evaluation failures, which bundles do not carry), plus
-each stage's instructions and JSON Schema, the brief, the draft template and the dev sample
-PDFs. Holdout
+each stage's instructions and JSON Schema, the brief, the draft template and the dev samples as
+uploaded (PDF or .docx). Holdout
 samples are refused here as they are in drafting. The manifest is parsed by
 `BundleManifestSchema` (packages/shared/src/bundle.ts).
 """
@@ -20,6 +20,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import Field, ValidationError
 
+from .convert import is_docx
 from .drafting import (
     MAX_CONTEXT_SAMPLES,
     STAGES,
@@ -46,8 +47,8 @@ README = """\
 - `stages/<stage>.md` is a stage's instructions and `stages/<stage>.schema.json` the JSON
   Schema its answer must satisfy. Give a model `context.md` followed by one stage's
   instructions, and ask for JSON matching the schema.
-- `samples/` holds the dev sample PDFs; `manifest.json` lists them. Holdout samples are never
-  included.
+- `samples/` holds the dev samples as uploaded (`<sha256>.pdf`, or `<sha256>.docx` for a Word
+  document); `manifest.json` lists them. Holdout samples are never included.
 - `survey.json` (when present) is the accepted survey; `manifest.json` lists the stages
   already accepted or skipped in `completedStages`.
 - Import the bundle into another deployment from the Workbench page to start a project with
@@ -72,7 +73,7 @@ def build_bundle(
     context: str,
     brief: dict[str, Any],
     draft: dict[str, Any] | None,
-    pdfs: dict[str, bytes],
+    files: dict[str, bytes],
     survey: dict[str, Any] | None = None,
 ) -> bytes:
     """The bundle zip. Deterministic: entries in a fixed order with a fixed timestamp."""
@@ -95,8 +96,7 @@ def build_bundle(
         entries.append(
             (f"stages/{stage.id}.schema.json", json.dumps(stage.schema, indent=2).encode())
         )
-    for sha, pdf in pdfs.items():
-        entries.append((f"samples/{sha}.pdf", pdf))
+    entries += files.items()
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for name, data in entries:
@@ -120,14 +120,17 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
     if holdout:
         raise DocumentError(f"holdout samples are never exported: {', '.join(holdout)}")
 
-    pdfs: dict[str, bytes] = {}
+    # Each sample as uploaded (a PDF, or a .docx: never its converted PDF), named by its bytes.
+    files: dict[str, bytes] = {}
+    names: dict[str, str] = {}
     for s in params.samples:
         if s.bucket is None or s.object_key is None:
-            raise DocumentError(f"sample {s.filename} has no PDF location")
-        pdf = deps.store.get_optional(s.bucket, s.object_key)
-        if pdf is None or hashlib.sha256(pdf).hexdigest() != s.sha256:
-            raise DocumentError(f"sample {s.filename}: PDF is missing or changed")
-        pdfs[s.sha256] = pdf
+            raise DocumentError(f"sample {s.filename} has no file location")
+        data = deps.store.get_optional(s.bucket, s.object_key)
+        if data is None or hashlib.sha256(data).hexdigest() != s.sha256:
+            raise DocumentError(f"sample {s.filename}: the file is missing or changed")
+        names[s.sha256] = f"samples/{s.sha256}.{'docx' if is_docx(data) else 'pdf'}"
+        files[names[s.sha256]] = data
     in_context = params.samples[:MAX_CONTEXT_SAMPLES]
     context = build_context(
         brief=params.brief,
@@ -150,7 +153,7 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
                 "sampleId": s.sample_id,
                 "filename": s.filename,
                 "sha256": s.sha256,
-                "file": f"samples/{s.sha256}.pdf",
+                "file": names[s.sha256],
                 "inContext": i < MAX_CONTEXT_SAMPLES,
             }
             for i, s in enumerate(params.samples)
@@ -163,7 +166,7 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
         context=context,
         brief=params.brief,
         draft=params.draft,
-        pdfs=pdfs,
+        files=files,
         survey=params.survey,
     )
     check_cancelled(job, queue)
