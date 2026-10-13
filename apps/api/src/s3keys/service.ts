@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { USER_PREFIX, type S3KeyIssuer } from './issuer.js';
-import type { S3Consumer, S3Key, S3KeyRepo } from './repo.js';
+import { z } from 'zod';
+import { S3ConsumerSchema, S3KeySchema, type S3Consumer, type S3KeyRepo } from './repo.js';
 
 /** Returned once, when a key is created: the only time its secret leaves SeaweedFS. */
-export interface IssuedKey {
-  consumer: S3Consumer;
-  key: S3Key;
-  secretAccessKey: string;
-}
+export const IssuedKeySchema = z.object({
+  consumer: S3ConsumerSchema,
+  key: S3KeySchema,
+  secretAccessKey: z.string().describe('Shown only in this response.'),
+});
+export type IssuedKey = z.infer<typeof IssuedKeySchema>;
 
 /** Active keys per consumer: two allow a rotation with overlap. */
 export const MAX_ACTIVE_KEYS = 2;

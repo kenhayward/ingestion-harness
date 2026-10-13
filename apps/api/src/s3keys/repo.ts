@@ -1,25 +1,29 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 
-export type S3KeyStatus = 'active' | 'expired' | 'revoked';
+export const S3KeyStatusSchema = z.enum(['active', 'expired', 'revoked']);
+export type S3KeyStatus = z.infer<typeof S3KeyStatusSchema>;
 
 /** An S3 access key as listed to admins: never its secret (SeaweedFS holds that, ADR 0008). */
-export interface S3Key {
-  id: string;
-  accessKeyId: string;
-  createdAt: string;
-  expiresAt: string | null;
-  revokedAt: string | null;
-  status: S3KeyStatus;
-}
+export const S3KeySchema = z.object({
+  id: z.string().uuid(),
+  accessKeyId: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+  status: S3KeyStatusSchema,
+});
+export type S3Key = z.infer<typeof S3KeySchema>;
 
 /** A data-lake consumer: one SeaweedFS user, at most two active keys (newest first). */
-export interface S3Consumer {
-  id: string;
-  label: string;
-  userName: string;
-  createdAt: string;
-  keys: S3Key[];
-}
+export const S3ConsumerSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  userName: z.string().describe('The SeaweedFS identity: `lake-{id}`.'),
+  createdAt: z.string(),
+  keys: z.array(S3KeySchema).describe('Newest first; at most two active.'),
+});
+export type S3Consumer = z.infer<typeof S3ConsumerSchema>;
 
 /** Consumer and key metadata. `PgS3KeyRepo` (migration 0010) / `MemoryS3KeyRepo`. */
 export interface S3KeyRepo {
