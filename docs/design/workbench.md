@@ -434,6 +434,33 @@ connectors; `OverviewStack` below 760 px, with the caption). Each overview item 
 per tab (`boxMetrics` in `packages/shared/src/overview.ts` over the `MetricFacts` that `gatherFacts`
 gathers in `apps/api/src/routes/workbench-overview.ts`); a metric's `at` time renders as relative time.
 
+### Project list (redesign)
+
+The list serves 100–1,000 projects (handoff W1 and W3). `GET /api/workbench/projects` searches
+(`q`), filters (a `filter` chip, `phase`, `policy`, `ids`), sorts (`activity`, `name`, `score`,
+`samples`) and pages (25, 50 or 100) on the server, and counts the chips in `facets`, which ignore
+`filter` but honour the other narrowing. Each row, a `ProjectListItem`, comes from the same code as
+the project page's overview (`listItemFrom` over `overviewParts`), so the list and the rail cannot
+disagree.
+
+Rows are cached in `workbench_list_cache` (migration 0022), each under a fingerprint: per-project
+counts and latest timestamps over every table the overview reads, computed for all projects in one
+SQL query (`projectFingerprints`). A request reads the fingerprints, recomputes only the rows whose
+fingerprint moved (8 at a time), then filters, counts, sorts and pages in memory with the pure
+`queryProjects`. This is "cached project state refreshed on every event", computed lazily, so the
+worker needs no change. The first request after a deploy that bumps `LIST_CACHE_VERSION`, or on a
+fresh database, computes every row (about 25 s for 1,000 seeded projects); later requests touch only
+what changed. The old unpaged array stays behind `?all=1` until the web moves to the paged list.
+
+Pins (W3) live in `workbench_pins (owner, project_id)` and belong to the signed-in token
+(`GET /api/workbench/pins`, `PUT` and `DELETE /api/workbench/pins/:projectId`). The bootstrap admin
+token is recreated on every API start, so its pins reset then; named admin tokens keep theirs.
+
+`npm run seed:workbench -w @ih/api -- 1000` seeds varied projects into the database in
+`DATABASE_URL`, and `apps/api/test/integration/workbench-list-perf.test.ts` holds the list at p95 <
+200 ms with 1,000 seeded projects against a throwaway Postgres (skipped unless
+`IH_TEST_DATABASE_URL` is set).
+
 ## Cross-language contracts touched
 
 | Contract | TypeScript | Python |

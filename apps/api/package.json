@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "migrate": "tsx src/db/migrate-cli.ts"
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "seed:workbench": "tsx scripts/seed-workbench.ts"
   },
   "dependencies": {
     "@aws-sdk/client-iam": "^3.1148.0",
