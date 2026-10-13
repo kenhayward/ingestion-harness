@@ -33,6 +33,35 @@ function card(p: ProposalView, props: Partial<Parameters<typeof ProposalCard>[0]
 }
 
 describe('ProposalCard', () => {
+  it('offers to accept a proposal that needs no changes', async () => {
+    const p = changeProposalView({
+      stage: 'sections',
+      body: { notes: 'The anchors still fit every sample.', changes: [] },
+    });
+    const h = card(p, { selected: new Set() });
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Proposal · no changes needed' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('The anchors still fit every sample.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    const accept = screen.getByRole('button', { name: 'Accept: no changes needed' });
+    expect(accept).toBeEnabled();
+    await userEvent.click(accept);
+    expect(h.onApply).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Reject all' })).toBeInTheDocument();
+  });
+
+  it('says a proposal was accepted with no changes', () => {
+    card(
+      changeProposalView({
+        status: 'accepted',
+        body: { notes: '', changes: [] },
+        acceptedChanges: [],
+      }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Accepted: no changes needed');
+  });
+
   it('lists every change with a tick box, a live count, Apply and Reject all', async () => {
     const h = card(changeProposalView());
     expect(

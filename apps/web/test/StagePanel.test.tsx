@@ -57,6 +57,22 @@ describe('StagePanel', () => {
     expect(await screen.findByText(/1 of 2 changes applied/)).toBeInTheDocument();
   });
 
+  it('accepts a run that proposes no changes, sending none', async () => {
+    const p = changeProposalView({ body: { notes: 'Nothing to add.', changes: [] } });
+    const { api, onApplied } = panel({
+      listProposals: vi.fn(async () => [p]),
+      decideProposal: vi.fn(async () => ({
+        ...p,
+        status: 'accepted' as const,
+        acceptedChanges: [],
+      })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Accept: no changes needed' }));
+    expect(api.decideProposal).toHaveBeenCalledWith('letter', p.id, 'accepted', []);
+    expect(onApplied).toHaveBeenCalled();
+    expect(await screen.findByText('Accepted: no changes needed')).toBeInTheDocument();
+  });
+
   it('rejects all', async () => {
     const p = changeProposalView();
     const { api } = panel({

@@ -190,3 +190,56 @@ describe('holdout', () => {
     expect(res.statusCode).toBe(409); // no verified DEV references
   });
 });
+
+describe('re-verifying one sample', () => {
+  const rerun = (ctx: Awaited<ReturnType<typeof project>>, sid: string, projectId = 'letter') =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/workbench/projects/${projectId}/references/${sid}/run`,
+    });
+  /** A verified sample whose source run has finished. */
+  const verified = async (ctx: Awaited<ReturnType<typeof project>>, n: number) => {
+    const s = await ctx.add(n);
+    const ref = await ctx.verify(s, 'Acme');
+    const job = ctx.repo.jobs.get(ref.sourceJobId!)!;
+    ctx.repo.jobs.set(job.id, { ...job, status: 'succeeded' });
+    return s;
+  };
+
+  it('runs the drafting model on a verified dev sample, forcing review', async () => {
+    const ctx = await project();
+    const s = await verified(ctx, 1);
+    const res = await rerun(ctx, s.id);
+    expect(res.statusCode).toBe(201);
+    const [job] = res.json().jobs as { id: string; modelOverride: string | null }[];
+    expect(job!.modelOverride).toBe('draft');
+    expect(ctx.repo.jobParams.get(job!.id)).toMatchObject({ forceReview: true });
+    // The old reference stays until the new run is saved: the stage stays accepted.
+    const stages = (await ctx.app.inject('/api/workbench/projects/letter/stages')).json();
+    expect(stages.find((x: { stage: string }) => x.stage === 'references').state).toBe('accepted');
+  });
+
+  it("runs a holdout sample with the template's own models", async () => {
+    const ctx = await project();
+    const s = await verified(ctx, 1);
+    await ctx.setRole(s.id, 'holdout');
+    const res = await rerun(ctx, s.id);
+    expect(res.statusCode).toBe(201);
+    expect(res.json().jobs[0].modelOverride).toBeNull();
+  });
+
+  it('refuses a second run while one is active, and unknown samples or projects', async () => {
+    const ctx = await project();
+    const s = await verified(ctx, 1);
+    expect((await rerun(ctx, s.id)).statusCode).toBe(201);
+    const again = await rerun(ctx, s.id);
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toEqual({ error: 'a reference run of this sample is already running' });
+    const unknown = await rerun(ctx, crypto.randomUUID());
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toEqual({ error: 'sample not found' });
+    const noProject = await rerun(ctx, s.id, 'nope');
+    expect(noProject.statusCode).toBe(404);
+    expect(noProject.json()).toEqual({ error: 'project not found' });
+  });
+});
