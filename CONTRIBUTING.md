@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for helping improve Ingestion Harness. Issues, discussions and pull requests are all
-welcome.
+Thanks for helping improve Content Transformation Studio (CT Studio). Issues, discussions and
+pull requests are all welcome.
 
 ## Before you start
 
@@ -54,5 +54,6 @@ contributors before they start.
 
 ## License
 
-Ingestion Harness is licensed under the [Apache License 2.0](LICENSE). By submitting a
-contribution you agree that it is licensed under the same terms (Apache-2.0 section 5).
+Content Transformation Studio (`ingestion-harness`) is licensed under the
+[Apache License 2.0](LICENSE). By submitting a contribution you agree that it is licensed under
+the same terms (Apache-2.0 section 5).

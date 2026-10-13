@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -11,7 +11,7 @@ describe('sign-in gate', () => {
   it('titles the sign-in tab', async () => {
     render(<App api={fakeApi({ me: vi.fn(async () => null) })} pollMs={0} />);
     await screen.findByRole('button', { name: 'Sign in' });
-    expect(document.title).toBe('Sign in · CT Studio');
+    await waitFor(() => expect(document.title).toBe('Sign in · CT Studio'));
   });
 
   it('shows the CT Studio mark and name', async () => {
