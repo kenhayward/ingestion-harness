@@ -596,6 +596,17 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     );
   });
 
+  it('counts unfinished jobs that use a model choice', async () => {
+    const projectId = await newProject();
+    const choice = `choice-${randomUUID().slice(0, 8)}`;
+    const job = await repo.createDocumentAndJob(doc(projectId), choice);
+    expect(await repo.countUnfinishedJobsWithModel(choice)).toBe(1);
+    await pool.query("UPDATE jobs SET status = 'awaiting_review' WHERE id = $1", [job.id]);
+    expect(await repo.countUnfinishedJobsWithModel(choice)).toBe(1);
+    await pool.query("UPDATE jobs SET status = 'succeeded' WHERE id = $1", [job.id]);
+    expect(await repo.countUnfinishedJobsWithModel(choice)).toBe(0);
+  });
+
   it('stores who queued a job and lists only their jobs', async () => {
     const projectId = await newProject();
     const label = `it-user-${randomUUID().slice(0, 8)}`;

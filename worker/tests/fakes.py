@@ -12,7 +12,7 @@ from ingest_worker.llm.base import (
     ProviderKind,
     VisionRequest,
 )
-from ingest_worker.llm.endpoints import Seed
+from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
@@ -175,8 +175,10 @@ class MemoryLlmConfigStore:
         self.endpoints: dict[str, _StoredEndpoint] = {}
         #: (provider, model_id) -> (curated, edited)
         self.curated: dict[tuple[str, str], tuple[bool, bool]] = {}
-        #: name -> (ref, edited)
-        self.aliases: dict[str, tuple[str, bool]] = {}
+        #: id -> (choice, source, edited)
+        self.choices: dict[str, tuple[Choice, str, bool]] = {}
+        #: name -> (value, edited)
+        self.settings: dict[str, tuple[str, bool]] = {}
         #: (provider, model_id) disabled by an admin: not offered even when curated
         self.disabled: set[tuple[str, str]] = set()
         self._version = 0
@@ -191,7 +193,8 @@ class MemoryLlmConfigStore:
         return (
             {n: (e.cfg.model_dump(), e.source, e.edited) for n, e in self.endpoints.items()},
             dict(self.curated),
-            dict(self.aliases),
+            dict(self.choices),
+            dict(self.settings),
             frozenset(self.disabled),
         )
 
@@ -220,12 +223,20 @@ class MemoryLlmConfigStore:
         for key, (curated, edited) in list(self.curated.items()):
             if curated and not edited and key[0] in [*owned, *removed] and key not in wanted:
                 self.curated[key] = (False, False)
-        for name, ref in seed.aliases.items():
-            if not self.aliases.get(name, ("", False))[1]:
-                self.aliases[name] = (ref, False)
-        for name, (_, edited) in list(self.aliases.items()):
-            if not edited and name not in seed.aliases:
-                del self.aliases[name]
+        ids = [c.id for c in seed.choices]
+        for c in seed.choices:
+            stored = self.choices.get(c.id)
+            if stored is None or (stored[1] == "env" and not stored[2]):
+                self.choices[c.id] = (c, "env", False)
+        for choice_id, (_, source, edited) in list(self.choices.items()):
+            if source == "env" and not edited and choice_id not in ids:
+                del self.choices[choice_id]
+        for name, value in seed.settings.items():
+            if not self.settings.get(name, ("", False))[1]:
+                self.settings[name] = (value, False)
+        for name, (_, edited) in list(self.settings.items()):
+            if not edited and name not in seed.settings:
+                del self.settings[name]
         self._changed(before)
 
     def load(self) -> Seed:
@@ -242,7 +253,11 @@ class MemoryLlmConfigStore:
             )
             for n in sorted(self.endpoints)
         ]
-        return Seed(endpoints, {n: ref for n, (ref, _) in sorted(self.aliases.items())})
+        return Seed(
+            endpoints,
+            [c for _, (c, _, _) in sorted(self.choices.items())],
+            {n: v for n, (v, _) in sorted(self.settings.items())},
+        )
 
     def version(self) -> int:
         return self._version
@@ -256,9 +271,24 @@ class MemoryLlmConfigStore:
         stored.edited = True
         self._changed(before)
 
-    def edit_alias(self, name: str, ref: str) -> None:
+    def edit_choice(self, choice_id: str, ref: str) -> None:
         before = self._snapshot()
-        self.aliases[name] = (ref, True)
+        choice, source, _ = self.choices[choice_id]
+        self.choices[choice_id] = (
+            Choice(choice.id, choice.label, ref, choice.description),
+            source,
+            True,
+        )
+        self._changed(before)
+
+    def add_ui_choice(self, choice: Choice) -> None:
+        before = self._snapshot()
+        self.choices[choice.id] = (choice, "ui", True)
+        self._changed(before)
+
+    def set_setting(self, name: str, value: str) -> None:
+        before = self._snapshot()
+        self.settings[name] = (value, True)
         self._changed(before)
 
     def disable_model(self, provider: str, model_id: str) -> None:

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import type { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { testApp } from './helpers.js';
 
 async function seed(status: 'awaiting_review' | 'queued' = 'awaiting_review') {
@@ -121,7 +122,7 @@ describe('step runs and re-runs', () => {
 describe('re-run models (only configured models run, ADR 0010)', () => {
   it.each([
     ['other/advertised', 'model other/advertised is not offered: add it on the Models page'],
-    ['nope', 'unknown model alias nope'],
+    ['nope', 'unknown model choice nope'],
   ])('refuses %s', async (model, error) => {
     const { app, repo, job } = await seed();
     repo.models = [offered('other/better'), offered('other/advertised', false)];
@@ -131,11 +132,11 @@ describe('re-run models (only configured models run, ADR 0010)', () => {
     expect(repo.jobs.get(job.id)!.status).toBe('awaiting_review');
   });
 
-  it('accepts an alias that resolves to an offered model', async () => {
+  it('accepts a model choice that points at an offered model', async () => {
     const { app, repo, job } = await seed();
     repo.models = [offered('other/better')];
-    const { llm } = app.deps as unknown as { llm: { aliases: Record<string, string> } };
-    llm.aliases = { fast: 'other/better' };
+    const { llm } = app.deps as unknown as { llm: MemoryLlmConfigRepo };
+    llm.seedChoice({ id: 'fast', label: 'Fast', ref: 'other/better' });
     const res = await app.inject(post(`/api/jobs/${job.id}/steps/data/rerun`, { model: 'fast' }));
     expect(res.statusCode).toBe(200);
   });

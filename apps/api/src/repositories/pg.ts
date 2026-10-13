@@ -396,6 +396,15 @@ export class PgRepo implements IngestionRepo {
     }
   }
 
+  async countUnfinishedJobsWithModel(model: string): Promise<number> {
+    const { rows } = await this.pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM jobs
+        WHERE model_override = $1 AND status IN ('queued', 'running', 'awaiting_review')`,
+      [model],
+    );
+    return Number(rows[0]!.n);
+  }
+
   async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
     const { rows } = await this.pool.query<JobRow>(
       `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare'

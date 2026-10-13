@@ -1,4 +1,4 @@
-import type { LlmEndpointView } from '@ih/shared';
+import type { LlmChoicesView, LlmEndpointView } from '@ih/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -172,5 +172,147 @@ describe('ModelsPage', () => {
   it('is for admins only', () => {
     render(<ModelsPage api={fakeApi()} me={{ role: 'user', label: 'Ann', expiresAt: null }} />);
     expect(screen.getByText('Admins only.')).toBeInTheDocument();
+  });
+});
+
+describe('ModelsPage: model choices and pipeline models', () => {
+  const choicesView = (over: Partial<LlmChoicesView> = {}): LlmChoicesView => ({
+    choices: [
+      {
+        id: 'main',
+        label: 'Main Production Model',
+        description: 'What production uses',
+        ref: 'local/qwen',
+        source: 'env',
+        editedAt: null,
+        updatedBy: null,
+      },
+      {
+        id: 'test',
+        label: 'New for testing only',
+        description: '',
+        ref: 'local/llama-3',
+        source: 'ui',
+        editedAt: '2026-10-13T10:00:00.000Z',
+        updatedBy: 'Ken',
+      },
+    ],
+    settings: { defaultChoice: 'main', draftingModel: 'local/qwen', ocrModel: 'local/olmocr' },
+    ...over,
+  });
+  const endpoints = [
+    endpoint({
+      models: [
+        { modelId: 'llama-3', displayName: null, curated: true, enabled: true },
+        { modelId: 'olmocr', displayName: null, curated: true, enabled: true },
+        { modelId: 'qwen', displayName: null, curated: true, enabled: true },
+        { modelId: 'suggested', displayName: null, curated: false, enabled: true },
+      ],
+    }),
+  ];
+  const choicesPage = (overrides = {}) =>
+    page(endpoints, { listModelChoices: vi.fn(async () => choicesView()), ...overrides });
+  const section = (name: string) => screen.findByRole('region', { name });
+
+  it('lists the choices by label with their model, and marks the default', async () => {
+    choicesPage();
+    const choices = await section('Model choices');
+    const main = within(choices).getByRole('row', { name: /Main Production Model/ });
+    expect(main).toHaveTextContent('local/qwen');
+    expect(main).toHaveTextContent('Default');
+    expect(main).toHaveTextContent('What production uses');
+    const test = within(choices).getByRole('row', { name: /New for testing only/ });
+    expect(within(test).getByRole('button', { name: 'Make default' })).toBeInTheDocument();
+    expect(within(main).queryByRole('button', { name: 'Make default' })).toBeNull();
+  });
+
+  it('adds a choice from the offered models only', async () => {
+    const createModelChoice = vi.fn(async () => choicesView().choices[1]!);
+    choicesPage({ createModelChoice });
+    const choices = await section('Model choices');
+    const form = within(choices).getByRole('form', { name: 'Add a model choice' });
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Label' }), 'Fast drafts');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Description' }), 'Cheap');
+    const model = within(form).getByRole('combobox', { name: 'Model' });
+    expect(within(model).queryByRole('option', { name: 'local/suggested' })).toBeNull();
+    await userEvent.selectOptions(model, 'local/llama-3');
+    await userEvent.click(within(form).getByRole('button', { name: 'Add choice' }));
+    expect(createModelChoice).toHaveBeenCalledWith({
+      label: 'Fast drafts',
+      description: 'Cheap',
+      ref: 'local/llama-3',
+    });
+  });
+
+  it('makes a choice the default', async () => {
+    const setLlmSettings = vi.fn(async () => choicesView());
+    choicesPage({ setLlmSettings });
+    const choices = await section('Model choices');
+    const test = within(choices).getByRole('row', { name: /New for testing only/ });
+    await userEvent.click(within(test).getByRole('button', { name: 'Make default' }));
+    expect(setLlmSettings).toHaveBeenCalledWith({ defaultChoice: 'test' });
+  });
+
+  it('renames and repoints a choice', async () => {
+    const updateModelChoice = vi.fn(async () => choicesView().choices[0]!);
+    choicesPage({ updateModelChoice });
+    const choices = await section('Model choices');
+    const main = within(choices).getByRole('row', { name: /Main Production Model/ });
+    await userEvent.click(within(main).getByRole('button', { name: 'Edit Main Production Model' }));
+    const label = within(choices).getByRole('textbox', { name: 'Label for main' });
+    await userEvent.clear(label);
+    await userEvent.type(label, 'Production');
+    await userEvent.selectOptions(
+      within(choices).getByRole('combobox', { name: 'Model for main' }),
+      'local/llama-3',
+    );
+    await userEvent.click(within(choices).getByRole('button', { name: 'Save main' }));
+    expect(updateModelChoice).toHaveBeenCalledWith('main', {
+      label: 'Production',
+      description: 'What production uses',
+      ref: 'local/llama-3',
+    });
+  });
+
+  it('removes a choice after a confirm, and shows a refusal', async () => {
+    const deleteModelChoice = vi.fn(async () => {
+      throw new ApiError('New for testing only is used by letter v2 (step head)', 409);
+    });
+    choicesPage({ deleteModelChoice });
+    const choices = await section('Model choices');
+    const test = within(choices).getByRole('row', { name: /New for testing only/ });
+    await userEvent.click(
+      within(test).getByRole('button', { name: 'Remove New for testing only' }),
+    );
+    expect(deleteModelChoice).not.toHaveBeenCalled();
+    await userEvent.click(within(choices).getByRole('button', { name: 'Confirm remove test' }));
+    expect(deleteModelChoice).toHaveBeenCalledWith('test');
+    expect(await within(choices).findByRole('alert')).toHaveTextContent('used by letter v2');
+  });
+
+  it('sets the OCR and drafting models, which are not choices', async () => {
+    const setLlmSettings = vi.fn(async () => choicesView());
+    choicesPage({ setLlmSettings });
+    const pipeline = await section('Pipeline models');
+    const ocr = within(pipeline).getByRole('combobox', { name: 'OCR model' });
+    expect(ocr).toHaveValue('local/olmocr');
+    await userEvent.selectOptions(ocr, 'local/qwen');
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ ocrModel: 'local/qwen' });
+    await userEvent.selectOptions(
+      within(pipeline).getByRole('combobox', { name: 'Drafting model' }),
+      'local/llama-3',
+    );
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ draftingModel: 'local/llama-3' });
+  });
+
+  it('asks the workers to discover an endpoint now', async () => {
+    const discoverLlmEndpoint = vi.fn(async () => undefined);
+    choicesPage({ discoverLlmEndpoint });
+    const local = await card('local');
+    await userEvent.click(within(local).getByRole('button', { name: 'Discover models' }));
+    expect(discoverLlmEndpoint).toHaveBeenCalledWith('local');
+    expect(await within(local).findByRole('status')).toHaveTextContent(
+      'Discovery requested: new models appear as suggestions within a minute.',
+    );
   });
 });

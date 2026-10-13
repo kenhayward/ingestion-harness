@@ -114,9 +114,130 @@ export function modelRefProblem(
   const notOffered = 'is not offered: add it on the Models page';
   if (ref in aliases) {
     const resolved = resolveAlias(ref, aliases);
-    if (resolved === null) return `alias ${ref} does not resolve to a model`;
-    return offered.has(resolved) ? null : `alias ${ref} uses ${resolved}, which ${notOffered}`;
+    if (resolved === null) return `model choice ${ref} does not resolve to a model`;
+    return offered.has(resolved)
+      ? null
+      : `model choice ${ref} uses ${resolved}, which ${notOffered}`;
   }
   if (ref.includes('/')) return offered.has(ref) ? null : `model ${ref} ${notOffered}`;
-  return unknownAliases === 'allow' ? null : `unknown model alias ${ref}`;
+  return unknownAliases === 'allow' ? null : `unknown model choice ${ref}`;
+}
+
+/**
+ * Model choices (ADR 0010, phase 4b): what people pick, by label. Templates and jobs store the
+ * id, so a label can change. One is the default (`settings.defaultChoice`), used by template
+ * steps that name none. The OCR and drafting models are pipeline settings, never a choice.
+ */
+export const RESERVED_CHOICE_IDS = ['default', 'draft', 'ocr'] as const;
+const ChoiceId = z
+  .string()
+  .max(40)
+  .regex(ENDPOINT_NAME, 'lower-case letters, digits, - and _')
+  .refine((id) => !(RESERVED_CHOICE_IDS as readonly string[]).includes(id), 'reserved');
+/** endpoint/model-id: the first `/` ends the endpoint, the model id may hold more. */
+const ModelRef = z
+  .string()
+  .trim()
+  .regex(/^[a-z0-9][a-z0-9_-]*\/\S+$/, 'endpoint/model-id')
+  .max(250);
+const Label = z.string().trim().min(1).max(80);
+const Description = z.string().trim().max(300);
+
+export const LlmChoiceViewSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  /** The offered model it points at (`endpoint/model-id`). */
+  ref: z.string(),
+  source: z.enum(['env', 'ui']),
+  editedAt: z.string().nullable(),
+  updatedBy: z.string().nullable(),
+});
+export type LlmChoiceView = z.infer<typeof LlmChoiceViewSchema>;
+
+export const LlmSettingsViewSchema = z.object({
+  /** The choice template steps use when they name none. */
+  defaultChoice: z.string().nullable(),
+  /** The Workbench's drafting stages and dev reference runs. */
+  draftingModel: z.string().nullable(),
+  /** The OCR stage only. */
+  ocrModel: z.string().nullable(),
+});
+export type LlmSettingsView = z.infer<typeof LlmSettingsViewSchema>;
+
+export const LlmChoicesViewSchema = z.object({
+  choices: z.array(LlmChoiceViewSchema),
+  settings: LlmSettingsViewSchema,
+});
+export type LlmChoicesView = z.infer<typeof LlmChoicesViewSchema>;
+
+export const ChoiceCreateBodySchema = z
+  .object({
+    /** Made from the label when left out. */
+    id: ChoiceId.optional(),
+    label: Label,
+    description: Description.default(''),
+    ref: ModelRef,
+  })
+  .strict();
+export type ChoiceCreateInput = z.input<typeof ChoiceCreateBodySchema>;
+
+export const ChoicePatchBodySchema = z
+  .object({
+    label: Label.optional(),
+    description: Description.optional(),
+    ref: ModelRef.optional(),
+  })
+  .strict()
+  .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
+export type ChoicePatchBody = z.infer<typeof ChoicePatchBodySchema>;
+
+export const SettingsBodySchema = z
+  .object({
+    defaultChoice: z.string().min(1).optional(),
+    draftingModel: ModelRef.optional(),
+    ocrModel: ModelRef.optional(),
+  })
+  .strict()
+  .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
+export type SettingsBody = z.infer<typeof SettingsBodySchema>;
+
+/** A choice id from its label: "Main Production Model" -> `main-production-model`. */
+export function choiceIdFrom(label: string): string {
+  const slug = label
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 36)
+    .replace(/-+$/, '');
+  return slug && !(RESERVED_CHOICE_IDS as readonly string[]).includes(slug) ? slug : 'choice';
+}
+
+/**
+ * The names a user's pick may use, as `modelRefProblem` takes them: each choice's id and
+ * `default` (the default choice, for template steps naming none). Never the drafting or OCR
+ * model: those belong to the pipeline.
+ */
+export function choiceNames(
+  choices: readonly Pick<LlmChoiceView, 'id' | 'ref'>[],
+  settings: Pick<LlmSettingsView, 'defaultChoice'>,
+): Record<string, string> {
+  const names: Record<string, string> = Object.fromEntries(choices.map((c) => [c.id, c.ref]));
+  if (settings.defaultChoice) names.default = settings.defaultChoice;
+  return names;
+}
+
+/** What points at a model: each choice and the two pipeline models (endpoint guards). */
+export function modelUses(
+  choices: readonly Pick<LlmChoiceView, 'label' | 'ref'>[],
+  settings: Pick<LlmSettingsView, 'draftingModel' | 'ocrModel'>,
+): { what: string; ref: string }[] {
+  return [
+    ...choices.map((c) => ({ what: `model choice ${c.label}`, ref: c.ref })),
+    ...(settings.draftingModel
+      ? [{ what: 'the drafting model', ref: settings.draftingModel }]
+      : []),
+    ...(settings.ocrModel ? [{ what: 'the OCR model', ref: settings.ocrModel }] : []),
+  ];
 }

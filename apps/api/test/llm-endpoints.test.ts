@@ -12,7 +12,7 @@ const fixture = JSON.parse(
 ) as { key: string };
 const keys = secretsKeys({ LLM_SECRETS_KEY: fixture.key })!;
 
-/** An env-seeded `local` endpoint (as the worker writes it) and alias default -> local/qwen. */
+/** An env-seeded `local` endpoint (as the worker writes it), the default choice `cheap` -> local/qwen and the OCR model. */
 async function setup(withKeys = true) {
   const llm = new MemoryLlmConfigRepo();
   llm.seedEnv(
@@ -26,7 +26,8 @@ async function setup(withKeys = true) {
     ['qwen', 'olmocr'],
   );
   llm.discovered('local', 'llama-3', 'Llama 3');
-  llm.aliases = { default: 'local/qwen', cheap: 'default', ocr: 'local/olmocr' };
+  llm.seedChoice({ id: 'cheap', label: 'Cheap', ref: 'local/qwen' });
+  llm.seedSettings({ default_choice: 'cheap', ocr_model: 'local/olmocr' });
   const ctx = await testApp({ llm, llmSecrets: withKeys ? keys : null });
   const call = (
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
@@ -162,14 +163,14 @@ describe('LLM endpoints API', () => {
     expect(res.json()).toMatchObject({ location: 'external', updatedBy: 'admin' });
   });
 
-  it('refuses to disable an endpoint or drop a model an alias uses', async () => {
+  it('refuses to disable an endpoint or drop a model a choice or a pipeline setting uses', async () => {
     const { call } = await setup();
     const off = await call('PATCH', '/endpoints/local', { enabled: false });
     expect(off.statusCode).toBe(409);
-    expect(off.json().error).toBe('alias cheap uses local/qwen: point it elsewhere first');
+    expect(off.json().error).toBe('model choice Cheap uses local/qwen: point it elsewhere first');
     const drop = await call('PUT', '/endpoints/local/models', { models: ['qwen'] });
     expect(drop.statusCode).toBe(409);
-    expect(drop.json().error).toBe('alias ocr uses local/olmocr: point it elsewhere first');
+    expect(drop.json().error).toBe('the OCR model uses local/olmocr: point it elsewhere first');
   });
 
   it('sets the curated models exactly, adding new ones and suggestions', async () => {
