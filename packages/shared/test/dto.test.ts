@@ -13,6 +13,7 @@ import {
   ProjectViewSchema,
   ProposalViewSchema,
   PublicationSchema,
+  ReferenceDetailSchema,
   ReferenceRowSchema,
   ReferenceSchema,
   ReviewEditSchema,
@@ -224,8 +225,42 @@ const referenceRow = {
     version: 2,
     carriedFrom: null,
     outdated: [],
+    sourceJobId: null,
+    verifiedBy: null,
+    corrections: null,
+    reverified: { from: 1, changed: ['field:due_date'] },
   },
   run: null,
+};
+
+const referenceDetail = {
+  sampleId: id(3),
+  filename: 'march.pdf',
+  role: 'holdout',
+  reference: {
+    id: id(1),
+    name: 'March',
+    createdAt: at,
+    version: 2,
+    carriedFrom: 1,
+    outdated: [],
+    sourceJobId: id(4),
+    verifiedBy: 'ken',
+    corrections: [{ key: 'total', kind: 'corrected', proposed: '1' }],
+    reverified: null,
+  },
+  run: { jobId: id(4), modelOverride: null, models: ['local/qwen'] },
+  values: [
+    {
+      id: 'total',
+      kind: 'field',
+      value: '2',
+      provenance: 'corrected',
+      proposed: '1',
+      corrections: [{ key: 'total', kind: 'corrected', proposed: '1' }],
+    },
+  ],
+  corrections: [{ key: 'total', kind: 'corrected', proposed: '1' }],
 };
 
 describe.each([
@@ -253,6 +288,7 @@ describe.each([
   ['IterationView', IterationViewSchema, iteration, 'scorecard'],
   ['ProposalView', ProposalViewSchema, proposal, 'stage'],
   ['ReferenceRow', ReferenceRowSchema, referenceRow, 'reference'],
+  ['ReferenceDetail', ReferenceDetailSchema, referenceDetail, 'values'],
   [
     'StageView',
     StageViewSchema,

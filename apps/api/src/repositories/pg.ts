@@ -19,6 +19,7 @@ import {
   type DeleteJobResult,
   type IngestionRepo,
   type JobEventRecord,
+  type JobReview,
   type ListJobsQuery,
   type ListPublishedQuery,
   type RetryOptions,
@@ -705,6 +706,36 @@ export class PgRepo implements IngestionRepo {
       [jobId],
     );
     return rows.map(toEdit);
+  }
+
+  async listJobReviews(jobIds: readonly string[]): Promise<JobReview[]> {
+    if (jobIds.length === 0) return [];
+    // One round trip for every row of a References list (no per-reference query); edits use
+    // review_edits_job_idx (job_id, id).
+    const { rows } = await this.pool.query<{
+      id: string;
+      status: JobStatus;
+      reviewer: string | null;
+      reviewed_at: Date | null;
+      model_override: string | null;
+      edits: (Omit<EditRow, 'at'> & { at: string })[];
+    }>(
+      `SELECT j.id, j.status, j.reviewer, j.reviewed_at, j.model_override,
+              coalesce(json_agg(e ORDER BY e.id) FILTER (WHERE e.id IS NOT NULL), '[]') AS edits
+         FROM jobs j LEFT JOIN review_edits e ON e.job_id = j.id
+        WHERE j.id = ANY($1::uuid[])
+        GROUP BY j.id`,
+      [[...new Set(jobIds)]],
+    );
+    return rows.map((r) => ({
+      jobId: r.id,
+      status: r.status,
+      reviewer: r.reviewer,
+      reviewedAt: r.reviewed_at?.toISOString() ?? null,
+      modelOverride: r.model_override,
+      // json_agg renders timestamptz as text: parse it back so `at` matches toEdit's ISO.
+      edits: r.edits.map((e) => toEdit({ ...e, at: new Date(e.at) })),
+    }));
   }
 
   async addEdit(jobId: string, e: NewEdit): Promise<ReviewEdit> {
