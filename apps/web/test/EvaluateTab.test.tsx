@@ -319,6 +319,31 @@ describe('EvaluateTab', () => {
     confirm.mockRestore();
   });
 
+  it('keeps a threshold being typed when the stored one arrives late', async () => {
+    let arrive!: () => void;
+    const late = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const { api, onGateChanged } = tab({
+      getProject: vi.fn(async () => {
+        await late;
+        return projectView();
+      }),
+      setPublishThreshold: vi.fn(async () => projectView()),
+    });
+    const input = await screen.findByLabelText('Publish threshold (%)');
+    await userEvent.clear(input);
+    await userEvent.type(input, '8');
+    arrive(); // the stored 90% lands mid-edit: it must not overwrite what is being typed
+    await waitFor(() => expect(api.getProject).toHaveBeenCalled());
+    await screen.findByText(/Threshold 90%/);
+    await userEvent.type(input, '0');
+    expect(input).toHaveValue(80);
+    await userEvent.click(screen.getByRole('button', { name: 'Save threshold' }));
+    expect(api.setPublishThreshold).toHaveBeenCalledWith('letter', 0.8);
+    await waitFor(() => expect(onGateChanged).toHaveBeenCalledTimes(1));
+  });
+
   it('refreshes the page after the threshold is saved', async () => {
     const { api, onGateChanged } = tab({ setPublishThreshold: vi.fn(async () => projectView()) });
     await waitFor(() => expect(api.getPublishGate).toHaveBeenCalled());
