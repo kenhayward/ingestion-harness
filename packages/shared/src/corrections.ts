@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { stableJson } from './drafting.js';
+import type { ReferenceRow } from './evaluation.js';
 import type { JobStatus, ReviewEdit } from './jobs.js';
+import { outputCoverage } from './template.js';
 
 /**
  * What the reviewer changed in a reference run (handoff RF1), derived from the run's
@@ -88,4 +90,62 @@ export type Provenance = (typeof PROVENANCES)[number];
 export function outputProvenance(corrections: readonly Correction[]): Provenance {
   if (corrections.length === 0) return 'model';
   return corrections.some((c) => c.kind === 'corrected') ? 'corrected' : 'entered';
+}
+
+/** References that count in figures: verified for the current outputs, corrections known. */
+const knownReferences = (rows: readonly ReferenceRow[]) =>
+  rows.flatMap((r) =>
+    r.reference !== null && r.reference.outdated.length === 0 && r.reference.corrections !== null
+      ? [r.reference.corrections]
+      : [],
+  );
+
+/**
+ * Right first time (handoff §7): of the values in verified references, those the model proposed
+ * correctly. One value per output per reference (a table is one value: right when no cell
+ * changed); outputs no step fills are `excluded` (nothing proposed them).
+ */
+export function rightFirstTime(rows: readonly ReferenceRow[], definition: unknown) {
+  const coverage = outputCoverage(definition);
+  const counted = coverage.outputs.filter((o) => o.steps.length > 0).map((o) => o.id);
+  const references = knownReferences(rows);
+  const right = references.reduce(
+    (sum, corrections) =>
+      sum + counted.filter((id) => !corrections.some((c) => correctionOutput(c.key) === id)).length,
+    0,
+  );
+  return {
+    right,
+    total: references.length * counted.length,
+    references: references.length,
+    excluded: coverage.uncovered,
+  };
+}
+
+export interface OutputNeed {
+  id: string;
+  kind: 'field' | 'table';
+  /** References where a value the model proposed was changed. */
+  corrected: number;
+  /** References where the model proposed nothing and every change was typed in. */
+  entered: number;
+  /** Some extract step fills it (else the strip links to Steps). */
+  hasStep: boolean;
+}
+
+/** "Where the draft model needed you": per output, how many references changed it, and how. */
+export function outputNeeds(rows: readonly ReferenceRow[], definition: unknown): OutputNeed[] {
+  const references = knownReferences(rows);
+  return outputCoverage(definition).outputs.map((o) => {
+    const kinds = references.map((cs) =>
+      outputProvenance(cs.filter((c) => correctionOutput(c.key) === o.id)),
+    );
+    return {
+      id: o.id,
+      kind: o.kind,
+      corrected: kinds.filter((k) => k === 'corrected').length,
+      entered: kinds.filter((k) => k === 'entered').length,
+      hasStep: o.steps.length > 0,
+    };
+  });
 }

@@ -3,9 +3,13 @@ import {
   correctionKey,
   correctionOutput,
   correctionsFromEdits,
+  outputNeeds,
   outputProvenance,
   referenceCorrections,
+  rightFirstTime,
   type Correction,
+  type ReferenceInfo,
+  type ReferenceRow,
   type ReviewEdit,
 } from '../src/index.js';
 
@@ -168,5 +172,87 @@ describe('outputProvenance', () => {
     ],
   ])('%s', (_name, corrections, expected) => {
     expect(outputProvenance(corrections)).toBe(expected);
+  });
+});
+
+const definition = {
+  outputs: {
+    fields: [{ id: 'supplier_name' }, { id: 'total' }, { id: 'due_date' }],
+    tables: [{ id: 'line_items', columns: [{ id: 'qty' }] }],
+  },
+  pipeline: [
+    { type: 'extract', id: 'head', fields: ['supplier_name', 'total'] },
+    { type: 'extract', id: 'lines', table: 'line_items' },
+  ],
+}; // due_date: no step fills it
+
+const info = (o: Partial<ReferenceInfo> = {}): ReferenceInfo => ({
+  id: crypto.randomUUID(),
+  name: 'r',
+  createdAt: '2026-10-13T09:00:00.000Z',
+  version: 4,
+  carriedFrom: null,
+  outdated: [],
+  sourceJobId: crypto.randomUUID(),
+  verifiedBy: 'ken',
+  corrections: [],
+  reverified: null,
+  ...o,
+});
+const row = (reference: ReferenceInfo | null): ReferenceRow => ({
+  sampleId: crypto.randomUUID(),
+  filename: 'a.pdf',
+  sha256: 'sha',
+  reference,
+  run: null,
+});
+const corrected = (key: string): Correction => ({ key, kind: 'corrected', proposed: 'x' });
+const entered = (key: string): Correction => ({ key, kind: 'entered', proposed: null });
+
+describe('rightFirstTime', () => {
+  it.each<[string, ReferenceRow[], ReturnType<typeof rightFirstTime>]>([
+    ['no references', [row(null)], { right: 0, total: 0, references: 0, excluded: ['due_date'] }],
+    [
+      'three values per reference, due_date excluded',
+      [row(info()), row(info({ corrections: [corrected('total'), entered('due_date')] }))],
+      { right: 5, total: 6, references: 2, excluded: ['due_date'] },
+    ],
+    [
+      'a table is one value however many cells changed',
+      [row(info({ corrections: [corrected('line_items[1].qty'), entered('line_items[2].qty')] }))],
+      { right: 2, total: 3, references: 1, excluded: ['due_date'] },
+    ],
+    [
+      'outdated references and unknown corrections do not count',
+      [row(info({ outdated: ['field:total'] })), row(info({ corrections: null })), row(info())],
+      { right: 3, total: 3, references: 1, excluded: ['due_date'] },
+    ],
+  ])('%s', (_name, rows, expected) => {
+    expect(rightFirstTime(rows, definition)).toEqual(expected);
+  });
+});
+
+describe('outputNeeds', () => {
+  it('counts per output the references where it was corrected or only entered', () => {
+    const rows = [
+      row(info({ corrections: [corrected('supplier_name'), entered('due_date')] })),
+      row(
+        info({
+          corrections: [
+            entered('due_date'),
+            entered('line_items[1].qty'),
+            corrected('line_items[2].qty'),
+          ],
+        }),
+      ),
+      row(info({ corrections: null })), // unknown: not counted
+      row(null),
+    ];
+    expect(outputNeeds(rows, definition)).toEqual([
+      { id: 'supplier_name', kind: 'field', corrected: 1, entered: 0, hasStep: true },
+      { id: 'total', kind: 'field', corrected: 0, entered: 0, hasStep: true },
+      { id: 'due_date', kind: 'field', corrected: 0, entered: 2, hasStep: false },
+      { id: 'line_items', kind: 'table', corrected: 1, entered: 0, hasStep: true },
+    ]);
   });
 });

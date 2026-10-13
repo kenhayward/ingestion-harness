@@ -18551,6 +18551,80 @@
                                 "items": {
                                   "type": "string"
                                 }
+                              },
+                              "sourceJobId": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "verifiedBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "corrections": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "corrected",
+                                            "entered"
+                                          ]
+                                        },
+                                        "proposed": {}
+                                      },
+                                      "required": [
+                                        "key",
+                                        "kind"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reverified": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "from": {
+                                        "type": "integer"
+                                      },
+                                      "changed": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "from",
+                                      "changed"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -18559,7 +18633,11 @@
                               "createdAt",
                               "version",
                               "carriedFrom",
-                              "outdated"
+                              "outdated",
+                              "sourceJobId",
+                              "verifiedBy",
+                              "corrections",
+                              "reverified"
                             ],
                             "additionalProperties": true
                           },

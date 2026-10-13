@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { CorrectionSchema, PROVENANCES } from './corrections.js';
 import { JobStatusSchema, type JobStatus } from './jobs.js';
+import { SampleRoleSchema } from './workbench.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
 
@@ -183,24 +185,40 @@ export function comparisonRows(iterations: IterationView[]): ComparisonRow[] {
   ];
 }
 
-/** One dev sample on the References tab. */
+/** A sample's reference for the current version, with what the reviewer changed (RF1). */
+export const ReferenceInfoSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  createdAt: z.string(),
+  /** Version it is pinned to; null for an unpinned (legacy) reference. */
+  version: z.number().int().nullable(),
+  /** Version it was carried forward from, when it is a copy. */
+  carriedFrom: z.number().int().nullable(),
+  /** `outputChanges` against the version's outputs: non-empty means re-verify before use. */
+  outdated: z.array(z.string()),
+  /** The reviewed run the values were saved from; null when unknown or deleted. */
+  sourceJobId: z.string().uuid().nullable(),
+  /** The run's approver (else its last editor); null when unknown. */
+  verifiedBy: z.string().nullable(),
+  /**
+   * What the reviewer changed (derived from the run's review edits); null when unknown: no
+   * source run, or it was re-run or reviewed again after the save.
+   */
+  corrections: z.array(CorrectionSchema).nullable(),
+  /**
+   * Set when this reference re-verified a carried copy at the same version: the version that
+   * copy came from and its output changes (why it needed verifying again).
+   */
+  reverified: z.object({ from: z.number().int(), changed: z.array(z.string()) }).nullable(),
+});
+export type ReferenceInfo = z.infer<typeof ReferenceInfoSchema>;
+
+/** One ready sample (dev or holdout) on the References tab. */
 export const ReferenceRowSchema = z.object({
   sampleId: z.string().uuid(),
   filename: z.string(),
   sha256: z.string(),
-  reference: z
-    .object({
-      id: z.string().uuid(),
-      name: z.string(),
-      createdAt: z.string(),
-      /** Version it is pinned to; null for an unpinned (legacy) reference. */
-      version: z.number().int().nullable(),
-      /** Version it was carried forward from, when it is a copy. */
-      carriedFrom: z.number().int().nullable(),
-      /** `outputChanges` against the version's outputs: non-empty means re-verify before use. */
-      outdated: z.array(z.string()),
-    })
-    .nullable(),
+  reference: ReferenceInfoSchema.nullable(),
   /** Latest test run of this sample that is not an evaluation run. */
   run: z
     .object({
@@ -212,6 +230,42 @@ export const ReferenceRowSchema = z.object({
     .nullable(),
 });
 export type ReferenceRow = z.infer<typeof ReferenceRowSchema>;
+
+/** One output of a reference with where its value came from (handoff RF2). */
+export const ReferenceValueSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['field', 'table']),
+  /** A field's expected value, or a table's expected rows. */
+  value: z.unknown(),
+  /** null: the corrections are unknown. */
+  provenance: z.enum(PROVENANCES).nullable(),
+  /** A corrected field: the model's value (shown struck through); otherwise null. */
+  proposed: z.unknown(),
+  /** This output's corrections (cells for a table). */
+  corrections: z.array(CorrectionSchema),
+});
+export type ReferenceValue = z.infer<typeof ReferenceValueSchema>;
+
+/** `GET /api/workbench/projects/:id/references/:sid` (handoff RF2): the References detail panel. */
+export const ReferenceDetailSchema = z.object({
+  sampleId: z.string().uuid(),
+  filename: z.string(),
+  role: SampleRoleSchema,
+  reference: ReferenceInfoSchema,
+  /** The run that proposed the values; null when it is unknown or deleted. */
+  run: z
+    .object({
+      jobId: z.string().uuid(),
+      modelOverride: z.string().nullable(),
+      /** Models its succeeded step runs used (cached runs included), in first-use order. */
+      models: z.array(z.string()),
+    })
+    .nullable(),
+  /** One per output of the current version, in definition order (fields, then tables). */
+  values: z.array(ReferenceValueSchema),
+  corrections: z.array(CorrectionSchema).nullable(),
+});
+export type ReferenceDetail = z.infer<typeof ReferenceDetailSchema>;
 
 export const FEEDBACK_TARGETS = ['field', 'table', 'step', 'section'] as const;
 /** Longest feedback body the API accepts (the UI caps its text boxes to match). */

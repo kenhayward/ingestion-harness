@@ -553,6 +553,10 @@ async function referenceEntries(
           version: reference.templateVersion,
           carriedFrom: reference.carriedFrom,
           outdated: reference.outdated,
+          sourceJobId: reference.sourceJobId,
+          verifiedBy: null,
+          corrections: null,
+          reverified: null,
         },
         run: run && {
           jobId: run.id,
