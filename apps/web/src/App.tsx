@@ -3,6 +3,7 @@ import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
+import { HomePage } from './home/HomePage.js';
 import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
@@ -105,7 +106,7 @@ function SignedInApp({
     setQuerySection(section);
     setQuery('');
   }
-  /** Upload document was pressed: the Jobs page opens the file picker once, then clears this. */
+  /** Upload document was pressed: Home opens the file picker once, then clears this. */
   const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
@@ -116,7 +117,7 @@ function SignedInApp({
         api={api}
         jobId={route.jobId}
         jobs={jobs}
-        onDone={() => navigate('#/')}
+        onDone={() => navigate('#/jobs')}
       />
     );
   } else if (route.name === 'results') {
@@ -154,7 +155,7 @@ function SignedInApp({
         role={me.role}
       />
     );
-  } else {
+  } else if (route.name === 'jobs') {
     page = (
       <JobsPage
         api={api}
@@ -162,6 +163,17 @@ function SignedInApp({
         error={error}
         refresh={refresh}
         query={query}
+        pollMs={pollMs}
+      />
+    );
+  } else {
+    page = (
+      <HomePage
+        api={api}
+        me={me.label}
+        jobs={jobs}
+        error={error}
+        refresh={refresh}
         pollMs={pollMs}
         pickPending={pickPending}
         onPicked={() => setPickPending(false)}

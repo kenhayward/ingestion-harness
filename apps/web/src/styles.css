@@ -472,7 +472,27 @@ html {
   text-transform: uppercase;
   color: var(--ih-muted);
 }
-/* Project pages: icons only, to make room for the project's own step rail (Workbench redesign). */
+/* Collapse / expand the nav (any page; remembered except on project pages). */
+.nav-toggle {
+  align-self: flex-end;
+  min-height: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-bottom: 4px;
+  justify-content: center;
+  border-color: transparent;
+  background: none;
+  color: var(--ih-muted);
+}
+.nav-toggle:hover:not(:disabled) {
+  background: var(--ih-surface2);
+  color: var(--ih-text);
+}
+.side-nav.compact .nav-toggle {
+  align-self: center;
+}
+/* Collapsed: icons only (project pages start this way, to make room for the step rail). */
 .side-nav.compact {
   flex: 0 0 68px;
   padding: 20px 10px;
@@ -1581,6 +1601,53 @@ button.danger-fill {
   .job-panel {
     max-width: none;
   }
+}
+
+/* Home: the latest job as one wide card. Summary, progress and facts sit side by side; outputs
+   and actions run across the bottom. Narrow screens stack it like the side panel. */
+.job-panel.wide {
+  max-width: none;
+}
+@media (min-width: 900px) {
+  .job-panel.wide {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 12px 32px;
+  }
+  .job-panel.wide > * {
+    grid-column: 1;
+  }
+  .job-panel.wide > .progress {
+    grid-column: 2;
+    grid-row: 1 / span 6;
+  }
+  .job-panel.wide > .meta {
+    grid-column: 3;
+    grid-row: 1 / span 6;
+  }
+  .job-panel.wide > .outputs,
+  .job-panel.wide > .panel-actions {
+    grid-column: 1 / -1;
+  }
+  .job-panel.wide .panel-actions > :first-child {
+    flex-basis: auto;
+  }
+  .job-panel.wide .panel-actions > a.button,
+  .job-panel.wide .panel-actions > button {
+    flex: 0 0 auto;
+    min-width: 140px;
+  }
+}
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.home-latest-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
 }
 
 /* Review (UI handoff §2): header, reasons, source + data panes, sticky decision bar */

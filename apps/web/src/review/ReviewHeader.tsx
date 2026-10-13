@@ -25,7 +25,7 @@ export function ReviewHeader({
     <>
       <header className="review-header">
         <div>
-          <a className="back-link" href="#/">
+          <a className="back-link" href="#/jobs">
             <Icon name="chevronLeft" />
             Jobs
           </a>

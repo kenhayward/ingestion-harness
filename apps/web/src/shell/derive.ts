@@ -2,9 +2,10 @@ import type { JobStatus, JobSummary } from '@ih/shared';
 import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
-export type Section = 'jobs' | 'results' | 'templates' | 'workbench' | 'access' | 'models';
+export type Section = 'home' | 'jobs' | 'results' | 'templates' | 'workbench' | 'access' | 'models';
 
 const SECTION: Record<Route['name'], Section> = {
+  home: 'home',
   jobs: 'jobs',
   review: 'jobs',
   results: 'results',
@@ -64,6 +65,7 @@ export const APP_NAME = 'CT Studio';
 
 /** Child screens take their parent page's name, as in the nav. */
 const PAGE: Record<Route['name'], string> = {
+  home: 'Home',
   jobs: 'Jobs',
   review: 'Review',
   results: 'Results',

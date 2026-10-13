@@ -147,13 +147,13 @@ export function relativeTime(iso: string, now: number): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/** "0:31", "2:05", "1:02:05". */
+/** mm:ss ("00:31", "23:04"), h:mm:ss from an hour ("1:02:05"). */
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
   const ss = String(s % 60).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 /**

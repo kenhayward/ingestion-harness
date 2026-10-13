@@ -10,6 +10,24 @@ import { attentionCount, initials, sectionOf } from './derive.js';
 /** The API reference (served by the API, public: docs/design/api-docs.md). */
 export const API_DOCS = '/api/docs/';
 
+/** The nav's collapsed choice on ordinary pages, remembered per browser. */
+const NAV_KEY = 'ih.navCollapsed';
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem(NAV_KEY) === '1';
+  } catch {
+    return false; // storage blocked: start expanded
+  }
+}
+function saveCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) localStorage.setItem(NAV_KEY, '1');
+    else localStorage.removeItem(NAV_KEY);
+  } catch {
+    // storage blocked: the choice lasts for this visit only
+  }
+}
+
 function NavLink({
   href,
   icon,
@@ -146,7 +164,20 @@ export function AppShell({
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
   const attention = attentionCount(jobs);
-  const compact = route.name === 'project';
+  // Project pages need the width: the nav starts collapsed there, and expanding it lasts for the
+  // visit. Elsewhere the person's own choice holds, remembered per browser.
+  const onProject = route.name === 'project';
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [projectExpanded, setProjectExpanded] = useState(false);
+  if (!onProject && projectExpanded) setProjectExpanded(false);
+  const compact = onProject ? !projectExpanded : collapsed;
+  const toggleNav = () => {
+    if (onProject) setProjectExpanded(compact);
+    else {
+      saveCollapsed(!collapsed);
+      setCollapsed(!collapsed);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -221,9 +252,27 @@ export function AppShell({
         </div>
       </header>
       <div className="app-body">
-        <nav className={compact ? 'side-nav compact' : 'side-nav'} aria-label="Main">
+        <nav id="main-nav" className={compact ? 'side-nav compact' : 'side-nav'} aria-label="Main">
+          <button
+            type="button"
+            className="nav-toggle"
+            aria-controls="main-nav"
+            aria-expanded={!compact}
+            aria-label={compact ? 'Expand menu' : 'Collapse menu'}
+            title={compact ? 'Expand menu' : 'Collapse menu'}
+            onClick={toggleNav}
+          >
+            <Icon name={compact ? 'chevronRight' : 'chevronLeft'} size={16} />
+          </button>
           <NavLink
             href="#/"
+            icon="home"
+            label="Home"
+            current={section === 'home'}
+            compact={compact}
+          />
+          <NavLink
+            href="#/jobs"
             icon="jobs"
             label="Jobs"
             compactLabel={attention > 0 ? `Jobs, ${attention} need attention` : 'Jobs'}

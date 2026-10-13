@@ -15,8 +15,6 @@ const element = (jobs: JobSummary[], o: Partial<Props> = {}) => (
     refresh={vi.fn(async () => {})}
     query=""
     pollMs={0}
-    pickPending={false}
-    onPicked={vi.fn()}
     {...o}
   />
 );
@@ -31,6 +29,8 @@ describe('JobsPage', () => {
       job({ filename: 'c.pdf', status: 'succeeded' }),
     ]);
     expect(screen.getByRole('heading', { level: 1, name: 'Jobs' })).toBeInTheDocument();
+    // Uploading moved to Home: Jobs is the list and the detail panel.
+    expect(screen.queryByLabelText('PDF or Word files')).toBeNull();
     const chips = screen.getByRole('group', { name: 'Filter jobs by status' });
     expect(within(chips).getByRole('button', { name: 'All 3' })).toHaveAttribute(
       'aria-pressed',

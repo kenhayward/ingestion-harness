@@ -21,11 +21,13 @@ describe('App', () => {
   });
 
   it('shows an empty state when there are no jobs', async () => {
+    window.location.hash = '#/jobs';
     render(<App api={fakeApi()} pollMs={0} />);
     expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
   });
 
   it('renders jobs and offers retry only for failed ones', async () => {
+    window.location.hash = '#/jobs';
     const api = fakeApi({
       listJobs: async () => [
         job({ filename: 'ok.pdf', status: 'succeeded' }),
@@ -64,6 +66,7 @@ describe('App', () => {
 
 describe('review routing', () => {
   it('links jobs awaiting review to the review screen', async () => {
+    window.location.hash = '#/jobs';
     const api = fakeApi({
       listJobs: async () => [
         job({
@@ -99,16 +102,18 @@ describe('review routing', () => {
   });
 
   it("retries with the job's own model choice, not the upload form's", async () => {
+    localStorage.setItem('ih.uploadModel', 'test'); // the upload form's remembered choice
+    window.location.hash = '#/jobs';
     const api = fakeApi({
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByRole('option', { name: /New for testing only/ });
-    await userEvent.selectOptions(screen.getByLabelText('Model'), 'New for testing only');
     await userEvent.click(await (await list()).findByRole('button', { name: 'Retry bad.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry bad.pdf' });
     expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
     expect(api.retryJob).toHaveBeenCalledWith('f', null);
+    localStorage.removeItem('ih.uploadModel');
+    window.location.hash = '';
   });
 });
