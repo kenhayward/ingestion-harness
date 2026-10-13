@@ -1,4 +1,4 @@
-import { TemplateSchema, type Template } from '@ih/shared';
+import { isOffered, modelRefProblem, TemplateSchema, type Template } from '@ih/shared';
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
@@ -29,6 +29,35 @@ export function validateTemplate(definition: unknown): TemplateIssue[] {
         ]
       : [],
   );
+}
+
+/** The refs offered in the pickers and the stored aliases: what may run (ADR 0010). */
+export async function runnableModels(deps: Pick<AppDeps, 'repo' | 'llm'>) {
+  const [models, aliases] = await Promise.all([deps.repo.listModels(), deps.llm.listAliases()]);
+  return { offered: new Set(models.filter(isOffered).map((m) => m.ref)), aliases };
+}
+
+/**
+ * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
+ * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
+ * database does not define is left to the worker.
+ */
+export async function templateIssues(
+  deps: Pick<AppDeps, 'repo' | 'llm'>,
+  definition: unknown,
+): Promise<TemplateIssue[]> {
+  const issues = validateTemplate(definition);
+  const parsed = TemplateSchema.safeParse(definition);
+  if (!parsed.success) return issues;
+  const { offered, aliases } = await runnableModels(deps);
+  const modelIssues = parsed.data.pipeline.flatMap((step, i) => {
+    if (step.type !== 'extract') return [];
+    const problem = modelRefProblem(step.model, offered, aliases, { unknownAliases: 'allow' });
+    return problem
+      ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
+      : [];
+  });
+  return [...issues, ...modelIssues];
 }
 
 /**

@@ -202,10 +202,14 @@ class ModelRegistry:
         configs: dict[str, ProviderConfig],
         aliases: dict[str, str],
         ocr_providers: dict[str, LLMProvider] | None = None,
+        offered_only: bool = False,
     ) -> None:
         self._providers = providers
         self._configs = configs
         self._aliases = aliases
+        #: Only each provider's configured `models` resolve (ADR 0010: endpoints from the
+        #: database). A registry built from the config file alone resolves any model id.
+        self._offered_only = offered_only
         #: Same-named providers for OCR's own endpoint/key (OcrConfig.base_url, api_key_env).
         self._ocr_providers = ocr_providers or {}
 
@@ -228,6 +232,10 @@ class ModelRegistry:
         if provider is None:
             raise ModelResolutionError(
                 f"model {ref!r}: provider {provider_name!r} is not configured/enabled"
+            )
+        if self._offered_only and model_id not in self._configs[provider_name].models:
+            raise ModelResolutionError(
+                f"model {ref} is not offered on endpoint {provider_name}: add it on the Models page"
             )
         return provider, model_id
 
@@ -282,6 +290,7 @@ def build_registry(
     config: LLMConfig,
     env: Mapping[str, str] = os.environ,
     factories: Mapping[str, ProviderFactory] = DEFAULT_FACTORIES,
+    offered_only: bool = False,
 ) -> ModelRegistry:
     providers: dict[str, LLMProvider] = {}
     configs: dict[str, ProviderConfig] = {}
@@ -303,7 +312,7 @@ def build_registry(
             raise ValueError(msg)
         providers[cfg.name] = factories[cfg.kind](cfg, api_key)
         configs[cfg.name] = cfg
-    registry = ModelRegistry(providers, configs, config.aliases)
+    registry = ModelRegistry(providers, configs, config.aliases, offered_only=offered_only)
     ocr = config.ocr
     ocr_key = env.get(ocr.api_key_env) if ocr and ocr.api_key_env else None
     if ocr is None or not ocr.enabled or not (ocr.base_url or ocr_key):
@@ -315,4 +324,6 @@ def build_registry(
     ocr_cfg = configs[name].model_copy(update={"base_url": ocr.base_url or configs[name].base_url})
     api_key = ocr_key or endpoint_key(ocr_cfg, env)
     ocr_provider = factories[ocr_cfg.kind](ocr_cfg, api_key)
-    return ModelRegistry(providers, configs, config.aliases, {name: ocr_provider})
+    return ModelRegistry(
+        providers, configs, config.aliases, {name: ocr_provider}, offered_only=offered_only
+    )

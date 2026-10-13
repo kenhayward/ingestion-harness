@@ -126,13 +126,14 @@ def registry_from_seed(
     factories: Mapping[str, ProviderFactory] = DEFAULT_FACTORIES,
 ) -> ModelRegistry:
     """Every stored endpoint is optional: one without its key (added in the UI, say) is skipped
-    with a warning, never a crash. The `ocr` alias, when stored, picks the OCR model."""
+    with a warning, never a crash. Only the models offered on an endpoint resolve (aliases and
+    OCR included). The `ocr` alias, when stored, picks the OCR model."""
     providers = [e.model_copy(update={"optional": True}) for e in seed.endpoints]
     ocr_cfg = None
     if ocr is not None:
         ocr_cfg = ocr.model_copy(update={"model": seed.aliases.get("ocr", ocr.model)})
     config = LLMConfig(providers=providers, aliases=dict(seed.aliases), ocr=ocr_cfg)
-    return build_registry(config, env, factories)
+    return build_registry(config, env, factories, offered_only=True)
 
 
 class LlmConfigStore(Protocol):
@@ -277,7 +278,8 @@ class PgLlmConfigStore:
         rows = self._conn.execute(
             f"""SELECT name, {_ENDPOINT_COLUMNS}, api_key_enc,
                        array(SELECT m.model_id FROM llm_models m
-                              WHERE m.provider = e.name AND m.curated ORDER BY m.model_id)
+                              WHERE m.provider = e.name AND m.curated AND m.enabled
+                              ORDER BY m.model_id)
                   FROM llm_endpoints e ORDER BY name"""
         ).fetchall()
         endpoints = [

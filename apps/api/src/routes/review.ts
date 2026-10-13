@@ -4,6 +4,7 @@ import {
   EditRequestSchema,
   JobDetailSchema,
   JobSummarySchema,
+  modelRefProblem,
   RejectRequestSchema,
   RerunRequestSchema,
   ReviewEditSchema,
@@ -14,7 +15,7 @@ import {
 } from '@ih/shared';
 import { z } from 'zod';
 import { error, md, res } from '../openapi/zod.js';
-import { resolveDefinition } from '../templates/definitions.js';
+import { resolveDefinition, runnableModels } from '../templates/definitions.js';
 
 const UUID = z.string().uuid();
 const JobParams = z.object({ id: z.string().uuid().describe('The job id.') });
@@ -308,7 +309,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
           the checks; the job returns to \`awaiting_review\` with the step's new values.
 
           Refused while the step's outputs have reviewer edits, since a re-run would discard
-          them.
+          them. \`model\` must be offered (\`GET /api/models\`) or an alias resolving to one.
         `,
         params: z.object({
           id: z.string().uuid().describe('The job id.'),
@@ -317,7 +318,11 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
         body: RerunRequestSchema,
         response: {
           200: res('The job, queued to re-run the step.', JobSummarySchema),
-          400: error('Zod issues for an invalid body, or `no extract step "{step}"`.'),
+          400: error(
+            'Zod issues for an invalid body, `no extract step "{step}"`, or a `model` that may ' +
+              'not run: `model {ref} is not offered: add it on the Models page`, `alias {name} ' +
+              'uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).',
+          ),
           404: error('`not found`, or `job is not a template document`.'),
           409: error(
             '`job is {status}, not awaiting_review`, the step has reviewer edits, or the job ' +
@@ -355,6 +360,12 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({
           error: `step "${step.id}" outputs already have ${edited.length} reviewer edits; a re-run would discard them`,
         });
+      }
+      if (body.data.model) {
+        // Only models offered on their endpoint run (ADR 0010); the worker refuses the rest too.
+        const { offered, aliases } = await runnableModels(app.deps);
+        const problem = modelRefProblem(body.data.model, offered, aliases);
+        if (problem) return reply.code(400).send({ error: problem });
       }
       const updated = await app.deps.repo.requestRerun(job.id, step.id, body.data);
       return updated ?? reply.code(409).send({ error: 'job is no longer awaiting review' });
