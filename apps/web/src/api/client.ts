@@ -279,7 +279,7 @@ export interface Api {
   getStepRuns(jobId: string): Promise<StepRun[]>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   getMetrics(templateId: string): Promise<TemplateMetrics>;
-  listReferences(templateId: string): Promise<Reference[]>;
+  listReferences(templateId: string, version?: number): Promise<Reference[]>;
   createReference(templateId: string, jobId: string, name: string): Promise<Reference>;
   deleteReference(templateId: string, referenceId: string): Promise<void>;
   runRegression(templateId: string, version: number): Promise<{ jobs: JobSummary[] }>;
@@ -682,8 +682,10 @@ export function createHttpApi(base = '/api'): Api {
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
     getMetrics: (templateId) =>
       apiFetch(`${base}/templates/${templateId}/metrics`).then(json<TemplateMetrics>),
-    listReferences: (templateId) =>
-      apiFetch(`${base}/templates/${templateId}/references`).then(json<Reference[]>),
+    listReferences: (templateId, version) =>
+      apiFetch(
+        `${base}/templates/${templateId}/references${version === undefined ? '' : `?version=${version}`}`,
+      ).then(json<Reference[]>),
     createReference: (templateId, jobId, name) =>
       post<Reference>(`${base}/templates/${templateId}/references`, { jobId, name }),
     deleteReference: async (templateId, referenceId) => {

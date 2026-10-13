@@ -260,6 +260,22 @@ v(N+1) keeps vN's references pinned to vN. Samples added for v(N+1) don't change
 results. Accepted references are copied forward as the starting set for the new version, and
 re-verified only where outputs changed.
 
+How it works (migration 0018):
+
+- A Workbench reference is pinned to a template version (`template_version`) together with the
+  outputs it was verified against (`verified_outputs`). Opening the next draft copies the
+  previous version's references forward (`copied_from`); this runs on every reference read while
+  a draft is open and is idempotent.
+- `outputChanges` (`packages/shared/src/references.ts`) compares the outputs a reference was
+  verified against with the current ones. A change of type, enum values, an added or removed
+  field, table or column counts; names, descriptions and enum order do not.
+- A reference with changes is outdated and counts as unverified in the references stage,
+  reference runs (dev and holdout), evaluation and so the holdout gate's coverage, until the user
+  re-verifies it. Regression ignores outdated references.
+- Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
+  instead of deleting it, so older iterations keep their comparisons.
+- Other document types keep unpinned references that apply to every version.
+
 ## API (sketch)
 
 All routes are under `/api/workbench`, covered by the session hook and the `access.test.ts` sweep.
@@ -357,7 +373,7 @@ Each phase is usable on its own.
    - **4c (done):** feedback, `revise`, commenting from the scorecard drill-down. Phase 4 is complete.
 5. **Holdout and publish**, split in two:
    - **5a (done):** holdout evaluation, the publish gate and holdout history.
-   - **5b (next):** references across versions.
+   - **5b (done):** references across versions.
 6. **Export/import bundle.**
 
 The most important phases are 2 and 4. If the segmentation preview and the scored loop aren't
