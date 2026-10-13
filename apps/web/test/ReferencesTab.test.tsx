@@ -42,7 +42,7 @@ const saved = (filename: string, o = {}) =>
 function tab(
   rows: { dev?: ReferenceRow[]; holdout?: ReferenceRow[] } = {},
   overrides = {},
-  props: Partial<{ draft: number | null; published: number | null }> = {},
+  props: Partial<{ draft: number | null; published: number | null; item: OverviewItem }> = {},
 ) {
   const api = fakeApi({
     listReferenceRows: vi.fn(async (_id: string, set?: string) =>
@@ -59,7 +59,7 @@ function tab(
       dataPolicy="local"
       draft={props.draft === undefined ? 2 : props.draft}
       published={props.published === undefined ? 1 : props.published}
-      item={item}
+      item={props.item ?? item}
       pollMs={1}
       onChanged={onChanged}
     />,
@@ -82,6 +82,68 @@ describe('ReferencesTab', () => {
     await userEvent.click(within(header).getByRole('button', { name: 'Skip this stage' }));
     expect(api.skipStage).toHaveBeenCalledWith('letter', 'references');
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it.each(['accepted', 'skipped'] as const)(
+    'offers no Skip once the stage is %s',
+    async (state) => {
+      tab({ dev: [saved('a.pdf')] }, {}, { item: { ...item, state, status: 'Verified' } });
+      expect(await screen.findByText('Verified')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Skip this stage' })).toBeNull();
+    },
+  );
+
+  it('re-verifies one verified dev sample with the drafting model', async () => {
+    const a = saved('inv-0012.pdf', { sourceJobId: 'src-1' });
+    const getReferenceDetail = vi.fn(async () =>
+      referenceDetail({ sampleId: a.sampleId, filename: 'inv-0012.pdf', reference: a.reference! }),
+    );
+    const { api, onChanged } = tab(
+      { dev: [a] },
+      { getReferenceDetail, runSampleReference: vi.fn(async () => [job()]) },
+    );
+    const panel = await screen.findByRole('complementary', { name: 'Reference inv-0012.pdf' });
+    await userEvent.click(within(panel).getByRole('button', { name: 'Re-verify…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Re-verify inv-0012.pdf' });
+    expect(dialog).toHaveTextContent('The drafting model');
+    expect(dialog).toHaveTextContent('The current reference stands until you save the new run.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
+    expect(api.runSampleReference).toHaveBeenCalledWith('letter', a.sampleId);
+    expect(onChanged).toHaveBeenCalled();
+    expect(await screen.findByRole('status')).toHaveTextContent('1 run queued');
+  });
+
+  it("re-verifies a holdout sample with the template's own models", async () => {
+    const h = saved('inv-0033.pdf');
+    const getReferenceDetail = vi.fn(async () =>
+      referenceDetail({
+        sampleId: h.sampleId,
+        filename: 'inv-0033.pdf',
+        role: 'holdout',
+        reference: h.reference!,
+      }),
+    );
+    tab({ holdout: [h] }, { getReferenceDetail });
+    const panel = await screen.findByRole('complementary', { name: 'Reference inv-0033.pdf' });
+    await userEvent.click(within(panel).getByRole('button', { name: 'Re-verify…' }));
+    expect(screen.getByRole('dialog', { name: 'Re-verify inv-0033.pdf' })).toHaveTextContent(
+      "The template's own models",
+    );
+  });
+
+  it.each<[string, ReferenceRow['run'], number | null, string]>([
+    ['its run is active', run('running'), 2, 'This sample is already running'],
+    ['there is no draft', null, null, 'Start a draft version first'],
+  ])('disables Re-verify when %s', async (_name, sampleRun, draft, reason) => {
+    const a = { ...saved('a.pdf'), run: sampleRun };
+    const getReferenceDetail = vi.fn(async () =>
+      referenceDetail({ sampleId: a.sampleId, filename: 'a.pdf', reference: a.reference! }),
+    );
+    tab({ dev: [a] }, { getReferenceDetail }, { draft });
+    const panel = await screen.findByRole('complementary', { name: 'Reference a.pdf' });
+    const button = within(panel).getByRole('button', { name: 'Re-verify…' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', reason);
   });
 
   it('runs the draft model on the unverified count, and gives the reason when it cannot', async () => {

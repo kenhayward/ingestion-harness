@@ -188,9 +188,12 @@ export function ReferencesTab({
             >
               Run the draft model on {devCount} unverified…
             </button>
-            <button type="button" disabled={busy} onClick={() => void skip()}>
-              Skip this stage
-            </button>
+            {/* A complete stage needs no skip: outdated references reopen it on their own. */}
+            {item?.state !== 'accepted' && item?.state !== 'skipped' && (
+              <button type="button" disabled={busy} onClick={() => void skip()}>
+                Skip this stage
+              </button>
+            )}
           </>
         }
       />
@@ -308,6 +311,20 @@ export function ReferencesTab({
             sampleId={current}
             version={version}
             published={published}
+            reverifyReason={
+              !hasDraft
+                ? 'Start a draft version first'
+                : [...dev, ...holdout].some(
+                      (r) => r.sampleId === current && r.run !== null && isActive(r.run.status),
+                    )
+                  ? 'This sample is already running'
+                  : null
+            }
+            onReverified={async () => {
+              setMessage('1 run queued');
+              onChanged();
+              await refresh();
+            }}
           />
         ) : (
           <aside className="card refs-detail refs-detail-empty" aria-label="Reference values">
@@ -546,14 +563,20 @@ function ReferenceDetailPanel({
   sampleId,
   version,
   published,
+  reverifyReason,
+  onReverified,
 }: {
   api: Api;
   projectId: string;
   sampleId: string;
   version: number | null;
   published: number | null;
+  /** Why Re-verify is disabled; null: it is not. */
+  reverifyReason: string | null;
+  onReverified: () => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ReferenceDetail | null>(null);
+  const [reverifying, setReverifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -642,17 +665,46 @@ function ReferenceDetailPanel({
           </tbody>
         </table>
       </div>
-      {r.sourceJobId && (
-        <a className="button" href={`#/review/${r.sourceJobId}`}>
-          Open in Review
-        </a>
-      )}
+      <div className="refs-detail-actions">
+        {r.sourceJobId && (
+          <a className="button" href={`#/review/${r.sourceJobId}`}>
+            Open in Review
+          </a>
+        )}
+        <button
+          type="button"
+          disabled={reverifyReason !== null}
+          title={reverifyReason ?? undefined}
+          onClick={() => setReverifying(true)}
+        >
+          Re-verify…
+        </button>
+      </div>
       <p className="muted">To change a value, run the sample again and save a new reference.</p>
       <p className="muted">
         {holdout
           ? 'Holdout values are only scored, never shown to drafting.'
           : `Saving again replaces this reference for v${version ?? '?'}.`}
       </p>
+      {reverifying && (
+        <ReprocessDialog
+          title={`Re-verify ${detail.filename}`}
+          confirmLabel="Run"
+          choices={[]}
+          fixedModel={holdout ? "The template's own models" : 'The drafting model'}
+          summary={
+            <p>
+              The sample runs again and stops for review: correct the values, approve, then save it
+              as the reference. The current reference stands until you save the new run.
+            </p>
+          }
+          onConfirm={async () => {
+            await api.runSampleReference(projectId, sampleId);
+            await onReverified();
+          }}
+          onClose={() => setReverifying(false)}
+        />
+      )}
     </aside>
   );
 }

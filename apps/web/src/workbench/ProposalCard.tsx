@@ -76,6 +76,8 @@ export function ProposalCard({
   footerNote?: string;
 }) {
   const idBase = useId();
+  // Running the stage again may find nothing to change: accepting that keeps the stage.
+  const empty = body.changes.length === 0;
   const border = TONE_COLOR[stageStyle(PROPOSAL_STATE[proposal.status]).tone];
   const meta = (
     <p>
@@ -97,7 +99,9 @@ export function ProposalCard({
           {accepted && (
             <div role="status">
               <h3>
-                {`${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`}
+                {empty
+                  ? 'Accepted: no changes needed'
+                  : `${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`}
               </h3>
             </div>
           )}
@@ -145,56 +149,72 @@ export function ProposalCard({
     <section aria-label="Proposal" className="proposal-card" style={{ borderColor: border }}>
       <div className="proposal-meta proposal-ready">
         <h3>
-          Proposal · {selected.size} of {body.changes.length} changes selected
+          {empty
+            ? 'Proposal · no changes needed'
+            : `Proposal · ${selected.size} of ${body.changes.length} changes selected`}
         </h3>
         {meta}
         {body.notes && <p>{body.notes}</p>}
       </div>
-      <ul className="proposal-changes">
-        {body.changes.map((c, i) => {
-          const verb = definition ? changeVerb(c, definition) : null;
-          const diff = definition ? changeDiff(c, definition) : null;
-          const line = note?.(c) ?? null;
-          const badgeNode = badge?.(c, i);
-          return (
-            <li key={`${i}-${c.op}`}>
-              <input
-                id={`${idBase}-${i}`}
-                type="checkbox"
-                aria-label={`Apply: ${changeLabel(c)}`}
-                checked={selected.has(i)}
-                onChange={() => onToggle(i)}
-              />
-              <label className="proposal-change" htmlFor={`${idBase}-${i}`}>
-                <span className="proposal-line">
-                  {verb && <span className={`kind-tag tone-${VERB_TONE[verb]}`}>{verb}</span>}
-                  <ChangeText c={c} />
-                </span>
-                {diff && <code className="diff-chip">{diff}</code>}
-                <span className="proposal-line muted">{c.reason}</span>
-                {line && <span className="proposal-line muted">{line}</span>}
-              </label>
-              {badgeNode != null && <span className="proposal-badge">{badgeNode}</span>}
-              <details>
-                <summary>Details</summary>
-                <pre>{JSON.stringify(c, null, 2)}</pre>
-              </details>
-            </li>
-          );
-        })}
-      </ul>
+      {!empty && (
+        <ul className="proposal-changes">
+          {body.changes.map((c, i) => {
+            const verb = definition ? changeVerb(c, definition) : null;
+            const diff = definition ? changeDiff(c, definition) : null;
+            const line = note?.(c) ?? null;
+            const badgeNode = badge?.(c, i);
+            return (
+              <li key={`${i}-${c.op}`}>
+                <input
+                  id={`${idBase}-${i}`}
+                  type="checkbox"
+                  aria-label={`Apply: ${changeLabel(c)}`}
+                  checked={selected.has(i)}
+                  onChange={() => onToggle(i)}
+                />
+                <label className="proposal-change" htmlFor={`${idBase}-${i}`}>
+                  <span className="proposal-line">
+                    {verb && <span className={`kind-tag tone-${VERB_TONE[verb]}`}>{verb}</span>}
+                    <ChangeText c={c} />
+                  </span>
+                  {diff && <code className="diff-chip">{diff}</code>}
+                  <span className="proposal-line muted">{c.reason}</span>
+                  {line && <span className="proposal-line muted">{line}</span>}
+                </label>
+                {badgeNode != null && <span className="proposal-badge">{badgeNode}</span>}
+                <details>
+                  <summary>Details</summary>
+                  <pre>{JSON.stringify(c, null, 2)}</pre>
+                </details>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <footer className="proposal-footer">
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || selected.size === 0 || !!applyBlockedReason}
-          title={
-            applyBlockedReason ?? (selected.size === 0 ? 'Select a change to apply' : undefined)
-          }
-          onClick={onApply}
-        >
-          Apply {selected.size} selected {selected.size === 1 ? 'change' : 'changes'}
-        </button>
+        {empty ? (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !!applyBlockedReason}
+            title={applyBlockedReason ?? undefined}
+            onClick={onApply}
+          >
+            Accept: no changes needed
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || selected.size === 0 || !!applyBlockedReason}
+            title={
+              applyBlockedReason ?? (selected.size === 0 ? 'Select a change to apply' : undefined)
+            }
+            onClick={onApply}
+          >
+            Apply {selected.size} selected {selected.size === 1 ? 'change' : 'changes'}
+          </button>
+        )}
         <button type="button" className="danger" disabled={busy} onClick={onReject}>
           Reject all
         </button>
