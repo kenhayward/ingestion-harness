@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { DELETABLE_STATUSES, type JobStatus, type JobSummary, type ModelInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { isWordDocument } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 import { menuPosition, primaryAction } from './derive.js';
 
@@ -225,9 +226,16 @@ export function JobActions({
           Re-process…
         </button>
       )}
-      <a className="button" href={api.documentUrl(job.id)} target="_blank" rel="noopener">
-        Open PDF
-      </a>
+      {isWordDocument(job.contentType) ? (
+        // Served as an attachment: download in place rather than opening a blank tab.
+        <a className="button" href={api.documentUrl(job.id)} download>
+          Download original (.docx)
+        </a>
+      ) : (
+        <a className="button" href={api.documentUrl(job.id)} target="_blank" rel="noopener">
+          Open PDF
+        </a>
+      )}
       {DELETABLE.has(job.status) && (
         <button
           type="button"

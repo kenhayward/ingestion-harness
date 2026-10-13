@@ -1,13 +1,12 @@
 import { useId, useState } from 'react';
 import type { Api, TemplateListItem } from '../api/client.js';
+import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 import { qualityLine, shapeLine } from './quality.js';
 
-const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-
 /**
  * One document type (UI handoff §4): versions, shape, quality, and the quick actions (edit or
- * start a draft, test-run a PDF, export YAML).
+ * start a draft, test-run a PDF or Word document, export YAML).
  */
 export function TemplateCard({
   api,
@@ -40,8 +39,8 @@ export function TemplateCard({
 
   const testRun = async (file: File | undefined) => {
     if (!file || shown === null) return; // picker cancelled
-    if (!isPdf(file)) {
-      setStatus('Choose a PDF');
+    if (!isSourceFile(file)) {
+      setStatus('Choose a PDF or Word document');
       return;
     }
     setStatus('Queuing test run…');
@@ -103,8 +102,8 @@ export function TemplateCard({
               id={fileId}
               className="visually-hidden"
               type="file"
-              accept="application/pdf"
-              aria-label={`Test run ${item.name} with a PDF`}
+              accept={SOURCE_ACCEPT}
+              aria-label={`Test run ${item.name} with a PDF or Word document`}
               onChange={(e) => {
                 void testRun(e.target.files?.[0]);
                 e.target.value = '';

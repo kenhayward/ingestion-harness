@@ -79,6 +79,22 @@ describe('ResultsPage list', () => {
     );
   });
 
+  it('offers the original of a Word document as a download', async () => {
+    const r = result({
+      jobId: 'j2',
+      filename: 'report.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r]) })} />);
+    await screen.findByRole('button', { name: 'Show preview of report.docx' });
+    const link = within(row('report.docx')).getByRole('link', {
+      name: 'Download original of report.docx',
+    });
+    expect(link).toHaveAttribute('href', '/api/jobs/j2/document');
+    expect(link).toHaveAttribute('title', 'Download original (.docx)');
+    expect(link).not.toHaveAttribute('target');
+  });
+
   it('filters by document type with chips', async () => {
     const listResults = vi.fn(async () => [result()]);
     render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);

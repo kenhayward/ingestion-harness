@@ -1,6 +1,6 @@
 # Word documents: accept .docx by converting it to PDF
 
-**Status:** PRs 1–2 implemented (converter and worker; API, storage and bundles) · 2026-10-13 · approach A approved in conversation (.docx only)
+**Status:** implemented (PRs 1–3) · 2026-10-13 · approach A approved in conversation (.docx only)
 
 Content Transformation Studio (CT Studio) ingests only PDFs today. This design lets people upload
 Word documents (`.docx`) wherever they upload a PDF now: the Jobs upload, Templates test runs, and
@@ -228,7 +228,7 @@ converter on an internal network; identity by the uploaded file.
    - Workbench sample upload and bundle import/export, results names, OpenAPI docs and
      `CLAUDE.md`.
    - The smoke test uploads a `.docx`.
-3. **Web:** upload inputs and labels, the "Download original" links, and the page-number hints.
+3. **Web** (done): upload inputs and labels, the "Download original" links, and the page-number hints.
 
 ## Later
 

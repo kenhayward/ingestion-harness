@@ -224,7 +224,7 @@ describe('TemplateEditor', () => {
       expect(
         screen.queryByRole('complementary', { name: 'Test this draft' }),
       ).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Sample PDF')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Sample document')).not.toBeInTheDocument();
     });
 
     it('reports a publish instead of navigating', async () => {
@@ -466,20 +466,31 @@ describe('TemplateEditor', () => {
     const rail = await screen.findByRole('complementary', { name: 'Test this draft' });
     expect(within(rail).getByRole('button', { name: 'Run test' })).toBeDisabled();
     const file = new File(['%PDF-1.7'], 'sample.pdf', { type: 'application/pdf' });
-    await userEvent.upload(within(rail).getByLabelText('Sample PDF'), file);
+    await userEvent.upload(within(rail).getByLabelText('Sample document'), file);
     await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.pdf' }));
     expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
     expect(await within(rail).findByRole('status')).toHaveTextContent('Test run queued');
   });
 
+  it('test-runs a draft on a Word document', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 1 }));
+    const rail = await screen.findByRole('complementary', { name: 'Test this draft' });
+    const file = new File(['PK'], 'sample.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await userEvent.upload(within(rail).getByLabelText('Sample document'), file);
+    await userEvent.click(within(rail).getByRole('button', { name: 'Run test on sample.docx' }));
+    expect(api.testRun).toHaveBeenCalledWith(file, 'letter', 1);
+  });
+
   it('does not take a non-PDF as the sample', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     const rail = await screen.findByRole('complementary', { name: 'Test this draft' });
-    fireEvent.change(within(rail).getByLabelText('Sample PDF'), {
+    fireEvent.change(within(rail).getByLabelText('Sample document'), {
       target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] },
     });
     expect(within(rail).getByRole('button', { name: 'Run test' })).toBeDisabled();
-    expect(within(rail).getByText('Choose a PDF')).toBeInTheDocument();
+    expect(within(rail).getByText('Choose a PDF or Word document')).toBeInTheDocument();
   });
 
   it('lists recent test runs of this document type', async () => {

@@ -89,7 +89,7 @@ describe('TemplatesPage cards', () => {
     const file = pdf('sample.pdf');
     await userEvent.upload(
       within(card('Process Validation Protocol')).getByLabelText(
-        'Test run Process Validation Protocol with a PDF',
+        'Test run Process Validation Protocol with a PDF or Word document',
       ),
       file,
     );
@@ -99,11 +99,26 @@ describe('TemplatesPage cards', () => {
     ).toHaveTextContent('Test run queued — see Jobs');
   });
 
+  it('test-runs a Word document', async () => {
+    const { api } = setup();
+    await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    const word = new File(['PK'], 'protocol.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await userEvent.upload(
+      within(card('Process Validation Protocol')).getByLabelText(
+        'Test run Process Validation Protocol with a PDF or Word document',
+      ),
+      word,
+    );
+    expect(api.testRun).toHaveBeenCalledWith(word, 'pvp', 4);
+  });
+
   it('sends nothing when no file or a non-PDF is chosen', async () => {
     const { api } = setup();
     await screen.findByRole('article', { name: 'Certificate of analysis' });
     const input = within(card('Certificate of analysis')).getByLabelText(
-      'Test run Certificate of analysis with a PDF',
+      'Test run Certificate of analysis with a PDF or Word document',
     );
     fireEvent.change(input, { target: { files: [] } });
     fireEvent.change(input, {
@@ -111,7 +126,7 @@ describe('TemplatesPage cards', () => {
     });
     expect(api.testRun).not.toHaveBeenCalled();
     expect(within(card('Certificate of analysis')).getByRole('status')).toHaveTextContent(
-      'Choose a PDF',
+      'Choose a PDF or Word document',
     );
   });
 

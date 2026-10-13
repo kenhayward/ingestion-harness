@@ -34,8 +34,8 @@ export function TemplatesPage({
         <div>
           <h1>Document types</h1>
           <p className="muted">
-            What each PDF looks like and what to extract. Published versions are immutable; edit a
-            draft.
+            What each document looks like and what to extract. Published versions are immutable;
+            edit a draft.
           </p>
         </div>
         <div className="header-actions">

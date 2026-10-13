@@ -62,12 +62,22 @@ describe('SamplesTab', () => {
       new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' }),
       new File(['%PDF-2'], 'two.pdf', { type: 'application/pdf' }),
     ];
-    await userEvent.upload(screen.getByLabelText('Add sample PDFs'), files);
+    await userEvent.upload(screen.getByLabelText('Add sample documents'), files);
     expect(uploadSample).toHaveBeenCalledWith('letter', files[0], 'dev');
     expect(uploadSample).toHaveBeenCalledWith('letter', files[1], 'dev');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'two.pdf: this PDF is already a sample of the project',
     );
+  });
+
+  it('uploads Word documents too', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    tab(fakeApi({ uploadSample }));
+    const word = new File(['PK'], 'letter.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    await userEvent.upload(screen.getByLabelText('Add sample documents'), word);
+    expect(uploadSample).toHaveBeenCalledWith('letter', word, 'dev');
   });
 
   it('tells the page after a successful upload, role change or removal, not after a failed upload', async () => {
@@ -86,11 +96,11 @@ describe('SamplesTab', () => {
     await screen.findByRole('table', { name: 'Samples' });
     const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
 
-    await userEvent.upload(screen.getByLabelText('Add sample PDFs'), file);
+    await userEvent.upload(screen.getByLabelText('Add sample documents'), file);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(onChanged).not.toHaveBeenCalled();
 
-    await userEvent.upload(screen.getByLabelText('Add sample PDFs'), file);
+    await userEvent.upload(screen.getByLabelText('Add sample documents'), file);
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
 
     await userEvent.selectOptions(screen.getByLabelText('Role of good.pdf'), 'holdout');

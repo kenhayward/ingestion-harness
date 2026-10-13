@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MAX_SAMPLES, type SampleRole, type SampleView } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { SOURCE_ACCEPT } from '../documents.js';
 import { SampleText } from './SampleText.js';
 
-/** Upload, triage and roles of a project's sample PDFs. Polls while any is preparing. */
+/** Upload, triage and roles of a project's samples (PDF or Word). Polls while any is preparing. */
 export function SamplesTab({
   api,
   projectId,
@@ -72,15 +73,15 @@ export function SamplesTab({
   return (
     <div className="samples">
       <p className="muted">
-        Add 3–8 sample PDFs to develop with, plus a few held out for testing (at most {MAX_SAMPLES}
-        ). Each is prepared in the background: text extraction, then OCR for pages without a text
-        layer.
+        Add 3–8 sample documents (PDF or Word) to develop with, plus a few held out for testing (at
+        most {MAX_SAMPLES}). Each is prepared in the background: a Word document is converted to
+        PDF, then its text is extracted, with OCR for pages without a text layer.
       </p>
       <label className="file-pick">
-        Add sample PDFs
+        Add sample documents
         <input
           type="file"
-          accept="application/pdf"
+          accept={SOURCE_ACCEPT}
           multiple
           disabled={uploading}
           onChange={(e) => {

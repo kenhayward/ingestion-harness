@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import type { ModelInfo, SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 
 /** The Model selection is remembered per browser ('' / absent = spec default). */
@@ -30,14 +31,14 @@ type Pick = {
   message: string;
 };
 
-const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
 /** Still to send: never tried, or failed (the button retries those). */
 const pending = (p: Pick) => p.status === 'ready' || p.status === 'error';
 const filesLabel = (n: number) =>
   n === 0 ? 'Upload' : `Upload ${n} ${n === 1 ? 'file' : 'files'}`;
 
 /**
- * Upload strip (UI handoff §1): drop or browse several PDFs, each becomes its own job, uploaded
+ * Upload strip (UI handoff §1): drop or browse several PDFs or Word documents, each becomes its
+ * own job, uploaded
  * one after another with a status per file.
  */
 export function UploadStrip({
@@ -51,7 +52,7 @@ export function UploadStrip({
   onUploaded: () => void;
   /** Reports the Model selection ('' = spec default), e.g. so Retry can use it. */
   onModelChange?: (model: string) => void;
-  /** Upload PDF (top bar) was pressed: open the file picker, then report it with onPicked. */
+  /** Upload document (top bar) was pressed: open the file picker, then report it with onPicked. */
   pickPending?: boolean;
   onPicked?: () => void;
 }) {
@@ -119,8 +120,8 @@ export function UploadStrip({
     const added = files.map<Pick>((file) => ({
       key: String(nextKey.current++),
       file,
-      status: isPdf(file) ? 'ready' : 'skipped',
-      message: isPdf(file) ? 'Ready' : 'Not a PDF',
+      status: isSourceFile(file) ? 'ready' : 'skipped',
+      message: isSourceFile(file) ? 'Ready' : 'Not a PDF or Word document',
     }));
     setPicks((prev) => [...(uploading.current ? prev : prev.filter(pending)), ...added]);
   }
@@ -180,7 +181,8 @@ export function UploadStrip({
         </span>
         <span className="drop-text">
           <span>
-            <strong>Drop PDFs here</strong> or <span className="link-text">browse</span>
+            <strong>Drop PDF or Word files here</strong> or{' '}
+            <span className="link-text">browse</span>
           </span>
           <small>Several at once — each becomes its own job</small>
         </span>
@@ -190,9 +192,9 @@ export function UploadStrip({
         id={inputId}
         className="visually-hidden"
         type="file"
-        accept="application/pdf"
+        accept={SOURCE_ACCEPT}
         multiple
-        aria-label="PDF files"
+        aria-label="PDF or Word files"
         onChange={(e) => {
           add([...(e.target.files ?? [])]);
           e.target.value = ''; // the same file can be picked again after a failure

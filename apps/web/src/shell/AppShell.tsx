@@ -109,7 +109,7 @@ export function AppShell({
           <ThemeSwitch />
           <button type="button" className="primary" onClick={onUpload}>
             <Icon name="upload" />
-            Upload PDF
+            Upload document
           </button>
           <div
             className="user-chip"
