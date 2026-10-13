@@ -44,6 +44,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Local infra (Postgres + SeaweedFS + Word converter) | `deploy/scripts/dev-infra.ps1 up` (or `.sh`) |
 | Run services on host | `npm run dev:api`, `npm run dev:web`, `cd worker && uv run ingest-worker` |
 | Full stack in Docker | `deploy/scripts/deploy.sh` (needs `deploy/.env`, copy from `.env.example`) |
+| Type detection research (read-only) | `docker exec ingestion-worker-1 python -m ingest_worker.detect` ([findings](docs/design/type-detection.md)) |
 
 ## Test-driven development — how we work here
 
