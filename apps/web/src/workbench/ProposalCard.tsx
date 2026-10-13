@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import type { ChangeBody, DraftChange, ProposalStatus, ProposalView } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
@@ -49,6 +49,8 @@ export function ProposalCard({
   now,
   note,
   next,
+  badge,
+  footerNote,
 }: {
   projectId: string;
   proposal: ProposalView;
@@ -68,6 +70,10 @@ export function ProposalCard({
   note?: (c: DraftChange) => string | null;
   /** The next action on the applied card. */
   next?: NextStep;
+  /** Beside each change while ready (revise: the "Answers 1" badge); null draws nothing. */
+  badge?: (c: DraftChange, index: number) => ReactNode;
+  /** A muted line in the footer, next to Apply and Reject. */
+  footerNote?: string;
 }) {
   const idBase = useId();
   const border = TONE_COLOR[stageStyle(PROPOSAL_STATE[proposal.status]).tone];
@@ -167,6 +173,7 @@ export function ProposalCard({
                 <span className="proposal-line muted">{c.reason}</span>
                 {line && <span className="proposal-line muted">{line}</span>}
               </label>
+              {badge && <span className="proposal-badge">{badge(c, i)}</span>}
               <details>
                 <summary>Details</summary>
                 <pre>{JSON.stringify(c, null, 2)}</pre>
@@ -190,6 +197,7 @@ export function ProposalCard({
         <button type="button" className="danger" disabled={busy} onClick={onReject}>
           Reject all
         </button>
+        {footerNote && <span className="muted proposal-footer-note">{footerNote}</span>}
         <a className="proposal-edit" href={`#/workbench/${projectId}/template`}>
           Edit by hand on the Template tab
         </a>

@@ -15,7 +15,7 @@ export function StaleBanner({
   keepBlockedReason,
 }: {
   children: ReactNode;
-  tone?: 'alert' | 'info' | 'skip';
+  tone?: 'alert' | 'info' | 'skip' | 'warn';
   onKeep?: () => void;
   keepLabel?: string;
   onPropose?: () => void;

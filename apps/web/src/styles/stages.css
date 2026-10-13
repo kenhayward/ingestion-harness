@@ -880,6 +880,18 @@ label.inline.list-select {
   border-color: var(--ih-skip-fg);
   background: var(--ih-skip-bg);
 }
+.stale-banner[data-tone='warn'] {
+  border-color: var(--ih-warn-fg);
+  background: var(--ih-warn-bg);
+}
+.proposal-badge {
+  align-self: start;
+  min-width: 0;
+}
+.proposal-footer-note {
+  font-size: var(--ih-text-sm);
+  overflow-wrap: anywhere;
+}
 .stale-banner-text {
   flex: 1 1 280px;
   margin: 0;

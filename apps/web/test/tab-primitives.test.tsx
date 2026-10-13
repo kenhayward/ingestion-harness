@@ -153,4 +153,10 @@ describe('StaleBanner', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Keep these anchors' }));
     expect(onKeep).toHaveBeenCalled();
   });
+  it('has a warn tone without the stale icon', () => {
+    render(<StaleBanner tone="warn">Steps has an open proposal.</StaleBanner>);
+    const note = screen.getByRole('note');
+    expect(note).toHaveAttribute('data-tone', 'warn');
+    expect(within(note).queryByRole('img', { name: 'Stale' })).toBeNull();
+  });
 });
