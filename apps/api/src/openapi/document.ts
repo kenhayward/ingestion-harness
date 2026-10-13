@@ -119,8 +119,8 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
 ];
 
 const DESCRIPTION = md`
-  The Ingestion Harness extracts the contents of PDFs whose structure is known in advance and
-  publishes them as validated CSV and JSON. This API is what the web app uses.
+  Content Transformation Studio (CT Studio) extracts the contents of PDFs whose structure is known
+  in advance and publishes them as validated CSV and JSON. This API is what the web app uses.
 
   ## Signing in
 
@@ -143,7 +143,7 @@ const DESCRIPTION = md`
 
 export const OPENAPI = {
   openapi: '3.1.0',
-  info: { title: 'Ingestion Harness API', version, description: DESCRIPTION },
+  info: { title: 'Content Transformation Studio API', version, description: DESCRIPTION },
   servers: [{ url: '/' }],
   components: {
     securitySchemes: {

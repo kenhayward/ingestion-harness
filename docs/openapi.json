@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Ingestion Harness API",
+    "title": "Content Transformation Studio API",
     "version": "0.1.0",
-    "description": "The Ingestion Harness extracts the contents of PDFs whose structure is known in advance and\npublishes them as validated CSV and JSON. This API is what the web app uses.\n\n## Signing in\n\nEvery `/api` route needs a session except `POST /api/auth/login`, `POST /api/auth/logout`\nand these docs. Sign in with an access token; the response sets the `ih_session` cookie, which\nthe browser sends with every request. Signed out, a guarded route answers `401`\n`{ \"error\": \"sign in required\" }`. \"Try it\" in these docs uses your session when you are\nsigned in to the app in the same browser.\n\n## Errors\n\nErrors are JSON: `{ \"error\": \"message\" }`, or `{ \"error\": [ ...Zod issues ] }` for some\nvalidation failures. IDs are UUIDs; a malformed ID is a `404`, the same as an unknown one.\n\n## Admin routes\n\nRoutes marked **Admin token required** (`x-admin: true`) answer `403`\n`{ \"error\": \"admins only\" }` to a session opened with a user token."
+    "description": "Content Transformation Studio (CT Studio) extracts the contents of PDFs whose structure is known\nin advance and publishes them as validated CSV and JSON. This API is what the web app uses.\n\n## Signing in\n\nEvery `/api` route needs a session except `POST /api/auth/login`, `POST /api/auth/logout`\nand these docs. Sign in with an access token; the response sets the `ih_session` cookie, which\nthe browser sends with every request. Signed out, a guarded route answers `401`\n`{ \"error\": \"sign in required\" }`. \"Try it\" in these docs uses your session when you are\nsigned in to the app in the same browser.\n\n## Errors\n\nErrors are JSON: `{ \"error\": \"message\" }`, or `{ \"error\": [ ...Zod issues ] }` for some\nvalidation failures. IDs are UUIDs; a malformed ID is a `404`, the same as an unknown one.\n\n## Admin routes\n\nRoutes marked **Admin token required** (`x-admin: true`) answer `403`\n`{ \"error\": \"admins only\" }` to a session opened with a user token."
   },
   "components": {
     "securitySchemes": {

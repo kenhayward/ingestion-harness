@@ -1,10 +1,12 @@
-# Ingestion Harness
+# Content Transformation Studio
 
 [![CI](https://github.com/kenhayward/ingestion-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kenhayward/ingestion-harness/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Ingest PDF documents with a known structure, extract their contents through a spec-driven LLM
-prompt harness, and land validated **CSV / JSON** in S3-compatible storage (SeaweedFS).
+Content Transformation Studio (CT Studio) ingests PDF documents with a known structure, extracts
+their contents through a spec-driven LLM prompt harness, and lands validated **CSV / JSON** in S3-compatible storage (SeaweedFS).
+
+The code, packages and images keep the project's original name, `ingestion-harness`; see [docs/brand/BRAND.md](docs/brand/BRAND.md).
 
 ```
  app (React/nginx) ──► api (Fastify) ──► Postgres (documents, jobs queue, models)
