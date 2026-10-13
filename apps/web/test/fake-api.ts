@@ -18,6 +18,7 @@ import type {
   RevisePreview,
   SampleView,
   SegmentationView,
+  TestRun,
 } from '@ih/shared';
 import { OVERVIEW_STAGES, OVERVIEW_TABS } from '@ih/shared';
 import {
@@ -172,6 +173,15 @@ export function feedbackItem(overrides: Partial<FeedbackItem> = {}): FeedbackIte
   };
 }
 
+/** A dev test run of `letter` as the Test runs tab lists it (no batch, no progress). */
+export function testRunView(overrides: Partial<TestRun> = {}): TestRun {
+  return {
+    ...job({ test: true, projectId: 'letter', specId: 'letter', filename: 's1.pdf' }),
+    progress: null,
+    ...overrides,
+  };
+}
+
 export function job(overrides: Partial<JobSummary> = {}): JobSummary {
   return {
     id: crypto.randomUUID(),
@@ -196,6 +206,9 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     reviewedAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+    batchId: null,
+    startedAt: null,
+    finishedAt: null,
     ...overrides,
   };
 }
@@ -447,6 +460,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     runDevTests: vi.fn(async () => ({ jobs: [] })),
     listTestRuns: vi.fn(async () => []),
+    getQueueSummary: vi.fn(async () => ({ ahead: 0, running: 0, etaSeconds: 0 })),
     startSegmentation: vi.fn(async () => {
       throw new Error('startSegmentation not stubbed');
     }),

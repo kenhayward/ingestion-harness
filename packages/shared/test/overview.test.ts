@@ -594,8 +594,11 @@ describe('overviewItems', () => {
     ).toMatchObject({
       stage: 'runs',
       state: 'running',
-      status: '2 running',
+      status: '2 test runs in progress · 1 awaiting review',
     });
+    expect(
+      status(ctx({ runs: { total: 3, unfinished: 1, awaitingReview: 0 } }), 'runs').status,
+    ).toBe('1 test run in progress');
     expect(
       status(ctx({ runs: { total: 6, unfinished: 0, awaitingReview: 1 } }), 'runs').status,
     ).toBe('1 awaiting review');

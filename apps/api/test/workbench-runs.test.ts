@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_BRIEF, preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
+import {
+  EMPTY_BRIEF,
+  preparedTextKey,
+  preparedTriageKey,
+  STEP_PROGRESS_EVENT,
+  type SampleView,
+} from '@ih/shared';
 import { WORKBENCH_PRIORITY } from '../src/repositories/types.js';
 import { letter, multipart, testApp } from './helpers.js';
 
@@ -137,6 +143,89 @@ describe('workbench dev test runs', () => {
     const listed = (await app.inject('/api/workbench/projects/letter/test-runs')).json();
     expect(listed.map((j: { id: string }) => j.id).sort()).toEqual(jobs.map((j) => j.id).sort());
   });
+
+  const runWith = (app: Awaited<ReturnType<typeof project>>['app'], payload: object) =>
+    app.inject({ method: 'POST', url: '/api/workbench/projects/letter/test-runs', payload });
+
+  it('runs only the chosen ready dev samples, as one batch (TR1, TR2)', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    const a = await add(1);
+    await add(2);
+    const c = await add(3);
+    const res = await runWith(app, { sampleIds: [a.id, c.id] });
+    expect(res.statusCode).toBe(201);
+    const jobs = res.json().jobs as { id: string; filename: string; batchId: string }[];
+    expect(jobs.map((j) => j.filename).sort()).toEqual(['s1.pdf', 's3.pdf']);
+    const [batch] = new Set(jobs.map((j) => j.batchId));
+    expect(batch).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(jobs.map((j) => j.batchId)).size).toBe(1);
+    for (const j of jobs) expect(repo.jobParams.get(j.id)).toMatchObject({ batchId: batch });
+
+    const again = (await runWith(app, {})).json().jobs as { batchId: string }[];
+    expect(again).toHaveLength(3); // no sampleIds: every ready dev sample
+    expect(new Set(again.map((j) => j.batchId)).size).toBe(1);
+    expect(again[0]!.batchId).not.toBe(batch);
+    const listed = (await app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+      batchId: string | null;
+    }[];
+    expect(new Set(listed.map((j) => j.batchId))).toEqual(new Set([batch, again[0]!.batchId]));
+  });
+
+  it('refuses holdout, unknown and unprepared samples before queuing anything', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    const dev = await add(1);
+    const holdout = await add(2, 'holdout');
+    const preparing = await add(3, 'dev', false);
+    const before = repo.jobs.size;
+
+    const held = await runWith(app, { sampleIds: [dev.id, holdout.id] });
+    expect(held.statusCode).toBe(400);
+    expect(held.json().error).toBe(
+      's2.pdf is a holdout sample: holdout samples are never test-run',
+    );
+    const unknown = await runWith(app, { sampleIds: ['00000000-0000-4000-8000-000000000009'] });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json().error).toBe(
+      'sample 00000000-0000-4000-8000-000000000009 is not a sample of this project',
+    );
+    const notReady = await runWith(app, { sampleIds: [preparing.id] });
+    expect(notReady.statusCode).toBe(409);
+    expect(notReady.json().error).toBe('s3.pdf is not prepared yet');
+    expect(repo.jobs.size).toBe(before);
+  });
+
+  it.each([
+    ['an empty selection', { sampleIds: [] }],
+    [
+      'a duplicate',
+      {
+        sampleIds: ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001'],
+      },
+    ],
+    ['a non-uuid', { sampleIds: ['s1.pdf'] }],
+  ])('rejects %s', async (_name, payload) => {
+    const { app, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    await add(1);
+    expect((await runWith(app, payload)).statusCode).toBe(400);
+  });
+
+  it('keeps a retried run in its batch', async () => {
+    const { app, repo, add, templates } = await project();
+    await templates.updateDraft('letter', 1, letter(1));
+    await add(1);
+    const [job] = (await runWith(app, {})).json().jobs as { id: string; batchId: string }[];
+    repo.jobs.set(job!.id, { ...repo.jobs.get(job!.id)!, status: 'failed' });
+    const retried = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job!.id}/retry`,
+      payload: {},
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().batchId).toBe(job!.batchId);
+  });
 });
 
 describe('dev test run housekeeping', () => {
@@ -178,5 +267,87 @@ describe('dev test run housekeeping', () => {
     expect(res.json().deleted).toBe(1);
     expect(c.repo.jobs.has(c.runId)).toBe(false);
     await expectSampleIntact(c);
+  });
+});
+
+describe('test runs list: holdout stays sealed', () => {
+  it('leaves out every job whose sample is a holdout sample', async () => {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    await ctx.add(1);
+    const holdout = await ctx.add(2, 'holdout');
+    await ctx.run();
+    // A holdout reference run and a holdout evaluation job, as the routes create them.
+    for (const params of [{ forceReview: true }, { referenceId: 'r' }]) {
+      await ctx.repo.createWorkbenchJob(
+        {
+          id: crypto.randomUUID(),
+          filename: holdout.filename,
+          sha256: holdout.sha256,
+          sizeBytes: holdout.sizeBytes,
+          specId: 'letter',
+          specVersion: 1,
+          bucket: 'inbox',
+          objectKey: `${holdout.sha256}.pdf`,
+        },
+        { projectId: 'letter', task: 'process', params },
+      );
+    }
+    const listed = (await ctx.app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+      filename: string;
+    }[];
+    expect(listed.map((j) => j.filename)).toEqual(['s1.pdf']);
+  });
+});
+
+describe('test run progress (TR3)', () => {
+  async function runningRun() {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    await ctx.add(1);
+    const [created] = (await ctx.run()).json().jobs as { id: string }[];
+    const id = created!.id;
+    const startedAt = ctx.repo.now();
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, status: 'running', startedAt });
+    const listed = async () =>
+      (
+        (await ctx.app.inject('/api/workbench/projects/letter/test-runs')).json() as {
+          id: string;
+          progress: unknown;
+        }[]
+      ).find((j) => j.id === id)!;
+    return { ...ctx, id, listed };
+  }
+  const event = { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null };
+
+  it("shows a running run's latest progress of this attempt", async () => {
+    const r = await runningRun();
+    expect((await r.listed()).progress).toBeNull(); // nothing reported yet
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, { ...event, attempt: 1 });
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    expect((await r.listed()).progress).toEqual(event);
+  });
+
+  it("ignores an earlier attempt's progress, malformed data and finished runs", async () => {
+    const r = await runningRun();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    // The run is claimed again (retry or reaped lock): the old event predates this attempt.
+    r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, startedAt: r.repo.now() });
+    expect((await r.listed()).progress).toBeNull();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, { step: 'totals' });
+    expect((await r.listed()).progress).toBeNull();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, status: 'succeeded' });
+    expect((await r.listed()).progress).toBeNull();
+  });
+
+  it('shows no step progress for a running step re-run or publish', async () => {
+    const r = await runningRun();
+    r.repo.addEvent(r.id, 'info', STEP_PROGRESS_EVENT, event);
+    expect((await r.listed()).progress).toEqual(event);
+    for (const task of ['rerun', 'publish'] as const) {
+      r.repo.jobs.set(r.id, { ...r.repo.jobs.get(r.id)!, task });
+      expect((await r.listed()).progress).toBeNull();
+    }
   });
 });

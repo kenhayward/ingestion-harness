@@ -706,6 +706,46 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf(plain.id)).toEqual({ outputs: null }); // untouched without the option
   });
 
+  it('times process runs with the trigger and reads the batch from params (TR2)', async () => {
+    const projectId = await newProject();
+    const batchId = randomUUID();
+    const job = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      params: { dataPolicy: 'local', batchId },
+    });
+    expect(job).toMatchObject({ batchId, startedAt: null, finishedAt: null });
+    const set = (sql: string) => pool.query(`UPDATE jobs SET ${sql} WHERE id = $1`, [job.id]);
+    const read = async () => (await repo.getJob(job.id))!;
+
+    await set(`status = 'running'`); // the worker's claim
+    const running = await read();
+    expect(running.startedAt).not.toBeNull();
+    expect(running.finishedAt).toBeNull();
+
+    await set(`status = 'awaiting_review'`);
+    const reviewed = await read();
+    expect(reviewed.startedAt).toBe(running.startedAt);
+    expect(reviewed.finishedAt).not.toBeNull();
+    expect(Date.parse(reviewed.finishedAt!)).toBeGreaterThanOrEqual(Date.parse(running.startedAt!));
+
+    // Approve (publish task on the same row), the publish run: the extraction's times stay.
+    await set(`status = 'queued', task = 'publish'`);
+    await set(`status = 'running'`);
+    await set(`status = 'succeeded'`);
+    const published = await read();
+    expect(published.startedAt).toBe(reviewed.startedAt);
+    expect(published.finishedAt).toBe(reviewed.finishedAt);
+
+    // A retried extraction is timed again: the claim clears the old finish.
+    await set(`status = 'queued', task = 'process'`);
+    await set(`status = 'running'`);
+    expect((await read()).finishedAt).toBeNull();
+    // A job without a batch reads null.
+    const plain = await repo.createDocumentAndJob(doc(projectId), null);
+    expect(plain.batchId).toBeNull();
+  });
+
   it('serializes concurrent saves of the same PDF at one version', async () => {
     const projectId = await newProject();
     const source = doc(projectId);
@@ -1440,5 +1480,40 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       expect(await workbench.listPins(owner)).toEqual([keep]);
       expect((await workbench.projectFingerprints()).some((f) => f.id === projectId)).toBe(false);
     });
+  });
+
+  it('counts the queue and takes the median of the newest timed runs (TR4)', async () => {
+    const projectId = await newProject();
+    const before = await repo.queueStats();
+    const queued = await repo.createDocumentAndJob(doc(projectId), null);
+    const running = await repo.createDocumentAndJob(doc(projectId), null);
+    await pool.query(`UPDATE jobs SET status = 'running' WHERE id = $1`, [running.id]);
+    // 50 runs finished "later" than anything else, so they are the newest 50: median 20 s.
+    const timed = doc(projectId);
+    await repo.createDocumentAndJob(timed, null);
+    await pool.query(
+      `INSERT INTO jobs (document_id, status, started_at, finished_at)
+       SELECT $1, 'succeeded', now() + interval '1 hour', now() + interval '1 hour 20 seconds'
+         FROM generate_series(1, 50)`,
+      [timed.id],
+    );
+    // Quick failures and reviews, newer still, are not timed: they would pull the median to 1 s.
+    await pool.query(
+      `INSERT INTO jobs (document_id, status, started_at, finished_at)
+       SELECT $1, s, now() + interval '2 hours', now() + interval '2 hours 1 second'
+         FROM unnest(ARRAY['needs_review', 'failed', 'cancelled']::job_status[]) s,
+              generate_series(1, 20)`,
+      [timed.id],
+    );
+    try {
+      const after = await repo.queueStats();
+      expect(after.queued).toBe(before.queued + 2); // `queued` + the job created with `timed`
+      expect(after.running).toBe(before.running + 1);
+      expect(after.medianSeconds).toBeCloseTo(20, 3);
+    } finally {
+      await pool.query(`DELETE FROM documents WHERE id = ANY($1::uuid[])`, [
+        [queued.documentId, running.documentId, timed.id],
+      ]);
+    }
   });
 });

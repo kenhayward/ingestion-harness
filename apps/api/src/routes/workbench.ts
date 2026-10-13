@@ -107,8 +107,11 @@ import {
   MAX_ROW_DIFFS,
   RevisePreviewSchema,
   type RevisePreview,
+  STEP_PROGRESS_EVENT,
+  TestRunSchema,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
+import { stepProgress } from '../workbench/test-runs.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
@@ -762,7 +765,18 @@ const EvaluateBody = z
   })
   .strict();
 const ReferencesQuery = z.object({ set: z.enum(EVALUATION_SETS).optional() });
-const TestRunsBody = z.object({ model: z.string().min(1).max(80).optional() }).strict();
+const TestRunsBody = z
+  .object({
+    model: z.string().min(1).max(80).optional(),
+    sampleIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(200)
+      .refine((ids) => new Set(ids).size === ids.length, 'sample ids must be unique')
+      .optional()
+      .describe('Only these samples (each a ready dev sample). Default: every ready dev sample.'),
+  })
+  .strict();
 const CompareBody = z
   .object({
     models: z.array(z.string().min(1).max(80)).max(MAX_COMPARED_MODELS).optional(),
@@ -1796,8 +1810,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'startTestRuns',
         summary: 'Test-run the draft on the dev samples',
         description: md`
-          Queues a test job of the open draft for every ready dev sample (holdout samples are
-          never used). Jobs carry the project's data policy and a snapshot of the draft's
+          Queues a test job of the open draft for every ready dev sample, or for the ready dev
+          samples in \`sampleIds\` (holdout samples are never used). The jobs of one call share
+          a \`batchId\` (the Test runs tab's batches). Jobs carry the project's data policy and a snapshot of the draft's
           outputs. Test runs reuse a step's stored output when its full input is unchanged
           (the step cache), so only changed steps call a model. They are never delivered.
           \`model\` overrides every step with a model choice (its id; \`default\` is the
@@ -1809,13 +1824,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
           400: res(
-            'Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`).',
+            'Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), ' +
+              'a sample id that is not a sample of this project, or a holdout sample.',
             z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
           ),
           404: PROJECT_NOT_FOUND,
           409: error(
-            '`no open draft to test; start the next version first`, or `no prepared dev ' +
-              'samples to run`.',
+            '`no open draft to test; start the next version first`, `no prepared dev ' +
+              'samples to run`, or `<file> is not prepared yet`.',
           ),
         },
       },
@@ -1840,16 +1856,39 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const { definition } = (await templates.get(projectId, draft))!;
       const issues = validateTemplate(definition);
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-      const ready = (await sampleViews(app, projectId)).filter(
-        (s) => s.view.role === 'dev' && s.view.state === 'ready',
-      );
-      if (!ready.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+      const views = await sampleViews(app, projectId);
+      let chosen = views.filter((s) => s.view.role === 'dev' && s.view.state === 'ready');
+      if (body.data.sampleIds) {
+        const byId = new Map(views.map((s) => [s.record.id, s]));
+        for (const id of body.data.sampleIds) {
+          const sample = byId.get(id);
+          if (!sample) {
+            return reply.code(400).send({ error: `sample ${id} is not a sample of this project` });
+          }
+          if (sample.view.role !== 'dev') {
+            return reply.code(400).send({
+              error: `${sample.record.filename} is a holdout sample: holdout samples are never test-run`,
+            });
+          }
+          if (sample.view.state !== 'ready') {
+            return reply.code(409).send({ error: `${sample.record.filename} is not prepared yet` });
+          }
+        }
+        const wanted = new Set(body.data.sampleIds);
+        chosen = chosen.filter((s) => wanted.has(s.record.id));
+      }
+      if (!chosen.length) return reply.code(409).send({ error: 'no prepared dev samples to run' });
+      const batchId = randomUUID();
       const jobs = await Promise.all(
-        ready.map(({ record }) =>
+        chosen.map(({ record }) =>
           app.deps.repo.createWorkbenchJob(sampleDocument(record, projectId, draft), {
             projectId,
             task: 'process',
-            params: { dataPolicy: project.dataPolicy, ...draftOutputsSnapshot(definition) },
+            params: {
+              dataPolicy: project.dataPolicy,
+              batchId,
+              ...draftOutputsSnapshot(definition),
+            },
             modelOverride: model,
             createdBy: req.auth?.label ?? null,
           }),
@@ -1977,20 +2016,34 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listTestRuns',
         summary: "List a project's jobs",
         description: md`
-          The project's jobs except sample preparation: test runs, reference runs and
-          evaluation jobs, newest first. Open one with \`GET /api/jobs/{id}/review\`.
+          The project's jobs except sample preparation and any run of a holdout sample (holdout
+          stays sealed here): test runs, dev reference runs and evaluation jobs, newest first. Test runs started together share a \`batchId\`; a
+          running job carries its latest \`progress\` in this attempt (step, attempt, chunk;
+          null before the first model call). Open one with \`GET /api/jobs/{id}/review\`.
         `,
         params: ProjectIdParams,
-        response: { 200: res('The jobs.', z.array(JobSummarySchema)), 404: PROJECT_NOT_FOUND },
+        response: { 200: res('The jobs.', z.array(TestRunSchema)), 404: PROJECT_NOT_FOUND },
       },
     },
     async (req, reply) => {
       if (!(await workbench.getProject(req.params.id))) {
         return reply.code(404).send({ error: 'project not found' });
       }
-      return (await app.deps.repo.listProjectJobs(req.params.id)).filter(
-        (j) => j.task !== 'prepare',
+      // Holdout stays sealed on this tab: no run of a holdout sample is listed.
+      const holdout = new Set(
+        (await app.deps.workbench.listSamples(req.params.id))
+          .filter((s) => s.role === 'holdout')
+          .map((s) => s.sha256),
       );
+      const shaByJob = holdout.size ? await jobShas(app, req.params.id) : new Map<string, string>();
+      const jobs = (await app.deps.repo.listProjectJobs(req.params.id)).filter(
+        (j) => j.task !== 'prepare' && !holdout.has(shaByJob.get(j.id) ?? ''),
+      );
+      const running = jobs.filter((j) => j.status === 'running').map((j) => j.id);
+      const events = running.length
+        ? await app.deps.repo.latestEvents(running, [STEP_PROGRESS_EVENT])
+        : [];
+      return jobs.map((j) => ({ ...j, progress: stepProgress(j, events) }));
     },
   );
 

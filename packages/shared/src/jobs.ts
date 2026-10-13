@@ -77,8 +77,56 @@ export const JobSummarySchema = z.object({
   reviewedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /**
+   * Workbench test runs started together (one `POST …/test-runs`) share this id
+   * (`params.batchId`; handoff TR2). Null for every other job and for runs from before batches.
+   */
+  batchId: z.string().nullable(),
+  /**
+   * The latest extraction attempt's start and end (migration 0028: a database trigger on
+   * `process` runs; approving and step re-runs keep them). Null before the first claim, for
+   * other tasks, and for jobs from before the migration; `finishedAt` is null while running.
+   */
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
+
+/** Job event a Workbench run's worker writes per model call (worker: template_pipeline.STEP_PROGRESS). */
+export const STEP_PROGRESS_EVENT = 'step progress';
+
+/**
+ * Where a running Workbench extraction is (handoff TR3): extract step `index` of `of` (check
+ * steps are not counted), its id, the attempt of the current call and, for a chunked step, the
+ * chunk. Shared fixture: packages/shared/test/fixtures/step-progress.json.
+ */
+export const StepProgressSchema = z.object({
+  step: z.string(),
+  index: z.number().int().positive(),
+  of: z.number().int().positive(),
+  attempt: z.number().int().positive(),
+  chunk: z.object({ n: z.number().int().positive(), of: z.number().int().positive() }).nullable(),
+});
+export type StepProgress = z.infer<typeof StepProgressSchema>;
+
+/** A project's job as the Test runs tab lists it: the summary plus a running run's progress. */
+export const TestRunSchema = JobSummarySchema.extend({
+  /** While running: the latest progress of this attempt; null otherwise or before any. */
+  progress: StepProgressSchema.nullable(),
+});
+export type TestRun = z.infer<typeof TestRunSchema>;
+
+/**
+ * The queue a new Workbench run waits behind (handoff TR4): queued document jobs (production
+ * and earlier Workbench runs), the jobs running now, and a rough wait (null without recent timed
+ * runs; 0 when nothing is queued).
+ */
+export const QueueSummarySchema = z.object({
+  ahead: z.number().int().nonnegative(),
+  running: z.number().int().nonnegative(),
+  etaSeconds: z.number().int().nonnegative().nullable(),
+});
+export type QueueSummary = z.infer<typeof QueueSummarySchema>;
 
 export const JobOutputSchema = z.object({
   outputId: z.string(),

@@ -14,6 +14,8 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,6 +47,38 @@ from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
 
+log = logging.getLogger("ingest_worker")
+
+#: Job event the API reads for the Test runs tab (TS: STEP_PROGRESS_EVENT, StepProgressSchema).
+STEP_PROGRESS = "step progress"
+
+Progress = Callable[[int, dict[str, Any] | None], None]
+
+
+def step_reporter(
+    job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of: int
+) -> Progress | None:
+    """Workbench jobs only: a `step progress` event before each model call of a step (its place
+    among the extract steps, the attempt, the chunk). Advisory: a failed write (job deleted
+    mid-run, database blip) never fails the step. Production jobs write none."""
+    if job.project_id is None:
+        return None
+
+    def report(attempt: int, chunk: dict[str, Any] | None) -> None:
+        data = {
+            "step": step_id,
+            "index": index,
+            "of": of,
+            "attempt": attempt,
+            "chunk": None if chunk is None else {"n": chunk["index"], "of": chunk["count"]},
+        }
+        try:
+            queue.event(job.id, "info", STEP_PROGRESS, data)
+        except Exception:
+            log.exception("could not record step progress for job %s", job.id)
+
+    return report
+
 
 def workbench_step_cache(job: ClaimedJob, deps: PipelineDeps) -> StepCache | None:
     """Only workbench test runs use the step cache: never production, regression or re-runs.
@@ -62,6 +96,7 @@ def process_template_job(
 ) -> ProcessResult:
     template = loaded.template
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
+    extract_ids = [s.id for s in template.extract_steps()]
     resolved = resolve_models(job, deps, list(compiled.values()))
     doc = prepare_document(job, deps, queue, template.document)
     cache = workbench_step_cache(job, deps)
@@ -95,6 +130,9 @@ def process_template_job(
             tables,
             trigger="process",
             cache=cache,
+            progress=step_reporter(
+                job, queue, step.id, extract_ids.index(step.id) + 1, len(extract_ids)
+            ),
         )
         models_used[step.id] = result.model_ref
         step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
@@ -210,6 +248,7 @@ def _run_step(
     trigger: str,
     extra_instructions: str | None = None,
     cache: StepCache | None = None,
+    progress: Progress | None = None,
 ) -> ExtractionResult:
     """Run one extract step with context from earlier steps; record it in step_runs."""
     provider, model_id = model
@@ -232,7 +271,16 @@ def _run_step(
     }
     try:
         result = run_step_extraction(
-            job, deps, loaded.directory, ex, provider, model_id, doc.sections, images, cache=cache
+            job,
+            deps,
+            loaded.directory,
+            ex,
+            provider,
+            model_id,
+            doc.sections,
+            images,
+            cache=cache,
+            progress=progress,
         )
     except Exception as exc:
         attempts = getattr(exc.__cause__, "attempts", [])

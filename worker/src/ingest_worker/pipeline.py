@@ -420,6 +420,17 @@ def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Call
     return lambda page_number: ocr_cache_key(digest, fingerprint, page_number)
 
 
+def _attempt_reporter(
+    progress: Callable[[int, dict[str, int] | None], None] | None,
+    chunk: dict[str, int] | None,
+) -> Callable[[int], None] | None:
+    """Bind a chunk to the step's progress callback (None: no reporting)."""
+    if progress is None:
+        return None
+    report = progress
+    return lambda attempt: report(attempt, chunk)
+
+
 def run_step_extraction(
     job: ClaimedJob,
     deps: PipelineDeps,
@@ -431,9 +442,11 @@ def run_step_extraction(
     images: tuple[bytes, ...],
     *,
     cache: StepCache | None = None,
+    progress: Callable[[int, dict[str, int] | None], None] | None = None,
 ) -> ExtractionResult:
     """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
     (keeps each call's output well inside the model's output token limit).
+    `progress(attempt, chunk)` is called before each model call (never for a cache hit).
 
     With a `cache`, an unchanged step input (every rendered prompt, schema, images, step id,
     model and provider fingerprint) returns the stored output without calling the model, if it
@@ -497,6 +510,7 @@ def run_step_extraction(
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
+                on_attempt=_attempt_reporter(progress, chunk),
             )
         except ExtractionFailedError as exc:
             _audit(deps, job.id, audit_id, exc.attempts)

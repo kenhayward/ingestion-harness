@@ -1,0 +1,8 @@
+{
+  "templateRun": [
+    { "step": "header", "index": 1, "of": 3, "attempt": 1, "chunk": null },
+    { "step": "date", "index": 2, "of": 3, "attempt": 1, "chunk": null },
+    { "step": "data", "index": 3, "of": 3, "attempt": 1, "chunk": { "n": 1, "of": 2 } },
+    { "step": "data", "index": 3, "of": 3, "attempt": 1, "chunk": { "n": 2, "of": 2 } }
+  ]
+}

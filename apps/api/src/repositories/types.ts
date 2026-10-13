@@ -37,6 +37,14 @@ export interface SegmentJob {
 /** A document-less project job (segment previews, drafting runs, bundle exports). */
 export type ProjectJob = SegmentJob;
 
+/** What the queue estimate reads (GET /api/queue/summary). Document jobs only. */
+export interface QueueStats {
+  queued: number;
+  running: number;
+  /** Median seconds of the 50 newest timed runs finished in the last 24 h; null if none. */
+  medianSeconds: number | null;
+}
+
 /** A job_events row as the API reads it. */
 export interface JobEventRecord {
   jobId: string;
@@ -202,6 +210,8 @@ export interface IngestionRepo {
   getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The newest event with each of `messages` for each job (job_events); none: left out. */
   latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]>;
+  /** Queued and running document jobs, and the median duration of recent timed runs. */
+  queueStats(): Promise<QueueStats>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
   getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */

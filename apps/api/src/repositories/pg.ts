@@ -19,6 +19,7 @@ import {
   type DeleteJobResult,
   type IngestionRepo,
   type JobEventRecord,
+  type QueueStats,
   type JobReview,
   type ListJobsQuery,
   type ListPublishedQuery,
@@ -40,6 +41,7 @@ const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.status,
          j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.created_by, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
+         j.params->>'batchId' AS batch_id, j.started_at, j.finished_at,
          array(SELECT model FROM step_runs
                 WHERE job_id = j.id AND model IS NOT NULL
                 GROUP BY model ORDER BY min(started_at)) AS models_used
@@ -86,6 +88,9 @@ interface JobRow {
   reviewed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  batch_id: string | null;
+  started_at: Date | null;
+  finished_at: Date | null;
 }
 
 function toSummary(r: JobRow): JobSummary {
@@ -112,6 +117,9 @@ function toSummary(r: JobRow): JobSummary {
     reviewedAt: r.reviewed_at ? r.reviewed_at.toISOString() : null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
+    batchId: r.batch_id,
+    startedAt: r.started_at ? r.started_at.toISOString() : null,
+    finishedAt: r.finished_at ? r.finished_at.toISOString() : null,
   };
 }
 
@@ -459,6 +467,36 @@ export class PgRepo implements IngestionRepo {
       data: r.data,
       at: r.at.toISOString(),
     }));
+  }
+
+  async queueStats(): Promise<QueueStats> {
+    // Document jobs only (any query bypassing JOB_SELECT must exclude document-less rows).
+    // A requeued job keeps its old times until reclaimed, so the median reads finished runs only,
+    // and only those that did the whole extraction (a quick failure or review would drag it down).
+    const { rows } = await this.pool.query<{
+      queued: string;
+      running: string;
+      median: number | null;
+    }>(
+      `SELECT count(*) FILTER (WHERE status = 'queued') AS queued,
+              count(*) FILTER (WHERE status = 'running') AS running,
+              (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY secs)
+                 FROM (SELECT extract(epoch FROM finished_at - started_at)::float8 AS secs
+                         FROM jobs
+                        WHERE document_id IS NOT NULL
+                          AND status IN ('succeeded', 'awaiting_review')
+                          AND finished_at >= started_at
+                          AND finished_at > now() - interval '24 hours'
+                        ORDER BY finished_at DESC LIMIT 50) t) AS median
+         FROM jobs
+        WHERE document_id IS NOT NULL AND status IN ('queued', 'running')`,
+    );
+    const row = rows[0]!;
+    return {
+      queued: Number(row.queued),
+      running: Number(row.running),
+      medianSeconds: row.median === null ? null : Number(row.median),
+    };
   }
 
   async getJob(id: string): Promise<JobDetail | null> {

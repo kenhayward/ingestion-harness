@@ -2248,6 +2248,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -2272,7 +2290,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The queued job."
@@ -2652,6 +2673,24 @@
                       },
                       "updatedAt": {
                         "type": "string"
+                      },
+                      "batchId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finishedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -2676,7 +2715,10 @@
                       "reviewNote",
                       "reviewedAt",
                       "createdAt",
-                      "updatedAt"
+                      "updatedAt",
+                      "batchId",
+                      "startedAt",
+                      "finishedAt"
                     ],
                     "additionalProperties": true
                   },
@@ -2713,6 +2755,78 @@
                   ],
                   "additionalProperties": true,
                   "description": "Zod issues for an invalid `limit` or `status`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/queue/summary": {
+      "get": {
+        "operationId": "getQueueSummary",
+        "summary": "How long a new run would wait",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "The queue a new Workbench test run waits behind: `ahead` counts the queued jobs\nwith a document (production first, then earlier Workbench runs), `running` the jobs\nrunning now, and `etaSeconds` is a rough wait from the median duration of the\nnewest timed runs of the last 24 hours, shared among the busy workers (null without\nsuch runs; 0 when nothing is queued). Counts only: no job or project is named.",
+        "responses": {
+          "200": {
+            "description": "The queue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ahead": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "running": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "etaSeconds": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ahead",
+                    "running",
+                    "etaSeconds"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queue."
                 }
               }
             }
@@ -2894,6 +3008,24 @@
                     "updatedAt": {
                       "type": "string"
                     },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "outputs": {
                       "type": "array",
                       "items": {
@@ -2968,6 +3100,9 @@
                     "reviewedAt",
                     "createdAt",
                     "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt",
                     "outputs"
                   ],
                   "additionalProperties": true,
@@ -3320,6 +3455,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -3344,7 +3497,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The queued job."
@@ -3624,6 +3780,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -3648,7 +3822,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The cancelled job."
@@ -4693,6 +4870,24 @@
                         "updatedAt": {
                           "type": "string"
                         },
+                        "batchId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "outputs": {
                           "type": "array",
                           "items": {
@@ -4767,6 +4962,9 @@
                         "reviewedAt",
                         "createdAt",
                         "updatedAt",
+                        "batchId",
+                        "startedAt",
+                        "finishedAt",
                         "outputs"
                       ],
                       "additionalProperties": true
@@ -5808,6 +6006,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -5832,7 +6048,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The job, queued to publish."
@@ -6135,6 +6354,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6159,7 +6396,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The rejected job."
@@ -6651,6 +6891,24 @@
                     },
                     "updatedAt": {
                       "type": "string"
+                    },
+                    "batchId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -6675,7 +6933,10 @@
                     "reviewNote",
                     "reviewedAt",
                     "createdAt",
-                    "updatedAt"
+                    "updatedAt",
+                    "batchId",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": true,
                   "description": "The job, queued to re-run the step."
@@ -9230,6 +9491,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -9254,7 +9533,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -10393,6 +10675,24 @@
                         },
                         "updatedAt": {
                           "type": "string"
+                        },
+                        "batchId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -10417,7 +10717,10 @@
                         "reviewNote",
                         "reviewedAt",
                         "createdAt",
-                        "updatedAt"
+                        "updatedAt",
+                        "batchId",
+                        "startedAt",
+                        "finishedAt"
                       ],
                       "additionalProperties": true
                     },
@@ -15262,7 +15565,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "Queues a test job of the open draft for every ready dev sample (holdout samples are\nnever used). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
+        "description": "Queues a test job of the open draft for every ready dev sample, or for the ready dev\nsamples in `sampleIds` (holdout samples are never used). The jobs of one call share\na `batchId` (the Test runs tab's batches). Jobs carry the project's data policy and a snapshot of the draft's\noutputs. Test runs reuse a step's stored output when its full input is unchanged\n(the step cache), so only changed steps call a model. They are never delivered.\n`model` overrides every step with a model choice (its id; `default` is the\ndefault choice); without it the template's own models run. An unknown choice, or an\nexternal one for a local-only project, is a 400.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15274,6 +15577,16 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 80
+                  },
+                  "sampleIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "description": "Only these samples (each a ready dev sample). Default: every ready dev sample."
                   }
                 },
                 "additionalProperties": false
@@ -15428,6 +15741,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -15452,7 +15783,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -15468,7 +15802,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`).",
+            "description": "Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), a sample id that is not a sample of this project, or a holdout sample.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15481,7 +15815,7 @@
                     }
                   },
                   "additionalProperties": true,
-                  "description": "Zod issues, a model that cannot run here, or `the draft is not valid` (with `issues`)."
+                  "description": "Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), a sample id that is not a sample of this project, or a holdout sample."
                 }
               }
             }
@@ -15541,7 +15875,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to test; start the next version first`, or `no prepared dev samples to run`.",
+            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15567,7 +15901,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to test; start the next version first`, or `no prepared dev samples to run`."
+                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`."
                 }
               }
             }
@@ -15580,7 +15914,7 @@
         "tags": [
           "Test runs"
         ],
-        "description": "The project's jobs except sample preparation: test runs, reference runs and\nevaluation jobs, newest first. Open one with `GET /api/jobs/{id}/review`.",
+        "description": "The project's jobs except sample preparation and any run of a holdout sample (holdout\nstays sealed here): test runs, dev reference runs and evaluation jobs, newest first. Test runs started together share a `batchId`; a\nrunning job carries its latest `progress` in this attempt (step, attempt, chunk;\nnull before the first model call). Open one with `GET /api/jobs/{id}/review`.",
         "parameters": [
           {
             "schema": {
@@ -15725,6 +16059,84 @@
                       },
                       "updatedAt": {
                         "type": "string"
+                      },
+                      "batchId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finishedAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "progress": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "step": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "of": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "attempt": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "chunk": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "n": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "of": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "n",
+                                      "of"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "step",
+                              "index",
+                              "of",
+                              "attempt",
+                              "chunk"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -15749,7 +16161,11 @@
                       "reviewNote",
                       "reviewedAt",
                       "createdAt",
-                      "updatedAt"
+                      "updatedAt",
+                      "batchId",
+                      "startedAt",
+                      "finishedAt",
+                      "progress"
                     ],
                     "additionalProperties": true
                   },
@@ -17826,6 +18242,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -17850,7 +18284,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }
@@ -19912,6 +20349,24 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -19936,7 +20391,10 @@
                           "reviewNote",
                           "reviewedAt",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": true
                       }

@@ -46,6 +46,8 @@ import type {
   SpecSummary,
   StageView,
   StepRun,
+  QueueSummary,
+  TestRun,
   Template,
   SettingsBody,
 } from '@ih/shared';
@@ -429,10 +431,18 @@ export interface Api {
   saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
   listBriefVersions(projectId: string): Promise<BriefVersionView[]>;
   getBriefVersion(projectId: string, version: number): Promise<Brief>;
-  /** Test-run the open draft on every prepared dev sample. */
-  /** `model`: a model choice's id for every step; null or absent: the template's models. */
-  runDevTests(projectId: string, model?: string | null): Promise<{ jobs: JobSummary[] }>;
-  listTestRuns(projectId: string): Promise<JobSummary[]>;
+  /**
+   * Test-run the open draft on the ready dev samples (handoff TR1): `sampleIds` picks some (all
+   * when absent); `model` is a model choice's id for every step (null or absent: the template's).
+   */
+  runDevTests(
+    projectId: string,
+    opts?: { model?: string | null; sampleIds?: string[] },
+  ): Promise<{ jobs: JobSummary[] }>;
+  /** The project's jobs except preparation, with batches and live step progress (TR2, TR3). */
+  listTestRuns(projectId: string): Promise<TestRun[]>;
+  /** The queue a new run waits behind, with a rough wait (TR4). */
+  getQueueSummary(): Promise<QueueSummary>;
   /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
   startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
   getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
@@ -796,13 +806,14 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/workbench/projects/${id}/briefs`).then(json<BriefVersionView[]>),
     getBriefVersion: (id, version) =>
       apiFetch(`${base}/workbench/projects/${id}/briefs/${version}`).then(json<Brief>),
-    runDevTests: (id, model) =>
-      post<{ jobs: JobSummary[] }>(
-        `${base}/workbench/projects/${id}/test-runs`,
-        model ? { model } : {},
-      ),
+    runDevTests: (id, opts) =>
+      post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {
+        ...(opts?.model ? { model: opts.model } : {}),
+        ...(opts?.sampleIds ? { sampleIds: opts.sampleIds } : {}),
+      }),
     listTestRuns: (id) =>
-      apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<JobSummary[]>),
+      apiFetch(`${base}/workbench/projects/${id}/test-runs`).then(json<TestRun[]>),
+    getQueueSummary: () => apiFetch(`${base}/queue/summary`).then(json<QueueSummary>),
     startSegmentation: (id, document) =>
       post<SegmentationView>(
         `${base}/workbench/projects/${id}/segmentations`,

@@ -5,12 +5,14 @@ import {
   JobSummarySchema,
   modelRefProblem,
   pagePreviewKey,
+  QueueSummarySchema,
   sourceContentType,
   type JobSummary,
 } from '@ih/shared';
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
+import { queueSummary } from '../jobs/queue-summary.js';
 import {
   draftOutputsSnapshot,
   resolveDefinition,
@@ -104,6 +106,26 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       if (!req.auth) return [];
       return app.deps.repo.listJobs({ ...rest, createdBy: req.auth.label });
     },
+  );
+
+  app.get(
+    '/queue/summary',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getQueueSummary',
+        summary: 'How long a new run would wait',
+        description: md`
+          The queue a new Workbench test run waits behind: \`ahead\` counts the queued jobs
+          with a document (production first, then earlier Workbench runs), \`running\` the jobs
+          running now, and \`etaSeconds\` is a rough wait from the median duration of the
+          newest timed runs of the last 24 hours, shared among the busy workers (null without
+          such runs; 0 when nothing is queued). Counts only: no job or project is named.
+        `,
+        response: { 200: res('The queue.', QueueSummarySchema) },
+      },
+    },
+    async () => queueSummary(await app.deps.repo.queueStats()),
   );
 
   app.get<{ Params: { id: string } }>(
