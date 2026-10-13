@@ -19,7 +19,8 @@ export function Meter({
   tone?: StageTone;
 }) {
   const at = (v: number) => {
-    const share = Math.min(1, Math.max(0, (v - min) / (max - min)));
+    const raw = (v - min) / (max - min);
+    const share = max > min && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;
     return `${Math.round(share * 10000) / 100}%`;
   };
   const text = `${label}: ${value === null ? 'no score yet' : percent(value)}${

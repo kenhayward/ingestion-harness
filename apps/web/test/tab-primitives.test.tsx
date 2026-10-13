@@ -71,6 +71,18 @@ describe('Meter', () => {
   });
 });
 
+describe('Meter degenerate scales', () => {
+  it.each([
+    ['max equals min', { value: 0.5, min: 0.5, max: 0.5 }],
+    ['max below min', { value: 0.5, min: 1, max: 0 }],
+    ['value is NaN', { value: Number.NaN, min: 0, max: 1 }],
+    ['value is Infinity', { value: Number.POSITIVE_INFINITY, min: 0, max: 1 }],
+  ])('draws a 0%% fill when %s', (_name, props) => {
+    const { container } = render(<Meter label="Dev" {...props} />);
+    expect((container.querySelector('.meter-fill') as HTMLElement).style.width).toBe('0%');
+  });
+});
+
 describe('StaleBanner', () => {
   it('names what changed, with Keep and Propose again', async () => {
     const onKeep = vi.fn();
