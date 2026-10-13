@@ -29,9 +29,8 @@ import {
   referenceRows,
   sampleViews,
   statusOf,
+  type SampleViews,
 } from './workbench.js';
-
-type Samples = Awaited<ReturnType<typeof sampleViews>>;
 
 /** A proposal's stored result: its model and change body, or null when missing or unreadable. */
 async function changeResult(
@@ -58,7 +57,7 @@ async function gatherFacts(
   app: FastifyInstance,
   ctx: {
     view: ProjectView;
-    samples: Samples;
+    samples: SampleViews;
     proposals: ProposalRecord[];
     iterations: IterationRecord[];
     gate: GateView;
@@ -71,6 +70,15 @@ async function gatherFacts(
   // Newest first (`listProposals`).
   const newest = (stage: DraftStage, decided = false) =>
     proposals.find((p) => p.stage === stage && (!decided || p.decision !== null));
+  // The newest proposal of a stage whose result is readable: a newer one still drafting (no
+  // body yet) or unreadable does not blank the figures.
+  const newestReadable = async (stage: DraftStage) => {
+    for (const p of proposals.filter((p) => p.stage === stage)) {
+      const result = await changeResult(app, p);
+      if (result) return result;
+    }
+    return null;
+  };
   const outputsProposal = newest('outputs', true);
   const version = view.draft ?? view.published;
   const [template, survey, outputsResult, sectionsResult, stepsResult, dev, holdout] =
@@ -78,10 +86,10 @@ async function gatherFacts(
       version === null ? null : app.deps.templates.get(id, version),
       acceptedSurvey(app, id).catch(() => null),
       changeResult(app, outputsProposal),
-      changeResult(app, newest('sections')),
-      changeResult(app, newest('steps')),
-      referenceRows(app, id, 'dev'),
-      referenceRows(app, id, 'holdout'),
+      newestReadable('sections'),
+      newestReadable('steps'),
+      referenceRows(app, id, 'dev', samples),
+      referenceRows(app, id, 'holdout', samples),
     ]);
 
   const ready = samples.filter((s) => s.view.state === 'ready');

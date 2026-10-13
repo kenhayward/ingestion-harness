@@ -197,11 +197,11 @@ describe('GET /api/workbench/projects/:id/overview', () => {
     const get = vi.spyOn(p.store, 'get');
     await p.overview();
     const triageReads = get.mock.calls.filter(([, key]) => String(key).startsWith('prepared/'));
-    // Every `sampleViews` call reads each ready sample's triage once, and an overview makes five
-    // (sharing one list between them is PR 6): the publish gate, the references stage, the
-    // overview's own sample facts (OCR pages), and the dev and holdout reference figures
-    // (`referenceRows`).
-    expect(triageReads).toEqual(Array(5).fill(['runs', preparedTriageKey(s.sha256)]));
+    // Every `sampleViews` call reads each ready sample's triage once, and an overview makes three
+    // (sharing one list between them is PR 6): the publish gate, the references stage, and the
+    // overview's own sample list, which the dev and holdout reference figures (`referenceRows`)
+    // reuse.
+    expect(triageReads).toEqual(Array(3).fill(['runs', preparedTriageKey(s.sha256)]));
   });
 
   it('gives dashes and zeros for a new project', async () => {
@@ -352,6 +352,24 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       value: '—',
       at: revise.createdAt,
     });
+  });
+
+  it('keeps the newest readable drafting figures while a newer proposal is drafting', async () => {
+    const p = await project();
+    await p.proposal(
+      'steps',
+      p.draftResult(
+        'steps',
+        { notes: '', changes: ['a', 'b', 'c', 'd'].map(removeStep) },
+        'local/qwen3.8-27b-mtp',
+      ),
+    );
+    const running = await p.proposal('steps', null);
+    p.repo.draftJobs.set(running.id, { ...p.repo.draftJobs.get(running.id)!, status: 'running' });
+    expect((await p.metrics('steps')).map((m) => [m.label, m.value])).toEqual([
+      ['Proposed changes', '4'],
+      ['Model', 'qwen3.8-27b-mtp'],
+    ]);
   });
 
   it("shows the newest finished dev evaluation's cached score", async () => {
