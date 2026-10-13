@@ -22,7 +22,10 @@ describe('parseHash', () => {
     ['#/workbench/letter/evaluate', { name: 'project', projectId: 'letter', tab: 'evaluate' }],
     ['#/workbench/letter/revise', { name: 'project', projectId: 'letter', tab: 'revise' }],
     ['#/workbench/letter/bogus', { name: 'project', projectId: 'letter', tab: 'overview' }],
-    ['', { name: 'jobs' }],
+    ['', { name: 'home' }],
+    ['#/', { name: 'home' }],
+    ['#/jobs', { name: 'jobs' }],
+    ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {
     expect(parseHash(hash)).toEqual(route);
   });

@@ -17,6 +17,7 @@ export const PROJECT_TABS = [
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export type Route =
+  | { name: 'home' }
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
@@ -46,16 +47,17 @@ export function parseHash(hash: string): Route {
     const tab = PROJECT_TABS.find((t) => t === project[2]) ?? 'overview';
     return { name: 'project', projectId: decodeURIComponent(project[1]!), tab };
   }
+  if (hash === '#/jobs') return { name: 'jobs' };
   if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
   if (hash === '#/models') return { name: 'models' };
-  return { name: 'jobs' };
+  return { name: 'home' };
 }
 
 /**
- * Minimal hash routing: #/ (jobs), #/review/<jobId>, #/results, #/results/<jobId>,
+ * Minimal hash routing: #/ (home), #/jobs, #/review/<jobId>, #/results, #/results/<jobId>,
  * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>] (Overview by default).
  */
 export function useHashRoute(): Route {

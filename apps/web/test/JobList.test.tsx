@@ -173,8 +173,8 @@ describe('JobList rows', () => {
       job({ filename: 'running.pdf', status: 'running', startedAt: '2026-10-12T11:36:56Z' }),
       job({ filename: 'queued.pdf', status: 'queued' }),
     ]);
-    const done = within(row('done.pdf')).getByLabelText('Processing time 1:34');
-    expect(done).toHaveTextContent('1:34');
+    const done = within(row('done.pdf')).getByLabelText('Processing time 01:34');
+    expect(done).toHaveTextContent('01:34');
     expect(done.querySelector('svg')).not.toBeNull();
     // Still running: counts up to now.
     expect(within(row('running.pdf')).getByLabelText('Processing time 23:04')).toBeInTheDocument();

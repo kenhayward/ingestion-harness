@@ -32,7 +32,7 @@ describe('sign-in gate', () => {
     await userEvent.type(field, 'ih_abc');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(api.login).toHaveBeenCalledWith('ih_abc');
-    expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No jobs yet: upload a document to start.')).toBeInTheDocument();
     expect(
       screen.getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
     ).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe('sign-in gate', () => {
   it('returns to sign-in when the session ends mid-use', async () => {
     const api = fakeApi();
     render(<App api={api} pollMs={0} />);
-    await screen.findByText('No jobs yet.');
+    await screen.findByText('No jobs yet: upload a document to start.');
     act(() => api.expireSession());
     expect(await screen.findByLabelText('Access token')).toBeInTheDocument();
     const status = screen.getByRole('status');
@@ -148,6 +148,6 @@ describe('sign-in gate', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("Can't reach the server");
     expect(screen.queryByLabelText('Access token')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText('No jobs yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No jobs yet: upload a document to start.')).toBeInTheDocument();
   });
 });
