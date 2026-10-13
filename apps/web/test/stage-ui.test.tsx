@@ -1,5 +1,9 @@
+import { OVERVIEW_STAGES, type OverviewEntry } from '@ih/shared';
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { NextAction, NEXT_ACTION_STATE } from '../src/ui/NextAction.js';
+import { PhasePanel } from '../src/ui/PhasePanel.js';
+import { ProgressStrip } from '../src/ui/ProgressStrip.js';
 import { StageLegend, StageStatusIcon } from '../src/ui/StageStatusIcon.js';
 import { stageStyle, TONE_COLOR, type DisplayState } from '../src/ui/stageStyle.js';
 
@@ -112,5 +116,84 @@ describe('StageLegend', () => {
         .map((li) => li.textContent),
     ).toEqual(['Accepted', 'Needs you', 'Running', 'Stale', 'Skipped', 'Locked', 'Not started']);
     expect(within(legend).queryAllByRole('img')).toHaveLength(0);
+  });
+});
+
+const entries: OverviewEntry[] = OVERVIEW_STAGES.map((stage, i) => ({
+  stage,
+  state: i < 5 ? 'accepted' : i === 5 ? 'proposed' : i === 9 ? 'locked' : 'pending',
+}));
+
+describe('ProgressStrip', () => {
+  it('spells out every stage in its accessible name', () => {
+    render(<ProgressStrip stages={entries} />);
+    expect(
+      screen.getByRole('img', {
+        name:
+          'Progress: Samples Accepted, Brief Accepted, Survey Accepted, Outputs Accepted, ' +
+          'Sections Accepted, Steps Needs you, References Not started, Evaluate Not started, ' +
+          'Revise Not started, Publish Locked',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('draws one titled segment per stage in the state style', () => {
+    const { container } = render(<ProgressStrip stages={entries} />);
+    const segments = [...container.querySelectorAll('.seg')];
+    expect(segments).toHaveLength(10);
+    expect(segments[5]).toHaveClass('seg-proposed');
+    expect(segments[5]).toHaveAttribute('title', 'Steps: Needs you');
+    expect(segments[9]).toHaveClass('seg-locked');
+  });
+});
+
+describe('NextAction', () => {
+  it('maps every kind to a state', () => {
+    expect(NEXT_ACTION_STATE).toEqual({
+      refresh: 'stale',
+      decide: 'proposed',
+      brief: 'warn',
+      samples: 'warn',
+      running: 'running',
+      below_threshold: 'warn',
+      publish: 'ready',
+      start_version: 'pending',
+      continue: 'pending',
+    });
+  });
+
+  it('links to the tab and reads as its label only', () => {
+    render(
+      <NextAction
+        action={{ kind: 'refresh', stage: 'sections', label: 'Refresh Sections' }}
+        href="#/workbench/invoice/sections"
+      />,
+    );
+    const link = screen.getByRole('link', { name: 'Refresh Sections' });
+    expect(link).toHaveAttribute('href', '#/workbench/invoice/sections');
+    expect(link).toHaveAttribute('data-tone', 'alert');
+    expect(within(link).queryByRole('img')).toBeNull();
+  });
+
+  it('is plain text without a link', () => {
+    render(<NextAction action={{ kind: 'start_version', stage: null, label: 'Start v4' }} />);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('Start v4').closest('.next-action')).toHaveAttribute(
+      'data-tone',
+      'neutral',
+    );
+  });
+});
+
+describe('PhasePanel', () => {
+  it('is a labelled region with its stage range', () => {
+    render(
+      <PhasePanel title="Prepare" range="stages 1–2">
+        <a href="#/x">Samples</a>
+      </PhasePanel>,
+    );
+    const panel = screen.getByRole('region', { name: 'Prepare' });
+    expect(panel).toHaveTextContent('stages 1–2');
+    expect(within(panel).getByRole('link', { name: 'Samples' })).toBeInTheDocument();
   });
 });
