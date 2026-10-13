@@ -16,6 +16,7 @@ function NavLink({
   label,
   current,
   compact,
+  compactLabel = label,
   children,
 }: {
   href: string;
@@ -23,14 +24,16 @@ function NavLink({
   label: string;
   current: boolean;
   compact: boolean;
+  /** Accessible name and tooltip in compact mode (defaults to the label). */
+  compactLabel?: string;
   children?: ReactNode;
 }) {
   return (
     <a
       href={href}
       aria-current={current ? 'page' : undefined}
-      aria-label={compact ? label : undefined}
-      title={compact ? label : undefined}
+      aria-label={compact ? compactLabel : undefined}
+      title={compact ? compactLabel : undefined}
     >
       <Icon name={icon} size={18} />
       <span className="nav-label">{label}</span>
@@ -138,6 +141,7 @@ export function AppShell({
             href="#/"
             icon="jobs"
             label="Jobs"
+            compactLabel={attention > 0 ? `Jobs, ${attention} need attention` : 'Jobs'}
             current={section === 'jobs'}
             compact={compact}
           >

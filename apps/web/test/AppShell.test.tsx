@@ -108,6 +108,22 @@ describe('app shell', () => {
     expect(within(nav).getByRole('link', { name: 'Document types' })).not.toHaveAttribute('title');
   });
 
+  it('keeps announcing jobs needing attention on the compact Jobs link', async () => {
+    window.location.hash = '#/workbench/letter';
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      listJobs: vi.fn(async () =>
+        (['awaiting_review', 'failed', 'running', 'succeeded'] as const).map((status) =>
+          job({ status }),
+        ),
+      ),
+    });
+    render(<App api={api} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const link = await within(nav).findByRole('link', { name: 'Jobs, 2 need attention' });
+    expect(link).toHaveAttribute('title', 'Jobs, 2 need attention');
+  });
+
   it('focuses search on Ctrl+K, not on a plain k, and Escape clears it', async () => {
     render(<App api={fakeApi()} pollMs={0} />);
     const search = await screen.findByRole('searchbox', { name: SEARCH });
