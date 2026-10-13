@@ -13,6 +13,7 @@ export function JobList({
   onChanged,
   models,
   specTitles,
+  typeModels,
   now,
 }: {
   api: Api;
@@ -23,6 +24,8 @@ export function JobList({
   models: readonly ModelChoice[];
   /** Document type titles by id (falls back to the id). */
   specTitles: ReadonlyMap<string, string>;
+  /** Each document type's model, by id (unknown types: no name in the dialog). */
+  typeModels?: ReadonlyMap<string, { model?: string }>;
   now: number;
 }) {
   if (jobs.length === 0) return <p>No jobs yet.</p>;
@@ -77,6 +80,7 @@ export function JobList({
                     job={job}
                     onChanged={onChanged}
                     models={models}
+                    typeModel={typeModels?.get(job.specId)}
                     variant="row"
                   />
                 </td>

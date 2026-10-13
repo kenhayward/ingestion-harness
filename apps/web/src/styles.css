@@ -3061,3 +3061,21 @@ tr.confirming td {
 .reprocess-fixed {
   font-weight: 600;
 }
+
+/* The document type's Default model row on the General tab (matches the label rows). */
+.form-rows > .model-row {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  align-items: start;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+.form-rows > .model-row select {
+  max-width: 16rem;
+}
+@media (max-width: 700px) {
+  .form-rows > .model-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}

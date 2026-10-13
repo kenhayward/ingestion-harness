@@ -82,6 +82,8 @@ export function TemplateEditor({
   const [error, setError] = useState<string | null>(null);
   const models = useModelChoices(api);
   const modelName = (id: string) => pickedChoice(id, models)?.label ?? id;
+  /** The document type's model choice, which steps naming none inherit ('' = the default). */
+  const typeModel = typeof def.model === 'string' && def.model !== 'default' ? def.model : '';
   /** The one pipeline step whose card is open (null: all collapsed). */
   const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
@@ -228,6 +230,16 @@ export function TemplateEditor({
             {tab === 'general' && (
               <div className="form-rows">
                 <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
+                <div className="model-row">
+                  <span>Default model</span>
+                  <ModelPicker
+                    label="Default model"
+                    choices={models}
+                    value={typeModel}
+                    emptyLabel={`Default choice${defaultLabel(models)}`}
+                    onChange={(id) => update(['model'], id || undefined)}
+                  />
+                </div>
                 <Area
                   label="Description"
                   rows={3}
@@ -422,6 +434,9 @@ export function TemplateEditor({
                   open={openStep === i}
                   readOnly={!editable}
                   modelName={modelName}
+                  inheritedModel={
+                    typeModel ? `${modelName(typeModel)} (document type)` : 'default model'
+                  }
                   onToggle={() => setOpenStep(openStep === i ? null : i)}
                   onMove={(delta) => {
                     const to = i + delta;
@@ -444,6 +459,11 @@ export function TemplateEditor({
                       tables={tables.map((t) => t.id)}
                       sections={sections.map((s) => s.id)}
                       models={models}
+                      typeModelLabel={
+                        typeModel
+                          ? `Document type's model (${modelName(typeModel)})`
+                          : `Default choice${defaultLabel(models)}`
+                      }
                       set={(key, v) => update(['pipeline', i, key], v)}
                       replace={(next) => update(['pipeline', i], next)}
                     />
@@ -487,7 +507,15 @@ export function TemplateEditor({
             </div>
           )}
         </div>
-        {!embedded && <TestRail api={api} templateId={templateId} version={version} jobs={jobs} />}
+        {!embedded && (
+          <TestRail
+            api={api}
+            templateId={templateId}
+            version={version}
+            jobs={jobs}
+            typeModel={typeModel ? { model: typeModel } : {}}
+          />
+        )}
       </div>
     </section>
   );
@@ -505,6 +533,7 @@ function ExtractStep({
   tables,
   sections,
   models,
+  typeModelLabel,
   set,
   replace,
 }: {
@@ -513,6 +542,8 @@ function ExtractStep({
   tables: string[];
   sections: string[];
   models: readonly ModelChoice[];
+  /** The empty option: what a step naming no model inherits. */
+  typeModelLabel: string;
   set: (key: string, value: unknown) => void;
   replace: (step: Definition) => void;
 }) {
@@ -580,7 +611,7 @@ function ExtractStep({
             choices={models}
             // No model, or `default`: the default choice, whichever it is when the step runs.
             value={step.model === 'default' ? '' : (step.model ?? '')}
-            emptyLabel={`Default choice${defaultLabel(models)}`}
+            emptyLabel={typeModelLabel}
             onChange={(id) => set('model', id || undefined)}
           />
         </div>

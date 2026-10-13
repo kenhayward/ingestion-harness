@@ -38,6 +38,26 @@ describe('UploadStrip', () => {
   });
 });
 
+describe("UploadStrip names the document type's model", () => {
+  it('shows which choice the selected type runs when no model is picked', async () => {
+    const api = fakeApi({
+      listSpecs: vi.fn(async () => [
+        { id: 'letter', version: 1, title: 'Letter', model: 'test' },
+        { id: 'memo', version: 1, title: 'Memo' },
+      ]),
+    });
+    render(<UploadStrip api={api} onUploaded={() => {}} />);
+    // The last listed type is selected first.
+    expect(
+      await screen.findByRole('option', { name: "Document type's model (Main Production Model)" }),
+    ).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Document type'), 'Letter · v1');
+    expect(
+      screen.getByRole('option', { name: "Document type's model (New for testing only)" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('UploadStrip remembers the model', () => {
   const opus = { ref: 'test' }; // the choice "New for testing only"
   const api = () => fakeApi();

@@ -85,9 +85,9 @@ export function choiceProblem(
 /**
  * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
  * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
- * database does not define is left to the worker. A draft's steps name model choices (phase
- * 4c): an `endpoint/model` ref there is an issue too, while published versions keep running
- * theirs.
+ * database does not define is left to the worker. A draft's steps and its document type model
+ * name model choices (phase 4c): an `endpoint/model` ref there is an issue too, while published
+ * versions keep running theirs.
  */
 export async function templateIssues(
   deps: Pick<AppDeps, 'repo' | 'llm'>,
@@ -98,17 +98,25 @@ export async function templateIssues(
   const parsed = TemplateSchema.safeParse(definition);
   if (!parsed.success) return issues;
   const { offered, aliases } = await runnableModels(deps);
+  const problemOf = (model: string) =>
+    draft && model.includes('/')
+      ? `pick a model choice instead of the model ${model}`
+      : modelRefProblem(model, offered, aliases, { unknownAliases: 'allow' });
+  // The document type's model, which steps naming none inherit, is checked once, here.
+  const typeModel = parsed.data.model;
+  const typeProblem = typeModel === undefined ? null : problemOf(typeModel);
   const modelIssues = parsed.data.pipeline.flatMap((step, i) => {
-    if (step.type !== 'extract') return [];
-    const problem =
-      draft && step.model.includes('/')
-        ? `pick a model choice instead of the model ${step.model}`
-        : modelRefProblem(step.model, offered, aliases, { unknownAliases: 'allow' });
+    if (step.type !== 'extract' || step.model === 'default') return [];
+    const problem = problemOf(step.model);
     return problem
       ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
       : [];
   });
-  return [...issues, ...modelIssues];
+  return [
+    ...issues,
+    ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
+    ...modelIssues,
+  ];
 }
 
 /**
@@ -160,6 +168,7 @@ export async function listDefinitions(deps: AppDeps): Promise<DefinitionSummary[
     version: r.version,
     title: String(r.definition.name ?? r.id),
     description: r.definition.description as string | undefined,
+    ...(typeof r.definition.model === 'string' ? { model: r.definition.model } : {}),
     kind: 'template',
   }));
   const seen = new Set(fromDb.map((d) => `${d.id}@${d.version}`));

@@ -224,5 +224,10 @@ export const SpecSummarySchema = z.object({
   version: z.number().int(),
   title: z.string(),
   description: z.string().optional(),
+  /**
+   * A template's own model choice, which its steps naming none inherit; absent: the default
+   * choice (and always for legacy spec.yaml types).
+   */
+  model: z.string().optional(),
 });
 export type SpecSummary = z.infer<typeof SpecSummarySchema>;

@@ -75,10 +75,16 @@ export function JobsPage({
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
+  /** Each type's model, from its newest version (what Retry and Re-process run on). */
+  const [typeModels, setTypeModels] = useState<ReadonlyMap<string, { model?: string }>>(new Map());
 
   useEffect(() => {
     api.listSpecs().then(
-      (specs) => setSpecTitles(new Map(specs.map((s) => [s.id, s.title]))),
+      (specs) => {
+        setSpecTitles(new Map(specs.map((s) => [s.id, s.title])));
+        // Listed oldest version first: the newest one wins.
+        setTypeModels(new Map(specs.map((s) => [s.id, s.model ? { model: s.model } : {}])));
+      },
       () => {}, // titles are cosmetic: ids are shown instead
     );
   }, [api]);
@@ -163,6 +169,7 @@ export function JobsPage({
               onChanged={refresh}
               models={models}
               specTitles={specTitles}
+              typeModels={typeModels}
               now={now}
             />
           )}
@@ -189,6 +196,7 @@ export function JobsPage({
             onChanged={refresh}
             models={models}
             specTitles={specTitles}
+            typeModels={typeModels}
             now={now}
           />
         )}

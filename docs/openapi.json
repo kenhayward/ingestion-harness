@@ -1117,6 +1117,9 @@
                       "description": {
                         "type": "string"
                       },
+                      "model": {
+                        "type": "string"
+                      },
                       "kind": {
                         "type": "string",
                         "enum": [
@@ -1579,6 +1582,10 @@
                             },
                             "preamble": {
                               "type": "string"
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1
                             },
                             "document": {
                               "type": "object",
@@ -4784,6 +4791,10 @@
                         },
                         "preamble": {
                           "type": "string"
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1
                         },
                         "document": {
                           "type": "object",
