@@ -261,25 +261,26 @@ export function ProjectPage({
             </>
           )}
           {tab === 'brief' && (
-            <>
-              {header('brief')}
-              <BriefTab
-                api={api}
-                projectId={project.id}
-                brief={view.brief}
-                onSaved={(brief) => {
-                  setView({ ...view, brief });
-                  loadOverview();
-                }}
-              />
-              <ExportPanel
-                api={api}
-                role={role}
-                projectId={project.id}
-                dataPolicy={project.dataPolicy}
-                pollMs={pollMs}
-              />
-            </>
+            <BriefTab
+              api={api}
+              projectId={project.id}
+              brief={view.brief}
+              item={itemOf('brief')}
+              onNavigate={onNavigate}
+              onSaved={(brief) => {
+                setView({ ...view, brief });
+                loadOverview();
+              }}
+              aside={
+                <ExportPanel
+                  api={api}
+                  role={role}
+                  projectId={project.id}
+                  dataPolicy={project.dataPolicy}
+                  pollMs={pollMs}
+                />
+              }
+            />
           )}
           {tab === 'survey' && header('survey')}
           {tab === 'survey' && (
