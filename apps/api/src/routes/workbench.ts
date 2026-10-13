@@ -604,12 +604,29 @@ async function iterationView(
   };
 }
 
+/** A job whose result can still change: the gate does not cache an iteration holding one. */
+const unsettledJob = (status: JobStatus) =>
+  status === 'queued' || status === 'running' || status === 'awaiting_review';
+
+/**
+ * What the gate's cached score of an iteration depends on: each of its jobs (in `jobIds` order)
+ * as `[id, status, updatedAt, referenceId]`, a deleted job as `[id, null, null, null]`.
+ */
+function gateFingerprint(jobIds: string[], jobs: (JobSummary | null)[]): string {
+  const parts = jobIds.map((id, n) => {
+    const job = jobs[n];
+    return job ? [id, job.status, job.updatedAt, job.referenceId] : [id, null, null, null];
+  });
+  return createHash('sha256').update(stableJson(parts)).digest('hex');
+}
+
 /**
  * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
- * draft (version and definition) with the template's own models count; their scores are always
- * recomputed from the jobs (raw output, so review edits never raise them), and coverage is
- * measured against the holdout samples that are ready now. `definition` is the draft the gate
- * was decided for.
+ * draft (version and definition) with the template's own models count; their scores are computed
+ * from the jobs (raw output, so review edits never raise them) and cached per iteration under a
+ * fingerprint of its jobs (`gateFingerprint`), so a score is reused only while none of its jobs
+ * changed. Coverage is always measured against the holdout samples that are ready now.
+ * `definition` is the draft the gate was decided for.
  */
 async function gateFor(
   app: FastifyInstance,
@@ -632,7 +649,9 @@ async function gateFor(
   const ready = (await sampleViews(app, project.id))
     .filter((s) => s.record.role === 'holdout' && s.view.state === 'ready')
     .map((s) => s.record.sha256);
-  const shaByJob = await jobShas(app, project.id);
+  const runs = await app.deps.repo.listProjectRuns(project.id);
+  const shaByJob = new Map(runs.map((r) => [r.job.id, r.sha256]));
+  const jobById = new Map(runs.map((r) => [r.job.id, r.job]));
   const holdout = (await app.deps.workbench.listIterations(project.id)).filter(
     (i) => i.set === 'holdout',
   );
@@ -652,8 +671,18 @@ async function gateFor(
         // publishGate ignores it; not worth scoring.
         return { ...base, status: 'running', score: null, completed: 0, total: i.jobIds.length };
       }
+      const jobs = i.jobIds.map((id) => jobById.get(id) ?? null);
+      const fingerprint = gateFingerprint(i.jobIds, jobs);
+      if (i.gateCache?.fingerprint === fingerprint) {
+        // Only stored once every job had finished, so the iteration is complete.
+        const { score, completed, total } = i.gateCache;
+        return { ...base, status: 'complete', score, completed, total };
+      }
       const view = await iterationView(app, i);
       const { status, score, completed, total } = view;
+      if (status === 'complete' && jobs.every((j) => j === null || !unsettledJob(j.status))) {
+        await app.deps.workbench.setGateCache(i.id, { fingerprint, score, completed, total });
+      }
       return { ...base, status, score, completed, total };
     }),
   );

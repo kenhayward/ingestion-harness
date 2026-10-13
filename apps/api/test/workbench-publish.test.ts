@@ -440,3 +440,119 @@ describe('publish gate honesty', () => {
     expect(await ctx.workbench.listPublications('letter')).toEqual([]);
   });
 });
+
+/** Counts reads of the outputs bucket (where evaluation documents live). */
+function countDocumentReads(ctx: Ctx) {
+  const get = ctx.store.get.bind(ctx.store);
+  const reads = { count: 0 };
+  vi.spyOn(ctx.store, 'get').mockImplementation(async (bucket: string, key: string) => {
+    if (bucket === 'outputs') reads.count++;
+    return get(bucket, key);
+  });
+  return reads;
+}
+
+describe('publish gate score cache', () => {
+  it('reads no job documents when nothing about the iteration changed', async () => {
+    const ctx = await project();
+    const iteration = await holdoutRun(ctx, 'Acme');
+    const reads = countDocumentReads(ctx);
+    const first = await gateOf(ctx);
+    expect(first).toMatchObject({ iterationId: iteration.id, score: 1, passes: true });
+    expect(reads.count).toBeGreaterThan(0);
+    reads.count = 0;
+    expect(await gateOf(ctx)).toEqual(first);
+    expect(reads.count).toBe(0);
+  });
+
+  it('keeps coverage live on a cache hit', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect((await gateOf(ctx)).passes).toBe(true);
+    const late = await ctx.add(20);
+    await ctx.setRole(late.id, 'holdout');
+    expect(await gateOf(ctx)).toMatchObject({
+      score: 1,
+      passes: false,
+      reason: 'holdout evaluation covered 1 of 2 holdout samples',
+    });
+  });
+
+  it('does not cache while a job awaits review', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    const [run] = await evaluationRuns(ctx);
+    const job = ctx.repo.jobs.get(run!.job.id)!;
+    ctx.repo.jobs.set(job.id, { ...job, status: 'awaiting_review' });
+    const reads = countDocumentReads(ctx);
+    expect((await gateOf(ctx)).score).toBe(1);
+    reads.count = 0;
+    expect((await gateOf(ctx)).score).toBe(1);
+    expect(reads.count).toBeGreaterThan(0);
+  });
+
+  it('recomputes after an evaluated job was deleted', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect((await gateOf(ctx)).passes).toBe(true);
+    const [run] = await evaluationRuns(ctx);
+    const deleted = await ctx.app.inject({ method: 'DELETE', url: `/api/jobs/${run!.job.id}` });
+    expect(deleted.statusCode).toBe(204);
+    expect(await gateOf(ctx)).toMatchObject({
+      passes: false,
+      reason: 'holdout evaluation compared 0 of 1 samples',
+    });
+  });
+
+  it('recomputes after a job changed status (a re-run)', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect((await gateOf(ctx)).passes).toBe(true);
+    const [run] = await evaluationRuns(ctx);
+    const id = run!.job.id;
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, status: 'needs_review' });
+    expect(await gateOf(ctx)).toMatchObject({
+      passes: false,
+      reason: 'holdout evaluation compared 0 of 1 samples',
+    });
+  });
+
+  it('recomputes when a job was updated, even back to the same status', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect((await gateOf(ctx)).passes).toBe(true);
+    const [run] = await evaluationRuns(ctx);
+    const id = run!.job.id;
+    // A re-run that succeeds again, with another answer, at a later time.
+    await ctx.finish(id, 'Wrong');
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, updatedAt: '2099-01-01T00:00:00.000Z' });
+    expect(await gateOf(ctx)).toMatchObject({ score: 0, passes: false });
+  });
+
+  it('recomputes when a job lost its reference (an unpinned reference was deleted)', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Acme');
+    expect((await gateOf(ctx)).passes).toBe(true);
+    const [run] = await evaluationRuns(ctx);
+    const id = run!.job.id;
+    ctx.repo.jobs.set(id, { ...ctx.repo.jobs.get(id)!, referenceId: null });
+    expect(await gateOf(ctx)).toMatchObject({
+      passes: false,
+      reason: 'holdout evaluation compared 0 of 1 samples',
+    });
+  });
+
+  it('still scores the raw output after a review edit once cached', async () => {
+    const ctx = await project();
+    await holdoutRun(ctx, 'Wrong');
+    expect((await gateOf(ctx)).score).toBe(0);
+    const [run] = await evaluationRuns(ctx);
+    await ctx.store.put(
+      'runs',
+      `${run!.job.id}/reviewed-document.json`,
+      Buffer.from(JSON.stringify({ fields: { sender: { value: 'Acme' } }, tables: {} })),
+      'application/json',
+    );
+    expect(await gateOf(ctx)).toMatchObject({ score: 0, passes: false });
+  });
+});

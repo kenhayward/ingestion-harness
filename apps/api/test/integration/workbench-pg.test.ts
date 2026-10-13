@@ -549,6 +549,26 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     ]);
   });
 
+  it('stores the publish gate cache of an iteration', async () => {
+    const projectId = await newProject();
+    const i = await workbench.createIteration({
+      projectId,
+      templateVersion: 1,
+      definition: { id: projectId, version: 1 },
+      briefVersion: null,
+      set: 'holdout',
+      model: null,
+      jobIds: [randomUUID()],
+    });
+    expect(i.gateCache).toBeNull();
+    const cache = { fingerprint: 'f'.repeat(64), score: 0.75, completed: 3, total: 4 };
+    await workbench.setGateCache(i.id, cache);
+    expect((await workbench.getIteration(projectId, i.id))!.gateCache).toEqual(cache);
+    const unscored = { fingerprint: 'e'.repeat(64), score: null, completed: 0, total: 1 };
+    await workbench.setGateCache(i.id, unscored);
+    expect((await workbench.listIterations(projectId))[0]!.gateCache).toEqual(unscored);
+  });
+
   it('stores the publish threshold and logs publications as numbers, newest first', async () => {
     const projectId = await newProject();
     expect((await workbench.getProject(projectId))!.publishThreshold).toBe(0.9);

@@ -93,12 +93,17 @@ export interface IterationRecord {
   uncached: boolean;
   /** Cached summary once every job has finished; null while running. */
   scores: { score: number | null; completed: number; total: number } | null;
+  /**
+   * The publish gate's raw holdout score (migration 0020), valid while `fingerprint` (a hash of
+   * the iteration's jobs) is unchanged; stored only once every job has finished.
+   */
+  gateCache: { fingerprint: string; score: number | null; completed: number; total: number } | null;
   createdAt: string;
 }
 
 export type NewIteration = Omit<
   IterationRecord,
-  'id' | 'scores' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
+  'id' | 'scores' | 'gateCache' | 'createdAt' | 'groupId' | 'uncached' | 'sampleShas'
 > &
   Partial<Pick<IterationRecord, 'groupId' | 'uncached' | 'sampleShas'>>;
 
@@ -196,6 +201,10 @@ export interface WorkbenchRepo {
   /** The iterations of one model comparison, oldest first. */
   listGroup(projectId: string, groupId: string): Promise<IterationRecord[]>;
   setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>): Promise<void>;
+  setGateCache(
+    iterationId: string,
+    cache: NonNullable<IterationRecord['gateCache']>,
+  ): Promise<void>;
   /**
    * Deletes the project in one transaction: its jobs (with their history), feedback,
    * iterations, publications, proposals, stage skips, briefs, samples, the template's
@@ -470,6 +479,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       uncached: input.uncached ?? false,
       id: randomUUID(),
       scores: null,
+      gateCache: null,
       createdAt: this.now(),
     };
     this.iterations.push(record);
@@ -491,6 +501,11 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   async setIterationScores(id: string, scores: NonNullable<IterationRecord['scores']>) {
     const at = this.iterations.findIndex((i) => i.id === id);
     if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, scores };
+  }
+
+  async setGateCache(iterationId: string, gateCache: NonNullable<IterationRecord['gateCache']>) {
+    const at = this.iterations.findIndex((i) => i.id === iterationId);
+    if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, gateCache };
   }
 
   async deleteProject(id: string): Promise<RemovedProject | null> {
@@ -672,6 +687,7 @@ interface IterationRow {
   group_id: string | null;
   uncached: boolean;
   scores: IterationRecord['scores'];
+  gate_cache: IterationRecord['gateCache'];
   created_at: Date;
 }
 
@@ -688,6 +704,7 @@ const toIteration = (r: IterationRow): IterationRecord => ({
   groupId: r.group_id,
   uncached: r.uncached,
   scores: r.scores,
+  gateCache: r.gate_cache,
   createdAt: r.created_at.toISOString(),
 });
 
@@ -1131,6 +1148,13 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     await this.pool.query('UPDATE workbench_iterations SET scores = $2 WHERE id = $1', [
       id,
       JSON.stringify(scores),
+    ]);
+  }
+
+  async setGateCache(iterationId: string, cache: NonNullable<IterationRecord['gateCache']>) {
+    await this.pool.query('UPDATE workbench_iterations SET gate_cache = $2 WHERE id = $1', [
+      iterationId,
+      JSON.stringify(cache),
     ]);
   }
 

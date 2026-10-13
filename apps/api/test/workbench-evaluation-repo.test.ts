@@ -121,4 +121,21 @@ describe('evaluation persistence', () => {
     });
     expect((await workbench.getIteration('letter', c.id))!.sampleShas).toEqual(['aa', 'bb']);
   });
+
+  it('stores the publish gate cache of an iteration', async () => {
+    const { workbench } = await setup();
+    const i = await workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: { id: 'letter', version: 1 },
+      briefVersion: null,
+      set: 'holdout',
+      model: null,
+      jobIds: [],
+    });
+    expect(i.gateCache).toBeNull();
+    const cache = { fingerprint: 'f'.repeat(64), score: 0.75, completed: 3, total: 4 };
+    await workbench.setGateCache(i.id, cache);
+    expect((await workbench.getIteration('letter', i.id))!.gateCache).toEqual(cache);
+  });
 });
