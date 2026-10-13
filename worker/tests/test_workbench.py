@@ -7,7 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ingest_worker.convert import DOCX_MIME
+import pytest
+from pypdf.errors import EmptyFileError, FileNotDecryptedError, PdfReadError, WrongPasswordError
+
+from ingest_worker.convert import DOCX_MIME, ConversionRejected
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ocr import OcrSettings
@@ -15,6 +18,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, prepared_text_key, prepared_triage_key
+from ingest_worker.workbench import PREPARE_FAILED, PREPARE_PROGRESS
 
 from .fakes import FakeConverter, FakeProvider, FakeQueue
 from .test_convert import DOCX
@@ -119,6 +123,7 @@ def test_image_only_pdf_without_ocr_needs_review_and_writes_nothing(
     [(_, reason)] = queue.reviewed
     assert "OCR" in reason
     assert deps.store.get_optional("runs", prepared_text_key(SHA)) is None
+    assert events_named(queue, PREPARE_FAILED) == [{"code": "other", "message": reason}]
 
 
 def test_a_word_sample_is_prepared_from_its_pdf_under_its_own_sha(fixture_specs_dir: Path) -> None:
@@ -134,3 +139,131 @@ def test_a_word_sample_is_prepared_from_its_pdf_under_its_own_sha(fixture_specs_
     assert seen == [b"%PDF-converted"]
     assert stored(deps, prepared_text_key(sha))["sha256"] == sha
     assert stored(deps, prepared_triage_key(sha))["pageCount"] == 1
+
+
+def events_named(queue: FakeQueue, message: str) -> list[dict[str, Any]]:
+    return [data for _, _, name, data in queue.event_details if name == message]
+
+
+def test_prepare_reports_the_text_layer_then_each_ocr_page(fixture_specs_dir: Path) -> None:
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + "Scanned one", OLMOCR_OK + "Scanned two"]
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE, "", ""], ocr)
+    queue = FakeQueue(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    assert events_named(queue, PREPARE_PROGRESS) == [
+        {"stage": "text", "page": 3, "of": 3},
+        {"stage": "ocr", "page": 0, "of": 2},  # before the first page finishes
+        {"stage": "ocr", "page": 1, "of": 2},
+        {"stage": "ocr", "page": 2, "of": 2},
+    ]
+    assert events_named(queue, PREPARE_FAILED) == []
+
+
+def test_prepare_without_ocr_reports_the_text_layer_only(fixture_specs_dir: Path) -> None:
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE, TEXT_PAGE])
+    queue = FakeQueue(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert events_named(queue, PREPARE_PROGRESS) == [{"stage": "text", "page": 2, "of": 2}]
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "message"),
+    [
+        (
+            FileNotDecryptedError("File has not been decrypted"),
+            "password",
+            "PDF is password-protected",
+        ),
+        (WrongPasswordError("Wrong password"), "password", "PDF is password-protected"),
+        (
+            PdfReadError("EOF marker not found"),
+            "corrupt",
+            "PDF could not be read: EOF marker not found",
+        ),
+        (
+            EmptyFileError("Cannot read an empty file"),
+            "corrupt",
+            "PDF could not be read: Cannot read an empty file",
+        ),
+    ],
+)
+def test_an_unreadable_pdf_goes_to_review_with_its_reason(
+    fixture_specs_dir: Path, error: Exception, code: str, message: str
+) -> None:
+    deps = make_deps(fixture_specs_dir, [])
+
+    def unreadable(_pdf: bytes) -> list[str]:
+        raise error
+
+    deps.extract_text = unreadable
+    queue = FakeQueue(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.reviewed == [("job-p", message)]
+    assert queue.failed == []  # not retried: the file will not read better next time
+    assert events_named(queue, PREPARE_FAILED) == [{"code": code, "message": message}]
+    assert deps.store.get_optional("runs", prepared_text_key(SHA)) is None
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [(413, "too_large"), (400, "corrupt"), (None, "corrupt")],
+)
+def test_a_word_sample_the_converter_rejects_says_why(
+    fixture_specs_dir: Path, status: int | None, code: str
+) -> None:
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE])
+    deps.store.put("inbox", "letter/v1/doc-s.pdf", DOCX, DOCX_MIME)
+    deps.converter = FakeConverter(error=ConversionRejected("rejected", status=status))
+    queue = FakeQueue(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    [(_, reason)] = queue.reviewed
+    assert events_named(queue, PREPARE_FAILED) == [{"code": code, "message": reason}]
+
+
+class FlakyEvents(FakeQueue):
+    """Progress and failure events cannot be written (job deleted mid-run, database blip)."""
+
+    def event(
+        self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+    ) -> None:
+        if message in (PREPARE_PROGRESS, PREPARE_FAILED):
+            raise RuntimeError("could not write the event")
+        super().event(job_id, level, message, data)
+
+
+def test_a_failing_progress_event_does_not_abort_a_good_prepare(fixture_specs_dir: Path) -> None:
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + "Scanned one"]
+    deps = make_deps(fixture_specs_dir, [TEXT_PAGE, ""], ocr)
+    queue = FlakyEvents(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    assert queue.failed == []
+    assert deps.store.get_optional("runs", prepared_text_key(SHA)) is not None
+
+
+def test_a_failing_failure_event_keeps_the_needs_review_routing(fixture_specs_dir: Path) -> None:
+    deps = make_deps(fixture_specs_dir, [])
+
+    def locked(_pdf: bytes) -> list[str]:
+        raise FileNotDecryptedError("File has not been decrypted")
+
+    deps.extract_text = locked
+    queue = FlakyEvents(jobs=[prepare_job()])
+
+    run_once(queue, deps, "w1")
+
+    assert queue.reviewed == [("job-p", "PDF is password-protected")]
+    assert queue.failed == []

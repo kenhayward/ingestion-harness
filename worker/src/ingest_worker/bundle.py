@@ -34,6 +34,8 @@ from .queue import ClaimedJob, JobQueue
 from .storage import export_key
 
 BUNDLE_FORMAT = "ih-workbench-bundle"
+#: The job event naming the finished zip (TS `BUNDLE_EXPORTED_EVENT`, packages/shared/src/bundle.ts).
+BUNDLE_EXPORTED = "bundle exported"
 #: Fixed timestamp so the same inputs always give the same zip bytes.
 _ZIP_TIME = (2020, 1, 1, 0, 0, 0)
 
@@ -176,6 +178,9 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
         deps.store.delete(deps.buckets.runs, key)
         raise JobCancelled(job.id)
     queue.event(
-        job.id, "info", "bundle exported", {"samples": [s.sample_id for s in params.samples]}
+        job.id,
+        "info",
+        BUNDLE_EXPORTED,
+        {"samples": [s.sample_id for s in params.samples], "bytes": len(data)},
     )
     return manifest

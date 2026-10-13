@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 import yaml
 
-from ingest_worker.bundle import build_bundle, run_export
+from ingest_worker.bundle import BUNDLE_EXPORTED, build_bundle, run_export
 from ingest_worker.convert import DOCX_MIME
 from ingest_worker.drafting import MAX_CONTEXT_SAMPLES, STAGES, DraftSample, build_context
 from ingest_worker.llm.registry import ModelRegistry
@@ -306,3 +306,18 @@ def test_run_once_sends_a_refused_export_to_review(fixture_specs_dir: Path) -> N
     [(job_id, reason)] = queue.reviewed
     assert job_id == "job-x" and "stage" in reason
     assert queue.completed == []
+
+
+def test_export_records_the_size_of_its_zip(fixture_specs_dir: Path) -> None:
+    store, deps = make(fixture_specs_dir)
+    queue = FakeQueue()
+
+    run_export(export_job(), deps, queue)
+
+    zipped = store.get("runs", export_key("letter", "job-x"))
+    assert queue.event_details[-1] == (
+        "job-x",
+        "info",
+        BUNDLE_EXPORTED,
+        {"samples": ["s1"], "bytes": len(zipped)},
+    )

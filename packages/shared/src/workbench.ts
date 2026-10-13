@@ -103,6 +103,26 @@ export type PreparedTriage = z.infer<typeof PreparedTriageSchema>;
 export const SampleStateSchema = z.enum(['preparing', 'ready', 'failed']);
 export type SampleState = z.infer<typeof SampleStateSchema>;
 
+/** Job events the worker's prepare task writes (worker: workbench.PREPARE_PROGRESS / _FAILED). */
+export const PREPARE_PROGRESS_EVENT = 'prepare progress';
+export const PREPARE_FAILED_EVENT = 'prepare failed';
+
+/** Where a running preparation is: the text layer read, or `page` of `of` OCR pages done. */
+export const PrepareProgressSchema = z.object({
+  stage: z.enum(['text', 'ocr']),
+  page: z.number().int().nonnegative(),
+  of: z.number().int().nonnegative(),
+});
+export type PrepareProgress = z.infer<typeof PrepareProgressSchema>;
+
+/** Why a preparation failed (worker: workbench.PrepareErrorCode). */
+export const PREPARE_ERROR_CODES = ['password', 'corrupt', 'too_large', 'other'] as const;
+export const PrepareErrorSchema = z.object({
+  code: z.enum(PREPARE_ERROR_CODES),
+  message: z.string(),
+});
+export type PrepareError = z.infer<typeof PrepareErrorSchema>;
+
 export const SampleViewSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string(),
@@ -116,6 +136,10 @@ export const SampleViewSchema = z.object({
   state: SampleStateSchema,
   prepareJobId: z.string().uuid().nullable(),
   error: z.string().nullable(),
+  /** While the prepare job runs: its latest progress in this attempt (null before any). */
+  prepare: PrepareProgressSchema.nullable(),
+  /** When `failed`: the reason's code and message (`other` when the worker gave none). */
+  prepareError: PrepareErrorSchema.nullable(),
   triage: PreparedTriageSchema.nullable(),
   /**
    * The number of holdout evaluations (iterations) that evaluated this sample's PDF. A sample

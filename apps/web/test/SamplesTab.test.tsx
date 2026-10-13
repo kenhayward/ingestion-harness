@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SampleText } from '../src/workbench/SampleText.js';
@@ -7,36 +7,89 @@ import { fakeApi, sampleView } from './fake-api.js';
 
 const tab = (api = fakeApi()) =>
   render(<SamplesTab api={api} projectId="letter" pollMs={60_000} />);
-const row = (filename: string) => screen.getByRole('cell', { name: filename }).closest('tr')!;
+const row = (filename: string) => screen.getByRole('listitem', { name: filename });
+const triage = (pageCount: number, ocrPages: number[]) => ({
+  sha256: 'abc',
+  pageCount,
+  ocrPages,
+  chars: 1412,
+  ocrModel: 'local/olmocr',
+});
 
 describe('SamplesTab', () => {
-  it('lists samples with triage and state', async () => {
+  it('summarises readiness, capacity and OCR pages', async () => {
     tab(
       fakeApi({
         listSamples: vi.fn(async () => [
-          sampleView({ filename: 'a.pdf' }),
-          sampleView({ filename: 'b.pdf', state: 'preparing', triage: null }),
+          sampleView({ filename: 'a.pdf', triage: triage(2, []) }),
+          sampleView({ filename: 'b.pdf', triage: triage(3, [1, 2, 3]) }),
+          sampleView({ filename: 'c.pdf', state: 'preparing', triage: null }),
+          sampleView({ filename: 'h.pdf', role: 'holdout', triage: triage(1, []) }),
         ]),
       }),
     );
-    await screen.findByRole('table', { name: 'Samples' });
-    expect(row('a.pdf')).toHaveTextContent('ready');
-    expect(row('a.pdf')).toHaveTextContent('3'); // pages
-    expect(row('b.pdf')).toHaveTextContent('preparing');
+    const dev = await screen.findByRole('region', { name: 'Dev samples' });
+    expect(dev).toHaveTextContent('2ready of 3');
+    expect(dev).toHaveTextContent('3–8 recommended');
+    expect(screen.getByRole('region', { name: 'Holdout samples' })).toHaveTextContent(
+      'Add 1 more for the publish gate (≥ 2)',
+    );
+    expect(screen.getByRole('region', { name: 'Capacity' })).toHaveTextContent('8 slots left');
+    expect(screen.getByRole('region', { name: 'OCR' })).toHaveTextContent('3of 6 pages');
+    expect(screen.getByRole('img', { name: 'Dev samples ready: 67%' })).toBeInTheDocument();
   });
 
-  it('shows how often a holdout sample was used in evaluations', async () => {
+  it('lists dev then holdout samples with status, meta and notes', async () => {
     tab(
       fakeApi({
         listSamples: vi.fn(async () => [
-          sampleView({ filename: 'h.pdf', role: 'holdout', holdoutRuns: 2 }),
-          sampleView({ filename: 'd.pdf' }),
+          sampleView({ filename: 'h.pdf', role: 'holdout', holdoutRuns: 3, triage: triage(2, []) }),
+          sampleView({
+            filename: 'scan.pdf',
+            triage: triage(3, [1, 2, 3]),
+            sizeBytes: 1.2 * 1024 * 1024,
+          }),
+          sampleView({
+            filename: 'wip.pdf',
+            state: 'preparing',
+            triage: null,
+            prepare: { stage: 'ocr', page: 1, of: 3 },
+          }),
+          sampleView({
+            filename: 'locked.pdf',
+            state: 'failed',
+            triage: null,
+            error: 'PDF is password-protected',
+            prepareError: { code: 'password', message: 'PDF is password-protected' },
+          }),
         ]),
       }),
     );
-    await screen.findByRole('table', { name: 'Samples' });
-    expect(row('h.pdf')).toHaveTextContent('used in 2 holdout evaluations');
-    expect(row('d.pdf')).not.toHaveTextContent('holdout evaluation');
+    const devList = await screen.findByRole('list', { name: 'Dev samples' });
+    expect(
+      within(devList)
+        .getAllByRole('listitem')
+        .map((li) => li.getAttribute('aria-label')),
+    ).toEqual(['scan.pdf', 'wip.pdf', 'locked.pdf']);
+    expect(row('scan.pdf')).toHaveTextContent('Ready');
+    expect(row('scan.pdf')).toHaveTextContent('3 pages · 3 OCR · 1.2 MB · added for v1');
+    expect(row('scan.pdf')).toHaveTextContent('Scanned — all 3 pages read by OCR (local/olmocr)');
+    expect(within(row('scan.pdf')).getByRole('img', { name: '3 pages' })).toHaveTextContent('3');
+    expect(row('wip.pdf')).toHaveTextContent('Preparing — OCR page 2 of 3');
+    expect(within(row('wip.pdf')).getByRole('img', { name: 'Pages unknown' })).toHaveTextContent(
+      '?',
+    );
+    expect(row('locked.pdf')).toHaveTextContent('Failed');
+    expect(row('locked.pdf')).toHaveTextContent(
+      'PDF is password-protected. Remove the password and upload it again.',
+    );
+    // A password-protected file fails the same way again: upload a new one instead.
+    expect(within(row('locked.pdf')).queryByRole('button', { name: /Retry/ })).toBeNull();
+    const holdout = screen.getByRole('list', { name: 'Holdout samples' });
+    expect(within(holdout).getByRole('listitem', { name: 'h.pdf' })).toHaveTextContent(
+      'Used in 3 holdout evaluations · never sent to a model',
+    );
+    expect(row('scan.pdf')).not.toHaveTextContent('holdout evaluation');
   });
 
   it('says "1 holdout evaluation" in the singular', async () => {
@@ -47,27 +100,39 @@ describe('SamplesTab', () => {
         ]),
       }),
     );
-    await screen.findByRole('table', { name: 'Samples' });
-    expect(row('h.pdf')).toHaveTextContent(/used in 1 holdout evaluation(?!s)/);
+    expect(await screen.findByRole('listitem', { name: 'h.pdf' })).toHaveTextContent(
+      /Used in 1 holdout evaluation(?!s)/,
+    );
   });
 
-  it('uploads each chosen PDF as a dev sample and reports failures', async () => {
+  it('uploads each chosen file with the Add as role and reports failures', async () => {
     const uploadSample = vi
       .fn()
       .mockResolvedValueOnce(sampleView())
-      .mockRejectedValueOnce(new Error('this PDF is already a sample of the project'));
+      .mockRejectedValueOnce(new Error('this PDF is already a sample of the project'))
+      .mockResolvedValue(sampleView());
     const api = fakeApi({ uploadSample });
     tab(api);
     const files = [
       new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' }),
       new File(['%PDF-2'], 'two.pdf', { type: 'application/pdf' }),
     ];
-    await userEvent.upload(screen.getByLabelText('Add sample documents'), files);
+    await userEvent.upload(await screen.findByLabelText('Add sample documents'), files);
     expect(uploadSample).toHaveBeenCalledWith('letter', files[0], 'dev');
     expect(uploadSample).toHaveBeenCalledWith('letter', files[1], 'dev');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'two.pdf: this PDF is already a sample of the project',
     );
+
+    const addAs = screen.getByRole('group', { name: 'Add as' });
+    await userEvent.click(within(addAs).getByRole('button', { name: 'Holdout' }));
+    expect(within(addAs).getByRole('button', { name: 'Holdout' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const three = new File(['%PDF-3'], 'three.pdf', { type: 'application/pdf' });
+    await userEvent.upload(screen.getByLabelText('Add sample documents'), three);
+    expect(uploadSample).toHaveBeenLastCalledWith('letter', three, 'holdout');
   });
 
   it('uploads Word documents too', async () => {
@@ -76,8 +141,22 @@ describe('SamplesTab', () => {
     const word = new File(['PK'], 'letter.docx', {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
-    await userEvent.upload(screen.getByLabelText('Add sample documents'), word);
+    await userEvent.upload(await screen.findByLabelText('Add sample documents'), word);
     expect(uploadSample).toHaveBeenCalledWith('letter', word, 'dev');
+  });
+
+  it('takes dropped files and skips what is not a PDF or Word document', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    tab(fakeApi({ uploadSample }));
+    const zone = (await screen.findByText(/Drop sample files here/)).closest('.drop-zone')!;
+    const pdf = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
+    const txt = new File(['hi'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.drop(zone, { dataTransfer: { files: [pdf, txt] } });
+    await waitFor(() => expect(uploadSample).toHaveBeenCalledWith('letter', pdf, 'dev'));
+    expect(uploadSample).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'notes.txt: not a PDF or Word document',
+    );
   });
 
   it('tells the page after a successful upload, role change or removal, not after a failed upload', async () => {
@@ -93,7 +172,7 @@ describe('SamplesTab', () => {
     });
     const onChanged = vi.fn();
     render(<SamplesTab api={api} projectId="letter" pollMs={60_000} onChanged={onChanged} />);
-    await screen.findByRole('table', { name: 'Samples' });
+    await screen.findByRole('listitem', { name: 'good.pdf' });
     const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
 
     await userEvent.upload(screen.getByLabelText('Add sample documents'), file);
@@ -103,7 +182,8 @@ describe('SamplesTab', () => {
     await userEvent.upload(screen.getByLabelText('Add sample documents'), file);
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
 
-    await userEvent.selectOptions(screen.getByLabelText('Role of good.pdf'), 'holdout');
+    const role = within(row('good.pdf')).getByRole('group', { name: 'Role of good.pdf' });
+    await userEvent.click(within(role).getByRole('button', { name: 'Holdout' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2));
 
     await userEvent.click(within(row('good.pdf')).getByRole('button', { name: 'Remove good.pdf' }));
@@ -123,12 +203,20 @@ describe('SamplesTab', () => {
       setSampleRole: vi.fn(async () => ({ ...good, role: 'holdout' as const })),
     });
     tab(api);
-    await screen.findByRole('table', { name: 'Samples' });
-    expect(row('bad.pdf')).toHaveTextContent('OCR down');
-
-    await userEvent.selectOptions(screen.getByLabelText('Role of good.pdf'), 'holdout');
+    expect(await screen.findByRole('listitem', { name: 'bad.pdf' })).toHaveTextContent(
+      'Could not prepare it: OCR down',
+    );
+    const role = within(row('good.pdf')).getByRole('group', { name: 'Role of good.pdf' });
+    expect(within(role).getByRole('button', { name: 'Dev' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(role).getByRole('button', { name: 'Dev' }));
+    expect(api.setSampleRole).not.toHaveBeenCalled(); // already dev
+    await userEvent.click(within(role).getByRole('button', { name: 'Holdout' }));
     expect(api.setSampleRole).toHaveBeenCalledWith('letter', good.id, 'holdout');
 
+    expect(within(row('good.pdf')).queryByRole('button', { name: /Retry/ })).toBeNull();
     await userEvent.click(within(row('bad.pdf')).getByRole('button', { name: 'Retry bad.pdf' }));
     expect(api.retryJob).toHaveBeenCalledWith(failed.prepareJobId);
 
@@ -136,24 +224,41 @@ describe('SamplesTab', () => {
     expect(api.removeSample).toHaveBeenCalledWith('letter', good.id);
   });
 
-  it('shows the prepared text page by page, marking OCR pages', async () => {
-    const s = sampleView({ filename: 'a.pdf' });
-    const api = fakeApi({
-      listSamples: vi.fn(async () => [s]),
-      getSampleText: vi.fn(async () => ({
-        sha256: 'abc',
-        pages: [
-          { number: 1, text: 'PROTOCOL APPROVAL', ocr: false },
-          { number: 2, text: 'Batch 1 results', ocr: true },
-        ],
-      })),
-    });
-    tab(api);
-    await userEvent.click(await screen.findByRole('button', { name: 'View text of a.pdf' }));
-    const page2 = await screen.findByRole('region', { name: 'Page 2' });
-    expect(page2).toHaveTextContent('Batch 1 results');
-    expect(page2).toHaveTextContent('OCR');
-    expect(screen.getByRole('region', { name: 'Page 1' })).not.toHaveTextContent('OCR');
+  it('previews the first ready dev sample, page by page, and switches on selection', async () => {
+    const a = sampleView({ filename: 'a.pdf', triage: triage(2, [2]) });
+    const b = sampleView({ filename: 'b.pdf', triage: triage(1, []) });
+    const wip = sampleView({ filename: 'wip.pdf', state: 'preparing', triage: null });
+    const getSampleText = vi.fn(async (_p: string, id: string) => ({
+      sha256: 'abc',
+      pages:
+        id === a.id
+          ? [
+              { number: 1, text: 'PROTOCOL APPROVAL', ocr: false },
+              { number: 2, text: 'Batch 1 results', ocr: true },
+            ]
+          : [{ number: 1, text: 'MEMO', ocr: false }],
+    }));
+    tab(fakeApi({ listSamples: vi.fn(async () => [wip, a, b]), getSampleText }));
+    const preview = await screen.findByRole('region', { name: 'Text preview' });
+    expect(within(preview).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
+    expect(preview).toHaveTextContent('1,412 characters');
+    expect(await within(preview).findByRole('region', { name: 'Page 1' })).toHaveTextContent(
+      '[page 1] PROTOCOL APPROVAL',
+    );
+    await userEvent.click(within(preview).getByRole('button', { name: 'Page 2 OCR' }));
+    expect(within(preview).getByRole('region', { name: 'Page 2' })).toHaveTextContent(
+      'Batch 1 results',
+    );
+    expect(preview).toHaveTextContent('Read by OCR (local/olmocr) · cached per PDF hash');
+    expect(screen.getByRole('button', { name: 'Show text of a.pdf' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Show text of wip.pdf' })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show text of b.pdf' }));
+    expect(await within(preview).findByText(/MEMO/)).toBeInTheDocument();
+    expect(getSampleText).toHaveBeenLastCalledWith('letter', b.id);
   });
 
   it('marks where a section starts on its page', async () => {
@@ -216,5 +321,138 @@ describe('SamplesTab', () => {
       />,
     );
     expect(await screen.findByRole('note', { name: 'head starts here' })).toBeInTheDocument();
+  });
+});
+
+describe('SamplesTab capacity and polling', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => sampleView({ filename: `s${i}.pdf` }));
+  const pdf = (name: string) => new File(['%PDF-1'], name, { type: 'application/pdf' });
+
+  it('caps a dropped batch to the slots left and ignores drops at capacity', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    const listSamples = vi.fn(async () => many(11));
+    tab(fakeApi({ listSamples, uploadSample }));
+    const zone = (await screen.findByText(/Drop sample files here/)).closest('.drop-zone')!;
+    fireEvent.drop(zone, { dataTransfer: { files: [pdf('a.pdf'), pdf('b.pdf'), pdf('c.pdf')] } });
+    await waitFor(() => expect(uploadSample).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('alert')).toHaveTextContent('b.pdf: no sample slots left');
+  });
+
+  it('uploads nothing and disables the picker with no slots left', async () => {
+    const uploadSample = vi.fn().mockResolvedValue(sampleView());
+    tab(fakeApi({ listSamples: vi.fn(async () => many(12)), uploadSample }));
+    const zone = (await screen.findByText(/Drop sample files here/)).closest('.drop-zone')!;
+    expect(screen.getByLabelText('Add sample documents')).toBeDisabled();
+    fireEvent.drop(zone, { dataTransfer: { files: [pdf('a.pdf')] } });
+    expect(uploadSample).not.toHaveBeenCalled();
+  });
+
+  it('polls while a sample is preparing, stops when all are ready and after unmount', async () => {
+    vi.useFakeTimers();
+    try {
+      let state: 'preparing' | 'ready' = 'preparing';
+      const listSamples = vi.fn(async () => [
+        sampleView({ filename: 'w.pdf', state, triage: state === 'ready' ? triage(1, []) : null }),
+      ]);
+      const view = render(
+        <SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />,
+      );
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(listSamples).toHaveBeenCalledTimes(1);
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      state = 'ready';
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(listSamples).toHaveBeenCalledTimes(3);
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(listSamples).toHaveBeenCalledTimes(3);
+
+      state = 'preparing';
+      view.unmount();
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(listSamples).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears a list error once a later refresh succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      const listSamples = vi
+        .fn()
+        .mockResolvedValueOnce([
+          sampleView({ filename: 'w.pdf', state: 'preparing', triage: null }),
+        ])
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue([sampleView({ filename: 'w.pdf', state: 'preparing', triage: null })]);
+      render(<SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(screen.getByRole('alert')).toHaveTextContent('network down');
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(screen.queryByRole('alert')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start a refresh while one is still in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      let release: (v: ReturnType<typeof sampleView>[]) => void = () => {};
+      const waiting = new Promise<ReturnType<typeof sampleView>[]>((r) => (release = r));
+      const prep = sampleView({ filename: 'w.pdf', state: 'preparing', triage: null });
+      const listSamples = vi
+        .fn()
+        .mockResolvedValueOnce([prep])
+        .mockReturnValueOnce(waiting)
+        .mockResolvedValue([prep]);
+      render(<SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      await act(() => vi.advanceTimersByTimeAsync(100)); // starts the slow refresh
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      await act(() => vi.advanceTimersByTimeAsync(500)); // ticks while it is pending
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      release([prep]);
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(listSamples).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores a response that arrives after unmount', async () => {
+    let release: (v: ReturnType<typeof sampleView>[]) => void = () => {};
+    const listSamples = vi.fn(
+      () => new Promise<ReturnType<typeof sampleView>[]>((r) => (release = r)),
+    );
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = render(
+        <SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />,
+      );
+      view.unmount();
+      await act(async () => release([sampleView({ filename: 'late.pdf' })]));
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it('keeps a list error visible once polling has stopped, until a refresh succeeds', async () => {
+    const listSamples = vi
+      .fn()
+      .mockResolvedValueOnce([sampleView({ filename: 'a.pdf' })])
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue([sampleView({ filename: 'a.pdf' })]);
+    const api = fakeApi({ listSamples, removeSample: vi.fn(async () => {}) });
+    tab(api);
+    await screen.findByRole('listitem', { name: 'a.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });

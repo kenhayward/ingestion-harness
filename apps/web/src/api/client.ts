@@ -1,6 +1,7 @@
 import type {
   Brief,
   BriefBody,
+  BriefVersionView,
   DataPolicy,
   DraftStage,
   EditRequest,
@@ -387,6 +388,8 @@ export interface Api {
   removeSample(projectId: string, sampleId: string): Promise<void>;
   getSampleText(projectId: string, sampleId: string): Promise<PreparedText>;
   saveBrief(projectId: string, body: BriefBody): Promise<Brief>;
+  listBriefVersions(projectId: string): Promise<BriefVersionView[]>;
+  getBriefVersion(projectId: string, version: number): Promise<Brief>;
   /** Test-run the open draft on every prepared dev sample. */
   runDevTests(projectId: string): Promise<{ jobs: JobSummary[] }>;
   listTestRuns(projectId: string): Promise<JobSummary[]>;
@@ -715,6 +718,10 @@ export function createHttpApi(base = '/api'): Api {
         json<PreparedText>,
       ),
     saveBrief: (id, body) => post<Brief>(`${base}/workbench/projects/${id}/brief`, body, 'PUT'),
+    listBriefVersions: (id) =>
+      apiFetch(`${base}/workbench/projects/${id}/briefs`).then(json<BriefVersionView[]>),
+    getBriefVersion: (id, version) =>
+      apiFetch(`${base}/workbench/projects/${id}/briefs/${version}`).then(json<Brief>),
     runDevTests: (id) =>
       post<{ jobs: JobSummary[] }>(`${base}/workbench/projects/${id}/test-runs`, {}),
     listTestRuns: (id) =>

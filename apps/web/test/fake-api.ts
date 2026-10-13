@@ -348,6 +348,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     saveBrief: vi.fn(async () => {
       throw new Error('saveBrief not stubbed');
     }),
+    listBriefVersions: vi.fn(async () => []),
+    getBriefVersion: vi.fn(async () => {
+      throw new Error('getBriefVersion not stubbed');
+    }),
     runDevTests: vi.fn(async () => ({ jobs: [] })),
     listTestRuns: vi.fn(async () => []),
     startSegmentation: vi.fn(async () => {
@@ -478,6 +482,8 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     state: 'ready',
     prepareJobId: crypto.randomUUID(),
     error: null,
+    prepare: null,
+    prepareError: null,
     triage: { sha256: 'abc', pageCount: 3, ocrPages: [2], chars: 900, ocrModel: 'local/olmocr' },
     holdoutRuns: 0,
     ...overrides,

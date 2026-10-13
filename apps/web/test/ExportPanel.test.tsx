@@ -11,6 +11,9 @@ const exp = (overrides: Partial<ExportView> = {}): ExportView => ({
   error: null,
   createdAt: 't',
   updatedAt: 't',
+  briefVersion: null,
+  devSamples: null,
+  bytes: null,
   ...overrides,
 });
 
@@ -112,5 +115,38 @@ describe('ExportPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('network down');
     await screen.findByRole('link', { name: 'Download bundle' });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('tells what the ready bundle carries and offers it again', async () => {
+    const api = fakeApi({
+      listExports: vi.fn(async () => [
+        exp({ status: 'succeeded', briefVersion: 3, devSamples: 6, bytes: 3_250_000 }),
+      ]),
+      startExport: vi.fn(async () => exp()),
+    });
+    render(
+      <ExportPanel api={api} role="admin" projectId="letter" dataPolicy="external" pollMs={10} />,
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Export ready · brief v3 · 6 dev samples · 3.1 MB',
+    );
+    expect(screen.getByRole('link', { name: 'Download bundle' })).toHaveTextContent('Download');
+    expect(screen.queryByRole('button', { name: 'Export bundle' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Export again' }));
+    expect(api.startExport).toHaveBeenCalledWith('letter');
+  });
+
+  it('says what the bundle includes, never holdout', async () => {
+    render(<ExportPanel api={fakeApi()} role="admin" projectId="letter" dataPolicy="external" />);
+    expect(await screen.findByText(/never holdout samples/)).toBeInTheDocument();
+  });
+
+  it('notes that a local-only project needs the admin token', async () => {
+    render(<ExportPanel api={fakeApi()} role="admin" projectId="letter" dataPolicy="local" />);
+    expect(
+      await screen.findByText(
+        'Local-only project: exporting and downloading need the admin token.',
+      ),
+    ).toBeInTheDocument();
   });
 });

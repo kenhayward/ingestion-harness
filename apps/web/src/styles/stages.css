@@ -1184,3 +1184,431 @@ label.inline.list-select {
   margin: 8px 0 0;
   font-size: var(--ih-text-sm);
 }
+
+/* Samples tab (handoff §1) */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ih-space-3);
+}
+.summary-card h3 {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+}
+.summary-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 6px 0;
+}
+.summary-figure strong {
+  font-size: var(--ih-text-xl);
+}
+.summary-foot {
+  margin: 6px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.tone-text-warn {
+  color: var(--ih-warn-fg);
+}
+.tone-text-info {
+  color: var(--ih-info-fg);
+}
+.tone-text-danger {
+  color: var(--ih-danger-fg);
+}
+.tone-text-muted {
+  color: var(--ih-muted);
+}
+.sample-drop {
+  display: flex;
+  align-items: center;
+  gap: var(--ih-space-3);
+  flex-wrap: wrap;
+  margin: var(--ih-space-3) 0;
+}
+.sample-drop .drop-text {
+  flex: 1 1 280px;
+}
+.browse-link {
+  color: var(--ih-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.drop-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.samples-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--ih-space-3);
+  align-items: start;
+}
+.sample-groups {
+  display: grid;
+  gap: var(--ih-space-3);
+}
+.sample-group {
+  padding: 0;
+  overflow: hidden;
+}
+.sample-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.sample-group-head h3 {
+  margin: 0;
+  font-size: var(--ih-text-md);
+}
+.sample-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sample-empty {
+  padding: 12px 14px;
+}
+.sample-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.sample-row.selected {
+  background: var(--ih-sel-row);
+}
+.page-badge {
+  display: inline-grid;
+  place-items: end center;
+  width: 28px;
+  height: 34px;
+  padding-bottom: 3px;
+  border: 1px solid var(--ih-border-strong);
+  border-radius: var(--ih-radius-sm);
+  font-size: var(--ih-text-xs);
+}
+.sample-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sample-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--ih-font-mono);
+  font-weight: 600;
+  color: var(--ih-text);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.sample-name:disabled {
+  cursor: default;
+}
+.sample-meta,
+.sample-note {
+  margin: 2px 0 0;
+  font-size: var(--ih-text-sm);
+  overflow-wrap: anywhere;
+}
+.holdout-note {
+  color: var(--ih-skip-fg);
+}
+.sample-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.sample-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sample-preview-head h3 {
+  margin: 0;
+  font-family: var(--ih-font-mono);
+  overflow-wrap: anywhere;
+}
+.page-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.page-chips button[aria-pressed='true'] {
+  border-color: var(--ih-accent);
+  color: var(--ih-accent);
+}
+.ocr-flag {
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  color: var(--ih-info-fg);
+}
+.sample-text.paged pre {
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sample-preview-foot {
+  margin: 10px 0 0;
+  font-size: var(--ih-text-sm);
+}
+@media (max-width: 1100px) {
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .samples-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .summary-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sample-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .sample-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.sample-drop:has(input:focus-visible) {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: 2px;
+}
+
+/* Brief tab (handoff §2) */
+.unsaved-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-sm);
+}
+.unsaved-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ih-warn-fg);
+}
+.brief-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: var(--ih-space-3) 0;
+}
+.brief-nav-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--ih-radius-pill);
+}
+.brief-nav-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.brief-nav-mark.filled {
+  background: var(--ih-ok-fg);
+  color: var(--ih-surface);
+}
+.brief-nav-mark.open {
+  background: var(--ih-warn-fg);
+  color: var(--ih-surface);
+}
+.brief-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--ih-space-3);
+  align-items: start;
+}
+.brief-main,
+.brief-side {
+  display: grid;
+  gap: var(--ih-space-3);
+}
+.brief-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ih-space-3);
+}
+.brief-card textarea {
+  width: 100%;
+  margin-top: 8px;
+}
+.brief-card.edited {
+  border-color: var(--ih-warn-fg);
+}
+.brief-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.brief-card-head h3 {
+  margin: 0;
+  font-size: var(--ih-text-md);
+}
+.brief-chars {
+  margin-left: auto;
+  font-size: var(--ih-text-xs);
+}
+.edited-tag {
+  padding: 1px 6px;
+  border-radius: var(--ih-radius-sm);
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+}
+.brief-preview p {
+  margin: 8px 0 4px;
+  font-size: var(--ih-text-sm);
+}
+.brief-diff-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.brief-answers {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ih-space-3);
+}
+.brief-answers.empty {
+  border-style: dashed;
+  border-color: var(--ih-warn-fg);
+  background: var(--ih-warn-bg);
+}
+.brief-answers-body {
+  flex: 1;
+}
+.brief-answers-body h3 {
+  margin: 0 0 4px;
+  font-size: var(--ih-text-md);
+}
+.brief-answers dl div {
+  margin: 0 0 6px;
+}
+.brief-answers dt {
+  font-weight: 600;
+}
+.brief-answers dd {
+  margin: 0;
+}
+.brief-versions ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-versions li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.brief-versions li > button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+}
+.brief-versions li p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.brief-version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.version-tag {
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  color: var(--ih-muted);
+}
+.version-tag.current {
+  color: var(--ih-ok-fg);
+}
+@media (max-width: 1100px) {
+  .brief-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .brief-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .brief-answers {
+    flex-wrap: wrap;
+  }
+}
+
+/* Drafting bundle panel (handoff §2) */
+.export-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: var(--ih-text-md);
+}
+.export-panel p {
+  font-size: var(--ih-text-sm);
+}
+.export-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.tone-text-ok {
+  color: var(--ih-ok-fg);
+}
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.export-note {
+  margin: 10px 0 0;
+}
+
+/* Workbench tab cards: .card itself has no padding, so these add the design's 12px 16px. */
+.brief-card,
+.brief-answers,
+.brief-versions,
+.brief-compare,
+.export-panel,
+.card.coverage,
+.card.pipeline,
+.summary-card,
+.sample-preview {
+  padding: 12px 16px;
+}
+.brief-card h3,
+.brief-answers h3,
+.brief-versions h3,
+.brief-compare h3,
+.export-panel h3,
+.coverage-head h3,
+.pipeline-head h3,
+.summary-card h3,
+.sample-preview-head h3 {
+  font-weight: 600;
+}

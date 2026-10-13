@@ -46,6 +46,9 @@ export const BundleManifestSchema = z
   .strict();
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;
 
+/** The worker's last event of an export job; its data carries the zip's `bytes`. */
+export const BUNDLE_EXPORTED_EVENT = 'bundle exported';
+
 /** An export job of a project, newest first in lists. */
 export const ExportViewSchema = z.object({
   jobId: z.string().uuid(),
@@ -53,5 +56,11 @@ export const ExportViewSchema = z.object({
   error: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** The brief version the bundle carries (null: no brief saved). */
+  briefVersion: z.number().int().nullable(),
+  /** Dev samples (PDF or Word) the bundle carries; null when the export's params are unreadable. */
+  devSamples: z.number().int().nullable(),
+  /** The zip's size once the export succeeded; null before (or for an older export). */
+  bytes: z.number().int().nullable(),
 });
 export type ExportView = z.infer<typeof ExportViewSchema>;

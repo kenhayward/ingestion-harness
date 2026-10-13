@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BriefVersionViewSchema,
   ComparisonSchema,
   ExportViewSchema,
   FeedbackItemSchema,
   GateViewSchema,
   IterationViewSchema,
   ModelInfoSchema,
+  PrepareErrorSchema,
   ProjectSummarySchema,
   ProjectViewSchema,
   ProposalViewSchema,
@@ -135,8 +137,17 @@ const sample = {
   state: 'ready',
   prepareJobId: '00000000-0000-4000-8000-000000000005',
   error: null,
+  prepare: { stage: 'ocr', page: 1, of: 3 },
+  prepareError: null,
   triage: { sha256: 'ab'.repeat(32), pageCount: 2, ocrPages: [], chars: 900, ocrModel: null },
   holdoutRuns: 0,
+};
+
+const briefVersion = {
+  version: 2,
+  createdAt: '2026-10-13T09:00:00.000Z',
+  changedSections: ['glossary'],
+  usedBy: ['outputs'],
 };
 
 const exportView = {
@@ -145,6 +156,9 @@ const exportView = {
   error: null,
   createdAt: '2026-10-13T09:00:00.000Z',
   updatedAt: '2026-10-13T09:00:01.000Z',
+  briefVersion: 3,
+  devSamples: 6,
+  bytes: 3_100_000,
 };
 
 const at = '2026-10-13T09:00:00.000Z';
@@ -226,7 +240,14 @@ describe.each([
   ],
   ['ProjectView', ProjectViewSchema, projectView, 'brief'],
   ['SampleView', SampleViewSchema, sample, 'state'],
+  [
+    'PrepareError',
+    PrepareErrorSchema,
+    { code: 'password', message: 'PDF is password-protected' },
+    'code',
+  ],
   ['ExportView', ExportViewSchema, exportView, 'status'],
+  ['BriefVersionView', BriefVersionViewSchema, briefVersion, 'usedBy'],
   ['IterationView', IterationViewSchema, iteration, 'scorecard'],
   ['ProposalView', ProposalViewSchema, proposal, 'stage'],
   ['ReferenceRow', ReferenceRowSchema, referenceRow, 'reference'],

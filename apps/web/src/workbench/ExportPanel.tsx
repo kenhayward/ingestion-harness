@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DataPolicy, ExportView } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
+import { exportStatusText } from './brief.js';
 
 const ACTIVE = new Set(['queued', 'running']);
 
@@ -56,40 +58,49 @@ export function ExportPanel({
     }
   };
 
+  const canDownload = dataPolicy !== 'local' || role === 'admin';
+  const ready = latest?.status === 'succeeded';
   return (
-    <section className="card" aria-label="Drafting bundle">
-      <h3>Drafting bundle</h3>
+    <section className="card export-panel" aria-labelledby="export-title">
+      <h3 id="export-title">
+        <Icon name="file" /> Drafting bundle
+      </h3>
       <p className="muted">
-        The drafting context, stage instructions, brief, draft and dev samples as uploaded — never
-        holdout samples — for drafting elsewhere or importing into another deployment.
+        Brief, draft, stage instructions and the dev samples as uploaded — never holdout samples —
+        to draft elsewhere or import into another deployment.
       </p>
-      {dataPolicy === 'local' && (
-        <p className="muted">Exporting a local-only project needs the admin token.</p>
-      )}
       {error && <p role="alert">{error}</p>}
-      <button type="button" disabled={busy || active} onClick={() => void start()}>
-        Export bundle
-      </button>
       {latest && (
-        <p role="status">
-          {latest.status === 'succeeded' ? (
-            <>
-              Export ready.{' '}
-              {dataPolicy === 'local' && role !== 'admin' ? (
-                <span>Downloading a local-only project&apos;s bundle needs the admin token.</span>
-              ) : (
-                <a href={api.exportBundleUrl(projectId, latest.jobId)} download>
-                  Download bundle
-                </a>
-              )}
-            </>
-          ) : active ? (
-            `Export ${latest.status}…`
+        <p
+          role="status"
+          className={`export-status ${ready ? 'tone-text-ok' : active ? 'tone-text-info' : 'tone-text-danger'}`}
+        >
+          {ready && <Icon name="check" />} {exportStatusText(latest)}
+        </p>
+      )}
+      <div className="export-actions">
+        {latest?.status === 'succeeded' &&
+          (canDownload ? (
+            <a
+              className="button primary"
+              href={api.exportBundleUrl(projectId, latest.jobId)}
+              download
+              aria-label="Download bundle"
+            >
+              <Icon name="download" /> Download
+            </a>
           ) : (
-            `Export ${latest.status === 'cancelled' ? 'cancelled' : 'failed'}${
-              latest.error ? `: ${latest.error}` : ''
-            }`
-          )}
+            <span className="muted">
+              Downloading a local-only project&apos;s bundle needs the admin token.
+            </span>
+          ))}
+        <button type="button" disabled={busy || active} onClick={() => void start()}>
+          {latest ? 'Export again' : 'Export bundle'}
+        </button>
+      </div>
+      {dataPolicy === 'local' && (
+        <p className="muted export-note">
+          Local-only project: exporting and downloading need the admin token.
         </p>
       )}
     </section>

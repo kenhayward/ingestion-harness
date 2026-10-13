@@ -329,9 +329,12 @@ def ocr_pages(
     mode: OcrMode,
     *,
     sha256: str,
+    progress: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """Replace low-text pages with OCR output. Transient model errors propagate (retried).
-    `sha256` is the source's (`Source.sha256`): the shared OCR cache is keyed by it."""
+    `sha256` is the source's (`Source.sha256`): the shared OCR cache is keyed by it.
+    `progress(done, total)` is called after each page is OCR'd, from this thread (never from
+    the OCR threads), counting pages read from the caches as done."""
     if deps.ocr is None:
         return pages
     targets = pages_needing_ocr(pages, mode, deps.ocr.min_chars)
@@ -383,9 +386,13 @@ def ocr_pages(
 
     # Pages are independent, so OCR them concurrently; results are written back in page order
     # and the first exception (transient or DocumentError) propagates.
+    if progress is not None and todo:
+        progress(len(cached), len(targets))  # the first page can take the whole run
     with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
-        for page in pool.map(run, todo):
+        for done, page in enumerate(pool.map(run, todo), start=1):
             pages[page.index] = page.text
+            if progress is not None:
+                progress(len(cached) + done, len(targets))
     queue.event(
         job.id,
         "info",

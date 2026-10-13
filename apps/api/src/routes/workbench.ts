@@ -5,6 +5,8 @@ import {
   AVAILABLE_STAGES,
   BriefBodySchema,
   BriefSchema,
+  BriefVersionViewSchema,
+  briefVersions,
   ComparisonViewSchema,
   DRAFT_STAGES,
   DataPolicySchema,
@@ -88,10 +90,11 @@ import {
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { listProjectsPage } from '../workbench/list.js';
+import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
-import type { NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
+import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import { draftOutputsSnapshot, validateTemplate } from '../templates/definitions.js';
@@ -117,6 +120,8 @@ const SampleIdParams = z.object({
   sid: z.string().uuid().describe('The sample id.'),
 });
 export const PROJECT_NOT_FOUND = error('`project not found`.');
+const BriefVersionParams = z.object({ id: Id, version: z.coerce.number().int().positive() });
+const BRIEF_VERSION_NOT_FOUND = '`project not found` or `brief version not found`.';
 const SAMPLE_NOT_FOUND = error('`sample not found`.');
 const DRAFT_NOT_VALID = res(
   'The open draft is not valid: `the draft is not valid`, with `issues`.',
@@ -296,6 +301,11 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
   const prepares = (await app.deps.repo.listProjectJobs(projectId)).filter(
     (j) => j.task === 'prepare',
   );
+  // Progress and failure reasons (handoff SM1-SM2): only jobs running or needing review have any.
+  const watched = prepares
+    .filter((j) => j.status === 'running' || j.status === 'needs_review')
+    .map((j) => j.id);
+  const events = watched.length ? await app.deps.repo.latestEvents(watched, PREPARE_EVENTS) : [];
   const records = await app.deps.workbench.listSamples(projectId);
   // Holdout history: the holdout iterations that evaluated this sample's PDF.
   const holdoutIterations = (await app.deps.workbench.listIterations(projectId)).filter(
@@ -312,6 +322,7 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         record,
         prepares.find((j) => j.documentId === record.documentId) ?? null,
         holdoutRuns(record.sha256),
+        events,
       ),
     })),
   );
@@ -341,6 +352,7 @@ async function toView(
   s: SampleRecord,
   job: JobSummary | null,
   holdoutRuns: number,
+  events: readonly JobEventRecord[],
 ): Promise<SampleView> {
   const state = stateOf(job);
   const triage = state === 'ready' ? await readJson(app, preparedTriageKey(s.sha256)) : null;
@@ -357,6 +369,8 @@ async function toView(
     state,
     prepareJobId: job?.id ?? null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
+    prepare: prepareProgress(job, events),
+    prepareError: prepareError(state, job, events),
     triage: triage === null ? null : PreparedTriageSchema.parse(triage),
     holdoutRuns,
   };
@@ -417,7 +431,7 @@ export async function addSampleFile(
       role,
       addedForVersion: version,
     });
-    return { view: await toView(app, record, job, 0) };
+    return { view: await toView(app, record, job, 0, []) };
   } catch (err) {
     if (err instanceof WorkbenchConflictError) return { code: 409, error: err.message };
     throw err;
@@ -1290,7 +1304,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           The project's sample PDFs with their role (\`dev\` or \`holdout\`) and preparation
           state: \`preparing\` while the worker extracts the text (with OCR where needed),
           \`ready\` with the triage (pages, OCR'd pages, characters), or \`failed\` with the
-          error. \`holdoutRuns\` counts the holdout evaluations that used the PDF.
+          error. \`holdoutRuns\` counts the holdout evaluations that used the PDF. While preparing,
+          \`prepare\` says how far the current attempt got (\`text\` read, or \`page\` of \`of\` OCR
+          pages done); a failed sample's \`prepareError\` gives a \`code\` (\`password\`,
+          \`corrupt\`, \`too_large\`, \`other\`) and the message.
         `,
         params: ProjectIdParams,
         response: { 200: res('The samples.', z.array(SampleViewSchema)), 404: PROJECT_NOT_FOUND },
@@ -1492,6 +1509,67 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const latest = await workbench.latestBrief(req.params.id);
       if (latest && JSON.stringify(latest.body) === JSON.stringify(body.data)) return latest;
       return reply.code(201).send(await workbench.saveBrief(req.params.id, body.data));
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/briefs',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'listBriefVersions',
+        summary: "List the brief's versions",
+        description: md`
+          Every saved version of the brief, newest first. \`changedSections\` names the
+          sections that differ from the previous version (for version 1, the sections with
+          text); \`usedBy\` names the drafting stages whose newest accepted or partially
+          accepted proposal was drafted from that version.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The versions, newest first.', z.array(BriefVersionViewSchema)),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      return briefVersions(
+        await workbench.listBriefs(req.params.id),
+        await workbench.listProposals(req.params.id),
+      );
+    },
+  );
+
+  app.get<{ Params: { id: string; version: string } }>(
+    '/workbench/projects/:id/briefs/:version',
+    {
+      schema: {
+        tags: ['Samples & brief'],
+        operationId: 'getBriefVersion',
+        summary: 'Get one version of the brief',
+        description: md`
+          The body of one saved version, for comparing versions (the Brief tab diffs two of
+          them section by section).
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          version: z.string().describe('The brief version: 1, 2, …'),
+        }),
+        response: { 200: res('That version.', BriefSchema), 404: error(BRIEF_VERSION_NOT_FOUND) },
+      },
+    },
+    async (req, reply) => {
+      if (!(await workbench.getProject(req.params.id))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+      const params = BriefVersionParams.safeParse(req.params);
+      const found = params.success
+        ? await workbench.getBrief(params.data.id, params.data.version)
+        : null;
+      return found ?? reply.code(404).send({ error: 'brief version not found' });
     },
   );
 

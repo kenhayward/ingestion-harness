@@ -7,15 +7,18 @@ PreparedTriage)."""
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
 import re
 import signal
 from bisect import bisect_right
 from multiprocessing.connection import Connection
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pypdf.errors import FileNotDecryptedError, PdfReadError, WrongPasswordError
 
+from .convert import ConversionRejected
 from .ocr import pages_needing_ocr
 from .pipeline import (
     DocumentError,
@@ -31,21 +34,99 @@ from .segment import PAGE_BREAK, section_spans, select_copy
 from .specs import CopySelection, Section
 from .storage import prepared_text_key, prepared_triage_key, segmentation_key
 
+log = logging.getLogger("ingest_worker")
+
 #: Longest matched line returned to the UI.
 LINE_LIMIT = 200
+
+
+#: Job events the API reads for the Samples tab (TS: PREPARE_PROGRESS_EVENT, PREPARE_FAILED_EVENT).
+PREPARE_PROGRESS = "prepare progress"
+PREPARE_FAILED = "prepare failed"
+
+#: TS: PREPARE_ERROR_CODES (packages/shared/src/workbench.ts).
+PrepareErrorCode = Literal["password", "corrupt", "too_large", "other"]
+
+
+class PrepareFailed(DocumentError):
+    """A sample that cannot be prepared, with the reason's code for the Samples tab."""
+
+    def __init__(self, code: PrepareErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: PrepareErrorCode = code
+
+
+def prepare_error_code(exc: DocumentError) -> PrepareErrorCode:
+    """The Samples tab's reason for a failed preparation."""
+    if isinstance(exc, PrepareFailed):
+        return exc.code
+    cause = exc.__cause__
+    if isinstance(cause, ConversionRejected):
+        return "too_large" if cause.status == 413 else "corrupt"
+    return "other"
+
+
+def _extract(deps: PipelineDeps, pdf: bytes) -> list[str]:
+    """The text layer; a PDF pypdf cannot open is a property of the file (needs review)."""
+    try:
+        return deps.extract_text(pdf)
+    except (FileNotDecryptedError, WrongPasswordError) as exc:
+        raise PrepareFailed("password", "PDF is password-protected") from exc
+    except PdfReadError as exc:
+        raise PrepareFailed("corrupt", f"PDF could not be read: {exc}") from exc
+
+
+def _quietly(
+    job: ClaimedJob,
+    level: Literal["info", "warn"],
+    message: str,
+    data: dict[str, Any],
+    queue: JobQueue,
+) -> None:
+    """Progress is advisory: a failed event write (job deleted mid-run, database blip) must
+    neither replace the DocumentError being raised nor abort a good preparation."""
+    try:
+        queue.event(job.id, level, message, data)
+    except Exception:
+        log.exception("could not record %r for job %s", message, job.id)
 
 
 def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     """Extract and OCR (mode auto) one sample (a PDF, or a .docx converted to PDF); write its
     text and triage to the runs bucket, keyed by the sha256 of the uploaded file. Returns the
-    triage."""
+    triage. Reports `prepare progress` events as it goes; a sample that cannot be prepared
+    records a `prepare failed` event (code and message, the message being the review reason)
+    before the DocumentError reaches run_once."""
+    try:
+        return _prepare(job, deps, queue)
+    except DocumentError as exc:
+        data = {"code": prepare_error_code(exc), "message": str(exc)}
+        _quietly(job, "warn", PREPARE_FAILED, data, queue)
+        raise
+
+
+def _prepare(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
+    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
+        data = {"stage": stage, "page": page, "of": of}
+        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
+
     source = load_source(job, deps, queue)
     pdf, sha256 = source.pdf, source.sha256
-    pages = deps.extract_text(pdf)
+    pages = _extract(deps, pdf)
+    report("text", len(pages), len(pages))
     ocr_numbers = (
         [i + 1 for i in pages_needing_ocr(pages, "auto", deps.ocr.min_chars)] if deps.ocr else []
     )
-    pages = ocr_pages(job, deps, queue, pdf, pages, "auto", sha256=sha256)
+    pages = ocr_pages(
+        job,
+        deps,
+        queue,
+        pdf,
+        pages,
+        "auto",
+        sha256=sha256,
+        progress=lambda done, total: report("ocr", done, total),
+    )
     if not any(p.strip() for p in pages):
         hint = "OCR is not configured" if deps.ocr is None else "OCR returned no text"
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")

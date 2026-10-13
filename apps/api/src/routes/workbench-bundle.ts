@@ -9,6 +9,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   BriefBodySchema,
+  BUNDLE_EXPORTED_EVENT,
   BundleManifestSchema,
   EMPTY_BRIEF,
   ExportViewSchema,
@@ -25,7 +26,7 @@ import {
   type SurveyBody,
   type WorkbenchProject,
 } from '@ih/shared';
-import type { ProjectJob } from '../repositories/types.js';
+import type { JobEventRecord, ProjectJob } from '../repositories/types.js';
 import { pinned } from '../templates/drafts.js';
 import { TemplateConflictError } from '../templates/repo.js';
 import {
@@ -103,13 +104,31 @@ interface Answer {
 }
 const answer = (code: number, body: unknown): Answer => ({ code, body });
 
-const exportView = (j: ProjectJob): ExportView => ({
-  jobId: j.id,
-  status: j.status,
-  error: j.error,
-  createdAt: j.createdAt,
-  updatedAt: j.updatedAt,
+/** What the export job's params say about the bundle (written by the export route). */
+const ExportFacts = z.object({
+  briefVersion: z.number().int().nullable().optional(),
+  samples: z.array(z.unknown()).optional(),
 });
+const ExportedBytes = z.object({ bytes: z.number().int().nonnegative() });
+
+const exportView = (
+  j: ProjectJob,
+  params: unknown,
+  exported: JobEventRecord | undefined,
+): ExportView => {
+  const facts = ExportFacts.safeParse(params);
+  const bytes = j.status === 'succeeded' ? ExportedBytes.safeParse(exported?.data) : null;
+  return {
+    jobId: j.id,
+    status: j.status,
+    error: j.error,
+    createdAt: j.createdAt,
+    updatedAt: j.updatedAt,
+    briefVersion: facts.success ? (facts.data.briefVersion ?? null) : null,
+    devSamples: facts.success && facts.data.samples ? facts.data.samples.length : null,
+    bytes: bytes?.success ? bytes.data.bytes : null,
+  };
+};
 
 export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
   const { repo, store, buckets, templates, workbench } = app.deps;
@@ -396,7 +415,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       const completedStages = (await stagesOf(app, id))
         .filter((s) => s.state === 'accepted' || s.state === 'skipped')
         .map((s) => s.stage);
-      const { job, removed } = await repo.createExportJob(id, {
+      const params = {
         stage: 'export',
         dataPolicy: project.dataPolicy,
         projectName: project.name,
@@ -406,13 +425,14 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         survey: await acceptedSurvey(app, id),
         completedStages,
         samples,
-      });
+      };
+      const { job, removed } = await repo.createExportJob(id, params);
       for (const removedId of removed) await store.delete(buckets.runs, exportKey(id, removedId));
       req.log.info(
         { projectId: id, jobId: job.id, samples: samples.length },
         'bundle export queued',
       );
-      return reply.code(202).send(exportView(job));
+      return reply.code(202).send(exportView(job, params, undefined));
     },
   );
 
@@ -425,7 +445,9 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         summary: "List a project's exports",
         description: md`
           The project's export jobs, newest first (at most one: a new export replaces the old).
-          Download a \`succeeded\` one with \`GET …/exports/{jobId}/bundle\`.
+          Download a \`succeeded\` one with \`GET …/exports/{jobId}/bundle\`. Each carries the
+          brief version and the number of dev samples it was built from, and, once
+          \`succeeded\`, the zip's size in \`bytes\`.
         `,
         params: ProjectIdParams,
         response: { 200: res('The exports.', z.array(ExportViewSchema)), 404: PROJECT_NOT_FOUND },
@@ -435,7 +457,20 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
       if (!(await workbench.getProject(req.params.id))) {
         return reply.code(404).send({ error: 'project not found' });
       }
-      return (await repo.listExportJobs(req.params.id)).map(exportView);
+      const jobs = await repo.listExportJobs(req.params.id);
+      const events = await repo.latestEvents(
+        jobs.map((j) => j.id),
+        [BUNDLE_EXPORTED_EVENT],
+      );
+      return Promise.all(
+        jobs.map(async (j) =>
+          exportView(
+            j,
+            await repo.getJobParams(j.id),
+            events.find((e) => e.jobId === j.id),
+          ),
+        ),
+      );
     },
   );
 
