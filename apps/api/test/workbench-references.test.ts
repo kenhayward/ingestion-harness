@@ -73,7 +73,11 @@ describe('references stage', () => {
       referenceId: string | null;
     }[];
     expect(job).toMatchObject({ modelOverride: 'draft', referenceId: null });
-    expect(repo.jobParams.get(job!.id)).toEqual({ dataPolicy: 'local', forceReview: true });
+    expect(repo.jobParams.get(job!.id)).toEqual({
+      dataPolicy: 'local',
+      forceReview: true,
+      outputs: letter(1).outputs,
+    });
     expect((await stage())!.state).toBe('running');
     expect(await rows()).toEqual([
       {

@@ -30,7 +30,7 @@ export function QualityPanel({
   const refresh = useCallback(async () => {
     try {
       const [refs, regression, stats] = await Promise.all([
-        api.listReferences(templateId),
+        api.listReferences(templateId, version),
         api.getRegression(templateId, version),
         api.getMetrics(templateId),
       ]);

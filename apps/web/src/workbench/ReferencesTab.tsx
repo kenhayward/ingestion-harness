@@ -116,6 +116,10 @@ export function ReferencesTab({
       </div>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
+      <p className="muted">
+        References carry over from the previous version; only those whose outputs changed need
+        verifying again.
+      </p>
       <ReferenceTable label="References" rows={rows} />
       <h3>Holdout references</h3>
       <p className="muted">
@@ -164,7 +168,23 @@ function ReferenceTable({ label, rows }: { label: string; rows: ReferenceRow[] |
               )}
             </td>
             <td>
-              {r.reference ? `✓ ${r.reference.name}` : <span className="muted">Not verified</span>}
+              {r.reference ? (
+                <>
+                  {r.reference.outdated.length === 0 ? '✓ ' : ''}
+                  {r.reference.name}
+                  {r.reference.carriedFrom !== null && (
+                    <small className="muted"> carried from v{r.reference.carriedFrom}</small>
+                  )}
+                  {r.reference.outdated.length > 0 && (
+                    <small role="status">
+                      {' '}
+                      re-verify: {r.reference.outdated.join(', ')} changed
+                    </small>
+                  )}
+                </>
+              ) : (
+                <span className="muted">Not verified</span>
+              )}
             </td>
           </tr>
         ))}

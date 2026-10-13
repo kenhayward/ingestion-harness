@@ -12,6 +12,15 @@ import type {
   StepRun,
 } from '@ih/shared';
 
+/**
+ * A reference to save. `templateVersion` pins it to a version (Workbench types) together with the
+ * outputs definition its values were verified against; without it the reference is unpinned.
+ */
+export type NewReference = Omit<
+  Reference,
+  'id' | 'createdAt' | 'templateVersion' | 'copiedFrom' | 'verifiedOutputs' | 'supersededAt'
+> & { templateVersion?: number | null; verifiedOutputs?: unknown };
+
 /** Segment previews run before other workbench work, still after production (ADR 0007). */
 export const SEGMENT_PRIORITY = -5;
 
@@ -146,6 +155,8 @@ export interface IngestionRepo {
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail | null>;
+  /** jobs.params (free-form; null when unset or the job is unknown). */
+  getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
   getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */
@@ -172,11 +183,21 @@ export interface IngestionRepo {
   listModels(): Promise<ModelInfo[]>;
 
   // --- references and regression runs ---
-  /** Throws ReferenceConflictError when the name is taken for the template. */
-  createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference>;
-  listReferences(templateId: string): Promise<Reference[]>;
-  /** References with their document's sha256, newest first. */
+  /**
+   * Throws ReferenceConflictError when the name is taken among live references of the template
+   * and version (unpinned references share one namespace). With `templateVersion`, live
+   * references of that version for the same PDF (sha256) are superseded first: re-verifying.
+   */
+  createReference(input: NewReference): Promise<Reference>;
+  /** Live references, oldest first; with `version`, those pinned to it or unpinned. */
+  listReferences(templateId: string, version?: number): Promise<Reference[]>;
+  /** Every reference (superseded and of every version) with its PDF's sha256, newest first. */
   listReferencesWithSha(templateId: string): Promise<(Reference & { sha256: string })[]>;
+  /**
+   * Copies the live references of the newest earlier version to `toVersion`, unless that version
+   * already has live pinned references. Idempotent; returns the number of copies.
+   */
+  carryReferencesForward(templateId: string, toVersion: number): Promise<number>;
   deleteReference(templateId: string, id: string): Promise<boolean>;
   /** Test job of `version` re-running the reference's PDF (new document row, same object). */
   createRegressionJob(reference: Reference, version: number): Promise<JobSummary>;

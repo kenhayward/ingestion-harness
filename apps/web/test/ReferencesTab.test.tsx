@@ -40,7 +40,14 @@ describe('ReferencesTab', () => {
         referenceRow({
           filename: 'b.pdf',
           run: null,
-          reference: { id: 'r1', name: 'b', createdAt: '' },
+          reference: {
+            id: 'r1',
+            name: 'b',
+            createdAt: '',
+            version: 1,
+            carriedFrom: null,
+            outdated: [],
+          },
         }),
       ]),
     });
@@ -53,6 +60,52 @@ describe('ReferencesTab', () => {
     expect(within(a).getByText('Not verified')).toBeInTheDocument();
     const b = within(table).getByText('b.pdf').closest('tr')!;
     expect(within(b).getByText('✓ b')).toBeInTheDocument();
+  });
+
+  it('shows carried and outdated references', async () => {
+    tab({
+      listReferenceRows: vi.fn(async (_id: string, set?: string) =>
+        set === 'holdout'
+          ? []
+          : [
+              referenceRow({
+                filename: 'a.pdf',
+                reference: {
+                  id: 'r1',
+                  name: 'a',
+                  createdAt: 't',
+                  version: 2,
+                  carriedFrom: 1,
+                  outdated: [],
+                },
+              }),
+              referenceRow({
+                filename: 'b.pdf',
+                reference: {
+                  id: 'r2',
+                  name: 'b',
+                  createdAt: 't',
+                  version: 2,
+                  carriedFrom: 1,
+                  outdated: ['field:date', 'table:lines.qty'],
+                },
+              }),
+            ],
+      ),
+    });
+    expect((await screen.findAllByText('carried from v1')).length).toBe(2);
+    expect(screen.getByText(/re-verify: field:date, table:lines\.qty changed/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/only those whose outputs changed need verifying again/),
+    ).toBeInTheDocument();
+    const verified = screen.getByText('a.pdf').closest('tr')!;
+    const outdated = screen.getByText('b.pdf').closest('tr')!;
+    expect(verified.textContent).toContain('✓');
+    expect(outdated.textContent).not.toContain('✓');
+    // a note, not an error
+    expect(within(outdated).getByRole('status')).toHaveTextContent(
+      're-verify: field:date, table:lines.qty changed',
+    );
   });
 
   it('runs the draft model on unverified samples and polls while they run', async () => {

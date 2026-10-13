@@ -23,6 +23,7 @@ import {
   type SegmentJob,
   type SegmentJobParams,
   type NewDocument,
+  type NewReference,
   type NewEdit,
   type StoredObject,
   WORKBENCH_PRIORITY,
@@ -211,6 +212,10 @@ export class MemoryRepo implements IngestionRepo {
     return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
   }
 
+  async getJobParams(id: string): Promise<Record<string, unknown> | null> {
+    return this.jobParams.get(id) ?? null;
+  }
+
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
     const job = this.jobs.get(jobId);
     const doc = job && this.documents.get(job.documentId);
@@ -369,27 +374,91 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async listReferencesWithSha(templateId: string) {
-    return (await this.listReferences(templateId))
+    return [...this.references.values()]
+      .filter((r) => r.templateId === templateId)
       .reverse()
       .map((r) => ({ ...r, sha256: this.documents.get(r.documentId)!.sha256 }));
   }
 
-  async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
-    const taken = [...this.references.values()].some(
-      (r) => r.templateId === input.templateId && r.name === input.name,
+  private liveReferences(templateId: string) {
+    return [...this.references.values()].filter(
+      (r) => r.templateId === templateId && r.supersededAt === null,
+    );
+  }
+
+  async createReference(input: NewReference): Promise<Reference> {
+    const version = input.templateVersion ?? null;
+    const sha = this.documents.get(input.documentId)?.sha256;
+    // Re-verifying a sample at a pinned version replaces its reference. Decide the name
+    // conflict before superseding anything, so a refused save changes nothing.
+    const replaced =
+      version === null
+        ? []
+        : this.liveReferences(input.templateId).filter(
+            (r) =>
+              r.templateVersion === version && this.documents.get(r.documentId)?.sha256 === sha,
+          );
+    const taken = this.liveReferences(input.templateId).some(
+      (r) => !replaced.includes(r) && r.templateVersion === version && r.name === input.name,
     );
     if (taken) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
-    const ref: Reference = { ...input, id: randomUUID(), createdAt: this.now() };
+    for (const r of replaced) this.references.set(r.id, { ...r, supersededAt: this.now() });
+    const ref: Reference = {
+      ...input,
+      templateVersion: version,
+      verifiedOutputs: version === null ? null : (input.verifiedOutputs ?? null),
+      copiedFrom: null,
+      supersededAt: null,
+      id: randomUUID(),
+      createdAt: this.now(),
+    };
     this.references.set(ref.id, ref);
     return ref;
   }
 
-  async listReferences(templateId: string): Promise<Reference[]> {
-    return [...this.references.values()].filter((r) => r.templateId === templateId);
+  async listReferences(templateId: string, version?: number): Promise<Reference[]> {
+    return this.liveReferences(templateId).filter(
+      (r) => version === undefined || r.templateVersion === null || r.templateVersion === version,
+    );
+  }
+
+  async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
+    // A version with any row, live or superseded (deleted), already has its own set.
+    const rows = [...this.references.values()].filter((r) => r.templateId === templateId);
+    if (rows.some((r) => r.templateVersion === toVersion)) return 0;
+    const live = this.liveReferences(templateId);
+    const earlier = live
+      .map((r) => r.templateVersion)
+      .filter((v): v is number => v !== null && v < toVersion);
+    if (!earlier.length) return 0;
+    const from = Math.max(...earlier);
+    const sources = live.filter((r) => r.templateVersion === from);
+    for (const s of sources) {
+      const copy: Reference = {
+        ...s,
+        id: randomUUID(),
+        templateVersion: toVersion,
+        copiedFrom: s.id,
+      };
+      this.references.set(copy.id, copy);
+    }
+    return sources.length;
   }
 
   async deleteReference(templateId: string, id: string): Promise<boolean> {
-    if (this.references.get(id)?.templateId !== templateId) return false;
+    const ref = this.references.get(id);
+    if (ref?.templateId !== templateId) return false;
+    // A pinned reference is superseded, not removed: iterations keep their comparison and the
+    // version keeps a row, so the next read does not carry the earlier set back.
+    if (ref.templateVersion !== null) {
+      if (ref.supersededAt !== null) return false;
+      this.references.set(id, { ...ref, supersededAt: this.now() });
+      return true;
+    }
+    // copied_from REFERENCES template_references ON DELETE SET NULL
+    for (const r of this.references.values()) {
+      if (r.copiedFrom === id) this.references.set(r.id, { ...r, copiedFrom: null });
+    }
     return this.references.delete(id);
   }
 

@@ -162,9 +162,17 @@ export type RerunRequest = z.infer<typeof RerunRequestSchema>;
 export interface Reference {
   id: string;
   templateId: string;
+  /** Workbench types: the template version it belongs to. Null: every version (other types). */
+  templateVersion: number | null;
   name: string;
   documentId: string;
   sourceJobId: string | null;
+  /** The reference it was carried forward from (a copy for the next version). */
+  copiedFrom: string | null;
+  /** The outputs definition the expected values were verified against (null: unpinned). */
+  verifiedOutputs: unknown;
+  /** Set when a re-verified reference replaced this one; kept for older iterations. */
+  supersededAt: string | null;
   expected: { fields: Record<string, unknown>; tables: Record<string, Record<string, unknown>[]> };
   createdAt: string;
 }

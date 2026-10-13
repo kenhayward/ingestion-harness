@@ -25,6 +25,7 @@ import {
   type SegmentJob,
   type SegmentJobParams,
   type NewDocument,
+  type NewReference,
   type NewEdit,
   type StoredObject,
   WORKBENCH_PRIORITY,
@@ -144,6 +145,10 @@ interface ReferenceRow {
   source_job_id: string | null;
   expected: Reference['expected'];
   created_at: Date;
+  template_version: number | null;
+  copied_from: string | null;
+  verified_outputs: unknown;
+  superseded_at: Date | null;
 }
 
 const toReference = (r: ReferenceRow): Reference => ({
@@ -154,6 +159,10 @@ const toReference = (r: ReferenceRow): Reference => ({
   sourceJobId: r.source_job_id,
   expected: r.expected,
   createdAt: r.created_at.toISOString(),
+  templateVersion: r.template_version,
+  copiedFrom: r.copied_from,
+  verifiedOutputs: r.verified_outputs ?? null,
+  supersededAt: r.superseded_at?.toISOString() ?? null,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -352,6 +361,14 @@ export class PgRepo implements IngestionRepo {
     );
     const row = rows[0];
     return row ? { bucket: row.bucket, key: row.object_key, filename: row.filename } : null;
+  }
+
+  async getJobParams(id: string): Promise<Record<string, unknown> | null> {
+    const { rows } = await this.pool.query<{ params: Record<string, unknown> | null }>(
+      'SELECT params FROM jobs WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.params ?? null;
   }
 
   async getJob(id: string): Promise<JobDetail | null> {
@@ -620,27 +637,67 @@ export class PgRepo implements IngestionRepo {
     return rowCount ? await this.getJob(jobId) : null;
   }
 
-  async createReference(input: Omit<Reference, 'id' | 'createdAt'>): Promise<Reference> {
-    const { rows } = await this.pool.query<ReferenceRow>(
-      `INSERT INTO template_references (template_id, name, document_id, source_job_id, expected)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (template_id, name) DO NOTHING RETURNING *`,
-      [
-        input.templateId,
-        input.name,
-        input.documentId,
-        input.sourceJobId,
-        JSON.stringify(input.expected),
-      ],
-    );
-    if (!rows[0]) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
-    return toReference(rows[0]);
+  async createReference(input: NewReference): Promise<Reference> {
+    const version = input.templateVersion ?? null;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (version !== null) {
+        const { rows: docs } = await client.query<{ sha256: string }>(
+          'SELECT sha256 FROM documents WHERE id = $1',
+          [input.documentId],
+        );
+        const sha = docs[0]?.sha256 ?? '';
+        // Two saves of the same PDF at the same version serialize here, so the second one
+        // sees (and supersedes) the first instead of both staying live.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2 || ':' || $3))`, [
+          input.templateId,
+          String(version),
+          sha,
+        ]);
+        // Re-verifying a sample at this version: the old reference is kept for older iterations.
+        await client.query(
+          `UPDATE template_references SET superseded_at = now()
+            WHERE template_id = $1 AND template_version = $2 AND superseded_at IS NULL
+              AND document_id IN (SELECT id FROM documents WHERE sha256 = $3)`,
+          [input.templateId, version, sha],
+        );
+      }
+      // Names are unique among live references of one version (template_references_live_name_idx).
+      const { rows } = await client.query<ReferenceRow>(
+        `INSERT INTO template_references
+           (template_id, template_version, name, document_id, source_job_id, expected, verified_outputs)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT DO NOTHING RETURNING *`,
+        [
+          input.templateId,
+          version,
+          input.name,
+          input.documentId,
+          input.sourceJobId,
+          JSON.stringify(input.expected),
+          version === null ? null : JSON.stringify(input.verifiedOutputs ?? null),
+        ],
+      );
+      // A refused save rolls back the supersede above: nothing changes.
+      if (!rows[0]) throw new ReferenceConflictError(`reference "${input.name}" already exists`);
+      await client.query('COMMIT');
+      return toReference(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
-  async listReferences(templateId: string): Promise<Reference[]> {
+  async listReferences(templateId: string, version?: number): Promise<Reference[]> {
     const { rows } = await this.pool.query<ReferenceRow>(
-      'SELECT * FROM template_references WHERE template_id = $1 ORDER BY created_at',
-      [templateId],
+      `SELECT * FROM template_references
+        WHERE template_id = $1 AND superseded_at IS NULL
+          AND ($2::int IS NULL OR template_version IS NULL OR template_version = $2)
+        ORDER BY created_at, id`,
+      [templateId, version ?? null],
     );
     return rows.map(toReference);
   }
@@ -654,9 +711,42 @@ export class PgRepo implements IngestionRepo {
     return rows.map((r) => ({ ...toReference(r), sha256: r.sha256 }));
   }
 
-  async deleteReference(templateId: string, id: string): Promise<boolean> {
+  async carryReferencesForward(templateId: string, toVersion: number): Promise<number> {
+    // Concurrent callers both pass NOT EXISTS; the live-name unique index makes the second a no-op.
+    // Any row of the target version, live or superseded (deleted), means it has its own set.
+    // Copies keep the source's created_at: when the sample was verified.
     const { rowCount } = await this.pool.query(
-      'DELETE FROM template_references WHERE template_id = $1 AND id = $2',
+      `INSERT INTO template_references
+         (template_id, template_version, name, document_id, source_job_id, expected,
+          verified_outputs, copied_from, created_at)
+       SELECT r.template_id, $2, r.name, r.document_id, r.source_job_id, r.expected,
+              r.verified_outputs, r.id, r.created_at
+         FROM template_references r
+        WHERE r.template_id = $1 AND r.superseded_at IS NULL
+          AND r.template_version = (SELECT max(template_version) FROM template_references
+                                     WHERE template_id = $1 AND superseded_at IS NULL
+                                       AND template_version < $2)
+          AND NOT EXISTS (SELECT 1 FROM template_references
+                           WHERE template_id = $1 AND template_version = $2)
+        ORDER BY r.created_at, r.id
+       ON CONFLICT DO NOTHING`,
+      [templateId, toVersion],
+    );
+    return rowCount ?? 0;
+  }
+
+  async deleteReference(templateId: string, id: string): Promise<boolean> {
+    // A pinned reference is superseded, not removed: iterations keep their comparison and the
+    // version keeps a row, so the next read does not carry the earlier set back.
+    const pinned = await this.pool.query(
+      `UPDATE template_references SET superseded_at = now()
+        WHERE template_id = $1 AND id = $2 AND template_version IS NOT NULL
+          AND superseded_at IS NULL`,
+      [templateId, id],
+    );
+    if ((pinned.rowCount ?? 0) > 0) return true;
+    const { rowCount } = await this.pool.query(
+      'DELETE FROM template_references WHERE template_id = $1 AND id = $2 AND template_version IS NULL',
       [templateId, id],
     );
     return (rowCount ?? 0) > 0;

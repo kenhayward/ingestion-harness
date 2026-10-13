@@ -260,6 +260,38 @@ v(N+1) keeps vN's references pinned to vN. Samples added for v(N+1) don't change
 results. Accepted references are copied forward as the starting set for the new version, and
 re-verified only where outputs changed.
 
+How it works (migration 0018):
+
+- A Workbench reference is pinned to a template version (`template_version`) together with the
+  outputs it was verified against (`verified_outputs`). Opening the next draft copies the
+  previous version's references forward (`copied_from`); this runs on every reference read while
+  a draft is open and is idempotent.
+- `outputChanges` (`packages/shared/src/references.ts`) compares the outputs a reference was
+  verified against with the current ones. A change of type, enum values, an added or removed
+  field, table or column counts; names, descriptions and enum order do not.
+- A reference with changes is outdated and counts as unverified in the references stage,
+  reference runs (dev and holdout), evaluation and so the holdout gate's coverage, until the user
+  re-verifies it. Regression ignores outdated references.
+- The verified outputs are those the run was checked against, not the draft at save time.
+  Reference runs (dev and holdout) snapshot the draft's outputs into `params.outputs`, and
+  "Save as reference" uses that snapshot. Without one, it uses the published version's outputs,
+  or the draft's when the draft has not changed since the run was created; a draft edited after
+  the run is a 409 (`the draft changed after this run; run it again`). A run of a version that no
+  longer exists saves `{}`, which is outdated as soon as the version has outputs again.
+- `GET /api/templates/:id/references?version=N` returns the version's regression set
+  (`versionReferences`): outdated references are left out.
+- Re-verifying a sample at the same version supersedes the older reference (`superseded_at`)
+  instead of deleting it, so older iterations keep their comparisons. Deleting a pinned reference
+  supersedes it too. Carrying skips a version that has any row, live or superseded, so deleted
+  copies don't come back; copies keep the source's `created_at`.
+- Two saves of the same PDF at the same version serialize on an advisory transaction lock
+  (template, version, sha256), so only one stays live.
+- Other document types keep unpinned references that apply to every version.
+- Workbench references saved before 5b stay unpinned (every version, never carried), so
+  nothing disappears from an open draft. Migration 0018 fills their `verified_outputs` from their
+  source job's version, so an outputs change still marks them outdated; without a source job
+  they stay trusted.
+
 ## API (sketch)
 
 All routes are under `/api/workbench`, covered by the session hook and the `access.test.ts` sweep.
@@ -357,7 +389,7 @@ Each phase is usable on its own.
    - **4c (done):** feedback, `revise`, commenting from the scorecard drill-down. Phase 4 is complete.
 5. **Holdout and publish**, split in two:
    - **5a (done):** holdout evaluation, the publish gate and holdout history.
-   - **5b (next):** references across versions.
+   - **5b (done):** references across versions.
 6. **Export/import bundle.**
 
 The most important phases are 2 and 4. If the segmentation preview and the scored loop aren't

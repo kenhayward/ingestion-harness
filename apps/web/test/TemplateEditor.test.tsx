@@ -382,6 +382,12 @@ describe('TemplateEditor', () => {
     expect(screen.getByText(/Average score 50%/)).toBeInTheDocument();
   });
 
+  it('lists the references of the version it shows', async () => {
+    const { api } = setup(view({ ...validDefinition(), version: 2 }));
+    await userEvent.click(await tab(/Quality/));
+    await waitFor(() => expect(api.listReferences).toHaveBeenCalledWith('letter', 2));
+  });
+
   it('shows operational metrics for the document type', async () => {
     setup(view({ ...validDefinition(), version: 3 }), {
       getMetrics: vi.fn(async () => ({

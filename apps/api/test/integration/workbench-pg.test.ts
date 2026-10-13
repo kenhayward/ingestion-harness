@@ -11,11 +11,15 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { EMPTY_BRIEF } from '@ih/shared';
+import { EMPTY_BRIEF, outputChanges } from '@ih/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
 import { PgRepo } from '../../src/repositories/pg.js';
-import type { NewDocument, SegmentJobParams } from '../../src/repositories/types.js';
+import {
+  ReferenceConflictError,
+  type NewDocument,
+  type SegmentJobParams,
+} from '../../src/repositories/types.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
@@ -307,6 +311,147 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
 
     const refs = await repo.listReferencesWithSha(projectId);
     expect(refs.map((r) => [r.name, r.sha256])).toEqual([['first', source.sha256]]);
+  });
+
+  it('pins, supersedes and carries references forward across versions', async () => {
+    const projectId = await newProject();
+    const source = doc(projectId);
+    const job = await repo.createWorkbenchJob(source, { projectId, task: 'process' });
+    const other = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    const outputs = { fields: [{ id: 'sender' }] };
+    const base = {
+      templateId: projectId,
+      documentId: job.documentId,
+      sourceJobId: job.id,
+      expected: { fields: {}, tables: {} },
+    };
+    const first = await repo.createReference({
+      ...base,
+      name: 'a',
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+    });
+    expect(first).toMatchObject({
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+      supersededAt: null,
+    });
+    const again = await repo.createReference({
+      ...base,
+      name: 'a',
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+    });
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+    const all = await repo.listReferencesWithSha(projectId);
+    expect(all.find((r) => r.id === first.id)!.supersededAt).not.toBeNull();
+    // a different sample under a taken name is refused, and the refusal changes nothing
+    await expect(
+      repo.createReference({
+        ...base,
+        documentId: other.documentId,
+        sourceJobId: other.id,
+        name: 'a',
+        templateVersion: 1,
+        verifiedOutputs: outputs,
+      }),
+    ).rejects.toThrow(ReferenceConflictError);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+
+    const [n1, n2] = await Promise.all([
+      repo.carryReferencesForward(projectId, 2),
+      repo.carryReferencesForward(projectId, 2),
+    ]);
+    expect(n1 + n2).toBe(1);
+    const v2 = await repo.listReferences(projectId, 2);
+    expect(v2.map((r) => [r.name, r.copiedFrom, r.templateVersion, r.verifiedOutputs])).toEqual([
+      ['a', again.id, 2, outputs],
+    ]);
+    expect((await repo.listReferences(projectId, 1)).map((r) => r.id)).toEqual([again.id]);
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(0);
+
+    const unpinned = await repo.createReference({ ...base, name: 'u' });
+    expect(unpinned).toMatchObject({ templateVersion: null, verifiedOutputs: null });
+    expect((await repo.listReferences(projectId, 9)).map((r) => r.id)).toEqual([unpinned.id]);
+
+    // copies keep the source's created_at
+    expect(v2[0]!.createdAt).toBe(again.createdAt);
+
+    // deleting a pinned source supersedes it: the copy keeps its link
+    expect(await repo.deleteReference(projectId, again.id)).toBe(true);
+    expect(await repo.deleteReference(projectId, again.id)).toBe(false);
+    const copies = (await repo.listReferences(projectId, 2)).filter((r) => r.templateVersion === 2);
+    expect(copies.map((r) => [r.id, r.copiedFrom])).toEqual([[v2[0]!.id, again.id]]);
+    expect(
+      (await repo.listReferences(projectId, 1)).filter((r) => r.templateVersion === 1),
+    ).toEqual([]);
+    // an unpinned reference is removed outright
+    expect(await repo.deleteReference(projectId, unpinned.id)).toBe(true);
+    expect((await repo.listReferencesWithSha(projectId)).map((r) => r.id)).not.toContain(
+      unpinned.id,
+    );
+
+    // deleting every carried reference: the version keeps its (superseded) rows, no re-carry
+    expect(await repo.deleteReference(projectId, v2[0]!.id)).toBe(true);
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(0);
+    expect(await repo.listReferences(projectId, 2)).toEqual([]);
+  });
+
+  it('serializes concurrent saves of the same PDF at one version', async () => {
+    const projectId = await newProject();
+    const source = doc(projectId);
+    const job = await repo.createWorkbenchJob(source, { projectId, task: 'process' });
+    const twin = await repo.createWorkbenchJob(
+      { ...doc(projectId), sha256: source.sha256 },
+      { projectId, task: 'process' },
+    );
+    const save = (j: { id: string; documentId: string }, name: string) =>
+      repo.createReference({
+        templateId: projectId,
+        name,
+        documentId: j.documentId,
+        sourceJobId: j.id,
+        expected: { fields: {}, tables: {} },
+        templateVersion: 1,
+        verifiedOutputs: {},
+      });
+    for (let i = 0; i < 5; i++) {
+      await Promise.all([save(job, `a${i}`), save(twin, `b${i}`)]);
+      expect(await repo.listReferences(projectId, 1)).toHaveLength(1);
+    }
+  });
+
+  it('keeps a backfilled pre-5b reference unpinned, never carried, with its verified outputs', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    const outputs = { fields: [{ id: 'sender', type: 'text' }] };
+    // the shape migration 0018 leaves: template_version NULL, verified_outputs set
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO template_references
+         (template_id, name, document_id, source_job_id, expected, verified_outputs)
+       VALUES ($1, 'legacy', $2, $3, '{}', $4) RETURNING id`,
+      [projectId, job.documentId, job.id, JSON.stringify(outputs)],
+    );
+    const id = rows[0]!.id;
+    expect(await repo.carryReferencesForward(projectId, 2)).toBe(0);
+    const [legacy] = await repo.listReferences(projectId, 2);
+    expect(legacy).toMatchObject({ id, templateVersion: null, verifiedOutputs: outputs });
+    // what the Workbench and regression compute against v2's outputs
+    expect(outputChanges(legacy!.verifiedOutputs, outputs)).toEqual([]);
+    expect(
+      outputChanges(legacy!.verifiedOutputs, { fields: [{ id: 'sender', type: 'date' }] }),
+    ).toEqual(['field:sender']);
+  });
+
+  it('reads job params', async () => {
+    const projectId = await newProject();
+    const job = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      params: { forceReview: true, outputs: { fields: [] } },
+    });
+    expect(await repo.getJobParams(job.id)).toEqual({ forceReview: true, outputs: { fields: [] } });
+    expect(await repo.getJobParams(randomUUID())).toBeNull();
   });
 
   it('records iterations and caches their scores', async () => {

@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
-import { regressionFinished, regressionReport } from '../regression/report.js';
+import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { validateTemplate } from '../templates/definitions.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import { TemplateConflictError, type TemplateRecord } from '../templates/repo.js';
@@ -37,7 +37,7 @@ async function summarise(
     document?: { sections?: unknown };
     outputs?: { fields?: unknown; tables?: unknown };
   };
-  const refs = await app.deps.repo.listReferences(id);
+  const refs = await versionReferences(app, id, latest.version);
   let lastRegression: { version: number; matched: number; total: number; at: string } | null = null;
   let regressionRunning = false;
   try {

@@ -180,7 +180,17 @@ export interface ReferenceRow {
   sampleId: string;
   filename: string;
   sha256: string;
-  reference: { id: string; name: string; createdAt: string } | null;
+  reference: {
+    id: string;
+    name: string;
+    createdAt: string;
+    /** Version it is pinned to; null for an unpinned (legacy) reference. */
+    version: number | null;
+    /** Version it was carried forward from, when it is a copy. */
+    carriedFrom: number | null;
+    /** `outputChanges` against the version's outputs: non-empty means re-verify before use. */
+    outdated: string[];
+  } | null;
   /** Latest test run of this sample that is not an evaluation run. */
   run: {
     jobId: string;
