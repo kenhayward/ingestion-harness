@@ -7,11 +7,13 @@ import type { OverviewItem } from '@ih/shared';
 import { fakeApi, projectOverview, projectView } from './fake-api.js';
 
 /** The fixture overview with some items replaced. */
-const overviewWith = (items: Partial<Record<OverviewItem['stage'], Omit<OverviewItem, 'stage'>>>) =>
+const overviewWith = (
+  items: Partial<Record<OverviewItem['stage'], Omit<OverviewItem, 'stage' | 'metrics'>>>,
+) =>
   projectOverview({
     stages: projectOverview().stages.map((s) => {
       const item = items[s.stage];
-      return item ? { stage: s.stage, ...item } : s;
+      return item ? { stage: s.stage, metrics: s.metrics, ...item } : s;
     }),
   });
 

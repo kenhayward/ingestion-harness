@@ -195,7 +195,7 @@ async function readJson(app: FastifyInstance, key: string): Promise<unknown | nu
 }
 
 /** Like `readJson`, but a corrupt object reads as `undefined` instead of throwing. */
-async function readJsonSafe(
+export async function readJsonSafe(
   app: FastifyInstance,
   key: string,
 ): Promise<unknown | null | undefined> {
@@ -207,7 +207,7 @@ async function readJsonSafe(
   }
 }
 
-function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | null {
+export function parseBody(stage: DraftStage, body: unknown): SurveyBody | ChangeBody | null {
   if (stage === 'survey') {
     const survey = SurveyBodySchema.safeParse(body);
     return survey.success ? survey.data : null;
@@ -311,21 +311,6 @@ export async function sampleViews(app: FastifyInstance, projectId: string) {
         holdoutRuns(record.sha256),
       ),
     })),
-  );
-}
-
-/**
- * Each sample's state alone, as `sampleViews` derives it, without reading triage from the store
- * or counting holdout runs (overview counts).
- */
-export async function sampleStates(app: FastifyInstance, projectId: string) {
-  const [jobs, records] = await Promise.all([
-    app.deps.repo.listProjectJobs(projectId),
-    app.deps.workbench.listSamples(projectId),
-  ]);
-  const prepares = jobs.filter((j) => j.task === 'prepare');
-  return records.map((record) =>
-    stateOf(prepares.find((j) => j.documentId === record.documentId) ?? null),
   );
 }
 
@@ -487,20 +472,25 @@ async function currentReferences(app: FastifyInstance, projectId: string) {
  * Ready samples of one set with their newest reference (by PDF sha256) and newest
  * non-evaluation run.
  */
-async function referenceRows(
+export async function referenceRows(
   app: FastifyInstance,
   projectId: string,
   set: EvaluationSet = 'dev',
+  preloaded?: SampleViews,
 ): Promise<ReferenceRow[]> {
-  return (await referenceEntries(app, projectId, set)).map((e) => e.row);
+  return (await referenceEntries(app, projectId, set, preloaded)).map((e) => e.row);
 }
+
+/** `sampleViews`' result: pass it to `referenceRows` when the caller has already loaded it. */
+export type SampleViews = Awaited<ReturnType<typeof sampleViews>>;
 
 async function referenceEntries(
   app: FastifyInstance,
   projectId: string,
   set: EvaluationSet = 'dev',
+  preloaded?: SampleViews,
 ): Promise<ReferenceEntry[]> {
-  const samples = (await sampleViews(app, projectId))
+  const samples = (preloaded ?? (await sampleViews(app, projectId)))
     .filter((s) => s.view.role === set && s.view.state === 'ready')
     .map((s) => s.record)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));

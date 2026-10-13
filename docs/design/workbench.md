@@ -429,7 +429,10 @@ the project, every tab's state and status text, the Next banner and the publish 
 it while anything runs and refetches it on window focus. On project routes the app nav collapses to
 icons, `ProjectRail` (status icons, legend, a `<select>` below 760 px) and `ProjectHeader` (policy
 pill, Publish vN locked until the gate passes) frame every tab, and Overview, the default tab, shows
-the Next banner and every step's status (the map replaces that list in a later PR).
+the Next banner and the process map (`OverviewMap`, a fixed 1020×640 canvas of phase panels and
+connectors; `OverviewStack` below 760 px, with the caption). Each overview item carries two `metrics`
+per tab (`boxMetrics` in `packages/shared/src/overview.ts` over the `MetricFacts` that `gatherFacts`
+gathers in `apps/api/src/routes/workbench-overview.ts`); a metric's `at` time renders as relative time.
 
 ## Cross-language contracts touched
 

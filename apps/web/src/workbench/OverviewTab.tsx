@@ -1,25 +1,32 @@
 import { OVERVIEW_TAB_LABEL, type ProjectOverview } from '@ih/shared';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { stageStyle } from '../ui/stageStyle.js';
+import { OverviewMap, OverviewStack } from './OverviewMap.js';
 
-/** Overview tab (handoff §3): the Next banner, then every step's status. PR 4 adds the map. */
+/** Overview tab (handoff §3): the Next banner, the process map (a stack on narrow screens). */
 export function OverviewTab({
   projectId,
   overview,
+  now = Date.now(),
 }: {
   projectId: string;
   overview: ProjectOverview;
+  now?: number;
 }) {
   const { next } = overview;
   const target = next ? (next.stage === 'publish' ? 'evaluate' : next.stage) : null;
-  const tone = next
-    ? stageStyle(overview.stages.find((s) => s.stage === next.stage)?.state ?? 'none').tone
-    : null;
+  const nextState = next
+    ? (overview.stages.find((s) => s.stage === next.stage)?.state ?? 'none')
+    : 'none';
+  const tone = next ? stageStyle(nextState).tone : null;
   return (
     <div className="overview">
       {next && target && (
         <div role="note" className="next-banner" data-tone={tone ?? undefined}>
-          <div>
+          <span className="next-banner-tile" style={{ background: stageStyle(nextState).fill }}>
+            <StageStatusIcon state={nextState} decorative />
+          </span>
+          <div className="next-banner-text">
             <strong>{next.title}</strong>
             {next.reason && <p>{next.reason}</p>}
           </div>
@@ -28,24 +35,14 @@ export function OverviewTab({
           </a>
         </div>
       )}
-      <ul className="overview-list" aria-label="Stages">
-        {overview.stages.map((s) => (
-          <li key={s.stage}>
-            <a
-              href={`#/workbench/${projectId}/${s.stage === 'publish' ? 'evaluate' : s.stage}`}
-              aria-label={`${OVERVIEW_TAB_LABEL[s.stage]}: ${s.status}`}
-            >
-              {s.state === 'none' ? (
-                <span className="stage-icon-slot" aria-hidden="true" />
-              ) : (
-                <StageStatusIcon state={s.state} decorative />
-              )}
-              <span>{OVERVIEW_TAB_LABEL[s.stage]}</span>
-              <span className="muted">{s.status}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
+      <OverviewMap projectId={projectId} overview={overview} now={now} />
+      <OverviewStack projectId={projectId} overview={overview} now={now} />
+      <p className="map-caption muted">
+        Each panel groups the stages of one phase (its label sits top-right). Click any box to open
+        its tab. Blue arrows are the order the stages run in; teal dashed arrows change the draft
+        from outside the main flow. In the Draft phase the model proposes changes and you accept,
+        edit or skip them.
+      </p>
     </div>
   );
 }

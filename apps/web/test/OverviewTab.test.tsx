@@ -47,21 +47,48 @@ describe('OverviewTab', () => {
     );
   });
 
-  it('keeps three columns in the Template row, which has no status icon', () => {
-    render(<OverviewTab projectId="letter" overview={projectOverview()} />);
-    const row = screen.getByRole('link', { name: /^Template:/ });
-    expect(row.children).toHaveLength(3);
-    expect(row.children[1]).toHaveTextContent('Template');
+  it('shows the next stage state as an icon at the start of the banner', () => {
+    const base = projectOverview();
+    const { container } = render(
+      <OverviewTab
+        projectId="letter"
+        overview={{
+          ...base,
+          stages: base.stages.map((s) =>
+            s.stage === 'sections' ? { ...s, state: 'stale' as const } : s,
+          ),
+          next: { stage: 'sections', title: 'Next: refresh Sections', reason: 'x' },
+        }}
+      />,
+    );
+    const icon = container.querySelector('.next-banner .next-banner-tile svg.stage-icon');
+    expect(icon).toHaveAttribute('data-state', 'stale');
+    expect(icon).toHaveAttribute('aria-hidden', 'true');
+    // The icon tile takes the stage tone's fill (Stale: the alert background).
+    expect(container.querySelector('.next-banner-tile')!.getAttribute('style')).toContain(
+      'background: var(--ih-alert-bg)',
+    );
   });
 
-  it('lists every stage with its status and has no banner when nothing is next', () => {
+  it('gives the Template box its title and status but no status icon', () => {
     render(<OverviewTab projectId="letter" overview={projectOverview()} />);
+    const map = screen.getByRole('region', { name: 'Process map' });
+    const box = within(map).getByRole('link', { name: /^Template:/ });
+    expect(box).toHaveTextContent('Template');
+    expect(box).toHaveTextContent('Draft v1');
+    expect(box.querySelector('svg.stage-icon')).toBeNull();
+  });
+
+  it('shows the map, the narrow-screen stack and the caption, and no banner when nothing is next', () => {
+    render(<OverviewTab projectId="letter" overview={projectOverview()} now={0} />);
     expect(screen.queryByRole('note')).toBeNull();
-    const list = screen.getByRole('list', { name: 'Stages' });
-    expect(within(list).getAllByRole('listitem')).toHaveLength(12);
-    expect(within(list).getByRole('link', { name: 'Samples: Not started' })).toHaveAttribute(
-      'href',
-      '#/workbench/letter/samples',
-    );
+    const map = screen.getByRole('region', { name: 'Process map' });
+    expect(within(map).getAllByRole('link')).toHaveLength(12);
+    expect(
+      within(map).getByRole('link', { name: 'Samples: Not started. Open the Samples tab' }),
+    ).toHaveAttribute('href', '#/workbench/letter/samples');
+    const stack = screen.getByRole('group', { name: 'Stages' });
+    expect(within(stack).getAllByRole('link')).toHaveLength(12);
+    expect(screen.getByText(/Click any box to open its tab\./)).toBeInTheDocument();
   });
 });
