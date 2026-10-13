@@ -1,0 +1,59 @@
+[
+  {
+    "name": "keeps dev samples only",
+    "dev": ["a.pdf"],
+    "failures": [
+      { "sample": "a.pdf", "score": 0.5 },
+      { "sample": "holdout.pdf", "score": 0.1 }
+    ],
+    "expected": ["a.pdf"]
+  },
+  {
+    "name": "lowest score first",
+    "dev": ["a.pdf", "b.pdf", "c.pdf"],
+    "failures": [
+      { "sample": "a.pdf", "score": 0.9 },
+      { "sample": "b.pdf", "score": 0.2 },
+      { "sample": "c.pdf", "score": 0.5 }
+    ],
+    "expected": ["b.pdf", "c.pdf", "a.pdf"]
+  },
+  {
+    "name": "ties keep the order they came in",
+    "dev": ["a.pdf", "b.pdf", "c.pdf"],
+    "failures": [
+      { "sample": "c.pdf", "score": 0 },
+      { "sample": "a.pdf", "score": 0 },
+      { "sample": "b.pdf", "score": 0 }
+    ],
+    "expected": ["c.pdf", "a.pdf", "b.pdf"]
+  },
+  {
+    "name": "at most eight, the worst ones",
+    "dev": [
+      "0.pdf",
+      "1.pdf",
+      "2.pdf",
+      "3.pdf",
+      "4.pdf",
+      "5.pdf",
+      "6.pdf",
+      "7.pdf",
+      "8.pdf",
+      "9.pdf"
+    ],
+    "failures": [
+      { "sample": "0.pdf", "score": 0.9 },
+      { "sample": "1.pdf", "score": 0.8 },
+      { "sample": "2.pdf", "score": 0.7 },
+      { "sample": "3.pdf", "score": 0.6 },
+      { "sample": "4.pdf", "score": 0.5 },
+      { "sample": "5.pdf", "score": 0.4 },
+      { "sample": "6.pdf", "score": 0.3 },
+      { "sample": "7.pdf", "score": 0.2 },
+      { "sample": "8.pdf", "score": 0.1 },
+      { "sample": "9.pdf", "score": 0 }
+    ],
+    "expected": ["9.pdf", "8.pdf", "7.pdf", "6.pdf", "5.pdf", "4.pdf", "3.pdf", "2.pdf"]
+  }
+]
