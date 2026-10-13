@@ -12,6 +12,8 @@ from ingest_worker.llm.base import (
     ProviderKind,
     VisionRequest,
 )
+from ingest_worker.llm.endpoints import Seed
+from ingest_worker.llm.registry import ProviderConfig
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
 
@@ -156,3 +158,112 @@ class FakeConverter:
 
     def fingerprint(self) -> str:
         return self.version
+
+
+@dataclass
+class _StoredEndpoint:
+    cfg: ProviderConfig  # models live in MemoryLlmConfigStore.curated
+    source: str = "env"
+    edited: bool = False
+
+
+class MemoryLlmConfigStore:
+    """In-memory LlmConfigStore with PgLlmConfigStore's seeding rules: .env seeds, edited rows
+    (and rows added in the UI) are left alone. The contract test runs both."""
+
+    def __init__(self, seed: Seed | None = None) -> None:
+        self.endpoints: dict[str, _StoredEndpoint] = {}
+        #: (provider, model_id) -> (curated, edited)
+        self.curated: dict[tuple[str, str], tuple[bool, bool]] = {}
+        #: name -> (ref, edited)
+        self.aliases: dict[str, tuple[str, bool]] = {}
+        self._version = 0
+        if seed is not None:
+            self.seed(seed)
+
+    def _changed(self, before: object) -> None:
+        if self._snapshot() != before:
+            self._version += 1
+
+    def _snapshot(self) -> object:
+        return (
+            {n: (e.cfg.model_dump(), e.source, e.edited) for n, e in self.endpoints.items()},
+            dict(self.curated),
+            dict(self.aliases),
+        )
+
+    def seed(self, seed: Seed) -> None:
+        before = self._snapshot()
+        names = [e.name for e in seed.endpoints]
+        for e in seed.endpoints:
+            stored = self.endpoints.get(e.name)
+            if stored is None or (stored.source == "env" and not stored.edited):
+                self.endpoints[e.name] = _StoredEndpoint(e.model_copy(update={"models": []}))
+        removed = [
+            n
+            for n, e in self.endpoints.items()
+            if e.source == "env" and not e.edited and n not in names
+        ]
+        for n in removed:
+            del self.endpoints[n]
+        owned = [
+            n for n in names if self.endpoints[n].source == "env" and not self.endpoints[n].edited
+        ]
+        wanted = {(e.name, m) for e in seed.endpoints if e.name in owned for m in e.models}
+        for key in wanted:
+            curated, edited = self.curated.get(key, (False, False))
+            if not edited:
+                self.curated[key] = (True, False)
+        for key, (curated, edited) in list(self.curated.items()):
+            if curated and not edited and key[0] in [*owned, *removed] and key not in wanted:
+                self.curated[key] = (False, False)
+        for name, ref in seed.aliases.items():
+            if not self.aliases.get(name, ("", False))[1]:
+                self.aliases[name] = (ref, False)
+        for name, (_, edited) in list(self.aliases.items()):
+            if not edited and name not in seed.aliases:
+                del self.aliases[name]
+        self._changed(before)
+
+    def load(self) -> Seed:
+        endpoints = [
+            self.endpoints[n].cfg.model_copy(
+                update={
+                    "optional": True,
+                    "models": sorted(
+                        m for (p, m), (curated, _) in self.curated.items() if p == n and curated
+                    ),
+                }
+            )
+            for n in sorted(self.endpoints)
+        ]
+        return Seed(endpoints, {n: ref for n, (ref, _) in sorted(self.aliases.items())})
+
+    def version(self) -> int:
+        return self._version
+
+    # --- what the admin API will do (edits win over .env) ---
+
+    def edit_endpoint(self, name: str, **fields: Any) -> None:
+        before = self._snapshot()
+        stored = self.endpoints[name]
+        stored.cfg = stored.cfg.model_copy(update=fields)
+        stored.edited = True
+        self._changed(before)
+
+    def edit_alias(self, name: str, ref: str) -> None:
+        before = self._snapshot()
+        self.aliases[name] = (ref, True)
+        self._changed(before)
+
+    def uncurate(self, provider: str, model_id: str) -> None:
+        before = self._snapshot()
+        self.curated[(provider, model_id)] = (False, True)
+        self._changed(before)
+
+    def add_ui_endpoint(self, cfg: ProviderConfig) -> None:
+        before = self._snapshot()
+        self.endpoints[cfg.name] = _StoredEndpoint(
+            cfg.model_copy(update={"models": []}), source="ui", edited=True
+        )
+        self._changed(before)
