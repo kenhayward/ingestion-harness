@@ -220,13 +220,23 @@ template and brief versions, samples, stages, `completedStages`), `README.md`, `
 ### Deleting a project
 
 `DELETE /projects/:id` deletes a project whose document type was never published (a published
-type keeps its project: 409). One transaction removes the project's jobs (with their events,
-outputs, step runs and proposals), feedback, iterations, publications, stage skips, briefs and
-samples, the type's references, and every document of the type that no other job, reference or
-sample uses. Then the open template draft is deleted, and the files are removed best-effort, as for
-a deleted job (ADR 0005): each job's drafts and `runs/{jobId}/`, the inbox PDFs no remaining
-document shares, and `drafting/<id>/`, `segmentation/<id>/` and `exports/<id>/` in the runs bucket.
-The prepared text and OCR caches (keyed by sha256) are kept. The id can then be used again.
+type keeps its project: 409). One transaction first locks the type's template rows and refuses if
+any is published, then locks the project (the order `publishDraft` uses, so a publish and a delete
+racing each other cannot deadlock: one wins cleanly). It removes the project's jobs (with their
+events, outputs, step runs and proposals), the type's project-less test jobs (Templates-page test
+uploads and regression runs of the never-published type), feedback, iterations, publications,
+stage skips, briefs and samples, the type's references, every document of the type that no other
+job, reference or sample uses, and the template's draft rows.
+
+Jobs are deleted whatever their status, queued and running ones included. This is an exception to
+ADR 0005 (which refuses to delete an active job), like segment preview and export replacement: a
+worker mid-run finds its status writes guarded (`AND status = 'running'`) and stops, but it may
+leave files it wrote after the clean-up behind.
+
+The files are then removed best-effort, as for a deleted job (ADR 0005): each job's drafts and
+`runs/{jobId}/`, the inbox PDFs no remaining document shares, and `drafting/<id>/`,
+`segmentation/<id>/` and `exports/<id>/` in the runs bucket. The content-keyed caches are kept: the
+prepared text, the step cache and the OCR cache. The id can then be used again.
 
 ### Models and data policy
 

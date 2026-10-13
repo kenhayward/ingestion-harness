@@ -668,6 +668,8 @@ async function gateFor(
         // publishGate ignores it; not worth scoring.
         return { ...base, status: 'running', score: null, completed: 0, total: i.jobIds.length };
       }
+      // Relies on evaluation jobs being RUN_TASKS (process, rerun, publish), the tasks
+      // listProjectRuns returns: a job of any other task would read as deleted (null) here.
       const jobs = i.jobIds.map((id) => jobById.get(id) ?? null);
       const fingerprint = gateFingerprint(i.jobIds, jobs);
       if (i.gateCache?.fingerprint === fingerprint) {
@@ -894,29 +896,18 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /**
-   * Delete a project whose type was never published: its rows in one transaction, then the open
-   * template draft, then its internal files (best-effort). Published types keep their project.
+   * Delete a project whose type was never published: its rows and template drafts in one
+   * transaction (which also refuses a published type), then its internal files (best-effort).
+   * Published types keep their project.
    */
   app.delete<{ Params: ProjectParams }>('/workbench/projects/:id', async (req, reply) => {
     const id = req.params.id;
-    if (!(await workbench.getProject(id))) {
-      return reply.code(404).send({ error: 'project not found' });
-    }
-    const versions = (await templates.list()).filter((r) => r.id === id);
-    if (versions.some((v) => v.status === 'published')) {
+    const removed = await workbench.deleteProject(id);
+    if (!removed) return reply.code(404).send({ error: 'project not found' });
+    if (removed === 'published') {
       return reply.code(409).send({
         error: `${id} has a published version; published document types keep their project`,
       });
-    }
-    const removed = await workbench.deleteProject(id);
-    if (!removed) return reply.code(404).send({ error: 'project not found' });
-    for (const v of versions.filter((r) => r.status === 'draft')) {
-      try {
-        await templates.deleteDraft(id, v.version);
-      } catch (err) {
-        // The draft stays on Document types, where it can be deleted.
-        req.log.error({ err, projectId: id, version: v.version }, 'template draft not deleted');
-      }
     }
     const { store, buckets } = app.deps;
     await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));

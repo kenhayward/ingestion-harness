@@ -81,13 +81,16 @@ describe('ProjectPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Delete project' }));
     const confirmBox = screen.getByLabelText('Type letter to confirm');
     const submit = screen.getByRole('button', { name: 'Delete project' });
+    expect(submit).toBeDisabled();
     await userEvent.type(confirmBox, 'lettr');
-    await userEvent.click(submit);
+    expect(submit).toBeDisabled();
+    await userEvent.type(confirmBox, '{Enter}');
     expect(api.deleteProject).not.toHaveBeenCalled();
     expect(onNavigate).not.toHaveBeenCalled();
 
     await userEvent.clear(confirmBox);
     await userEvent.type(confirmBox, 'letter');
+    expect(submit).toBeEnabled();
     await userEvent.click(submit);
     expect(api.deleteProject).toHaveBeenCalledWith('letter');
     expect(onNavigate).toHaveBeenCalledWith('#/workbench');

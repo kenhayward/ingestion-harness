@@ -9,6 +9,7 @@ import type {
   EvaluationModel,
   EvaluationSet,
   FeedbackItem,
+  JobSummary,
   ProposalDecision,
   Publication,
   SampleRole,
@@ -206,12 +207,14 @@ export interface WorkbenchRepo {
     cache: NonNullable<IterationRecord['gateCache']>,
   ): Promise<void>;
   /**
-   * Deletes the project in one transaction: its jobs (with their history), feedback,
-   * iterations, publications, proposals, stage skips, briefs, samples, the template's
-   * references and every document of the type that nothing else uses. Templates and files are
-   * the caller's. Null when the project is unknown.
+   * Deletes the project in one transaction: its jobs (with their history, queued and running
+   * ones included), the type's project-less test jobs, feedback, iterations, publications,
+   * proposals, stage skips, briefs, samples, the template's references, every document of the
+   * type that nothing else uses and the template's draft rows. Files are the caller's.
+   * `published` (nothing written) when any version of the template is published; null when the
+   * project is unknown. Locks the template rows before the project row, as `publishDraft` does.
    */
-  deleteProject(id: string): Promise<RemovedProject | null>;
+  deleteProject(id: string): Promise<RemovedProject | 'published' | null>;
 }
 
 /**
@@ -508,15 +511,21 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, gateCache };
   }
 
-  async deleteProject(id: string): Promise<RemovedProject | null> {
+  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
     if (!this.projects.has(id)) return null;
+    const versions = (await this.templates.list()).filter((t) => t.id === id);
+    if (versions.some((t) => t.status === 'published')) return 'published';
     const repo = this.jobs;
     const removed: RemovedJob[] = [];
     const draftsOf = (jobId: string) =>
       (repo.outputs.get(jobId) ?? [])
         .filter((o) => o.stage === 'draft')
         .map((o) => ({ bucket: o.bucket, key: o.key }));
-    for (const job of [...repo.jobs.values()].filter((j) => j.projectId === id)) {
+    // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
+    // and regression runs of a type that was never published).
+    const owned = (j: JobSummary) =>
+      j.projectId === id || (j.projectId === null && j.test && j.specId === id);
+    for (const job of [...repo.jobs.values()].filter(owned)) {
       removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
       repo.jobs.delete(job.id);
     }
@@ -538,6 +547,10 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
         repo.reruns,
       ]) {
         map.delete(jobId);
+      }
+      // ON DELETE SET NULL (migration 0005): other templates' references keep their row.
+      for (const ref of repo.references.values()) {
+        if (ref.sourceJobId === jobId) repo.references.set(ref.id, { ...ref, sourceJobId: null });
       }
     }
     const ofProject = (r: { projectId: string }) => r.projectId === id;
@@ -588,6 +601,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
     }
     this.projects.delete(id);
+    for (const t of versions) await this.templates.deleteDraft(id, t.version);
     return { jobs: removed, documents };
   }
 
@@ -837,6 +851,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
 
   async publishDraft(input: PublishDraftInput): Promise<PublishDraftResult> {
     const client = await this.pool.connect();
+    let failed: unknown = undefined;
     try {
       await client.query('BEGIN');
       const { rows } = await client.query<{
@@ -857,6 +872,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         await client.query('ROLLBACK');
         return refused;
       }
+      // Twin of PgTemplateRepo.publish (apps/api/src/templates/repo.ts): keep the two in step.
       await client.query(
         `UPDATE templates SET status = 'published', published_at = now(), updated_at = now()
           WHERE id = $1 AND version = $2 AND status = 'draft'`,
@@ -866,10 +882,12 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       await client.query('COMMIT');
       return { result: 'published', publication };
     } catch (err) {
-      await client.query('ROLLBACK');
+      failed = err;
+      await client.query('ROLLBACK').catch(() => {});
       throw err;
     } finally {
-      client.release();
+      // A client whose transaction failed is discarded rather than returned to the pool.
+      client.release(failed instanceof Error ? failed : undefined);
     }
   }
 
@@ -1158,10 +1176,18 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     ]);
   }
 
-  async deleteProject(id: string): Promise<RemovedProject | null> {
+  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
     const client = await this.pool.connect();
+    let failed: unknown = undefined;
     try {
       await client.query('BEGIN');
+      // The template rows first, then the project: publishDraft takes the same order (its
+      // template row, then the project through the publication's FK), so the two cannot
+      // deadlock. A publish that commits first is seen here; one that waits finds no row.
+      const versions = await client.query<{ version: number; status: string }>(
+        'SELECT version, status FROM templates WHERE id = $1 ORDER BY version FOR UPDATE',
+        [id],
+      );
       const found = await client.query(
         'SELECT 1 FROM workbench_projects WHERE id = $1 FOR UPDATE',
         [id],
@@ -1170,6 +1196,15 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         await client.query('ROLLBACK');
         return null;
       }
+      if (versions.rows.some((v) => v.status === 'published')) {
+        await client.query('ROLLBACK');
+        return 'published';
+      }
+      // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
+      // and regression runs of a type that was never published).
+      const owned = `j.project_id = $1
+         OR (j.project_id IS NULL AND j.test
+             AND EXISTS (SELECT 1 FROM documents d WHERE d.id = j.document_id AND d.spec_id = $1))`;
       const outputs = await client.query<{
         id: string;
         bucket: string | null;
@@ -1177,7 +1212,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       }>(
         `SELECT j.id, o.bucket, o.object_key
            FROM jobs j LEFT JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'draft'
-          WHERE j.project_id = $1
+          WHERE ${owned}
           ORDER BY j.created_at, j.id`,
         [id],
       );
@@ -1204,7 +1239,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       }
       // job_events, job_outputs, review_edits and step_runs cascade (0001, 0002, 0004); other
       // jobs' reference_id and references' source_job_id are set null (0005).
-      await client.query('DELETE FROM jobs WHERE project_id = $1', [id]);
+      await client.query(`DELETE FROM jobs j WHERE ${owned}`, [id]);
       // Other jobs' reference_id and copies' copied_from are set null (0005, 0018).
       await client.query('DELETE FROM template_references WHERE template_id = $1', [id]);
       const docs = await client.query<{ bucket: string; object_key: string }>(
@@ -1225,13 +1260,15 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
       }
       await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
+      await client.query(`DELETE FROM templates WHERE id = $1 AND status = 'draft'`, [id]);
       await client.query('COMMIT');
       return { jobs: [...jobs.values()], documents };
     } catch (err) {
-      await client.query('ROLLBACK');
+      failed = err;
+      await client.query('ROLLBACK').catch(() => {});
       throw err;
     } finally {
-      client.release();
+      client.release(failed instanceof Error ? failed : undefined);
     }
   }
 

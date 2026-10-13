@@ -868,7 +868,13 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       });
       await repo.createSegmentJob(projectId, segmentParams);
       await repo.createExportJob(projectId, { stage: 'export' });
-      return { projectId, sampleDoc, run };
+      // A Templates-page test upload of the type: a test job with no project.
+      const upload = await repo.createDocumentAndJob(doc(projectId), null, true);
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
+        [projectId],
+      );
+      return { projectId, sampleDoc, run, upload };
     };
     const counts = async (projectId: string) => {
       const { rows } = await pool.query<Record<string, number>>(
@@ -883,7 +889,8 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
            (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
            (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
            (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
-           (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents`,
+           (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents,
+           (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
         [projectId],
       );
       return rows[0]!;
@@ -894,14 +901,15 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(Object.values(before).every((n) => n > 0)).toBe(true);
 
     const removed = await workbench.deleteProject(target.projectId);
-    expect(removed).not.toBeNull();
-    // prepare, source, run, draft, segment and export jobs.
-    expect(removed!.jobs).toHaveLength(6);
-    expect(removed!.jobs.find((j) => j.jobId === target.run.id)!.draftObjects).toEqual([
+    if (!removed || removed === 'published') throw new Error(`not deleted: ${removed}`);
+    // prepare, source, run, draft, segment and export jobs, and the project-less test upload.
+    expect(removed.jobs).toHaveLength(7);
+    expect(removed.jobs.map((j) => j.jobId)).toContain(target.upload.id);
+    expect(removed.jobs.find((j) => j.jobId === target.run.id)!.draftObjects).toEqual([
       { bucket: 'outputs', key: `${target.projectId}/draft.json` },
     ]);
-    expect(removed!.documents).toHaveLength(3);
-    expect(removed!.documents).toContainEqual({ bucket: 'inbox', key: target.sampleDoc.objectKey });
+    expect(removed.documents).toHaveLength(4);
+    expect(removed.documents).toContainEqual({ bucket: 'inbox', key: target.sampleDoc.objectKey });
 
     expect(Object.values(await counts(target.projectId)).every((n) => n === 0)).toBe(true);
     const orphans = await pool.query(
@@ -913,5 +921,101 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(orphans.rowCount).toBe(0);
     expect(await counts(other.projectId)).toEqual(before);
     expect(await workbench.deleteProject(target.projectId)).toBeNull();
+  });
+
+  describe('deleteProject against publishDraft', () => {
+    const definition = { id: 'x', version: 1, outputs: { fields: [] } };
+    const projectWithDraft = async () => {
+      const projectId = await newProject();
+      const prepare = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'prepare' });
+      await workbench.addSample({
+        projectId,
+        documentId: prepare.documentId,
+        role: 'dev',
+        addedForVersion: 1,
+      });
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', $2)`,
+        [projectId, JSON.stringify(definition)],
+      );
+      return projectId;
+    };
+    const publish = (projectId: string) =>
+      workbench.publishDraft({
+        projectId,
+        version: 1,
+        definition,
+        publication: {
+          projectId,
+          version: 1,
+          iterationId: null,
+          score: null,
+          threshold: 0.9,
+          overrideReason: 'integration race',
+          publishedBy: null,
+        },
+      });
+    const state = async (projectId: string) =>
+      (
+        await pool.query<Record<string, number>>(
+          `SELECT
+             (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
+             (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
+             (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
+             (SELECT count(*)::int FROM templates WHERE id = $1 AND status = 'published') AS published,
+             (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
+          [projectId],
+        )
+      ).rows[0]!;
+
+    it('refuses a published type and writes nothing', async () => {
+      const projectId = await projectWithDraft();
+      await pool.query(
+        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 2, 'draft', '{}')`,
+        [projectId],
+      );
+      expect((await publish(projectId)).result).toBe('published');
+      expect(await workbench.deleteProject(projectId)).toBe('published');
+      expect(await state(projectId)).toEqual({
+        projects: 1,
+        samples: 1,
+        publications: 1,
+        published: 1,
+        templates: 2,
+      });
+    });
+
+    it('never deadlocks and leaves one consistent outcome when both run at once', async () => {
+      for (let round = 0; round < 8; round++) {
+        const projectId = await projectWithDraft();
+        // Alternate which call is issued first.
+        const [published, deleted] =
+          round % 2 === 0
+            ? await Promise.all([publish(projectId), workbench.deleteProject(projectId)])
+            : await Promise.all([workbench.deleteProject(projectId), publish(projectId)]).then(
+                ([d, p]) => [p, d] as const,
+              );
+        if (published.result === 'published') {
+          expect(deleted).toBe('published');
+          expect(await state(projectId)).toEqual({
+            projects: 1,
+            samples: 1,
+            publications: 1,
+            published: 1,
+            templates: 1,
+          });
+        } else {
+          expect(published).toEqual({ result: 'not-draft' });
+          expect(deleted).toMatchObject({ jobs: expect.any(Array) });
+          expect(await state(projectId)).toEqual({
+            projects: 0,
+            samples: 0,
+            publications: 0,
+            published: 0,
+            templates: 0,
+          });
+        }
+      }
+    });
   });
 });

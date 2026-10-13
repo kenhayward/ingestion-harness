@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   draftingKey,
   exportKey,
@@ -11,6 +11,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import { letter, multipart, testApp } from './helpers.js';
+import type { RemovedProject } from '../src/workbench/repo.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 const json = (value: unknown) => Buffer.from(JSON.stringify(value));
@@ -239,5 +240,81 @@ describe('DELETE /api/workbench/projects/:id', () => {
     expect(keys(store)).toContain(`${sample.bucket}/${sample.objectKey}`);
     expect(repo.documents.has(other.documentId)).toBe(true);
     expect(repo.jobs.has(other.id)).toBe(true);
+  });
+});
+
+describe('MemoryWorkbenchRepo.deleteProject', () => {
+  const testDoc = (name: string) => ({
+    id: crypto.randomUUID(),
+    filename: `${name}.pdf`,
+    sha256: crypto.randomUUID().replaceAll('-', '').padEnd(64, '0'),
+    sizeBytes: 1,
+    specId: 'letter',
+    specVersion: 1,
+    bucket: 'inbox',
+    objectKey: `letter/v1/${name}.pdf`,
+  });
+
+  it('refuses a published type inside the repo and removes nothing', async () => {
+    const { repo, templates, workbench, add } = await project();
+    await add(1);
+    await templates.create('letter', 2, letter(2), 'draft');
+    await templates.publish('letter', 1);
+    const jobs = repo.jobs.size;
+
+    expect(await workbench.deleteProject('letter')).toBe('published');
+    expect(workbench.projects.has('letter')).toBe(true);
+    expect(repo.jobs.size).toBe(jobs);
+    expect(await workbench.listSamples('letter')).toHaveLength(1);
+    expect((await templates.list()).filter((t) => t.id === 'letter')).toHaveLength(2);
+  });
+
+  it('deletes the draft template rows with the project', async () => {
+    const { templates, workbench } = await project();
+    await templates.create('letter', 2, letter(2), 'draft');
+    await templates.create('other', 1, letter(1), 'draft');
+
+    expect(await workbench.deleteProject('letter')).not.toBeNull();
+    expect((await templates.list()).filter((t) => t.id === 'letter')).toEqual([]);
+    expect(await templates.get('other', 1)).not.toBeNull();
+  });
+
+  it('deletes the project-less test jobs of the type and their documents', async () => {
+    const { repo, store, workbench, remove } = await project();
+    const upload = testDoc('templates-page');
+    await store.put('inbox', upload.objectKey, pdf(9), 'application/pdf');
+    const testRun = await repo.createDocumentAndJob(upload, null, true);
+    const production = await repo.createDocumentAndJob(testDoc('production'), null, false);
+    const deleteProject = vi.spyOn(workbench, 'deleteProject');
+
+    expect((await remove()).statusCode).toBe(204);
+    const removed = (await deleteProject.mock.results[0]!.value) as RemovedProject;
+    expect(removed.jobs.map((j) => j.jobId)).toContain(testRun.id);
+    expect(removed.documents).toContainEqual({ bucket: 'inbox', key: upload.objectKey });
+    expect(repo.jobs.has(testRun.id)).toBe(false);
+    expect(repo.documents.has(testRun.documentId)).toBe(false);
+    expect(keys(store)).not.toContain(`inbox/${upload.objectKey}`);
+    // Only test jobs: anything else is not the project's to delete.
+    expect(repo.jobs.has(production.id)).toBe(true);
+    expect(repo.documents.has(production.documentId)).toBe(true);
+  });
+
+  it("clears other templates' references to a deleted source job", async () => {
+    const { repo, workbench } = await project();
+    const source = await repo.createWorkbenchJob(testDoc('source'), {
+      projectId: 'letter',
+      task: 'process',
+    });
+    const other = await repo.createDocumentAndJob({ ...testDoc('kept'), specId: 'demo' }, null);
+    const kept = await repo.createReference({
+      templateId: 'demo',
+      name: 'kept',
+      documentId: other.documentId,
+      sourceJobId: source.id,
+      expected: { fields: {}, tables: {} },
+    });
+
+    expect(await workbench.deleteProject('letter')).not.toBeNull();
+    expect(repo.references.get(kept.id)).toMatchObject({ sourceJobId: null });
   });
 });

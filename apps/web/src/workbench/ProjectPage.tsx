@@ -62,7 +62,7 @@ function DeleteProject({
         Type {projectId} to confirm
         <input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
       </label>
-      <button type="submit" className="danger-fill">
+      <button type="submit" className="danger-fill" disabled={typed !== projectId}>
         Delete project
       </button>
       <button type="button" onClick={() => setOpen(false)}>
