@@ -109,6 +109,7 @@ import {
   type RevisePreview,
   STEP_PROGRESS_EVENT,
   TestRunSchema,
+  type ChangeStage,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { stepProgress } from '../workbench/test-runs.js';
@@ -118,6 +119,7 @@ import { error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { compareToReference } from '../regression/compare.js';
 import { jobDocument, regressionFinished } from '../regression/report.js';
 import type { JobEventRecord, NewDocument, ProjectJob, SegmentJob } from '../repositories/types.js';
+import { draftChange, startedChange } from '../templates/changes.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import type { TemplateRecord, TemplateRepo } from '../templates/repo.js';
 import {
@@ -1220,10 +1222,17 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (latest === null) {
         if (!name)
           return reply.code(400).send({ error: 'name is required for a new document type' });
-        await templates.create(id, 1, skeleton(id, name), 'draft');
+        await templates.create(
+          id,
+          1,
+          skeleton(id, name),
+          'draft',
+          startedChange('Draft v1 created', req.auth?.label ?? null),
+        );
       } else {
         name = String(latest.definition.name ?? id);
-        if (draft === null) await createNextDraft(templates, id);
+        if (draft === null)
+          await createNextDraft(templates, id, undefined, req.auth?.label ?? null);
       }
       try {
         const project = await workbench.createProject(id, name);
@@ -2934,11 +2943,25 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       }
       // Apply first: if the draft was published meanwhile nothing is written and the proposal
       // stays undecided. Re-applying the same changes after a lost race is idempotent.
-      const updated = await templates.updateDraft(
-        projectId,
-        draft,
-        pinned(applyChanges(draftRecord.definition, selected), projectId, draft),
-      );
+      const next = pinned(applyChanges(draftRecord.definition, selected), projectId, draft);
+      const partial =
+        chosen.length < proposed.length
+          ? ` (${chosen.length} of ${proposed.length} proposed changes)`
+          : '';
+      const updated = await templates.updateDraft(projectId, draft, next, {
+        change: draftChange(
+          draftRecord.definition,
+          next,
+          {
+            source: 'proposal',
+            // A change stage: the branch above returned for every other stage.
+            stage: record.stage as ChangeStage,
+            proposalId: pid,
+            by: req.auth?.label ?? null,
+          },
+          partial,
+        ),
+      });
       if (!updated) {
         return reply.code(409).send({
           error: 'the draft is no longer open; start the next version and re-run the stage',
@@ -3227,11 +3250,16 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           .code(409)
           .send({ error: 'no open draft; start the next version on the Template tab' });
       }
-      const saved = await templates.updateDraft(
-        projectId,
-        draft,
-        pinned(iteration.definition, projectId, draft),
-      );
+      const next = pinned(iteration.definition, projectId, draft);
+      const current = await templates.get(projectId, draft);
+      const saved = await templates.updateDraft(projectId, draft, next, {
+        change: draftChange(
+          current?.definition ?? {},
+          next,
+          { source: 'restore', stage: null, proposalId: null, by: req.auth?.label ?? null },
+          ` (from the ${iteration.set} evaluation of ${iteration.createdAt.slice(0, 10)})`,
+        ),
+      });
       if (!saved) return reply.code(409).send({ error: 'the draft is no longer open' });
       req.log.info({ projectId, iteration: iteration.id, version: draft }, 'iteration restored');
       return projectView(app, (await workbench.getProject(projectId))!);

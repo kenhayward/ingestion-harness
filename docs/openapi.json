@@ -7641,7 +7641,7 @@
         "tags": [
           "Templates"
         ],
-        "description": "Replaces a draft's definition. Invalid definitions are saved too, so work in progress\nis never lost; `issues` says what still needs fixing before it can be published.\nThe definition's `id` and `version` are pinned to the URL's. Published versions\nare immutable.",
+        "description": "Replaces a draft's definition. Invalid definitions are saved too, so work in progress\nis never lost; `issues` says what still needs fixing before it can be published.\nThe definition's `id` and `version` are pinned to the URL's. Published versions\nare immutable. Each save that changes the definition is recorded in the draft's change\nlog (`GET /api/workbench/projects/{id}/draft/changes`).",
         "requestBody": {
           "required": true,
           "content": {
@@ -7653,6 +7653,11 @@
                     "type": "object",
                     "additionalProperties": {},
                     "description": "The whole definition, as authored."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The `updatedAt` the edit started from. When the draft was written since (a proposal applied, another tab saved), nothing is saved and the answer is a 409."
                   }
                 },
                 "required": [
@@ -7855,7 +7860,7 @@
             }
           },
           "409": {
-            "description": "`{id} v{version} is published; start a new draft`.",
+            "description": "`{id} v{version} is published; start a new draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7881,7 +7886,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`{id} v{version} is published; start a new draft`."
+                  "description": "`{id} v{version} is published; start a new draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt`."
                 }
               }
             }

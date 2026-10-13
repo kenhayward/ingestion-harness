@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { TemplateIssueSchema, templateIssues, validateTemplate } from '../templates/definitions.js';
+import { byHand, draftChange, startedChange } from '../templates/changes.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import {
   TemplateConflictError,
@@ -17,7 +18,17 @@ const CreateBody = z
   .object({ id: Id.describe('Lowercase: `[a-z][a-z0-9_-]*`.'), name: z.string().min(1) })
   .strict();
 const SaveBody = z
-  .object({ definition: z.record(z.unknown()).describe('The whole definition, as authored.') })
+  .object({
+    definition: z.record(z.unknown()).describe('The whole definition, as authored.'),
+    baseUpdatedAt: z
+      .string()
+      .datetime()
+      .optional()
+      .describe(
+        'The `updatedAt` the edit started from. When the draft was written since (a proposal ' +
+          'applied, another tab saved), nothing is saved and the answer is a 409.',
+      ),
+  })
   .strict();
 const DraftBody = z
   .object({
@@ -232,6 +243,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         1,
         skeleton(body.data.id, body.data.name),
         'draft',
+        startedChange('Draft v1 created', req.auth?.label ?? null),
       );
       return reply.code(201).send(await withIssues(record));
     },
@@ -270,7 +282,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           Replaces a draft's definition. Invalid definitions are saved too, so work in progress
           is never lost; \`issues\` says what still needs fixing before it can be published.
           The definition's \`id\` and \`version\` are pinned to the URL's. Published versions
-          are immutable.
+          are immutable. Each save that changes the definition is recorded in the draft's change
+          log (\`GET /api/workbench/projects/{id}/draft/changes\`).
         `,
         params: VersionParams,
         body: SaveBody,
@@ -278,7 +291,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           200: res('The saved draft.', RecordView),
           400: error('Zod issues: `definition` must be an object.'),
           404: NOT_FOUND,
-          409: error('`{id} v{version} is published; start a new draft`.'),
+          409: error(
+            '`{id} v{version} is published; start a new draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt`.',
+          ),
         },
       },
     },
@@ -292,12 +307,21 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (existing.status !== 'draft') {
         return reply.code(409).send({ error: `${id} v${version} is published; start a new draft` });
       }
-      const record = await repo().updateDraft(
-        id,
-        version,
-        pinned(body.data.definition, id, version),
-      );
-      return await withIssues(record!);
+      const definition = pinned(body.data.definition, id, version);
+      const record = await repo().updateDraft(id, version, definition, {
+        expectedUpdatedAt: body.data.baseUpdatedAt,
+        change: draftChange(existing.definition, definition, byHand(req.auth?.label ?? null)),
+      });
+      if (!record) {
+        const now = await repo().get(id, version);
+        return reply.code(409).send({
+          error:
+            now?.status === 'draft'
+              ? 'the draft changed since you opened it; reload it to see the changes'
+              : `${id} v${version} is published; start a new draft`,
+        });
+      }
+      return await withIssues(record);
     },
   );
 
@@ -368,7 +392,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const body = DraftBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
-      const created = await createNextDraft(repo(), req.params.id, body.data.from);
+      const created = await createNextDraft(
+        repo(),
+        req.params.id,
+        body.data.from,
+        req.auth?.label ?? null,
+      );
       if (created === 'not-found') return notFound(reply);
       if (created === 'draft-exists') {
         return reply.code(409).send({ error: 'a draft already exists; edit or delete it first' });
@@ -493,6 +522,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           ident.data.version,
           ident.data,
           body.data.publish ? 'published' : 'draft',
+          body.data.publish
+            ? undefined
+            : startedChange('Imported from YAML', req.auth?.label ?? null, 'import'),
         );
         return reply.code(201).send(await withIssues(record));
       } catch (err) {
