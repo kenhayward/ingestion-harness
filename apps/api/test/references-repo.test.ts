@@ -23,7 +23,11 @@ async function docOf(repo: MemoryRepo, sha256: string, version = 1) {
   return job;
 }
 
-const input = (job: { id: string; documentId: string }, name: string, templateVersion?: number) => ({
+const input = (
+  job: { id: string; documentId: string },
+  name: string,
+  templateVersion?: number,
+) => ({
   templateId: 'letter',
   name,
   documentId: job.documentId,
@@ -36,7 +40,12 @@ describe('references across versions (repository)', () => {
   it('keeps unpinned references unchanged: every version, name unique per type', async () => {
     const repo = new MemoryRepo();
     const ref = await repo.createReference(input(await docOf(repo, 'a'), 'a'));
-    expect(ref).toMatchObject({ templateVersion: null, copiedFrom: null, verifiedOutputs: null, supersededAt: null });
+    expect(ref).toMatchObject({
+      templateVersion: null,
+      copiedFrom: null,
+      verifiedOutputs: null,
+      supersededAt: null,
+    });
     expect((await repo.listReferences('letter', 7)).map((r) => r.id)).toEqual([ref.id]);
     await expect(repo.createReference(input(await docOf(repo, 'b'), 'a'))).rejects.toThrow(
       ReferenceConflictError,

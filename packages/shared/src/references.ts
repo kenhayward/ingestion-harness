@@ -46,7 +46,8 @@ export function outputChanges(verified: unknown, current: unknown): string[] {
   const changed = new Set<string>();
   for (const key of new Set([...before.keys(), ...after.keys()])) {
     if (before.get(key) === after.get(key)) continue;
-    const table = key.startsWith('table:') && key.includes('.') ? key.slice(0, key.indexOf('.')) : null;
+    const table =
+      key.startsWith('table:') && key.includes('.') ? key.slice(0, key.indexOf('.')) : null;
     // a column of a table that is gone (or new) as a whole is reported as the table
     if (table && before.has(table) !== after.has(table)) continue;
     changed.add(key);

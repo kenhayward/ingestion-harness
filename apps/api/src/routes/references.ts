@@ -6,9 +6,7 @@ import { diffDefinitions } from '../regression/diff.js';
 import { computeMetrics } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
 
-const ListQuery = z
-  .object({ version: z.coerce.number().int().positive().optional() })
-  .strict();
+const ListQuery = z.object({ version: z.coerce.number().int().positive().optional() }).strict();
 
 const CreateReference = z
   .object({ jobId: z.string().uuid(), name: z.string().min(1).max(100) })
@@ -47,9 +45,10 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
       ? {
           templateVersion: job.specVersion,
           verifiedOutputs:
-            ((await app.deps.templates.get(req.params.id, job.specVersion))?.definition as
-              | { outputs?: unknown }
-              | undefined)?.outputs ?? null,
+            (
+              (await app.deps.templates.get(req.params.id, job.specVersion))?.definition as
+                { outputs?: unknown } | undefined
+            )?.outputs ?? null,
         }
       : null;
     try {

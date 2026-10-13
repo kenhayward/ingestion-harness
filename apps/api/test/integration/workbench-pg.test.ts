@@ -331,7 +331,11 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       templateVersion: 1,
       verifiedOutputs: outputs,
     });
-    expect(first).toMatchObject({ templateVersion: 1, verifiedOutputs: outputs, supersededAt: null });
+    expect(first).toMatchObject({
+      templateVersion: 1,
+      verifiedOutputs: outputs,
+      supersededAt: null,
+    });
     const again = await repo.createReference({
       ...base,
       name: 'a',
