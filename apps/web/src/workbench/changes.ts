@@ -1,4 +1,4 @@
-import type { DraftChange } from '@ih/shared';
+import { stableJson, type DraftChange } from '@ih/shared';
 
 export type ChangeKind =
   'FIELD' | 'TABLE' | 'SECTION' | 'COPIES' | 'EXTRACT' | 'CHECK' | 'REMOVE' | 'PREAMBLE';
@@ -6,7 +6,7 @@ export type ChangeKind =
 /** A change as the proposal card shows it: kind tag, tone, id (mono) and the rest in words. */
 export function changeParts(c: DraftChange): {
   kind: ChangeKind;
-  tone: 'info' | 'neutral' | 'ok' | 'alert';
+  tone: 'info' | 'neutral' | 'ok' | 'danger';
   id: string | null;
   text: string;
 } {
@@ -26,7 +26,7 @@ export function changeParts(c: DraftChange): {
         text: `columns ${c.table.columns.map((col) => col.id).join(', ')}`,
       };
     case 'removeOutput':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this output' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this output' };
     case 'putSection':
       return {
         kind: 'SECTION',
@@ -35,7 +35,7 @@ export function changeParts(c: DraftChange): {
         text: `/${c.section.anchor}/${c.section.required ? '' : ' (optional)'}`,
       };
     case 'removeSection':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this section' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this section' };
     case 'setCopies':
       return {
         kind: 'COPIES',
@@ -60,7 +60,7 @@ export function changeParts(c: DraftChange): {
             text: `${c.step.values} against ${c.step.reference}`,
           };
     case 'removeStep':
-      return { kind: 'REMOVE', tone: 'alert', id: c.id, text: 'remove this step' };
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this step' };
     case 'setPreamble':
       return {
         kind: 'PREAMBLE',
@@ -69,4 +69,143 @@ export function changeParts(c: DraftChange): {
         text: c.preamble ? 'Set the prompt preamble' : 'Remove the prompt preamble',
       };
   }
+}
+
+/** One line per change for assistive technology (a checkbox label): kind, id and the words. */
+export function changeLabel(c: DraftChange): string {
+  const parts = changeParts(c);
+  return [parts.kind, parts.id, parts.text].filter(Boolean).join(' ');
+}
+
+export type ChangeVerb = 'NEW' | 'CHANGED' | 'REMOVED';
+
+type Def = Record<string, unknown>;
+const MINUS = '−';
+const obj = (v: unknown): Def =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Def) : {};
+const list = (v: unknown): Def[] => (Array.isArray(v) ? v.map(obj) : []);
+const ids = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+const shown = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '–');
+const same = (a: unknown, b: unknown) => stableJson(a ?? null) === stableJson(b ?? null);
+const arrow = (label: string, a: unknown, b: unknown) =>
+  same(a, b) ? [] : [`${label} ${shown(a)} → ${shown(b)}`];
+const edited = (key: string, a: unknown, b: unknown) => (same(a, b) ? [] : [`${key} edited`]);
+const setDiff = (before: string[], after: string[], label = '') => [
+  ...after.filter((x) => !before.includes(x)).map((x) => `+ ${label}${x}`),
+  ...before.filter((x) => !after.includes(x)).map((x) => `${MINUS} ${label}${x}`),
+];
+const withDefault = (v: unknown, fallback: unknown) => (v === undefined ? fallback : v);
+
+/** The item a change replaces in the draft, or null when it adds one. */
+function existing(c: DraftChange, def: Def): Def | null {
+  const outputs = obj(def.outputs);
+  const document = obj(def.document);
+  const find = (items: Def[], id: string) => items.find((x) => x.id === id) ?? null;
+  switch (c.op) {
+    case 'putField':
+      return find([...list(outputs.fields), ...list(outputs.tables)], c.field.id);
+    case 'putTable':
+      return find([...list(outputs.fields), ...list(outputs.tables)], c.table.id);
+    case 'putSection':
+      return find(list(document.sections), c.section.id);
+    case 'putStep':
+      return find(list(def.pipeline), c.step.id);
+    case 'setCopies':
+      return document.copies ? obj(document.copies) : null;
+    case 'setPreamble':
+      return typeof def.preamble === 'string' && def.preamble !== '' ? {} : null;
+    default:
+      return null;
+  }
+}
+
+/** NEW / CHANGED / REMOVED against the open draft (handoff §0.2). */
+export function changeVerb(c: DraftChange, definition: Def): ChangeVerb {
+  if (c.op === 'removeOutput' || c.op === 'removeSection' || c.op === 'removeStep')
+    return 'REMOVED';
+  if (c.op === 'setCopies' && c.copies === null) return 'REMOVED';
+  if (c.op === 'setPreamble' && c.preamble === '') return 'REMOVED';
+  return existing(c, definition) === null ? 'NEW' : 'CHANGED';
+}
+
+function valueDiff(before: Def, after: Def): string[] {
+  return [
+    ...arrow('type', withDefault(before.type, 'text'), withDefault(after.type, 'text')),
+    ...(same(before.enum, after.enum)
+      ? []
+      : [`values ${ids(before.enum).join(', ') || '–'} → ${ids(after.enum).join(', ') || '–'}`]),
+    ...edited('name', before.name, after.name),
+    ...edited('description', before.description, after.description),
+  ];
+}
+
+/** The mono diff chip of a change: what it adds, drops or moves; null when there is nothing to add. */
+export function changeDiff(c: DraftChange, definition: Def): string | null {
+  if (c.op === 'removeOutput' || c.op === 'removeSection' || c.op === 'removeStep') {
+    return `${MINUS} ${c.id}`;
+  }
+  if (c.op === 'setCopies' || c.op === 'setPreamble') return null;
+  const before = existing(c, definition);
+  const id =
+    c.op === 'putField'
+      ? c.field.id
+      : c.op === 'putTable'
+        ? c.table.id
+        : c.op === 'putSection'
+          ? c.section.id
+          : c.step.id;
+  if (before === null) return `+ ${id}`;
+  let parts: string[] = [];
+  if (c.op === 'putField') parts = valueDiff(before, c.field as Def);
+  if (c.op === 'putTable') {
+    const old = list(before.columns);
+    const now = c.table.columns as Def[];
+    parts = [
+      ...setDiff(
+        old.map((x) => String(x.id)),
+        now.map((x) => String(x.id)),
+      ),
+      ...now
+        .filter((col) => {
+          const prev = old.find((x) => x.id === col.id);
+          return prev !== undefined && valueDiff(prev, col).length > 0;
+        })
+        .map((col) => `~ ${String(col.id)}`),
+      ...edited('name', before.name, c.table.name),
+      ...edited('description', before.description, c.table.description),
+    ];
+  }
+  if (c.op === 'putSection') {
+    const was = withDefault(before.required, true) === true;
+    parts = [
+      ...(same(before.anchor, c.section.anchor)
+        ? []
+        : [`anchor /${shown(before.anchor)}/ → /${c.section.anchor}/`]),
+      ...(was === c.section.required ? [] : [was ? 'required → optional' : 'optional → required']),
+    ];
+  }
+  if (c.op === 'putStep') {
+    const step = c.step as Def;
+    if (before.type !== step.type) {
+      parts = [`type ${shown(before.type)} → ${shown(step.type)}`];
+    } else if (step.type === 'extract') {
+      parts = [
+        ...setDiff(ids(before.fields), ids(step.fields)),
+        ...arrow('table', before.table, step.table),
+        ...setDiff(ids(before.sections), ids(step.sections), 'reads '),
+        ...arrow('chunk pages', before.chunkPages, step.chunkPages),
+        ...arrow('model', withDefault(before.model, 'default'), withDefault(step.model, 'default')),
+        ...arrow('attempts', withDefault(before.maxAttempts, 2), withDefault(step.maxAttempts, 2)),
+        ...edited('instructions', before.instructions, step.instructions),
+      ];
+    } else {
+      parts = [
+        ...arrow('values', before.values, step.values),
+        ...arrow('reference', before.reference, step.reference),
+        ...arrow('aliases', before.aliases, step.aliases),
+      ];
+    }
+  }
+  return parts.length ? parts.join(', ') : null;
 }

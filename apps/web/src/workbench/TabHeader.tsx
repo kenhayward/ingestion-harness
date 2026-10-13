@@ -7,11 +7,13 @@ import { stageStyle, TONE_COLOR } from '../ui/stageStyle.js';
 export function TabHeader({
   title,
   item,
+  description,
   note,
   actions,
 }: {
   title: string;
   item: OverviewItem | null;
+  description?: string;
   note?: string;
   actions?: ReactNode;
 }) {
@@ -26,6 +28,7 @@ export function TabHeader({
             {item.status}
           </p>
         )}
+        {description && <p className="muted tab-note">{description}</p>}
         {note && <p className="muted tab-note">{note}</p>}
       </div>
       {actions && <div className="tab-actions">{actions}</div>}

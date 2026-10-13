@@ -82,6 +82,60 @@ export const CheckStepSchema = z
 
 export const StepSchema = z.discriminatedUnion('type', [ExtractStepSchema, CheckStepSchema]);
 
+/** Which extract steps fill one output (handoff TP2). */
+export interface OutputFill {
+  id: string;
+  kind: 'field' | 'table';
+  /** Ids of the extract steps that fill it, in pipeline order (listed twice: appears twice). */
+  steps: string[];
+}
+
+export interface OutputCoverage {
+  /** Fields in order, then each distinct table id. */
+  outputs: OutputFill[];
+  /** Outputs no step fills. */
+  uncovered: string[];
+  /** Outputs more than one step fills. */
+  multiple: string[];
+}
+
+type Loose = Record<string, unknown>;
+const looseObj = (v: unknown): Loose =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Loose) : {};
+const looseList = (v: unknown): Loose[] => (Array.isArray(v) ? v.map(looseObj) : []);
+const looseIds = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
+/**
+ * Which extract step fills each output. Reads any definition, parsed or a raw draft (the Steps
+ * tab's coverage strip), skipping malformed parts. The template validation's "is not filled by
+ * any step" / "is filled by more than one step" issues come from this.
+ */
+export function outputCoverage(definition: unknown): OutputCoverage {
+  const def = looseObj(definition);
+  const outputs = looseObj(def.outputs);
+  const fieldIds = looseIds(looseList(outputs.fields).map((f) => f.id));
+  const tableIds = [...new Set(looseIds(looseList(outputs.tables).map((t) => t.id)))];
+  const extracts = looseList(def.pipeline).filter(
+    (s): s is Loose & { id: string } => s.type === 'extract' && typeof s.id === 'string',
+  );
+  const rows: OutputFill[] = [...fieldIds, ...tableIds].map((id) => ({
+    id,
+    kind: fieldIds.includes(id) ? 'field' : 'table',
+    steps: extracts.flatMap((s) => [
+      ...looseIds(s.fields)
+        .filter((f) => f === id)
+        .map(() => s.id),
+      ...(s.table === id ? [s.id] : []),
+    ]),
+  }));
+  return {
+    outputs: rows,
+    uncovered: rows.filter((r) => r.steps.length === 0).map((r) => r.id),
+    multiple: rows.filter((r) => r.steps.length > 1).map((r) => r.id),
+  };
+}
+
 export const TemplateSchema = z
   .object({
     id: Id,
@@ -129,7 +183,6 @@ export const TemplateSchema = z
       .filter((id) => RESERVED_OUTPUT_IDS.has(id))
       .forEach((id) => issue(`output id "${id}" is reserved`));
 
-    const fills = new Map<string, number>();
     for (const step of extracts) {
       if (step.fields.length > 0 === (step.table !== undefined)) {
         issue(`step "${step.id}": a step must fill either fields or a table`);
@@ -145,18 +198,14 @@ export const TemplateSchema = z
         .forEach((s) => issue(`step "${step.id}": unknown section "${s}"`));
       for (const f of step.fields) {
         if (!fieldIds.includes(f)) issue(`step "${step.id}": unknown field "${f}"`);
-        fills.set(f, (fills.get(f) ?? 0) + 1);
       }
-      if (step.table !== undefined) {
-        if (!tables.has(step.table)) issue(`step "${step.id}": unknown table "${step.table}"`);
-        fills.set(step.table, (fills.get(step.table) ?? 0) + 1);
+      if (step.table !== undefined && !tables.has(step.table)) {
+        issue(`step "${step.id}": unknown table "${step.table}"`);
       }
     }
-    for (const id of [...fieldIds, ...tables.keys()]) {
-      const kind = fieldIds.includes(id) ? 'field' : 'table';
-      const count = fills.get(id) ?? 0;
-      if (count === 0) issue(`${kind} "${id}" is not filled by any step`);
-      if (count > 1) issue(`${kind} "${id}" is filled by more than one step`);
+    for (const o of outputCoverage(t).outputs) {
+      if (o.steps.length === 0) issue(`${o.kind} "${o.id}" is not filled by any step`);
+      if (o.steps.length > 1) issue(`${o.kind} "${o.id}" is filled by more than one step`);
     }
 
     const resolves = (path: string) => {
