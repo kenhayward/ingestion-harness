@@ -535,6 +535,44 @@ describe('ProjectPage', () => {
       await screen.findByRole('button', { name: 'Propose section anchors' }),
     ).toBeInTheDocument();
   });
+  it('disables Keep these anchors while the Sections editor has unsaved anchors', async () => {
+    render(
+      <ProjectPage
+        api={fakeApi({
+          getProject: vi.fn(async () => projectView()),
+          getTemplate: vi.fn(async () =>
+            templateView({
+              id: 'letter',
+              version: 1,
+              name: 'Letter',
+              document: { ocr: 'auto', sections: [{ id: 'all', anchor: '\A' }] },
+              outputs: { fields: [] },
+              pipeline: [],
+            }),
+          ),
+          listProposals: vi.fn(async () => [
+            changeProposalView({ stage: 'sections', status: 'accepted' }),
+          ]),
+          getProjectOverview: vi.fn(async () =>
+            overviewWith({
+              sections: { state: 'stale', status: 'Stale — Outputs changed after it was accepted' },
+            }),
+          ),
+        })}
+        projectId="letter"
+        tab="sections"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    const keep = await screen.findByRole('button', { name: 'Keep these anchors' });
+    expect(keep).toBeEnabled();
+    await userEvent.click(await screen.findByRole('button', { name: /Add section/ }));
+    await waitFor(() => expect(keep).toBeDisabled());
+    expect(keep).toHaveAttribute('title', 'Save your unsaved anchors first');
+  });
+
   it('shows the references stage state and renders the References and Evaluate tabs', async () => {
     const api = fakeApi({
       getProject: vi.fn(async () => projectView()),
