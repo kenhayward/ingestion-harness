@@ -1588,3 +1588,27 @@ label.inline.list-select {
 .export-note {
   margin: 10px 0 0;
 }
+
+/* Workbench tab cards: .card itself has no padding, so these add the design's 12px 16px. */
+.brief-card,
+.brief-answers,
+.brief-versions,
+.brief-compare,
+.export-panel,
+.card.coverage,
+.card.pipeline,
+.summary-card,
+.sample-preview {
+  padding: 12px 16px;
+}
+.brief-card h3,
+.brief-answers h3,
+.brief-versions h3,
+.brief-compare h3,
+.export-panel h3,
+.coverage-head h3,
+.pipeline-head h3,
+.summary-card h3,
+.sample-preview-head h3 {
+  font-weight: 600;
+}

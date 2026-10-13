@@ -85,6 +85,44 @@ describe('BriefTab', () => {
     expect(api.listBriefVersions).toHaveBeenCalledTimes(2); // reloaded after the save
   });
 
+  it('shows a save error and keeps the edit and the Save button', async () => {
+    const api = fakeApi({
+      saveBrief: vi.fn(async () => {
+        throw new Error('brief too large');
+      }),
+    });
+    const onSaved = vi.fn();
+    show(api, brief(2), { onSaved });
+    await userEvent.type(screen.getByLabelText('Purpose'), 'QA');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as v3' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('brief too large');
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Purpose')).toHaveValue('QA');
+    expect(screen.getByRole('button', { name: 'Save as v3' })).toBeEnabled();
+  });
+
+  it('clears "Saved as vN" once the brief is edited again', async () => {
+    const api = fakeApi({ saveBrief: vi.fn(async () => brief(3, { purpose: 'QA' })) });
+    show(api, brief(2));
+    await userEvent.type(screen.getByLabelText('Purpose'), 'QA');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as v3' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved as v3');
+    await userEvent.type(screen.getByLabelText('Rules'), 'x');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('says in the Versions card when the versions cannot be loaded', async () => {
+    const api = fakeApi({
+      listBriefVersions: vi.fn(async () => {
+        throw new Error('versions down');
+      }),
+    });
+    show(api, brief(2));
+    const card = screen.getByRole('region', { name: 'Versions' });
+    expect(await within(card).findByText(/versions down/)).toBeInTheDocument();
+    expect(card).not.toHaveTextContent('Loading…');
+  });
+
   it('offers Save as v1 for a project without a brief', async () => {
     show(fakeApi(), null);
     await userEvent.type(screen.getByLabelText('Purpose'), 'x');

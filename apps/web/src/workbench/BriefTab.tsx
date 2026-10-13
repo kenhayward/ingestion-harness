@@ -170,13 +170,20 @@ export function BriefTab({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [versions, setVersions] = useState<BriefVersionView[] | null>(null);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
   const [survey, setSurvey] = useState<SurveyBody | null>(null);
   const [compare, setCompare] = useState<{ from: Brief; to: Brief } | null>(null);
   const [now] = useState(() => Date.now());
   const changed = briefDiff(saved, body).map((d) => d.section);
 
   const loadVersions = useCallback(() => {
-    api.listBriefVersions(projectId).then(setVersions, (err: Error) => setError(err.message));
+    api.listBriefVersions(projectId).then(
+      (list) => {
+        setVersions(list);
+        setVersionsError(null);
+      },
+      (err: Error) => setVersionsError(err.message),
+    );
   }, [api, projectId]);
   useEffect(loadVersions, [loadVersions]);
 
@@ -245,7 +252,10 @@ export function BriefTab({
       section={section}
       value={body[section]}
       edited={changed.includes(section)}
-      onChange={(value) => setBody({ ...body, [section]: value })}
+      onChange={(value) => {
+        setMessage(null);
+        setBody({ ...body, [section]: value });
+      }}
     >
       {children}
     </SectionCard>
@@ -358,7 +368,9 @@ export function BriefTab({
         <div className="brief-side">
           <section className="card brief-versions" aria-labelledby="brief-versions-title">
             <h3 id="brief-versions-title">Versions</h3>
-            {versions === null ? (
+            {versionsError !== null ? (
+              <p role="alert">Could not load the versions: {versionsError}</p>
+            ) : versions === null ? (
               <p className="muted">Loading…</p>
             ) : versions.length === 0 ? (
               <p className="muted">No version saved yet.</p>

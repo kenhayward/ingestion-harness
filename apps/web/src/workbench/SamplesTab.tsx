@@ -21,6 +21,9 @@ const ROLES = [
   { value: 'dev', label: 'Dev' },
   { value: 'holdout', label: 'Holdout' },
 ] as const;
+/** Failures that retrying cannot fix: the file itself has to be replaced. */
+const PERMANENT: ReadonlySet<string> = new Set(['password', 'corrupt', 'too_large']);
+
 const PILL = {
   ready: { label: 'Ready', tone: 'ok' },
   preparing: { label: 'Preparing', tone: 'info' },
@@ -297,6 +300,7 @@ export function SamplesTab({
                         >
                           <span
                             className="page-badge"
+                            role="img"
                             aria-label={
                               s.triage ? plural(s.triage.pageCount, 'page') : 'Pages unknown'
                             }
@@ -343,16 +347,18 @@ export function SamplesTab({
                                 }
                               }}
                             />
-                            {s.state === 'failed' && s.prepareJobId && (
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label={`Retry ${s.filename}`}
-                                onClick={() => void act(() => api.retryJob(s.prepareJobId!))}
-                              >
-                                Retry
-                              </button>
-                            )}
+                            {s.state === 'failed' &&
+                              s.prepareJobId &&
+                              !PERMANENT.has(s.prepareError?.code ?? '') && (
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  aria-label={`Retry ${s.filename}`}
+                                  onClick={() => void act(() => api.retryJob(s.prepareJobId!))}
+                                >
+                                  Retry
+                                </button>
+                              )}
                             <button
                               type="button"
                               className="icon-button danger"

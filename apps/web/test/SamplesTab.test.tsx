@@ -74,13 +74,17 @@ describe('SamplesTab', () => {
     expect(row('scan.pdf')).toHaveTextContent('Ready');
     expect(row('scan.pdf')).toHaveTextContent('3 pages · 3 OCR · 1.2 MB · added for v1');
     expect(row('scan.pdf')).toHaveTextContent('Scanned — all 3 pages read by OCR (local/olmocr)');
-    expect(within(row('scan.pdf')).getByLabelText('3 pages')).toHaveTextContent('3');
+    expect(within(row('scan.pdf')).getByRole('img', { name: '3 pages' })).toHaveTextContent('3');
     expect(row('wip.pdf')).toHaveTextContent('Preparing — OCR page 2 of 3');
-    expect(within(row('wip.pdf')).getByLabelText('Pages unknown')).toHaveTextContent('?');
+    expect(within(row('wip.pdf')).getByRole('img', { name: 'Pages unknown' })).toHaveTextContent(
+      '?',
+    );
     expect(row('locked.pdf')).toHaveTextContent('Failed');
     expect(row('locked.pdf')).toHaveTextContent(
       'PDF is password-protected. Remove the password and upload it again.',
     );
+    // A password-protected file fails the same way again: upload a new one instead.
+    expect(within(row('locked.pdf')).queryByRole('button', { name: /Retry/ })).toBeNull();
     const holdout = screen.getByRole('list', { name: 'Holdout samples' });
     expect(within(holdout).getByRole('listitem', { name: 'h.pdf' })).toHaveTextContent(
       'Used in 3 holdout evaluations · never sent to a model',
@@ -354,19 +358,19 @@ describe('SamplesTab capacity and polling', () => {
       const view = render(
         <SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />,
       );
-      await vi.advanceTimersByTimeAsync(0);
+      await act(() => vi.advanceTimersByTimeAsync(0));
       expect(listSamples).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(100);
+      await act(() => vi.advanceTimersByTimeAsync(100));
       expect(listSamples).toHaveBeenCalledTimes(2);
       state = 'ready';
-      await vi.advanceTimersByTimeAsync(100);
+      await act(() => vi.advanceTimersByTimeAsync(100));
       expect(listSamples).toHaveBeenCalledTimes(3);
-      await vi.advanceTimersByTimeAsync(500);
+      await act(() => vi.advanceTimersByTimeAsync(500));
       expect(listSamples).toHaveBeenCalledTimes(3);
 
       state = 'preparing';
       view.unmount();
-      await vi.advanceTimersByTimeAsync(500);
+      await act(() => vi.advanceTimersByTimeAsync(500));
       expect(listSamples).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
@@ -392,5 +396,63 @@ describe('SamplesTab capacity and polling', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('does not start a refresh while one is still in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      let release: (v: ReturnType<typeof sampleView>[]) => void = () => {};
+      const waiting = new Promise<ReturnType<typeof sampleView>[]>((r) => (release = r));
+      const prep = sampleView({ filename: 'w.pdf', state: 'preparing', triage: null });
+      const listSamples = vi
+        .fn()
+        .mockResolvedValueOnce([prep])
+        .mockReturnValueOnce(waiting)
+        .mockResolvedValue([prep]);
+      render(<SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />);
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      await act(() => vi.advanceTimersByTimeAsync(100)); // starts the slow refresh
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      await act(() => vi.advanceTimersByTimeAsync(500)); // ticks while it is pending
+      expect(listSamples).toHaveBeenCalledTimes(2);
+      release([prep]);
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(listSamples).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores a response that arrives after unmount', async () => {
+    let release: (v: ReturnType<typeof sampleView>[]) => void = () => {};
+    const listSamples = vi.fn(
+      () => new Promise<ReturnType<typeof sampleView>[]>((r) => (release = r)),
+    );
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const view = render(
+        <SamplesTab api={fakeApi({ listSamples })} projectId="letter" pollMs={100} />,
+      );
+      view.unmount();
+      await act(async () => release([sampleView({ filename: 'late.pdf' })]));
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it('keeps a list error visible once polling has stopped, until a refresh succeeds', async () => {
+    const listSamples = vi
+      .fn()
+      .mockResolvedValueOnce([sampleView({ filename: 'a.pdf' })])
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue([sampleView({ filename: 'a.pdf' })]);
+    const api = fakeApi({ listSamples, removeSample: vi.fn(async () => {}) });
+    tab(api);
+    await screen.findByRole('listitem', { name: 'a.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove a.pdf' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });
