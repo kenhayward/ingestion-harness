@@ -282,7 +282,6 @@ export function ProjectPage({
               }
             />
           )}
-          {tab === 'survey' && header('survey')}
           {tab === 'survey' && (
             <SurveyTab
               api={api}
@@ -295,6 +294,7 @@ export function ProjectPage({
               }}
               pollMs={pollMs}
               onChanged={changed}
+              item={itemOf('survey')}
             />
           )}
           {(tab === 'outputs' || tab === 'steps') && (
