@@ -565,7 +565,8 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
-    listProjects: () => apiFetch(`${base}/workbench/projects`).then(json<ProjectSummary[]>),
+    // The unpaged list until the Workbench page moves to the paged one (PR 7).
+    listProjects: () => apiFetch(`${base}/workbench/projects?all=1`).then(json<ProjectSummary[]>),
     createProject: (id, name) =>
       post<ProjectView>(`${base}/workbench/projects`, name ? { id, name } : { id }),
     getProject: (id) => apiFetch(`${base}/workbench/projects/${id}`).then(json<ProjectView>),

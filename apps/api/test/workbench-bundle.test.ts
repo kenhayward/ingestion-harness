@@ -598,7 +598,7 @@ describe('import', () => {
     const res = await importBundle(app, zip(), fields);
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toMatch(error);
-    const projects = (await app.inject('/api/workbench/projects')).json() as ProjectSummary[];
+    const projects = (await app.inject('/api/workbench/projects?all=1')).json() as ProjectSummary[];
     expect(projects.map((p) => p.id)).not.toContain('memo');
     expect((await templates.list()).map((t) => t.id)).not.toContain('memo');
     expect(store.objects.size).toBe(0);

@@ -15,7 +15,7 @@ describe('workbench projects', () => {
       brief: null,
     });
     expect((await templates.get('letter', 1))?.status).toBe('draft');
-    expect((await app.inject('/api/workbench/projects')).json()).toEqual([
+    expect((await app.inject('/api/workbench/projects?all=1')).json()).toEqual([
       expect.objectContaining({ id: 'letter', draft: 1, published: null, samples: 0 }),
     ]);
     expect(

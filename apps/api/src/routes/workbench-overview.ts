@@ -6,12 +6,14 @@ import {
   draftingKey,
   overviewItems,
   overviewNext,
+  listItemFrom,
   type ChangeBody,
   type DraftStage,
   type GateView,
   type MetricFacts,
   type OverviewInputs,
   type ProjectOverview,
+  type ProjectListItem,
   type ProjectView,
   type WorkbenchProject,
 } from '@ih/shared';
@@ -32,10 +34,14 @@ import {
   type SampleViews,
 } from './workbench.js';
 
-/** A proposal's stored result: its model and change body, or null when missing or unreadable. */
+/**
+ * A proposal's stored result: its model and change body, or null when missing or unreadable.
+ * A store outage also gives null (the overview still answers) and calls `outage`.
+ */
 async function changeResult(
   app: FastifyInstance,
   p: ProposalRecord | undefined,
+  outage: () => void,
 ): Promise<{ model: string; body: ChangeBody } | null> {
   if (!p) return null;
   try {
@@ -44,7 +50,8 @@ async function changeResult(
     const body = parsed?.success ? parseBody(p.stage, parsed.data.body) : null;
     return parsed?.success && body && 'changes' in body ? { model: parsed.data.model, body } : null;
   } catch {
-    return null; // a store outage leaves the figure empty; the overview still answers
+    outage();
+    return null;
   }
 }
 
@@ -64,9 +71,14 @@ async function gatherFacts(
     runs: { total: number; awaitingReview: number };
     openFeedback: number;
   },
-): Promise<MetricFacts> {
+): Promise<{ facts: MetricFacts; degraded: boolean }> {
   const { view, samples, proposals, iterations, gate } = ctx;
   const id = view.project.id;
+  // A store read that threw (not a missing or unreadable body): the figures are incomplete.
+  let degraded = false;
+  const outage = () => {
+    degraded = true;
+  };
   // Newest first (`listProposals`).
   const newest = (stage: DraftStage, decided = false) =>
     proposals.find((p) => p.stage === stage && (!decided || p.decision !== null));
@@ -74,7 +86,7 @@ async function gatherFacts(
   // body yet) or unreadable does not blank the figures.
   const newestReadable = async (stage: DraftStage) => {
     for (const p of proposals.filter((p) => p.stage === stage)) {
-      const result = await changeResult(app, p);
+      const result = await changeResult(app, p, outage);
       if (result) return result;
     }
     return null;
@@ -84,8 +96,11 @@ async function gatherFacts(
   const [template, survey, outputsResult, sectionsResult, stepsResult, dev, holdout] =
     await Promise.all([
       version === null ? null : app.deps.templates.get(id, version),
-      acceptedSurvey(app, id).catch(() => null),
-      changeResult(app, outputsProposal),
+      acceptedSurvey(app, id).catch(() => {
+        outage();
+        return null;
+      }),
+      changeResult(app, outputsProposal, outage),
       newestReadable('sections'),
       newestReadable('steps'),
       referenceRows(app, id, 'dev', samples),
@@ -115,7 +130,7 @@ async function gatherFacts(
     (i) =>
       i.set === 'dev' && i.model === null && i.templateVersion === view.draft && i.scores !== null,
   );
-  return {
+  const facts: MetricFacts = {
     samples: {
       dev: samples.filter((s) => s.record.role === 'dev').length,
       holdout: samples.filter((s) => s.record.role === 'holdout').length,
@@ -164,6 +179,7 @@ async function gatherFacts(
     revise: { open: ctx.openFeedback, lastAt: newest('revise')?.createdAt ?? null },
     publish: { live: view.published },
   };
+  return { facts, degraded };
 }
 
 /**
@@ -176,6 +192,25 @@ export async function projectOverview(
   app: FastifyInstance,
   project: WorkbenchProject,
 ): Promise<ProjectOverview> {
+  return (await overviewParts(app, project)).overview;
+}
+
+/**
+ * The overview with the inputs it was derived from (the list row reuses them). `degraded` is
+ * true when a stored proposal body could not be read because the store threw (the figures are
+ * then incomplete); a missing or unreadable body is not degraded.
+ */
+export async function overviewParts(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+): Promise<{
+  overview: ProjectOverview;
+  inputs: OverviewInputs;
+  runs: { total: number; unfinished: number; awaitingReview: number };
+  samples: SampleViews;
+  iterations: IterationRecord[];
+  degraded: boolean;
+}> {
   const { workbench, repo } = app.deps;
   const id = project.id;
   const [
@@ -247,7 +282,7 @@ export async function projectOverview(
     awaitingReview: runs.filter((j) => j.status === 'awaiting_review').length,
   };
   const openFeedback = feedback.filter((f) => f.resolvedBy === null).length;
-  const facts = await gatherFacts(app, {
+  const { facts, degraded } = await gatherFacts(app, {
     view,
     samples,
     proposals,
@@ -256,7 +291,7 @@ export async function projectOverview(
     runs: { total: runCounts.total, awaitingReview: runCounts.awaitingReview },
     openFeedback,
   });
-  return {
+  const overview: ProjectOverview = {
     project: view,
     stages: overviewItems({
       inputs,
@@ -268,6 +303,38 @@ export async function projectOverview(
     next: overviewNext(inputs),
     gate: inputs.gate,
   };
+  return { overview, inputs, runs: runCounts, samples, iterations, degraded };
+}
+
+/**
+ * A project's row on the Workbench list (W1), from the same inputs as its overview. The holdout
+ * score is the gate's on an open draft; with none, the newest scored own-model holdout iteration
+ * of the live version. `degraded` as in `overviewParts`: the row must not be cached.
+ */
+export async function projectListItem(
+  app: FastifyInstance,
+  project: WorkbenchProject,
+  lastActivityAt: string,
+): Promise<{ item: ProjectListItem; degraded: boolean }> {
+  const { overview, inputs, runs, samples, iterations, degraded } = await overviewParts(
+    app,
+    project,
+  );
+  const { project: settings, draft, published } = overview.project;
+  const live = iterations.find(
+    (i) => i.set === 'holdout' && i.model === null && i.templateVersion === published && i.scores,
+  );
+  const role = (r: 'dev' | 'holdout') => samples.filter((s) => s.record.role === r).length;
+  const item = listItemFrom({
+    summary: { ...settings, draft, published, samples: samples.length },
+    inputs,
+    runsUnfinished: runs.unfinished,
+    holdoutScore: draft !== null ? inputs.gate.score : (live?.scores?.score ?? null),
+    devSamples: role('dev'),
+    holdoutSamples: role('holdout'),
+    lastActivityAt,
+  });
+  return { item, degraded };
 }
 
 /** GET /api/workbench/projects/:id/overview (Workbench redesign, W2). */
