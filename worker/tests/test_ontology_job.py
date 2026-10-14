@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from ingest_worker.llm.registry import ModelRegistry
@@ -14,10 +16,15 @@ from ingest_worker.ontology import (
     PgOntologyStore,
     parse_ontology,
 )
-from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.ontology_fetch import Fetched, OntologySourceUnavailable
+from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
-from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
+from ingest_worker.storage import (
+    MemoryObjectStore,
+    ontology_normalized_key,
+    ontology_source_key,
+)
 
 from .fakes import FakeQueue, MemoryOntologyStore
 
@@ -161,4 +168,192 @@ def test_pg_store_saves_terms_and_ready_is_immutable() -> None:
             "UPDATE ontology_versions SET error = 'x' WHERE ontology_id = 'pv-worker-test'"
         )
     conn.execute("DELETE FROM ontologies WHERE id = 'pv-worker-test'")
+    conn.close()
+
+
+ROOT = b"""@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<https://w3id.org/pv> a owl:Ontology ;
+    owl:imports <https://w3id.org/base> , <https://w3id.org/lib> , <https://nope.org/x> .
+<https://w3id.org/pv#Batch> a owl:Class ; rdfs:subClassOf <https://w3id.org/base#Thing> .
+"""
+BASE = b"""@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<https://w3id.org/base> a owl:Ontology ; rdfs:label "Base" ; owl:imports <https://w3id.org/pv> .
+<https://w3id.org/base#Thing> a owl:Class .
+"""
+LIB = (
+    b"<https://w3id.org/lib#Unit> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+    b"<http://www.w3.org/2002/07/owl#Class> .\n"
+)
+
+
+def web(pages: dict[str, bytes]) -> Callable[[str], Fetched]:
+    def fetch(url: str) -> Fetched:
+        if url not in pages:
+            raise DocumentError(f"{httpx.URL(url).host} is not on ONTOLOGY_FETCH_ALLOW")
+        return Fetched(pages[url], "text/turtle", url, url.rsplit("/", 1)[-1])
+
+    return fetch
+
+
+def url_job() -> ClaimedJob:
+    return ontology_job(
+        sourceKey=None, sourceUrl="https://w3id.org/pv", fileName="pv", mediaType=""
+    )
+
+
+def test_imports_by_url_resolving_imports_from_the_library_and_the_web(
+    fixture_specs_dir: Path,
+) -> None:
+    deps, store, ontologies = make(fixture_specs_dir, source=None)
+    ontologies.library["https://w3id.org/lib"] = ("lib", 4)
+    store.put("runs", ontology_normalized_key("lib", 4), LIB, "application/n-triples")
+    deps.ontology_fetch = web({"https://w3id.org/pv": ROOT, "https://w3id.org/base": BASE})
+    run_once(FakeQueue(jobs=[url_job()]), deps, "w1")
+
+    assert ontologies.status[("pv", 1)] == "ready"
+    sha = ontologies.sources[("pv", 1)]["sha256"]
+    assert ("runs", ontology_source_key("pv", sha, "ttl")) in store.objects
+    imports = {e["iri"]: e for e in ontologies.saved[("pv", 1)].import_entries}
+    assert imports["https://w3id.org/lib"] == {
+        "iri": "https://w3id.org/lib",
+        "resolution": "library",
+        "ontologyId": "lib",
+        "version": 4,
+        "reason": None,
+    }
+    assert imports["https://w3id.org/base"]["resolution"] == "fetched"
+    assert imports["https://nope.org/x"]["resolution"] == "unresolved"
+    assert "not on ONTOLOGY_FETCH_ALLOW" in imports["https://nope.org/x"]["reason"]
+    # Base was created once, as a library ontology tagged with its importer; its import of pv
+    # (a cycle back to the root) did not recurse.
+    [(created_id, created)] = ontologies.created.items()
+    assert created["title"] == "Base" and created["root_id"] == "pv"
+    assert ("runs", ontology_normalized_key(created_id, 1)) in store.objects
+    terms = {t.iri: t for t in ontologies.saved[("pv", 1)].terms}
+    assert terms["https://w3id.org/base#Thing"].defined_in == f"{created_id}@1"
+    assert terms["https://w3id.org/lib#Unit"].defined_in == "lib@4"
+    assert not terms["https://w3id.org/pv#Batch"].root
+
+
+def test_url_imports_off_fails_the_version(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+    queue = FakeQueue(jobs=[url_job()])
+    run_once(queue, deps, "w1")
+    assert "URL imports are off" in queue.reviewed[0][1]
+    assert ontologies.status[("pv", 1)] == "failed"
+
+
+def test_the_same_bytes_as_another_version_fail_the_version(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+    ontologies.duplicate_of = 2
+    deps.ontology_fetch = web({"https://w3id.org/pv": ROOT})
+    queue = FakeQueue(jobs=[url_job()])
+    run_once(queue, deps, "w1")
+    assert "same file as version 2" in queue.reviewed[0][1]
+
+
+def test_an_unreachable_host_is_retried(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+
+    def down(url: str) -> Fetched:
+        raise OntologySourceUnavailable(f"{url} answered 503")
+
+    deps.ontology_fetch = down
+    queue = FakeQueue(jobs=[url_job()])
+    run_once(queue, deps, "w1")
+    assert queue.failed and not queue.reviewed
+    assert ontologies.status[("pv", 1)] == "parsing"
+
+
+def test_an_unreachable_import_is_listed_not_fatal(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+
+    def fetch(url: str) -> Fetched:
+        if url == "https://w3id.org/pv":
+            return Fetched(ROOT, "text/turtle", url, "pv")
+        raise OntologySourceUnavailable(f"{url} answered 503")
+
+    deps.ontology_fetch = fetch
+    run_once(FakeQueue(jobs=[url_job()]), deps, "w1")
+    entries = {e["iri"]: e for e in ontologies.saved[("pv", 1)].import_entries}
+    assert entries["https://w3id.org/base"]["resolution"] == "unresolved"
+    assert entries["https://w3id.org/base"]["reason"].startswith("unavailable:")
+
+
+def test_params_need_exactly_one_source(fixture_specs_dir: Path) -> None:
+    deps, _, _ = make(fixture_specs_dir)
+    queue = FakeQueue(jobs=[ontology_job(sourceUrl="https://w3id.org/pv")])  # both set
+    run_once(queue, deps, "w1")
+    assert "invalid ontology import parameters" in queue.reviewed[0][1]
+
+
+@pytest.mark.integration
+def test_pg_store_imports_and_duplicate_sources() -> None:
+    """Needs IH_TEST_DATABASE_URL with db/migrations applied (see the test above)."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import DuplicateSource, index_graph, read_graph
+
+    conn = psycopg.connect(url, autocommit=True)
+    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base')")
+    conn.execute("INSERT INTO ontologies (id, label) VALUES ('pv-url', 'PV')")
+    conn.execute(
+        """INSERT INTO ontology_versions
+             (ontology_id, version, file_name, media_type, source_kind, source_url)
+           VALUES ('pv-url', 1, 'pv', '', 'url', 'https://w3id.org/pv'),
+                  ('pv-url', 2, 'pv', '', 'url', 'https://w3id.org/pv')"""
+    )
+    store = PgOntologyStore(conn)
+    store.set_source("pv-url", 1, file_name="pv.ttl", media_type="text/turtle", sha256="s1", size=3)
+    with pytest.raises(DuplicateSource) as dup:
+        store.set_source(
+            "pv-url", 2, file_name="pv.ttl", media_type="text/turtle", sha256="s1", size=3
+        )
+    assert dup.value.version == 1
+
+    base = read_graph(BASE, "text/turtle", "base.ttl", max_triples=1000)
+    parsed = index_graph(base)
+    parsed.import_entries = [
+        {
+            "iri": "https://w3id.org/pv",
+            "resolution": "unresolved",
+            "ontologyId": None,
+            "version": None,
+            "reason": "a cycle back to an ontology being imported",
+        }
+    ]
+    oid, version = store.create_imported(
+        iri="https://w3id.org/base",
+        title=parsed.title,
+        file_name="base.ttl",
+        media_type="text/turtle",
+        sha256="b1",
+        size=len(BASE),
+        source_url="https://w3id.org/base",
+        parsed=parsed,
+        root_id="pv-url",
+    )
+    assert (oid, version) == ("w3id-org-base", 1)
+    assert store.find_ready("https://w3id.org/base") == ("w3id-org-base", 1)
+    assert store.version_imports(oid, 1)[0]["reason"].startswith("a cycle")
+    row = conn.execute(
+        "SELECT o.label, o.tags, v.status, v.source_kind FROM ontologies o "
+        "JOIN ontology_versions v ON v.ontology_id = o.id WHERE o.id = %s",
+        (oid,),
+    ).fetchone()
+    assert row == ("Base", ["imported-by:pv-url"], "ready", "import")
+
+    own = read_graph(ROOT, "text/turtle", "pv.ttl", max_triples=1000)
+    store.save("pv-url", 1, index_graph(own, imports=[(base, f"{oid}@1")]))
+    defined = conn.execute(
+        "SELECT defined_in FROM ontology_terms WHERE ontology_id = 'pv-url' AND iri = %s",
+        ("https://w3id.org/base#Thing",),
+    ).fetchone()
+    assert defined == (f"{oid}@1",)
+    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base')")
     conn.close()

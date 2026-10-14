@@ -6,6 +6,7 @@ object and the `ontology` job; the job parses the file and writes what this modu
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import deque
@@ -13,14 +14,15 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from rdflib import BNode, Graph, URIRef
 from rdflib import Literal as RdfLiteral
 from rdflib.collection import Collection
 from rdflib.namespace import DC, DCTERMS, OWL, RDF, RDFS, SH, SKOS, XSD
 
+from .ontology_fetch import OntologySourceUnavailable
 from .pipeline import DocumentError, JobCancelled, check_cancelled
-from .storage import ontology_normalized_key
+from .storage import ontology_normalized_key, ontology_source_key
 
 if TYPE_CHECKING:
     import psycopg
@@ -427,12 +429,70 @@ def parse_ontology(
 ONTOLOGY_INDEXED = "ontology indexed"
 
 
+#: owl:imports are followed this many levels down from the imported version.
+MAX_IMPORT_DEPTH = 3
+
+#: A stored file's extension from its content type, when its name has no known one.
+MEDIA_EXTENSIONS = {
+    "text/turtle": "ttl",
+    "application/rdf+xml": "rdf",
+    "application/ld+json": "jsonld",
+    "application/n-triples": "nt",
+    "text/n3": "n3",
+}
+
+
+class DuplicateSource(Exception):
+    """Another version of the ontology already has these bytes."""
+
+    def __init__(self, version: int) -> None:
+        super().__init__(f"same bytes as version {version}")
+        self.version = version
+
+
 class OntologyStore(Protocol):
     """The ontology tables the job writes (the API reads them)."""
 
     def start(self, ontology_id: str, version: int) -> None: ...
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None: ...
     def fail(self, ontology_id: str, version: int, error: str) -> None: ...
+
+    def set_source(
+        self,
+        ontology_id: str,
+        version: int,
+        *,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+    ) -> None:
+        """Record a fetched file's name, type and bytes; DuplicateSource if another version of
+        the ontology has the same bytes."""
+        ...
+
+    def find_ready(self, iri: str) -> tuple[str, int] | None:
+        """The newest ready version whose ontology or version IRI is `iri`."""
+        ...
+
+    def version_imports(self, ontology_id: str, version: int) -> list[dict[str, Any]]: ...
+
+    def create_imported(
+        self,
+        *,
+        iri: str,
+        title: str | None,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+        source_url: str,
+        parsed: ParsedOntology,
+        root_id: str,
+    ) -> tuple[str, int]:
+        """A new library ontology (tagged imported-by:<root_id>) whose ready version 1 holds
+        `parsed`; returns its id and version."""
+        ...
 
 
 class OntologyJobParams(BaseModel):
@@ -442,9 +502,17 @@ class OntologyJobParams(BaseModel):
 
     ontology_id: str = Field(alias="ontologyId", min_length=2)
     version: int = Field(gt=0)
-    source_key: str = Field(alias="sourceKey", min_length=1)
+    #: An uploaded file in the runs bucket, or a URL the worker fetches: exactly one.
+    source_key: str | None = Field(default=None, alias="sourceKey", min_length=1)
+    source_url: str | None = Field(default=None, alias="sourceUrl", min_length=1)
     file_name: str = Field(alias="fileName", min_length=1)
-    media_type: str = Field(alias="mediaType", min_length=1)
+    media_type: str = Field(default="", alias="mediaType")
+
+    @model_validator(mode="after")
+    def _one_source(self) -> OntologyJobParams:
+        if (self.source_key is None) == (self.source_url is None):
+            raise ValueError("exactly one of sourceKey and sourceUrl is required")
+        return self
 
 
 _TERM_COLUMNS = (
@@ -527,11 +595,87 @@ class PgOntologyStore:
                     parsed.license,
                     parsed.kinds,
                     Jsonb(parsed.stats()),
-                    Jsonb([{"iri": i, "resolution": "unresolved"} for i in parsed.imports]),
+                    Jsonb(parsed.import_entries or [_unresolved(i, None) for i in parsed.imports]),
                     ontology_id,
                     version,
                 ),
             )
+
+    def set_source(
+        self,
+        ontology_id: str,
+        version: int,
+        *,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+    ) -> None:
+        import psycopg
+
+        try:
+            self._conn.execute(
+                """UPDATE ontology_versions
+                      SET file_name = %s, media_type = %s, sha256 = %s, bytes = %s
+                    WHERE ontology_id = %s AND version = %s AND status <> 'ready'""",
+                (file_name, media_type, sha256, size, ontology_id, version),
+            )
+        except psycopg.errors.UniqueViolation:
+            row = self._conn.execute(
+                "SELECT version FROM ontology_versions WHERE ontology_id = %s AND sha256 = %s",
+                (ontology_id, sha256),
+            ).fetchone()
+            raise DuplicateSource(int(row[0]) if row else 0) from None
+
+    def find_ready(self, iri: str) -> tuple[str, int] | None:
+        row = self._conn.execute(
+            """SELECT ontology_id, version FROM ontology_versions
+                WHERE status = 'ready' AND (ontology_iri = %s OR version_iri = %s)
+                ORDER BY imported_at DESC, version DESC LIMIT 1""",
+            (iri, iri),
+        ).fetchone()
+        return (str(row[0]), int(row[1])) if row else None
+
+    def version_imports(self, ontology_id: str, version: int) -> list[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT imports FROM ontology_versions WHERE ontology_id = %s AND version = %s",
+            (ontology_id, version),
+        ).fetchone()
+        return list(row[0]) if row and row[0] else []
+
+    def create_imported(
+        self,
+        *,
+        iri: str,
+        title: str | None,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+        source_url: str,
+        parsed: ParsedOntology,
+        root_id: str,
+    ) -> tuple[str, int]:
+        base = import_id(iri)
+        with self._conn.transaction():
+            oid, n = base, 1
+            while self._conn.execute("SELECT 1 FROM ontologies WHERE id = %s", (oid,)).fetchone():
+                n += 1
+                oid = f"{base}-{n}"
+            self._conn.execute(
+                """INSERT INTO ontologies (id, label, tags, created_by)
+                   VALUES (%s, %s, %s, %s)""",
+                (oid, title or iri, [f"imported-by:{root_id}"], f"import of {root_id}"),
+            )
+            self._conn.execute(
+                """INSERT INTO ontology_versions
+                     (ontology_id, version, file_name, media_type, sha256, bytes, source_kind,
+                      source_url, imported_by)
+                   VALUES (%s, 1, %s, %s, %s, %s, 'import', %s, %s)""",
+                (oid, file_name, media_type, sha256, size, source_url, f"import of {root_id}"),
+            )
+            self.save(oid, 1, parsed)
+        return oid, 1
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self._conn.execute(
@@ -541,10 +685,183 @@ class PgOntologyStore:
         )
 
 
+def _unresolved(iri: str, reason: str | None) -> dict[str, Any]:
+    return {
+        "iri": iri,
+        "resolution": "unresolved",
+        "ontologyId": None,
+        "version": None,
+        "reason": reason,
+    }
+
+
+def _resolved(iri: str, how: str, ontology_id: str, version: int) -> dict[str, Any]:
+    return {
+        "iri": iri,
+        "resolution": how,
+        "ontologyId": ontology_id,
+        "version": version,
+        "reason": None,
+    }
+
+
+def import_id(iri: str) -> str:
+    """A library id for an ontology pulled in by owl:imports (ONTOLOGY_ID_RE), from its IRI."""
+    slug = re.sub(r"[^a-z0-9]+", "-", re.sub(r"^[a-z]+://", "", iri.lower())).strip("-")
+    slug = slug[:58].strip("-")
+    return slug if len(slug) >= 2 else "imported"
+
+
+def _extension(file_name: str, media_type: str) -> str:
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    return ext if ext in EXTENSIONS else MEDIA_EXTENSIONS.get(media_type, "ttl")
+
+
+def _imports_of(graph: Graph) -> list[str]:
+    headers, _, _ = _header(graph)
+    return sorted({str(o) for h in headers for o in graph.objects(h, OWL.imports)})
+
+
+Closure = list[tuple[Graph, str]]
+
+
+@dataclass
+class _ImportResolver:
+    """Resolves owl:imports for one job: the library first, then the allowlisted web (new
+    library ontologies tagged imported-by:<root>), at most MAX_IMPORT_DEPTH levels down, each
+    IRI once, never back up the import path."""
+
+    deps: PipelineDeps
+    store: OntologyStore
+    root_id: str
+    memo: dict[str, tuple[dict[str, Any], Closure]] = field(default_factory=dict)
+
+    def resolve_all(
+        self, iris: Sequence[str], depth: int, path: frozenset[str]
+    ) -> tuple[list[dict[str, Any]], Closure]:
+        entries: list[dict[str, Any]] = []
+        closure: Closure = []
+        labels: set[str] = set()
+        for iri in iris:
+            if iri in path:
+                entries.append(_unresolved(iri, "a cycle back to an ontology being imported"))
+                continue
+            entry, graphs = self.resolve(iri, depth, path)
+            entries.append(entry)
+            for graph, label in graphs:
+                if label not in labels:
+                    labels.add(label)
+                    closure.append((graph, label))
+        return entries, closure
+
+    def resolve(self, iri: str, depth: int, path: frozenset[str]) -> tuple[dict[str, Any], Closure]:
+        if iri not in self.memo:
+            if depth > MAX_IMPORT_DEPTH:
+                self.memo[iri] = (_unresolved(iri, f"deeper than {MAX_IMPORT_DEPTH} imports"), [])
+            else:
+                self.memo[iri] = self._resolve(iri, depth, path | {iri})
+        return self.memo[iri]
+
+    def _resolve(
+        self, iri: str, depth: int, path: frozenset[str]
+    ) -> tuple[dict[str, Any], Closure]:
+        runs = self.deps.buckets.runs
+        found = self.store.find_ready(iri)
+        if found is not None:
+            oid, version = found
+            data = self.deps.store.get_optional(runs, ontology_normalized_key(oid, version))
+            if data is None:
+                return _unresolved(iri, f"{oid} v{version} has no stored triples"), []
+            graph = Graph()
+            graph.parse(data=data, format="nt")
+            followed = [
+                str(e["iri"])
+                for e in self.store.version_imports(oid, version)
+                if e.get("resolution") in ("library", "fetched")
+            ]
+            _, children = self.resolve_all(followed, depth + 1, path)
+            return _resolved(iri, "library", oid, version), [(graph, f"{oid}@{version}"), *children]
+        fetch = self.deps.ontology_fetch
+        if fetch is None:
+            return _unresolved(iri, "not in the library, and URL imports are off"), []
+        max_triples = self.deps.ontology_max_triples
+        try:
+            fetched = fetch(iri)
+            graph = read_graph(
+                fetched.data, fetched.media_type, fetched.file_name, max_triples=max_triples
+            )
+        except DocumentError as exc:
+            return _unresolved(iri, str(exc)), []
+        except OntologySourceUnavailable as exc:
+            return _unresolved(iri, f"unavailable: {exc}"), []
+        child_entries, children = self.resolve_all(_imports_of(graph), depth + 1, path)
+        parsed = index_graph(graph, imports=children, max_triples=max_triples)
+        parsed.import_entries = child_entries
+        sha = hashlib.sha256(fetched.data).hexdigest()
+        oid, version = self.store.create_imported(
+            iri=iri,
+            title=parsed.title,
+            file_name=fetched.file_name,
+            media_type=fetched.media_type,
+            sha256=sha,
+            size=len(fetched.data),
+            source_url=fetched.url,
+            parsed=parsed,
+            root_id=self.root_id,
+        )
+        ext = _extension(fetched.file_name, fetched.media_type)
+        self.deps.store.put(
+            runs,
+            ontology_source_key(oid, sha, ext),
+            fetched.data,
+            fetched.media_type or "text/plain",
+        )
+        self.deps.store.put(
+            runs, ontology_normalized_key(oid, version), parsed.normalized, "application/n-triples"
+        )
+        return _resolved(iri, "fetched", oid, version), [(graph, f"{oid}@{version}"), *children]
+
+
+def _source(
+    params: OntologyJobParams, deps: PipelineDeps, store: OntologyStore
+) -> tuple[bytes, str, str]:
+    """The version's bytes, media type and file name; a URL is fetched and recorded."""
+    oid, version = params.ontology_id, params.version
+    if params.source_url is None:
+        assert params.source_key is not None  # the params validator guarantees one source
+        data = deps.store.get_optional(deps.buckets.runs, params.source_key)
+        if data is None:
+            raise DocumentError(f"the uploaded file is missing ({params.source_key})")
+        return data, params.media_type, params.file_name
+    if deps.ontology_fetch is None:
+        raise DocumentError("URL imports are off: set ONTOLOGY_FETCH_ALLOW")
+    fetched = deps.ontology_fetch(params.source_url)
+    sha = hashlib.sha256(fetched.data).hexdigest()
+    deps.store.put(
+        deps.buckets.runs,
+        ontology_source_key(oid, sha, _extension(fetched.file_name, fetched.media_type)),
+        fetched.data,
+        fetched.media_type or "text/plain",
+    )
+    try:
+        store.set_source(
+            oid,
+            version,
+            file_name=fetched.file_name,
+            media_type=fetched.media_type,
+            sha256=sha,
+            size=len(fetched.data),
+        )
+    except DuplicateSource as dup:
+        raise DocumentError(f"same file as version {dup.version} of {oid}") from dup
+    return fetched.data, fetched.media_type, fetched.file_name
+
+
 def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ParsedOntology:
-    """Parse the uploaded file, keep its canonical N-Triples, index its terms. A file that
-    cannot be read fails the version (and the job goes to review); other errors retry, failing
-    the version on the last attempt so it never stays 'parsing'."""
+    """Read the version's file (uploaded, or fetched from its URL), resolve its owl:imports,
+    keep its canonical N-Triples and index its terms with its imports'. A file that cannot be
+    read fails the version (the job goes to review); other errors retry, failing the version on
+    the last attempt so it never stays 'parsing'. An import never fails the job."""
     try:
         params = OntologyJobParams.model_validate(job.params or {})
     except ValidationError as exc:
@@ -555,12 +872,15 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
     oid, version = params.ontology_id, params.version
     store.start(oid, version)
     try:
-        data = deps.store.get_optional(deps.buckets.runs, params.source_key)
-        if data is None:
-            raise DocumentError(f"the uploaded file is missing ({params.source_key})")
-        parsed = parse_ontology(
-            data, params.media_type, params.file_name, max_triples=deps.ontology_max_triples
+        data, media_type, file_name = _source(params, deps, store)
+        max_triples = deps.ontology_max_triples
+        own = read_graph(data, media_type, file_name, max_triples=max_triples)
+        headers, _, _ = _header(own)
+        entries, graphs = _ImportResolver(deps, store, oid).resolve_all(
+            _imports_of(own), 1, frozenset(str(h) for h in headers)
         )
+        parsed = index_graph(own, imports=graphs, max_triples=max_triples)
+        parsed.import_entries = entries
         check_cancelled(job, queue)
         deps.store.put(
             deps.buckets.runs,

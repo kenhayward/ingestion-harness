@@ -38,6 +38,10 @@ class Settings:
     converter_url: str | None
     #: Ontology imports over this many triples are refused (ADR 0011).
     ontology_max_triples: int = 2_000_000
+    #: Hosts ontologies may be fetched from (ADR 0011); empty: URL imports are off.
+    ontology_fetch_allow: tuple[str, ...] = ()
+    #: Fetched ontology files over this many bytes are refused.
+    ontology_max_bytes: int = 104_857_600
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -78,4 +82,8 @@ class Settings:
             ),
             converter_url=env.get("CONVERTER_URL") or None,
             ontology_max_triples=int(env.get("ONTOLOGY_MAX_TRIPLES", "2000000")),
+            ontology_fetch_allow=tuple(
+                h.strip() for h in env.get("ONTOLOGY_FETCH_ALLOW", "").split(",") if h.strip()
+            ),
+            ontology_max_bytes=int(env.get("ONTOLOGY_MAX_BYTES", "104857600")),
         )
