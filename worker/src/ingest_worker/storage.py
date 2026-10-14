@@ -63,6 +63,11 @@ def drafting_key(project_id: str, job_id: str) -> str:
     return f"drafting/{project_id}/{job_id}.json"
 
 
+def ontology_normalized_key(ontology_id: str, version: int) -> str:
+    """A version's canonical N-Triples (runs bucket, ontology task)."""
+    return f"ontologies/{ontology_id}/v{version}/normalized.nt"
+
+
 def export_key(project_id: str, job_id: str) -> str:
     """A project's exported drafting bundle (runs bucket, export task)."""
     return f"exports/{project_id}/{job_id}.zip"
