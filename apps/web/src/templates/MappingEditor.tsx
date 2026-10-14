@@ -312,6 +312,74 @@ function PinForm({ api, onPin }: { api: Api; onPin: (id: string, version: number
   );
 }
 
+/**
+ * Prefix rows, held here so a row never vanishes into another: the mapping only gets them while
+ * every prefix is non-empty and unique (an object cannot hold two rows under one key).
+ */
+function PrefixRows({
+  prefixes,
+  onChange,
+}: {
+  prefixes: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const [rows, setRows] = useState<[string, string][]>(() => Object.entries(prefixes));
+  /** What this editor last wrote: anything else (YAML applied, a reload) resets the rows. */
+  const written = useRef(JSON.stringify(prefixes));
+  useEffect(() => {
+    const incoming = JSON.stringify(prefixes);
+    if (incoming !== written.current) {
+      written.current = incoming;
+      setRows(Object.entries(prefixes));
+    }
+  }, [prefixes]);
+  const keys = rows.map(([k]) => k.trim());
+  const valid = keys.every((k) => k !== '') && new Set(keys).size === keys.length;
+  const update = (next: [string, string][]) => {
+    setRows(next);
+    const nextKeys = next.map(([k]) => k.trim());
+    if (nextKeys.every((k) => k !== '') && new Set(nextKeys).size === nextKeys.length) {
+      const value = Object.fromEntries(next.map(([k, ns]) => [k.trim(), ns]));
+      written.current = JSON.stringify(value);
+      onChange(value);
+    }
+  };
+  const freshName = () => {
+    let n = 1;
+    while (keys.includes(`p${n}`)) n += 1;
+    return `p${n}`;
+  };
+  return (
+    <>
+      {rows.map(([prefix, ns], i) => (
+        <div className="prefix-row" key={i}>
+          <Text
+            label="Prefix"
+            value={prefix}
+            onChange={(v) => update(rows.map((r, j) => (j === i ? [v, r[1]] : r)))}
+          />
+          <Text
+            label="Namespace"
+            value={ns}
+            onChange={(v) => update(rows.map((r, j) => (j === i ? [r[0], v] : r)))}
+          />
+          <button type="button" onClick={() => update(rows.filter((_, j) => j !== i))}>
+            Remove prefix
+          </button>
+        </div>
+      ))}
+      {!valid && (
+        <p role="alert" className="field-error">
+          Each prefix must be unique and not empty: the mapping keeps the last valid set until then.
+        </p>
+      )}
+      <button type="button" onClick={() => update([...rows, [freshName(), '']])}>
+        Add a prefix
+      </button>
+    </>
+  );
+}
+
 const ACTIVE = new Set(['queued', 'running']);
 
 /** Render the saved draft's mapping over the dev samples' newest finished runs. */
@@ -432,8 +500,6 @@ export function MappingEditor({
     else next[id] = t;
     set({ tables: next });
   };
-  const prefixes = Object.entries(s.prefixes);
-  const setPrefixes = (rows: [string, string][]) => set({ prefixes: Object.fromEntries(rows) });
   const setLocal = (i: number, patch: Partial<LocalTerm>) =>
     set({ local: s.local.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
 
@@ -469,29 +535,7 @@ export function MappingEditor({
 
       <section>
         <h3>Prefixes</h3>
-        {prefixes.map(([prefix, ns], i) => (
-          <div className="prefix-row" key={i}>
-            <Text
-              label="Prefix"
-              value={prefix}
-              onChange={(v) => setPrefixes(prefixes.map((r, j) => (j === i ? [v, r[1]] : r)))}
-            />
-            <Text
-              label="Namespace"
-              value={ns}
-              onChange={(v) => setPrefixes(prefixes.map((r, j) => (j === i ? [r[0], v] : r)))}
-            />
-            <button type="button" onClick={() => setPrefixes(prefixes.filter((_, j) => j !== i))}>
-              Remove
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => setPrefixes([...prefixes, [`p${prefixes.length + 1}`, '']])}
-        >
-          Add a prefix
-        </button>
+        <PrefixRows prefixes={s.prefixes} onChange={(prefixes) => set({ prefixes })} />
       </section>
 
       <section>

@@ -187,3 +187,33 @@ describe('MappingEditor', () => {
     );
   });
 });
+
+describe('MappingEditor prefixes', () => {
+  it('never overwrites a namespace when adding a prefix after removing one', async () => {
+    const { last } = setup({ ...mapped, prefixes: {} });
+    const add = () => userEvent.click(screen.getByRole('button', { name: 'Add a prefix' }));
+    await add();
+    await add();
+    const namespaces = () => screen.getAllByLabelText('Namespace');
+    await userEvent.type(namespaces()[1]!, 'https://two.example/');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remove prefix' })[0]!);
+    await add();
+    expect(last()?.prefixes).toEqual({ p2: 'https://two.example/', p1: '' });
+  });
+
+  it('keeps both rows while a prefix repeats another, and says so', async () => {
+    const { last } = setup({
+      ...mapped,
+      prefixes: { ex: 'https://ex.example/', ey: 'https://ey.example/' },
+    });
+    const second = screen.getAllByLabelText('Prefix')[1]!;
+    await userEvent.clear(second);
+    await userEvent.type(second, 'ex');
+    expect(screen.getAllByLabelText('Namespace')).toHaveLength(2);
+    expect(screen.getByRole('alert')).toHaveTextContent('Each prefix must be unique and not empty');
+    // Nothing invalid is written: the last good set stands until the clash is fixed.
+    expect(last()?.prefixes).toEqual({ ex: 'https://ex.example/', e: 'https://ey.example/' });
+    await userEvent.type(second, '2');
+    expect(last()?.prefixes).toEqual({ ex: 'https://ex.example/', ex2: 'https://ey.example/' });
+  });
+});
