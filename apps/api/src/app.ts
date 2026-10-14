@@ -8,6 +8,7 @@ import { registerOpenApi } from './openapi/plugin.js';
 import { jobLiveRoutes } from './routes/job-live.js';
 import type { S3KeyService } from './s3keys/service.js';
 import type { LlmConfigRepo } from './llm/repo.js';
+import type { OntologyRepo } from './ontologies/repo.js';
 import type { SecretsKeys } from './llm/secrets.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
@@ -29,6 +30,7 @@ import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
 import { llmRoutes } from './routes/llm.js';
+import { ontologyRoutes } from './routes/ontologies.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -48,6 +50,8 @@ export interface AppDeps {
   s3Keys: S3KeyService | null;
   /** LLM endpoints and curated models (ADR 0010), for the Models page. */
   llm: LlmConfigRepo;
+  /** The ontology library (ADR 0011): imported versions and their indexed terms. */
+  ontologies: OntologyRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
@@ -100,6 +104,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
   await app.register(llmRoutes, { prefix: '/api' });
+  await app.register(ontologyRoutes, { prefix: '/api' });
 
   return app;
 }

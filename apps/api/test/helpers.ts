@@ -2,6 +2,7 @@ import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
+import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
@@ -67,6 +68,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const templates = new MemoryTemplateRepo();
   const workbench = new MemoryWorkbenchRepo(repo, templates);
   const llm = new MemoryLlmConfigRepo();
+  const ontologies = new MemoryOntologyRepo();
   const app = await buildApp({
     repo,
     store,
@@ -83,6 +85,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
     llm,
+    ontologies,
     llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),
@@ -95,7 +98,17 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   installConformance(app);
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
   const llmRepo = (overrides.llm ?? llm) as MemoryLlmConfigRepo;
-  return { app, repo, store, targetStore, templates, workbench, llm: llmRepo };
+  const ontologyRepo = (overrides.ontologies ?? ontologies) as MemoryOntologyRepo;
+  return {
+    app,
+    repo,
+    store,
+    targetStore,
+    templates,
+    workbench,
+    llm: llmRepo,
+    ontologies: ontologyRepo,
+  };
 }
 
 /**

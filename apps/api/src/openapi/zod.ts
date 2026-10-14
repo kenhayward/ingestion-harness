@@ -41,12 +41,13 @@ export const binary = (description: string, ...contentTypes: string[]) => ({
 export function multipart(
   fields: Record<string, { type: 'string'; description: string; enum?: string[] }>,
   required: string[],
+  fileDescription = 'The PDF. Send it last.',
 ) {
   return {
     type: 'object',
     properties: {
       ...fields,
-      file: { type: 'string', format: 'binary', description: 'The PDF. Send it last.' },
+      file: { type: 'string', format: 'binary', description: fileDescription },
     },
     required: [...required, 'file'],
   };

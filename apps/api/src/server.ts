@@ -4,6 +4,7 @@ import { buildApp } from './app.js';
 import { loadConfig, s3KeysConfig, targetConfig } from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
+import { PgOntologyRepo } from './ontologies/repo.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -72,6 +73,7 @@ const app = await buildApp({
   access, // always enforced in production (ADR 0006)
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   // Throws on a malformed key: better a failed start than keys that can't be read back.
   llmSecrets: secretsKeys(process.env),
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),

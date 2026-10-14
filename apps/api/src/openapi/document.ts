@@ -92,6 +92,11 @@ export const TAGS = {
   'Data-lake S3 keys': md`
     Read-only S3 credentials for data-lake consumers of the publish bucket. Secrets are shown
     once. See [ADR 0008](${REPO}/docs/adr/0008-s3-read-keys.md).`,
+  Ontologies: md`
+    The ontology library: customer and industry ontologies (OWL/RDFS, SKOS, SHACL) that
+    document types map their outputs to. Admins import a file as a new immutable version;
+    the worker parses it and indexes its terms, which anyone signed in can browse. See
+    [ADR 0011](${REPO}/docs/adr/0011-rdf-publishing-and-ontologies.md).`,
   Health: md`
     Liveness and readiness checks for load balancers and orchestrators. They need no session.
   `,
@@ -101,7 +106,10 @@ export type Tag = keyof typeof TAGS;
 
 export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   { name: 'Pipeline', tags: ['Documents', 'Jobs', 'Review & steps', 'Results'] },
-  { name: 'Configuration', tags: ['Specs', 'Recipes', 'References & regression', 'Models'] },
+  {
+    name: 'Configuration',
+    tags: ['Specs', 'Recipes', 'References & regression', 'Models', 'Ontologies'],
+  },
   {
     name: 'Workbench',
     tags: [
