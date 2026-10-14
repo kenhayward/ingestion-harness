@@ -362,6 +362,73 @@ describe('WorkbenchPage', () => {
     expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter');
   });
 
+  it('lays out the New project dialog: described, required Id, optional Name with its hint', async () => {
+    page(fakeApi());
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    expect(dialog).toHaveAccessibleDescription(
+      'A Workbench project drafts a document type with the model, step by step.',
+    );
+    const id = within(dialog).getByLabelText('Id');
+    expect(id).toHaveFocus();
+    expect(id).toHaveAttribute('placeholder', 'e.g. supplier-invoice');
+    expect(id).toHaveAttribute('autocomplete', 'off');
+    expect(id).toHaveAttribute('spellcheck', 'false');
+    expect(id).toBeRequired();
+    const name = within(dialog).getByLabelText('Name');
+    expect(name).toHaveAttribute('placeholder', 'e.g. Supplier invoice');
+    expect(name).toHaveAccessibleDescription(
+      'Leave the name empty to open an existing document type.',
+    );
+    expect(dialog).toHaveTextContent('Required');
+    expect(dialog).toHaveTextContent('Optional');
+  });
+
+  it.each(['', '   '])('keeps Create project disabled for the id %j', async (typed) => {
+    const api = fakeApi();
+    page(api);
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    if (typed) await userEvent.type(within(dialog).getByLabelText('Id'), typed);
+    const create = within(dialog).getByRole('button', { name: 'Create project' });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute('title', 'Enter an id first');
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'letter');
+    expect(create).toBeEnabled();
+    expect(create).not.toHaveAttribute('title');
+  });
+
+  it.each(['Letter', 'supplier invoice', '1st-letter', 'letter.v2'])(
+    'explains an id the API would refuse (%s) before sending it',
+    async (typed) => {
+      const api = fakeApi();
+      page(api);
+      await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+      const dialog = screen.getByRole('dialog', { name: 'New project' });
+      const id = within(dialog).getByLabelText('Id');
+      await userEvent.type(id, typed);
+      expect(id).toHaveAttribute('aria-invalid', 'true');
+      expect(id).toHaveAccessibleDescription(
+        'Use lowercase letters, digits, hyphens and underscores, starting with a letter.',
+      );
+      const create = within(dialog).getByRole('button', { name: 'Create project' });
+      expect(create).toBeDisabled();
+      expect(create).toHaveAttribute('title', 'Fix the id first');
+      await userEvent.clear(id);
+      await userEvent.type(id, 'supplier-invoice_2');
+      expect(id).not.toHaveAttribute('aria-invalid');
+      expect(create).toBeEnabled();
+    },
+  );
+
+  it('closes the New project dialog on Escape', async () => {
+    page(fakeApi());
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    expect(screen.getByRole('dialog', { name: 'New project' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'New project' })).toBeNull();
+  });
+
   it('opens an existing document type without a name', async () => {
     const api = fakeApi({ createProject: vi.fn(async () => projectView()) });
     page(api);

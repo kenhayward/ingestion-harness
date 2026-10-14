@@ -246,9 +246,12 @@ describe('SamplesTab', () => {
     expect(await within(preview).findByRole('region', { name: 'Page 1' })).toHaveTextContent(
       '[page 1] PROTOCOL APPROVAL',
     );
-    await userEvent.click(within(preview).getByRole('button', { name: 'Page 2 OCR' }));
+    await userEvent.click(within(preview).getByRole('button', { name: 'Next page' }));
     expect(within(preview).getByRole('region', { name: 'Page 2' })).toHaveTextContent(
       'Batch 1 results',
+    );
+    expect(within(preview).getByRole('navigation', { name: 'Pages' })).toHaveTextContent(
+      'Page 2 of 2OCR',
     );
     expect(preview).toHaveTextContent('Read by OCR · cached per PDF hash');
     expect(screen.getByRole('button', { name: 'Show text of a.pdf' })).toHaveAttribute(
@@ -260,6 +263,11 @@ describe('SamplesTab', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Show text of b.pdf' }));
     expect(await within(preview).findByText(/MEMO/)).toBeInTheDocument();
     expect(getSampleText).toHaveBeenLastCalledWith('letter', b.id);
+    // Back to a.pdf: its text opens on page 1 again.
+    await userEvent.click(screen.getByRole('button', { name: 'Show text of a.pdf' }));
+    expect(await within(preview).findByRole('region', { name: 'Page 1' })).toHaveTextContent(
+      'PROTOCOL APPROVAL',
+    );
   });
 
   it('marks where a section starts on its page', async () => {

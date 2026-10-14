@@ -13483,7 +13483,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid id, or `name is required for a new document type`.",
+            "description": "Zod issues for an invalid id, or `there is no document type {id} yet: give it a name to create it`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13509,7 +13509,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid id, or `name is required for a new document type`."
+                  "description": "Zod issues for an invalid id, or `there is no document type {id} yet: give it a name to create it`."
                 }
               }
             }

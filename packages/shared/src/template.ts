@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { CopySelectionSchema, OcrModeSchema, SectionSchema } from './spec.js';
+import { CopySelectionSchema, ID_PATTERN, OcrModeSchema, SectionSchema } from './spec.js';
 
 /**
  * Document type template (outputs-first). Mirrors worker/src/ingest_worker/template.py — both
  * sides validate every template.yaml under /specs in their test suites.
  */
-const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
+const Id = z.string().regex(ID_PATTERN, 'lowercase id: [a-z][a-z0-9_-]*');
 
 export const VALUE_TYPES = [
   'text',

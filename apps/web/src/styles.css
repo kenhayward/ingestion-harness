@@ -2490,6 +2490,71 @@ a.button.icon.bordered {
   justify-content: flex-end;
   gap: 8px;
 }
+/* A dialog with an icon or description (New project): header row, body, footer strip. The
+   body scrolls, so the strip reaches the rounded edges. */
+.dialog.dialog-rich {
+  width: min(480px, 100%);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 24px 20px;
+}
+.dialog-icon {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.dialog-rich h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.dialog-description {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.dialog-rich .dialog-body {
+  padding: 4px 24px 24px;
+  overflow: auto;
+}
+.dialog-rich .dialog-actions {
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-top: 1px solid var(--ih-border-soft);
+  background: var(--ih-surface2);
+}
+.dialog-rich .dialog-actions button {
+  min-height: 40px;
+}
+.dialog-rich .dialog-actions button.primary:disabled {
+  border-color: var(--ih-border);
+  background: var(--ih-surface);
+  color: var(--ih-muted);
+  opacity: 1;
+}
+@media (max-width: 480px) {
+  .dialog-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .dialog-icon .icon {
+    width: 28px;
+    height: 28px;
+  }
+}
 
 .segmentation-grid .anchor-errors {
   background: var(--ih-alert-bg);
