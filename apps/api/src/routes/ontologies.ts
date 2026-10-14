@@ -18,6 +18,7 @@ import {
 } from '@ih/shared';
 import { binary, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { multipartField } from '../uploads.js';
+import { contentDisposition } from './jobs.js';
 
 /** The ontology library (ADR 0011): anyone signed in reads, admins import and manage. */
 
@@ -337,10 +338,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           ? await app.deps.store.get(app.deps.buckets.runs, ontologySourceKey(id, v.sha256, ext))
           : null;
       if (!v || !body) return reply.code(404).send({ error: 'version not found' });
-      const name = v.fileName.replace(/["\\\r\n]/g, '_');
       return reply
         .header('content-type', v.mediaType)
-        .header('content-disposition', `attachment; filename="${name}"`)
+        .header('content-disposition', contentDisposition(v.fileName, 'attachment'))
         .header('x-content-type-options', 'nosniff')
         .send(body);
     },

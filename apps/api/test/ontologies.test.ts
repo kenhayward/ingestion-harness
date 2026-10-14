@@ -152,6 +152,21 @@ describe('reading and managing ontologies', () => {
   });
 });
 
+describe('non-ASCII file names', () => {
+  it('downloads under an ASCII fallback and the exact UTF-8 name', async () => {
+    const { app, upload } = await setup();
+    await upload(
+      { id: 'pv', label: 'Process validation' },
+      { filename: '本体 é.ttl', content: TTL, contentType: 'text/turtle' },
+    );
+    const res = await app.inject({ url: '/api/ontologies/pv/versions/1/source' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toBe(
+      `attachment; filename="__ _.ttl"; filename*=UTF-8''${encodeURIComponent('本体 é.ttl')}`,
+    );
+  });
+});
+
 describe('browsing terms', () => {
   const C = 'https://example.org/pv#';
   async function ready() {
