@@ -155,6 +155,28 @@ export const QueueSummarySchema = z.object({
 });
 export type QueueSummary = z.infer<typeof QueueSummarySchema>;
 
+/**
+ * A document graph's SHACL report (ADR 0011 step 5; worker `rdf.ShaclReport.to_json`). Only
+ * violations block (review reasons, a refused publish); warnings and infos become issues.
+ */
+export const ShaclResultSchema = z.object({
+  severity: z.enum(['Violation', 'Warning', 'Info']),
+  /** The node shape whose constraint failed. */
+  shape: z.string(),
+  focus: z.string(),
+  path: z.string(),
+  /** The output the path publishes (`field`, `table`, `table.column`), else the path IRI. */
+  output: z.string(),
+  message: z.string(),
+  value: z.string(),
+});
+export type ShaclResult = z.infer<typeof ShaclResultSchema>;
+export const ShaclReportSchema = z.object({
+  conforms: z.boolean(),
+  results: z.array(ShaclResultSchema),
+});
+export type ShaclReport = z.infer<typeof ShaclReportSchema>;
+
 /** What an output is written as; `rdf` is the document's graph in Turtle (ADR 0011). */
 export const OUTPUT_FORMATS = ['csv', 'json', 'rdf'] as const;
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number];

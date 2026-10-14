@@ -108,6 +108,18 @@ describe('mapping validation', () => {
       'ontology draft v1 is not ready (queued)',
     ],
     [
+      'shapes that are not ready',
+      (s) => ({ ...s, shapes: [{ id: 'draft', version: 1 }] }),
+      'semantics.shapes.0',
+      'ontology draft v1 is not ready (queued)',
+    ],
+    [
+      'unknown shapes',
+      (s) => ({ ...s, shapes: [{ id: 'nope', version: 2 }] }),
+      'semantics.shapes.0',
+      'unknown ontology nope v2',
+    ],
+    [
       'a prefix that is not declared',
       (s) => ({ ...s, document: { class: 'zzz:Letter' } }),
       'semantics.document.class',

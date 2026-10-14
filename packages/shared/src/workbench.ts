@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { RetirementSchema } from './retirement.js';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
-import { JobStatusSchema, PrepareProgressSchema } from './jobs.js';
+import { JobStatusSchema, PrepareProgressSchema, ShaclReportSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
 export const SAMPLE_ROLES = ['dev', 'holdout'] as const;
@@ -252,6 +252,8 @@ export const GraphPreviewResultSchema = z.object({
       fileName: z.string(),
       turtle: z.string(),
       triples: z.number().int(),
+      /** The SHACL report when the recipe pins shapes (step 5); null otherwise. */
+      report: ShaclReportSchema.nullable().default(null),
     }),
   ),
 });

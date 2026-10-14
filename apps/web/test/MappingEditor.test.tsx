@@ -166,7 +166,9 @@ describe('MappingEditor', () => {
       status: 'succeeded' as const,
       error: null,
       result: {
-        samples: [{ sampleId: 's1', fileName: 's1.pdf', turtle: '<a> <b> <c> .', triples: 1 }],
+        samples: [
+          { sampleId: 's1', fileName: 's1.pdf', turtle: '<a> <b> <c> .', triples: 1, report: null },
+        ],
       },
     }));
     setup(mapped, fakeApi({ startGraphPreview, getGraphPreview }), { projectId: 'letter' });

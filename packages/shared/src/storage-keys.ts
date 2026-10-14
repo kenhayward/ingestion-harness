@@ -66,6 +66,11 @@ export function reviewedDocumentKey(jobId: string): string {
   return `${jobId}/reviewed-document.json`;
 }
 
+/** A job's SHACL report of its document's graph (runs bucket; `storage.shacl_report_key`). */
+export function shaclReportKey(jobId: string): string {
+  return `${jobId}/shacl-report.json`;
+}
+
 /** A graph preview's Turtle per sample (runs bucket, worker graph task; ADR 0011). */
 export function graphPreviewKey(projectId: string, jobId: string): string {
   return `graphs/${projectId}/${jobId}.json`;

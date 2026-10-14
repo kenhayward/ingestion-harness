@@ -105,6 +105,20 @@ function templateChecks(template: Template): TemplateIssue[] {
   return issues;
 }
 
+/** Why a pinned version cannot be used: unknown, or not ready; null when it is. */
+async function pinProblem(
+  ontologies: OntologyRepo,
+  pin: { id: string; version: number },
+): Promise<string | null> {
+  const detail = await ontologies.get(pin.id);
+  const version = detail?.versions.find((v) => v.version === pin.version);
+  if (!version) return `unknown ontology ${pin.id} v${pin.version}`;
+  if (version.status !== 'ready') {
+    return `ontology ${pin.id} v${pin.version} is not ready (${version.status})`;
+  }
+  return null;
+}
+
 interface Use {
   path: string;
   term: string;
@@ -158,6 +172,11 @@ export async function semanticsIssues(
     }
   }
   issues.push(...templateChecks(template));
+
+  for (const [i, pin] of semantics.shapes.entries()) {
+    const problem = await pinProblem(ontologies, pin);
+    if (problem) issues.push({ path: `semantics.shapes.${i}`, message: problem });
+  }
 
   const pins: { id: string; version: number }[] = [];
   for (const [i, pin] of semantics.ontologies.entries()) {

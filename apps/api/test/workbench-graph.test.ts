@@ -182,7 +182,15 @@ describe('graph previews', () => {
     expect((await app.inject(url)).json()).toMatchObject({ jobId, status: 'queued', result: null });
 
     const result = {
-      samples: [{ sampleId: s1.id, fileName: 's1.pdf', turtle: '<a> <b> <c> .\n', triples: 1 }],
+      samples: [
+        {
+          sampleId: s1.id,
+          fileName: 's1.pdf',
+          turtle: '<a> <b> <c> .\n',
+          triples: 1,
+          report: { conforms: true, results: [] },
+        },
+      ],
     };
     repo.graphJobs.set(jobId, { ...repo.graphJobs.get(jobId)!, status: 'succeeded' });
     await store.put(

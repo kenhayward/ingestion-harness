@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { shaclReportKey } from '@ih/shared';
 import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 import { DOCX_MIME } from '../src/uploads.js';
 import { docx } from './docx-fixtures.js';
@@ -564,5 +565,41 @@ describe('GET /api/jobs/:id/document', () => {
     expect(unknown.statusCode).toBe(404);
     store.objects.clear();
     expect((await app.inject({ url: `/api/jobs/${job.id}/document` })).statusCode).toBe(404);
+  });
+});
+
+describe('the SHACL report of a job (ADR 0011 step 5)', () => {
+  it('returns the stored report, and 404 without one', async () => {
+    const { app, store, job } = await seedJob();
+    const url = `/api/jobs/${job.id}/shacl-report`;
+    const missing = await app.inject(url);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: 'no SHACL report for this job' });
+    const report = {
+      conforms: false,
+      results: [
+        {
+          severity: 'Violation',
+          shape: 'https://acme.example/def/LetterShape',
+          focus: 'https://data.acme.example/doc/ab',
+          path: 'https://acme.example/def/sentBy',
+          output: 'sender',
+          message: 'a letter names its sender',
+          value: '',
+        },
+      ],
+    };
+    await store.put(
+      'runs',
+      shaclReportKey(job.id),
+      Buffer.from(JSON.stringify(report)),
+      'application/json',
+    );
+    const res = await app.inject(url);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(report);
+    expect(
+      (await app.inject('/api/jobs/00000000-0000-4000-8000-000000000000/shacl-report')).statusCode,
+    ).toBe(404);
   });
 });
