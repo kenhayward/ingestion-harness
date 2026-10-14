@@ -15,6 +15,7 @@ from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
+from .embeddings import run_embed
 from .graph_preview import run_graph_preview
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
@@ -102,6 +103,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
             return True
+        if job.task == "embed":
+            embedded = run_embed(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s embedded %d terms", job.id, embedded)
+            return True
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
@@ -162,6 +168,7 @@ def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
     if not live.refresh():
         return False
     deps.models = live.registry
+    deps.embedding_model = live.embedding_model
     if deps.ocr is not None and live.ocr_model:
         deps.ocr = replace(deps.ocr, model=live.ocr_model)
     return True
@@ -228,6 +235,7 @@ def main() -> None:
         ),
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),
+        embedding_model=live.embedding_model,
         ontology_max_triples=settings.ontology_max_triples,
         ontology_fetch=(
             functools.partial(

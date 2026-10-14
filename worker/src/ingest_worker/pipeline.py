@@ -134,6 +134,8 @@ class PipelineDeps:
     ontology_fetch: Callable[[str], Fetched] | None = None
     #: The base IRI RDF is minted under (None: mapped recipes draft no graph).
     linked_data: LinkedDataSettings | None = None
+    #: The `embedding_model` setting (an `endpoint/model-id`); None: lexical retrieval only.
+    embedding_model: str | None = None
 
 
 @dataclass(frozen=True)

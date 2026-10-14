@@ -20,6 +20,7 @@ from rdflib import Literal as RdfLiteral
 from rdflib.collection import Collection
 from rdflib.namespace import DC, DCTERMS, OWL, RDF, RDFS, SH, SKOS, XSD
 
+from .embeddings import EmbeddingTerm, embed_after_import
 from .ontology_fetch import OntologySourceUnavailable
 from .pipeline import DocumentError, JobCancelled, check_cancelled
 from .storage import ontology_normalized_key, ontology_source_key
@@ -484,6 +485,30 @@ class OntologyStore(Protocol):
         (trimmed, any case); None if there is none."""
         ...
 
+    def local_only(self, ontology_id: str) -> bool:
+        """The ontology may only be sent to local models."""
+        ...
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        """Every term but shapes, its parents as labels."""
+        ...
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        """(kind, iri) -> text_sha256 of the vectors stored for the model."""
+        ...
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        """Upsert (kind, iri, text_sha256, vector) rows."""
+        ...
+
     def create_imported(
         self,
         *,
@@ -714,6 +739,86 @@ class PgOntologyStore:
         ).fetchone()
         return str(row[0]) if row else None
 
+    def local_only(self, ontology_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT local_only FROM ontologies WHERE id = %s", (ontology_id,)
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        rows = self._conn.execute(
+            """SELECT kind, iri, label, alt_labels, definition, parents FROM ontology_terms
+                WHERE ontology_id = %s AND version = %s AND kind <> 'shape'
+                ORDER BY kind, iri""",
+            (ontology_id, version),
+        ).fetchall()
+        labels: dict[str, str] = {}
+        for _, iri, label, *_rest in rows:
+            labels.setdefault(str(iri), str(label))
+        return [
+            EmbeddingTerm(
+                str(kind),
+                str(iri),
+                str(label),
+                list(alt_labels),
+                str(definition),
+                [labels.get(p, local_name(p)) for p in parents],
+            )
+            for kind, iri, label, alt_labels, definition, parents in rows
+        ]
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        rows = self._conn.execute(
+            """SELECT kind, iri, text_sha256 FROM ontology_term_embeddings
+                WHERE ontology_id = %s AND version = %s AND model_ref = %s""",
+            (ontology_id, version, model_ref),
+        ).fetchall()
+        return {(str(k), str(i)): str(s) for k, i, s in rows}
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        if not rows:
+            return
+        dims = len(rows[0][3])
+        with self._conn.transaction(), self._conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO ontology_term_embeddings
+                     (ontology_id, version, kind, iri, model_ref, dims, text_sha256, embedding)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector)
+                   ON CONFLICT (ontology_id, version, kind, iri, model_ref) DO UPDATE
+                     SET dims = excluded.dims, text_sha256 = excluded.text_sha256,
+                         embedding = excluded.embedding, created_at = now()""",
+                [
+                    (ontology_id, version, kind, iri, model_ref, len(vec), sha, vector_literal(vec))
+                    for kind, iri, sha, vec in rows
+                ],
+            )
+        self._ensure_index(model_ref, dims)
+
+    def _ensure_index(self, model_ref: str, dims: int) -> None:
+        """An HNSW index per model and dimension, on the cast the semantic query uses."""
+        from psycopg import sql
+
+        digest = hashlib.sha256(f"{model_ref}|{dims}".encode()).hexdigest()[:12]
+        self._conn.execute(
+            sql.SQL(
+                "CREATE INDEX IF NOT EXISTS {name} ON ontology_term_embeddings"
+                " USING hnsw ((embedding::vector({dims})) vector_cosine_ops)"
+                " WHERE model_ref = {ref} AND dims = {dims}"
+            ).format(
+                name=sql.Identifier(f"ontology_term_embeddings_hnsw_{digest}"),
+                dims=sql.Literal(dims),
+                ref=sql.Literal(model_ref),
+            )
+        )
+
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self._conn.execute(
             """UPDATE ontology_versions SET status = 'failed', error = %s
@@ -740,6 +845,11 @@ def _resolved(iri: str, how: str, ontology_id: str, version: int) -> dict[str, A
         "version": version,
         "reason": None,
     }
+
+
+def vector_literal(vector: list[float]) -> str:
+    """pgvector's text form: `[0.1,0.2]`."""
+    return "[" + ",".join(repr(float(v)) for v in vector) + "]"
 
 
 def import_id(iri: str) -> str:
@@ -950,6 +1060,7 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
             "application/n-triples",
         )
         store.save(oid, version, parsed)
+        embed_after_import(deps, queue, job.id, oid, version)
     except DocumentError as exc:
         store.fail(oid, version, str(exc))
         raise

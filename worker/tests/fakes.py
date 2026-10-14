@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
     CompletionResult,
@@ -345,6 +346,44 @@ class MemoryOntologyStore:
     created: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Set to make set_source report that another version has the same bytes.
     duplicate_of: int | None = None
+    #: Ontologies that may only go to local models.
+    local_only_ids: set[str] = field(default_factory=set)
+    #: (id, version, model) -> (kind, iri) -> (text_sha256, vector)
+    embeddings: dict[tuple[str, int, str], dict[tuple[str, str], tuple[str, list[float]]]] = field(
+        default_factory=dict
+    )
+
+    def local_only(self, ontology_id: str) -> bool:
+        return ontology_id in self.local_only_ids
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        parsed = self.saved.get((ontology_id, version))
+        terms = [t for t in (parsed.terms if parsed else []) if t.kind != "shape"]
+        labels = {t.iri: t.label for t in terms}
+        return [
+            EmbeddingTerm(
+                t.kind, t.iri, t.label, list(t.alt_labels), t.definition,
+                [labels.get(p, p) for p in t.parents],
+            )
+            for t in terms
+        ]  # fmt: skip
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        rows = self.embeddings.get((ontology_id, version, model_ref), {})
+        return {key: sha for key, (sha, _) in rows.items()}
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        stored = self.embeddings.setdefault((ontology_id, version, model_ref), {})
+        for kind, iri, sha, vector in rows:
+            stored[(kind, iri)] = (sha, vector)
 
     def concept_by_label(
         self, versions: list[tuple[str, int]], scheme: str, label: str

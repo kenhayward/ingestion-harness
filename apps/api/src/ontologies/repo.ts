@@ -85,6 +85,11 @@ export interface OntologyRepo {
     iris: string[],
     limit: number,
   ): Promise<OntologyTerm[] | null>;
+  /**
+   * Queue an `embed` job for every ready version (the embedding model changed): each embeds its
+   * terms under the new model. Versions still importing embed at the end of their import.
+   */
+  createEmbedJobs(): Promise<number>;
 }
 
 /** What a version whose import job ended without finishing it reads as. */
@@ -201,6 +206,18 @@ export class MemoryOntologyRepo implements OntologyRepo {
     error: string | null;
   }[] = [];
   private readonly versionJobs = new Map<string, string>();
+  /** The `embed` jobs queued, for assertions. */
+  readonly embedJobs: { ontologyId: string; version: number }[] = [];
+
+  async createEmbedJobs(): Promise<number> {
+    const ready = [...this.ontologies.values()].flatMap((o) =>
+      o.versions
+        .filter((v) => this.effective(v).status === 'ready')
+        .map((v) => ({ ontologyId: o.id, version: v.version })),
+    );
+    this.embedJobs.push(...ready);
+    return ready.length;
+  }
 
   /**
    * A version still queued or parsing whose job is no longer active never will finish (the
@@ -823,6 +840,15 @@ export class PgOntologyRepo implements OntologyRepo {
       [id, version, iris, limit],
     );
     return rows.map(toTerm);
+  }
+
+  async createEmbedJobs(): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      `INSERT INTO jobs (task, priority, max_attempts, params)
+       SELECT 'embed', -10, 3, jsonb_build_object('ontologyId', v.ontology_id, 'version', v.version)
+         FROM ontology_versions v WHERE v.status = 'ready'`,
+    );
+    return rowCount ?? 0;
   }
 
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {
