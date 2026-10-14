@@ -7,6 +7,23 @@ const defaultSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url)
 const blank = (v: unknown) => (v === '' ? undefined : v);
 const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blank, schema.optional());
 
+/** One `frame-ancestors` source: an https origin, optionally `*.` for every subdomain. */
+const FRAME_SOURCE = /^https:\/\/(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+(:\d{1,5})?$/i;
+
+/**
+ * Sites allowed to show the app in a frame (space-separated https origins, `*.` wildcards),
+ * normalised to single spaces; null (blank) = no framing. The app's nginx sends the same value.
+ */
+const FrameAncestors = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim().split(/\s+/).filter(Boolean).join(' ') || null : null),
+  z
+    .string()
+    .refine((v) => v.split(' ').every((source) => FRAME_SOURCE.test(source)), {
+      message: 'FRAME_ANCESTORS takes https origins only, e.g. https://*.example.com',
+    })
+    .nullable(),
+);
+
 const EnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().default(3000),
@@ -33,6 +50,8 @@ const EnvSchema = z.object({
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
   /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
   TRUST_PROXY: optional(z.string()),
+  /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */
+  FRAME_ANCESTORS: FrameAncestors,
 });
 
 export type Config = z.infer<typeof EnvSchema>;

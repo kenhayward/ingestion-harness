@@ -105,6 +105,66 @@ describe('token access', () => {
     expect(cookieOf(res).header).toMatch(/Secure/i); // inject() comes from 127.0.0.1
   });
 
+  it('keeps the strict cookie when framing is allowed but the request is plain HTTP', async () => {
+    const access = new MemoryAccessRepo();
+    const { app } = await testApp({ access, frameAncestors: 'https://*.3dexperience.3ds.com' });
+    const { res } = await login(app, await access.rotateAdminToken());
+    expect(cookieOf(res).header).toMatch(/SameSite=Strict/i);
+    expect(cookieOf(res).header).not.toMatch(/Partitioned/i);
+  });
+
+  it('sends the cookie into allowed frames over HTTPS: SameSite=None, Secure, Partitioned', async () => {
+    const access = new MemoryAccessRepo();
+    const { app } = await testApp({ access, frameAncestors: 'https://*.3dexperience.3ds.com' });
+    const { res, cookie } = await login(app, await access.rotateAdminToken(), {
+      'x-forwarded-proto': 'https',
+    });
+    const { header } = cookieOf(res);
+    expect(header).toMatch(/SameSite=None/i);
+    expect(header).toMatch(/Secure/i);
+    expect(header).toMatch(/Partitioned/i);
+    expect(header).toMatch(/HttpOnly/i);
+    const out = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout',
+      headers: { cookie, 'x-forwarded-proto': 'https' },
+    });
+    // A partitioned cookie is only cleared by a Set-Cookie with the same attributes.
+    expect(cookieOf(out).header).toMatch(/ih_session=;.*Partitioned/i);
+    expect(cookieOf(out).header).toMatch(/SameSite=None/i);
+  });
+
+  it("refuses another site's state-changing requests, whatever the cookie", async () => {
+    const { app, adminToken } = await setup();
+    const { cookie } = await login(app, adminToken);
+    const send = (method: 'POST' | 'DELETE' | 'GET', url: string, site?: string) =>
+      app.inject({
+        method,
+        url,
+        headers: { cookie, ...(site ? { 'sec-fetch-site': site } : {}) },
+        ...(method === 'POST' ? { payload: {} } : {}),
+      });
+    const crossSite = await send('POST', '/api/auth/logout', 'cross-site');
+    expect(crossSite.statusCode).toBe(403);
+    expect(crossSite.json()).toEqual({ error: 'cross-site request refused' });
+    expect((await send('DELETE', '/api/jobs/x', 'cross-site')).statusCode).toBe(403);
+    const forged = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { token: adminToken },
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    expect(forged.statusCode).toBe(403); // no signing someone in from another site either
+    // Reads, the app's own requests and clients that send no Sec-Fetch-Site (scripts) pass.
+    expect((await send('GET', '/api/specs', 'cross-site')).statusCode).toBe(200);
+    expect((await send('GET', '/api/specs', 'same-origin')).statusCode).toBe(200);
+    expect(
+      (await send('POST', '/api/jobs/00000000-0000-4000-8000-000000000000/cancel', 'same-origin'))
+        .statusCode,
+    ).not.toBe(403);
+    expect((await send('POST', '/api/auth/logout')).statusCode).toBe(204);
+  });
+
   it('marks the cookie Secure behind an HTTPS proxy', async () => {
     const { app, adminToken } = await setup();
     const { res } = await login(app, adminToken, { 'x-forwarded-proto': 'https' });

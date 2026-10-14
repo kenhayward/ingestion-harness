@@ -15,6 +15,30 @@ describe('loadConfig', () => {
     expect(cfg.S3_BUCKET_INBOX).toBe('ingest-inbox');
   });
 
+  it.each([
+    ['', null],
+    ['   ', null],
+    ['https://*.3dexperience.3ds.com', 'https://*.3dexperience.3ds.com'],
+    [
+      ' https://*.3dexperience.3ds.com   https://portal.example.com:8443 ',
+      'https://*.3dexperience.3ds.com https://portal.example.com:8443',
+    ],
+  ])('reads FRAME_ANCESTORS %j as %j', (value, expected) => {
+    expect(loadConfig({ ...base, FRAME_ANCESTORS: value }).FRAME_ANCESTORS).toBe(expected);
+  });
+
+  it.each([
+    "'none'",
+    '*',
+    'http://insecure.example.com',
+    'https://*',
+    'https://a.example.com; script-src *',
+    "https://a.example.com 'unsafe-inline'",
+    'https://a.example.com/path',
+  ])('refuses FRAME_ANCESTORS %j: only https hosts, a leading *. allowed', (value) => {
+    expect(() => loadConfig({ ...base, FRAME_ANCESTORS: value })).toThrow(/FRAME_ANCESTORS/);
+  });
+
   it('reports every missing variable at once', () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL[\s\S]*S3_ENDPOINT/);
   });
