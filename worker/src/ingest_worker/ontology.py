@@ -472,7 +472,7 @@ class OntologyStore(Protocol):
         ...
 
     def find_ready(self, iri: str) -> tuple[str, int] | None:
-        """The newest ready version whose ontology or version IRI is `iri`."""
+        """The newest ready version whose ontology, version or import IRI is `iri`."""
         ...
 
     def version_imports(self, ontology_id: str, version: int) -> list[dict[str, Any]]: ...
@@ -489,9 +489,11 @@ class OntologyStore(Protocol):
         source_url: str,
         parsed: ParsedOntology,
         root_id: str,
+        before_commit: Callable[[str, int], None],
     ) -> tuple[str, int]:
         """A new library ontology (tagged imported-by:<root_id>) whose ready version 1 holds
-        `parsed`; returns its id and version."""
+        `parsed`; returns its id and version. `before_commit(id, version)` stores its files
+        before the row is committed, so a ready version always has them."""
         ...
 
 
@@ -630,9 +632,10 @@ class PgOntologyStore:
     def find_ready(self, iri: str) -> tuple[str, int] | None:
         row = self._conn.execute(
             """SELECT ontology_id, version FROM ontology_versions
-                WHERE status = 'ready' AND (ontology_iri = %s OR version_iri = %s)
+                WHERE status = 'ready'
+                  AND (ontology_iri = %s OR version_iri = %s OR import_iri = %s)
                 ORDER BY imported_at DESC, version DESC LIMIT 1""",
-            (iri, iri),
+            (iri, iri, iri),
         ).fetchone()
         return (str(row[0]), int(row[1])) if row else None
 
@@ -655,6 +658,7 @@ class PgOntologyStore:
         source_url: str,
         parsed: ParsedOntology,
         root_id: str,
+        before_commit: Callable[[str, int], None],
     ) -> tuple[str, int]:
         base = import_id(iri)
         with self._conn.transaction():
@@ -670,11 +674,12 @@ class PgOntologyStore:
             self._conn.execute(
                 """INSERT INTO ontology_versions
                      (ontology_id, version, file_name, media_type, sha256, bytes, source_kind,
-                      source_url, imported_by)
-                   VALUES (%s, 1, %s, %s, %s, %s, 'import', %s, %s)""",
-                (oid, file_name, media_type, sha256, size, source_url, f"import of {root_id}"),
+                      source_url, import_iri, imported_by)
+                   VALUES (%s, 1, %s, %s, %s, %s, 'import', %s, %s, %s)""",
+                (oid, file_name, media_type, sha256, size, source_url, iri, f"import of {root_id}"),
             )
             self.save(oid, 1, parsed)
+            before_commit(oid, 1)
         return oid, 1
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
@@ -734,6 +739,8 @@ class _ImportResolver:
     deps: PipelineDeps
     store: OntologyStore
     root_id: str
+    #: Triples the root's closure may still add (None: not accounted at this level).
+    budget: int | None = None
     memo: dict[str, tuple[dict[str, Any], Closure]] = field(default_factory=dict)
 
     def resolve_all(
@@ -747,11 +754,19 @@ class _ImportResolver:
                 entries.append(_unresolved(iri, "a cycle back to an ontology being imported"))
                 continue
             entry, graphs = self.resolve(iri, depth, path)
+            fresh = [(g, label) for g, label in graphs if label not in labels]
+            if depth == 1 and self.budget is not None:
+                size = sum(len(g) for g, _ in fresh)
+                if size > self.budget:
+                    entries.append(
+                        _unresolved(iri, f"over the triple limit with its imports ({size} triples)")
+                    )
+                    continue
+                self.budget -= size
             entries.append(entry)
-            for graph, label in graphs:
-                if label not in labels:
-                    labels.add(label)
-                    closure.append((graph, label))
+            for graph, label in fresh:
+                labels.add(label)
+                closure.append((graph, label))
         return entries, closure
 
     def resolve(self, iri: str, depth: int, path: frozenset[str]) -> tuple[dict[str, Any], Closure]:
@@ -785,8 +800,10 @@ class _ImportResolver:
         if fetch is None:
             return _unresolved(iri, "not in the library, and URL imports are off"), []
         max_triples = self.deps.ontology_max_triples
+        # Imports name ontologies by IRI, mostly http://; only https is ever fetched.
+        target = "https://" + iri[len("http://") :] if iri.startswith("http://") else iri
         try:
-            fetched = fetch(iri)
+            fetched = fetch(target)
             graph = read_graph(
                 fetched.data, fetched.media_type, fetched.file_name, max_triples=max_triples
             )
@@ -795,9 +812,28 @@ class _ImportResolver:
         except OntologySourceUnavailable as exc:
             return _unresolved(iri, f"unavailable: {exc}"), []
         child_entries, children = self.resolve_all(_imports_of(graph), depth + 1, path)
-        parsed = index_graph(graph, imports=children, max_triples=max_triples)
+        try:
+            parsed = index_graph(graph, imports=children, max_triples=max_triples)
+        except DocumentError as exc:
+            return _unresolved(iri, str(exc)), []
         parsed.import_entries = child_entries
         sha = hashlib.sha256(fetched.data).hexdigest()
+        ext = _extension(fetched.file_name, fetched.media_type)
+
+        def store_files(oid: str, version: int) -> None:
+            self.deps.store.put(
+                runs,
+                ontology_source_key(oid, sha, ext),
+                fetched.data,
+                fetched.media_type or "text/plain",
+            )
+            self.deps.store.put(
+                runs,
+                ontology_normalized_key(oid, version),
+                parsed.normalized,
+                "application/n-triples",
+            )
+
         oid, version = self.store.create_imported(
             iri=iri,
             title=parsed.title,
@@ -808,16 +844,7 @@ class _ImportResolver:
             source_url=fetched.url,
             parsed=parsed,
             root_id=self.root_id,
-        )
-        ext = _extension(fetched.file_name, fetched.media_type)
-        self.deps.store.put(
-            runs,
-            ontology_source_key(oid, sha, ext),
-            fetched.data,
-            fetched.media_type or "text/plain",
-        )
-        self.deps.store.put(
-            runs, ontology_normalized_key(oid, version), parsed.normalized, "application/n-triples"
+            before_commit=store_files,
         )
         return _resolved(iri, "fetched", oid, version), [(graph, f"{oid}@{version}"), *children]
 
@@ -876,7 +903,8 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
         max_triples = deps.ontology_max_triples
         own = read_graph(data, media_type, file_name, max_triples=max_triples)
         headers, _, _ = _header(own)
-        entries, graphs = _ImportResolver(deps, store, oid).resolve_all(
+        resolver = _ImportResolver(deps, store, oid, budget=max_triples - len(own))
+        entries, graphs = resolver.resolve_all(
             _imports_of(own), 1, frozenset(str(h) for h in headers)
         )
         parsed = index_graph(own, imports=graphs, max_triples=max_triples)

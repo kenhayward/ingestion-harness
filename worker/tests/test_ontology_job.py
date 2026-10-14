@@ -300,7 +300,7 @@ def test_pg_store_imports_and_duplicate_sources() -> None:
     from ingest_worker.ontology import DuplicateSource, index_graph, read_graph
 
     conn = psycopg.connect(url, autocommit=True)
-    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base')")
+    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base-alias')")
     conn.execute("INSERT INTO ontologies (id, label) VALUES ('pv-url', 'PV')")
     conn.execute(
         """INSERT INTO ontology_versions
@@ -327,8 +327,9 @@ def test_pg_store_imports_and_duplicate_sources() -> None:
             "reason": "a cycle back to an ontology being imported",
         }
     ]
+    committed: list[tuple[str, int]] = []
     oid, version = store.create_imported(
-        iri="https://w3id.org/base",
+        iri="http://w3id.org/base-alias",
         title=parsed.title,
         file_name="base.ttl",
         media_type="text/turtle",
@@ -337,9 +338,12 @@ def test_pg_store_imports_and_duplicate_sources() -> None:
         source_url="https://w3id.org/base",
         parsed=parsed,
         root_id="pv-url",
+        before_commit=lambda oid, v: committed.append((oid, v)),
     )
-    assert (oid, version) == ("w3id-org-base", 1)
-    assert store.find_ready("https://w3id.org/base") == ("w3id-org-base", 1)
+    assert (oid, version) == ("w3id-org-base-alias", 1) and committed == [(oid, 1)]
+    # Found by its declared IRI and by the IRI it was imported by.
+    assert store.find_ready("https://w3id.org/base") == (oid, 1)
+    assert store.find_ready("http://w3id.org/base-alias") == (oid, 1)
     assert store.version_imports(oid, 1)[0]["reason"].startswith("a cycle")
     row = conn.execute(
         "SELECT o.label, o.tags, v.status, v.source_kind FROM ontologies o "
@@ -355,5 +359,61 @@ def test_pg_store_imports_and_duplicate_sources() -> None:
         ("https://w3id.org/base#Thing",),
     ).fetchone()
     assert defined == (f"{oid}@1",)
-    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base')")
+    conn.execute("DELETE FROM ontologies WHERE id IN ('pv-url', 'w3id-org-base-alias')")
     conn.close()
+
+
+BIG = (
+    b"\n".join(
+        f"<https://w3id.org/big#C{i}> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
+        f"<http://www.w3.org/2002/07/owl#Class> .".encode()
+        for i in range(18)
+    )
+    + b"\n"
+)
+ROOT_BIG = b"""@prefix owl: <http://www.w3.org/2002/07/owl#> .
+<https://w3id.org/pv> a owl:Ontology ; owl:imports <https://w3id.org/big> .
+<https://w3id.org/pv#Batch> a owl:Class .
+"""
+
+
+def test_an_import_over_the_triple_limit_is_listed_not_fatal(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+    deps.ontology_max_triples = 20
+    deps.ontology_fetch = web({"https://w3id.org/pv": ROOT_BIG, "https://w3id.org/big": BIG})
+    run_once(FakeQueue(jobs=[url_job()]), deps, "w1")
+    assert ontologies.status[("pv", 1)] == "ready"
+    [entry] = ontologies.saved[("pv", 1)].import_entries
+    assert entry["resolution"] == "unresolved" and "triple limit" in entry["reason"]
+
+
+def test_http_import_iris_are_fetched_over_https(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir, source=None)
+    root = ROOT.replace(b"<https://w3id.org/base>", b"<http://w3id.org/base>")
+    deps.ontology_fetch = web({"https://w3id.org/pv": root, "https://w3id.org/base": BASE})
+    run_once(FakeQueue(jobs=[url_job()]), deps, "w1")
+    entries = {e["iri"]: e for e in ontologies.saved[("pv", 1)].import_entries}
+    assert entries["http://w3id.org/base"]["resolution"] == "fetched"
+    # Found again later under the IRI it was imported by.
+    assert ontologies.find_ready("http://w3id.org/base") is not None
+
+
+def test_import_files_are_stored_before_the_version_is_committed(
+    fixture_specs_dir: Path,
+) -> None:
+    deps, store, ontologies = make(fixture_specs_dir, source=None)
+    deps.ontology_fetch = web({"https://w3id.org/pv": ROOT, "https://w3id.org/base": BASE})
+    seen: list[bool] = []
+
+    original = ontologies.create_imported
+
+    def checking(**kwargs: Any) -> tuple[str, int]:
+        def before_commit(oid: str, version: int) -> None:
+            kwargs["before_commit"](oid, version)
+            seen.append(("runs", ontology_normalized_key(oid, version)) in store.objects)
+
+        return original(**{**kwargs, "before_commit": before_commit})
+
+    ontologies.create_imported = checking  # type: ignore[method-assign]
+    run_once(FakeQueue(jobs=[url_job()]), deps, "w1")
+    assert seen == [True]

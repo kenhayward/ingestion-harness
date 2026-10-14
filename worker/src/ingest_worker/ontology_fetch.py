@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from urllib.parse import unquote
@@ -96,12 +97,25 @@ def _check(url: str, policy: FetchPolicy, resolve: Resolver) -> None:
 
 
 def fetch_rdf(
-    url: str, policy: FetchPolicy, *, client: httpx.Client, resolve: Resolver = system_resolver
+    url: str,
+    policy: FetchPolicy,
+    *,
+    client: httpx.Client,
+    resolve: Resolver = system_resolver,
+    clock: Callable[[], float] = time.monotonic,
 ) -> Fetched:
     """GET an ontology. A refused or unreadable URL is a DocumentError (final); a host that
     cannot answer now is OntologySourceUnavailable (retried)."""
+    # `timeout_s` bounds the whole fetch (redirects and body), not each read.
+    deadline = clock() + policy.timeout_s
+
+    def in_time() -> None:
+        if clock() > deadline:
+            raise OntologySourceUnavailable(f"{url} took longer than {policy.timeout_s:g} s")
+
     current = url
     for _ in range(policy.max_redirects + 1):
+        in_time()
         _check(current, policy, resolve)
         try:
             with client.stream(
@@ -127,6 +141,7 @@ def fetch_rdf(
                     raise DocumentError(f"{current} is over the {limit}-byte limit")
                 body = bytearray()
                 for chunk in resp.iter_bytes():
+                    in_time()
                     body += chunk
                     if len(body) > limit:
                         raise DocumentError(f"{current} is over the {limit}-byte limit")

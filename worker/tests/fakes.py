@@ -362,8 +362,10 @@ class MemoryOntologyStore:
         source_url: str,
         parsed: ParsedOntology,
         root_id: str,
+        before_commit: Callable[[str, int], None],
     ) -> tuple[str, int]:
         oid = f"import-{len(self.created) + 1}"
+        before_commit(oid, 1)
         self.created[oid] = {"iri": iri, "title": title, "root_id": root_id, "parsed": parsed}
         self.library[iri] = (oid, 1)
         self.imports_of[(oid, 1)] = parsed.import_entries

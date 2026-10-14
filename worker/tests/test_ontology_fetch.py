@@ -171,3 +171,19 @@ def test_unresolvable_hosts_are_final() -> None:
 
     with pytest.raises(DocumentError, match=r"cannot resolve w3id.org"):
         fetch_rdf("https://w3id.org/a", POLICY, client=client(never()), resolve=nowhere)
+
+
+def test_the_timeout_is_for_the_whole_fetch() -> None:
+    ticks = iter(range(0, 1000, 25))
+
+    def slow(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=(b"x" for _ in range(10)))
+
+    with pytest.raises(OntologySourceUnavailable, match="took longer than 60"):
+        fetch_rdf(
+            "https://w3id.org/a",
+            FetchPolicy(hosts=("w3id.org",), timeout_s=60),
+            client=client(httpx.MockTransport(slow)),
+            resolve=public,
+            clock=lambda: float(next(ticks)),
+        )
