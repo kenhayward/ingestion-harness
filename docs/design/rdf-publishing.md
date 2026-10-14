@@ -1059,7 +1059,14 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
      `RDF_ENDPOINT`. That way the counts and a later rebuild see every delivered graph.
    - **Entity keys** hold the raw key values, before filters.
    - **TBox loads** run inside the graph's publish: under its lock, and before its PUT.
-   - **Re-mint** publishes the graph under the new base first, then drops the old one.
+   - **Re-mint** drops the graph under the old base first, then publishes it under the new
+     one. A failure in between leaves the version under the old base, so the next
+     `--remint` picks the graph up again, and there are never two copies.
+   - **Documents delivered without review** publish their graph too: the process job does it
+     after recording its outputs. Backfill and re-mint read their draft document when there is
+     no reviewed one.
+   - **Order of a publish.** Delivered outputs are recorded (`job_outputs`) before the graph's
+     PUT, so a store failure never leaves target objects without a record.
 7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
    retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
    `ct-reader` user through the proxy, docs for consumers.
