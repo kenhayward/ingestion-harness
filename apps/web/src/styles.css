@@ -1490,6 +1490,14 @@ button.danger-fill {
   font-size: var(--ih-text-sm);
   color: var(--ih-muted);
 }
+.step-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px; /* the clock, a space, the time */
+  font-size: var(--ih-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ih-muted);
+}
 .meta {
   display: grid;
   grid-template-columns: auto 1fr;
