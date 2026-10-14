@@ -194,7 +194,7 @@ export const SemanticsSchema = z
             /** The property from the document to each row. */
             link: TermRef,
             class: TermRef,
-            /** Readable row IRI from its columns (absent: a blank node). */
+            /** Readable row IRI from its columns (absent: `doc/{sha256}/{type}/{table}/{n}`). */
             iri: z.string().min(1).optional(),
             columns: z.record(z.string(), OutputMappingSchema).default({}),
           })

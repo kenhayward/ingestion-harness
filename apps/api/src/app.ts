@@ -28,6 +28,7 @@ import { resultRoutes } from './routes/results.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
 import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
+import { workbenchGraphRoutes } from './routes/workbench-graph.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
 import { llmRoutes } from './routes/llm.js';
@@ -112,6 +113,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchRoutes, { prefix: '/api' });
   await app.register(workbenchBundleRoutes, { prefix: '/api' });
   await app.register(workbenchOverviewRoutes, { prefix: '/api' });
+  await app.register(workbenchGraphRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
   await app.register(llmRoutes, { prefix: '/api' });

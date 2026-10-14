@@ -3864,7 +3864,8 @@
                             "type": "string",
                             "enum": [
                               "csv",
-                              "json"
+                              "json",
+                              "rdf"
                             ]
                           },
                           "bucket": {
@@ -5192,6 +5193,12 @@
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "text/turtle": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -6045,7 +6052,8 @@
                                 "type": "string",
                                 "enum": [
                                   "csv",
-                                  "json"
+                                  "json",
+                                  "rdf"
                                 ]
                               },
                               "bucket": {
@@ -9043,6 +9051,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -9267,6 +9281,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -9461,6 +9481,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -9826,6 +9852,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -9868,6 +9900,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -10100,6 +10138,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -10458,6 +10502,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -10498,6 +10548,12 @@
                           },
                           "message": {
                             "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
                           }
                         },
                         "required": [
@@ -12329,7 +12385,8 @@
                               "type": "string",
                               "enum": [
                                 "csv",
-                                "json"
+                                "json",
+                                "rdf"
                               ]
                             },
                             "name": {
@@ -12686,7 +12743,8 @@
                             "type": "string",
                             "enum": [
                               "csv",
-                              "json"
+                              "json",
+                              "rdf"
                             ]
                           },
                           "bucket": {
@@ -30206,6 +30264,450 @@
                   ],
                   "additionalProperties": true,
                   "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/graph-previews": {
+      "post": {
+        "operationId": "previewGraphs",
+        "summary": "Preview the RDF graphs of the samples",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Queues a graph preview: the worker renders the open draft's ontology mapping\n(`semantics`) over each chosen dev sample's newest finished test run (its reviewed\ndocument when it was approved, else its draft), under the deployment's base IRI, as\nproduction publishing would. `sampleIds` defaults to every ready dev sample with a\nfinished run. Poll `GET …/graph-previews/{jobId}`. A project has one preview at a time:\na new one replaces the old.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sampleIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The queued preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "samples": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "fileName": {
+                                    "type": "string"
+                                  },
+                                  "turtle": {
+                                    "type": "string"
+                                  },
+                                  "triples": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "sampleId",
+                                  "fileName",
+                                  "turtle",
+                                  "triples"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "samples"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobId",
+                    "status",
+                    "error",
+                    "result"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued preview."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, `unknown sample …`, `graph previews use dev samples only`, or `the recipe is not valid`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, `unknown sample …`, `graph previews use dev samples only`, or `the recipe is not valid`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/graph-previews/{jobId}": {
+      "get": {
+        "operationId": "getGraphPreview",
+        "summary": "Get a graph preview",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "A preview's status and, once it succeeded, each sample's graph as Turtle with its\ntriple count. `error: result missing` when the result file is gone.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "description": "The preview job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "succeeded",
+                        "failed",
+                        "needs_review",
+                        "awaiting_review",
+                        "rejected",
+                        "cancelled"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "result": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "samples": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "sampleId": {
+                                    "type": "string"
+                                  },
+                                  "fileName": {
+                                    "type": "string"
+                                  },
+                                  "turtle": {
+                                    "type": "string"
+                                  },
+                                  "triples": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "sampleId",
+                                  "fileName",
+                                  "turtle",
+                                  "triples"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "samples"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobId",
+                    "status",
+                    "error",
+                    "result"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The preview."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`graph preview not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`graph preview not found`."
                 }
               }
             }

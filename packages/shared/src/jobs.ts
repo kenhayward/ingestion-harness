@@ -155,11 +155,27 @@ export const QueueSummarySchema = z.object({
 });
 export type QueueSummary = z.infer<typeof QueueSummarySchema>;
 
+/** What an output is written as; `rdf` is the document's graph in Turtle (ADR 0011). */
+export const OUTPUT_FORMATS = ['csv', 'json', 'rdf'] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+
+/** The file extension of an output format. */
+export const outputExtension = (format: OutputFormat): string =>
+  format === 'rdf' ? 'ttl' : format;
+
+/** The content type an output is served with. */
+export const outputContentType = (format: OutputFormat): string =>
+  format === 'csv'
+    ? 'text/csv; charset=utf-8'
+    : format === 'rdf'
+      ? 'text/turtle; charset=utf-8'
+      : 'application/json';
+
 export const JobOutputSchema = z.object({
   outputId: z.string(),
   /** draft: outputs bucket (pre-review); published: final target. */
   stage: z.enum(['draft', 'published']),
-  format: z.enum(['csv', 'json']),
+  format: z.enum(OUTPUT_FORMATS),
   bucket: z.string(),
   key: z.string(),
   rowCount: z.number().int().nullable(),

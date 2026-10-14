@@ -25,6 +25,8 @@ import {
   type ProjectJob,
   type SegmentJob,
   type SegmentJobParams,
+  type GraphJobParams,
+  SEGMENT_PRIORITY,
   type NewDocument,
   type NewReference,
   type NewEdit,
@@ -43,6 +45,7 @@ export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly segmentJobs = new Map<string, SegmentJob & { params: SegmentJobParams }>();
+  readonly graphJobs = new Map<string, ProjectJob & { params: GraphJobParams }>();
   /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** Export jobs (document-less, one per project): kept apart like draft jobs. */
@@ -224,6 +227,32 @@ export class MemoryRepo implements IngestionRepo {
     };
     this.segmentJobs.set(job.id, { ...job, params });
     return { job, removed };
+  }
+
+  async createGraphJob(projectId: string, params: GraphJobParams) {
+    const removed = [...this.graphJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .map((j) => j.id);
+    for (const id of removed) this.graphJobs.delete(id);
+    const now = new Date().toISOString();
+    const job: ProjectJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.graphJobs.set(job.id, { ...job, params });
+    this.priorities.set(job.id, SEGMENT_PRIORITY);
+    return { job, removed };
+  }
+
+  async getGraphJob(projectId: string, id: string): Promise<ProjectJob | null> {
+    const stored = this.graphJobs.get(id);
+    if (stored?.projectId !== projectId) return null;
+    const { id: jobId, status, error, createdAt, updatedAt } = stored;
+    return { id: jobId, projectId, status, error, createdAt, updatedAt };
   }
 
   async getSegmentJob(projectId: string, id: string) {

@@ -57,6 +57,11 @@ def prepared_triage_key(pdf_sha256: str) -> str:
     return f"prepared/{pdf_sha256}/triage.json"
 
 
+def graph_preview_key(project_id: str, job_id: str) -> str:
+    """A graph preview's Turtle per sample (runs bucket, graph task; ADR 0011)."""
+    return f"graphs/{project_id}/{job_id}.json"
+
+
 def segmentation_key(project_id: str, job_id: str) -> str:
     """Section-anchor preview grid of a workbench project (runs bucket, segment task)."""
     return f"segmentation/{project_id}/{job_id}.json"

@@ -8,6 +8,8 @@ import {
   QueueSummarySchema,
   sourceContentType,
   type JobSummary,
+  outputContentType,
+  outputExtension,
 } from '@ih/shared';
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
@@ -387,7 +389,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           inline: z.enum(['1']).optional(),
         }),
         response: {
-          200: binary('The output file.', 'text/csv', 'application/json'),
+          200: binary('The output file.', 'text/csv', 'application/json', 'text/turtle'),
           400: error('`stage must be draft or published`.'),
           404: error(
             '`not found`, `output not found`, or the object is missing from storage or the target.',
@@ -422,13 +424,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: `${where === 'target' ? 'target ' : ''}storage unavailable` });
       }
       if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
-      const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
+      const filename =
+        output.key.split('/').pop() ?? `${output.outputId}.${outputExtension(output.format)}`;
       return (
         reply
-          .header(
-            'content-type',
-            output.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json',
-          )
+          .header('content-type', outputContentType(output.format))
           .header(
             'content-disposition',
             `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,

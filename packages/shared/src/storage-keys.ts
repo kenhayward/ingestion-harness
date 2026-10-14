@@ -35,7 +35,8 @@ export function outputKey(
   version: number,
   outputId: string,
   documentId: string,
-  format: 'csv' | 'json',
+  /** The file extension: `ttl` for a graph (`outputExtension`). */
+  format: 'csv' | 'json' | 'ttl',
 ): string {
   return `${specId}/v${version}/${outputId}/${documentId}.${format}`;
 }
@@ -58,6 +59,11 @@ export function preparedTriageKey(sha256: string): string {
 /** Section-anchor preview grid of a workbench project (runs bucket, worker segment task). */
 export function segmentationKey(projectId: string, jobId: string): string {
   return `segmentation/${projectId}/${jobId}.json`;
+}
+
+/** A graph preview's Turtle per sample (runs bucket, worker graph task; ADR 0011). */
+export function graphPreviewKey(projectId: string, jobId: string): string {
+  return `graphs/${projectId}/${jobId}.json`;
 }
 
 /** A drafting stage's result for a workbench project (runs bucket, worker draft task). */

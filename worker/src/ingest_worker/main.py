@@ -15,6 +15,7 @@ from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
+from .graph_preview import run_graph_preview
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
@@ -95,6 +96,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             manifest = run_export(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
+            return True
+        if job.task == "graph":
+            preview = run_graph_preview(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
             return True
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
