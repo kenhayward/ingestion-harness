@@ -27,6 +27,29 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, FRAME_ANCESTORS: value }).FRAME_ANCESTORS).toBe(expected);
   });
 
+  it('reads the linked data customer and base', () => {
+    const cfg = loadConfig({
+      ...base,
+      LINKED_DATA_CUSTOMER: 'acme=Acme Pharma',
+      LINKED_DATA_BASE_IRI: 'https://data.acme.example/',
+    });
+    expect(cfg.LINKED_DATA_CUSTOMER).toBe('acme=Acme Pharma');
+  });
+
+  it.each([
+    [{ LINKED_DATA_CUSTOMER: 'Acme Ltd=Acme' }, /LINKED_DATA_CUSTOMER/],
+    [
+      { LINKED_DATA_CUSTOMER: 'acme', LINKED_DATA_BASE_IRI: 'https://x.example/ids' },
+      /must end with \//,
+    ],
+    [
+      { LINKED_DATA_BASE_IRI: 'https://x.example/' },
+      /LINKED_DATA_BASE_IRI needs LINKED_DATA_CUSTOMER/,
+    ],
+  ])('refuses linked data settings %j', (env, error) => {
+    expect(() => loadConfig({ ...base, ...env })).toThrow(error);
+  });
+
   it.each([
     "'none'",
     '*',

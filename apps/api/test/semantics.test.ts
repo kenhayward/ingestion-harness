@@ -70,6 +70,26 @@ async function issuesOf(patch: (s: Semantics) => Semantics) {
 }
 
 describe('mapping validation', () => {
+  it('accepts a row IRI template naming its columns, and entity IRIs on columns', async () => {
+    const issues = await issuesOf((s) => ({
+      ...s,
+      tables: {
+        lines: {
+          ...(s.tables as any).lines, // eslint-disable-line @typescript-eslint/no-explicit-any -- a test patch
+          iri: 'line/{sku|upper}',
+          columns: {
+            sku: {
+              property: 'acme:sentBy',
+              object: { class: 'acme:Party', iri: 'party/{value|slug}/{sku}' },
+            },
+            qty: { property: 'acme:qty' },
+          },
+        },
+      },
+    }));
+    expect(issues).toEqual([]);
+  });
+
   it('a complete mapping to a ready ontology has no issues', async () => {
     expect(await issuesOf((s) => s)).toEqual([]);
   });
@@ -116,6 +136,84 @@ describe('mapping validation', () => {
       }),
       'semantics.fields.kind.concepts.values.memo',
       'acme:sku is a datatype property, not a concept',
+    ],
+    [
+      'a document IRI template naming a value it does not have',
+      (s) => ({ ...s, document: { class: 'acme:Letter', iri: 'protocol/{protocol_number}' } }),
+      'semantics.document.iri',
+      'protocol_number is not available in this IRI template (use source, type, version)',
+    ],
+    [
+      'an entity IRI template naming another output',
+      (s) => ({
+        ...s,
+        fields: {
+          ...(s.fields as object),
+          sender: { property: 'acme:sentBy', object: { class: 'acme:Party', iri: 'party/{name}' } },
+        },
+      }),
+      'semantics.fields.sender.object.iri',
+      'name is not available in this IRI template (use value)',
+    ],
+    [
+      'a row IRI template naming a column the table lacks',
+      (s) => ({ ...s, tables: { lines: { ...(s.tables as any).lines, iri: 'line/{skux}' } } }), // eslint-disable-line @typescript-eslint/no-explicit-any -- a test patch
+      'semantics.tables.lines.iri',
+      'skux is not available in this IRI template (use sku, qty)',
+    ],
+    [
+      'an unknown IRI filter',
+      (s) => ({
+        ...s,
+        fields: {
+          ...(s.fields as object),
+          sender: {
+            property: 'acme:sentBy',
+            object: { class: 'acme:Party', iri: 'party/{value|lower}' },
+          },
+        },
+      }),
+      'semantics.fields.sender.object.iri',
+      'lower is not an IRI filter (use slug or upper)',
+    ],
+    [
+      'an IRI template with characters an IRI cannot carry',
+      (s) => ({
+        ...s,
+        fields: {
+          ...(s.fields as object),
+          sender: {
+            property: 'acme:sentBy',
+            object: { class: 'acme:Party', iri: 'my party/{value}' },
+          },
+        },
+      }),
+      'semantics.fields.sender.object.iri',
+      'my party/{value} has characters an IRI cannot carry',
+    ],
+    [
+      'a local term that is not a valid IRI',
+      (s) => ({ ...s, local: [{ iri: 'acme:has name', kind: 'class', label: 'x' }] }),
+      'semantics.local.0.iri',
+      'acme:has name is not a valid IRI',
+    ],
+    [
+      'a namespace that is not a valid IRI',
+      (s) => ({ ...s, prefixes: { acme: 'https://acme.example/my def/' } }),
+      'semantics.prefixes.acme',
+      'https://acme.example/my def/ is not a valid IRI',
+    ],
+    [
+      'matching by label without a scheme',
+      (s) => ({
+        ...s,
+        fields: {
+          ...(s.fields as object),
+          sender: { property: 'acme:sentBy', concepts: { match: 'label' } },
+        },
+      }),
+      'semantics.fields.sender.concepts.scheme',
+      'matching by label needs a concept scheme',
     ],
   ])('flags %s', async (_name, patch, path, message) => {
     expect(await issuesOf(patch)).toContainEqual({ path, message });

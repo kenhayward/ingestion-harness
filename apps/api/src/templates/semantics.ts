@@ -1,4 +1,4 @@
-import { CURIE_PREFIXES, type OntologyTermKind, type Template } from '@ih/shared';
+import { CURIE_PREFIXES, IRI_UNSAFE, type OntologyTermKind, type Template } from '@ih/shared';
 import type { OntologyRepo } from '../ontologies/repo.js';
 import type { TemplateIssue } from './definitions.js';
 
@@ -48,6 +48,63 @@ export function expandTerm(term: string, prefixes: Record<string, string>): stri
   return null;
 }
 
+const PLACEHOLDER = /\{(\w+)(?:\|(\w+))?\}/g;
+const FILTERS = ['slug', 'upper'];
+
+/** An IRI template's problems: names it cannot use, filters that do not exist, bad characters. */
+function iriTemplateIssues(path: string, template: string, allowed: string[]): TemplateIssue[] {
+  const issues: TemplateIssue[] = [];
+  for (const [, name, filter] of template.matchAll(PLACEHOLDER)) {
+    if (!allowed.includes(name!)) {
+      issues.push({
+        path,
+        message: `${name} is not available in this IRI template (use ${allowed.join(', ')})`,
+      });
+    }
+    if (filter !== undefined && !FILTERS.includes(filter)) {
+      issues.push({ path, message: `${filter} is not an IRI filter (use slug or upper)` });
+    }
+  }
+  if (IRI_UNSAFE.test(template.replace(PLACEHOLDER, ''))) {
+    issues.push({ path, message: `${template} has characters an IRI cannot carry` });
+  }
+  return issues;
+}
+
+/** Every IRI template the mapping holds, with the values each one may name. */
+function templateChecks(template: Template): TemplateIssue[] {
+  const semantics = template.semantics!;
+  const issues = iriTemplateIssues('semantics.document.iri', semantics.document.iri, [
+    'source',
+    'type',
+    'version',
+  ]);
+  const output = (
+    path: string,
+    m: NonNullable<Template['semantics']>['fields'][string],
+    allowed: string[],
+  ) => {
+    if (m.object) issues.push(...iriTemplateIssues(`${path}.object.iri`, m.object.iri, allowed));
+    if (m.concepts?.match === 'label' && !m.concepts.scheme) {
+      issues.push({
+        path: `${path}.concepts.scheme`,
+        message: 'matching by label needs a concept scheme',
+      });
+    }
+  };
+  for (const [id, m] of Object.entries(semantics.fields))
+    output(`semantics.fields.${id}`, m, ['value']);
+  for (const [id, t] of Object.entries(semantics.tables)) {
+    const columns =
+      template.outputs.tables.find((x) => x.id === id)?.columns.map((c) => c.id) ?? [];
+    if (t.iri) issues.push(...iriTemplateIssues(`semantics.tables.${id}.iri`, t.iri, columns));
+    for (const [col, m] of Object.entries(t.columns)) {
+      output(`semantics.tables.${id}.columns.${col}`, m, ['value', ...columns]);
+    }
+  }
+  return issues;
+}
+
 interface Use {
   path: string;
   term: string;
@@ -95,6 +152,13 @@ export async function semanticsIssues(
   const issues: TemplateIssue[] = [];
   const prefixes = { ...CURIE_PREFIXES, ...semantics.prefixes };
 
+  for (const [prefix, ns] of Object.entries(semantics.prefixes)) {
+    if (IRI_UNSAFE.test(ns)) {
+      issues.push({ path: `semantics.prefixes.${prefix}`, message: `${ns} is not a valid IRI` });
+    }
+  }
+  issues.push(...templateChecks(template));
+
   const pins: { id: string; version: number }[] = [];
   for (const [i, pin] of semantics.ontologies.entries()) {
     const detail = await ontologies.get(pin.id);
@@ -119,6 +183,8 @@ export async function semanticsIssues(
     const iri = expandTerm(term.iri, prefixes);
     if (iri === null) {
       issues.push({ path: `semantics.local.${i}.iri`, message: `unknown prefix in ${term.iri}` });
+    } else if (IRI_UNSAFE.test(iri)) {
+      issues.push({ path: `semantics.local.${i}.iri`, message: `${term.iri} is not a valid IRI` });
     } else {
       local.set(iri, [...(local.get(iri) ?? []), term.kind]);
     }
@@ -136,6 +202,10 @@ export async function semanticsIssues(
   for (const u of expanded) {
     if (u.iri === null) {
       issues.push({ path: u.path, message: `unknown prefix in ${u.term}` });
+      continue;
+    }
+    if (IRI_UNSAFE.test(u.iri)) {
+      issues.push({ path: u.path, message: `${u.term} is not a valid IRI` });
       continue;
     }
     if (BUILT_IN.some((ns) => u.iri!.startsWith(ns))) continue;

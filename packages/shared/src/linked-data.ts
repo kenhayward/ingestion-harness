@@ -63,6 +63,9 @@ export function effectiveBaseIri(s: {
 
 const LOCAL_SUFFIXES = ['.local', '.test', '.internal', '.localhost'];
 
+/** Characters an IRI cannot carry unescaped (RFC 3987): Turtle refuses them. */
+export const IRI_UNSAFE = /[\s<>"{}|\\^`]/;
+
 /** Why a base IRI cannot be used, or null. */
 export function baseIriProblem(iri: string): string | null {
   let url: URL;
@@ -83,7 +86,11 @@ export function baseIriProblem(iri: string): string | null {
   if (host === 'localhost' || LOCAL_SUFFIXES.some((s) => host.endsWith(s))) {
     return 'the base IRI cannot use a local host name';
   }
+  if (IRI_UNSAFE.test(iri)) return 'the base IRI has characters an IRI cannot carry';
   if (!iri.endsWith('/')) return 'the base IRI must end with /';
+  if (url.href !== iri) {
+    return 'the base IRI must be written as browsers write it (a lower-case host)';
+  }
   if (iri.length > 200) return 'the base IRI must be at most 200 characters';
   return null;
 }
