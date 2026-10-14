@@ -3681,7 +3681,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections.",
+        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections. `graph` is the newest graph the job published (ADR 0011): its IRI,\nversion and triples, and whether it reached the triple store.",
         "parameters": [
           {
             "schema": {
@@ -3895,6 +3895,41 @@
                         ],
                         "additionalProperties": true
                       }
+                    },
+                    "graph": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "iri": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "triples": {
+                              "type": "integer"
+                            },
+                            "endpoint": {
+                              "type": "boolean"
+                            },
+                            "publishedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "iri",
+                            "version",
+                            "triples",
+                            "endpoint",
+                            "publishedAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "progress": {
                       "anyOf": [
@@ -6226,6 +6261,41 @@
                             ],
                             "additionalProperties": true
                           }
+                        },
+                        "graph": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "iri": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer"
+                                },
+                                "triples": {
+                                  "type": "integer"
+                                },
+                                "endpoint": {
+                                  "type": "boolean"
+                                },
+                                "publishedAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "iri",
+                                "version",
+                                "triples",
+                                "endpoint",
+                                "publishedAt"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "progress": {
                           "anyOf": [
@@ -41066,6 +41136,32 @@
                     "rdfPublished": {
                       "type": "integer"
                     },
+                    "graphs": {
+                      "type": "object",
+                      "properties": {
+                        "published": {
+                          "type": "integer"
+                        },
+                        "lastPublishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "endpoint": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "published",
+                        "lastPublishedAt",
+                        "endpoint"
+                      ],
+                      "additionalProperties": true
+                    },
                     "history": {
                       "type": "array",
                       "items": {
@@ -41111,6 +41207,7 @@
                     "settings",
                     "effectiveBase",
                     "rdfPublished",
+                    "graphs",
                     "history"
                   ],
                   "additionalProperties": true,
@@ -41281,6 +41378,32 @@
                     "rdfPublished": {
                       "type": "integer"
                     },
+                    "graphs": {
+                      "type": "object",
+                      "properties": {
+                        "published": {
+                          "type": "integer"
+                        },
+                        "lastPublishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "endpoint": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "published",
+                        "lastPublishedAt",
+                        "endpoint"
+                      ],
+                      "additionalProperties": true
+                    },
                     "history": {
                       "type": "array",
                       "items": {
@@ -41326,6 +41449,7 @@
                     "settings",
                     "effectiveBase",
                     "rdfPublished",
+                    "graphs",
                     "history"
                   ],
                   "additionalProperties": true,

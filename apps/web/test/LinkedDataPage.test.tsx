@@ -18,6 +18,7 @@ const view = (over: Partial<LinkedDataView> = {}): LinkedDataView => ({
   },
   effectiveBase: null,
   rdfPublished: 0,
+  graphs: { published: 0, lastPublishedAt: null, endpoint: null },
   history: [],
   ...over,
 });
@@ -110,5 +111,25 @@ describe('LinkedDataPage', () => {
     expect(await screen.findByText(/3 RDF outputs published/)).toBeTruthy();
     const history = screen.getByRole('table', { name: 'Base IRI history' });
     expect(history).toHaveTextContent('https://id.stocks-hayward.com/acme/');
+  });
+});
+
+describe('LinkedDataPage published graphs (ADR 0011 step 6)', () => {
+  it('counts the graphs under the base and says whether they reach Fuseki', async () => {
+    setup({
+      ...acme,
+      graphs: { published: 4, lastPublishedAt: '2026-10-14T11:00:00.000Z', endpoint: true },
+    });
+    expect(await screen.findByText(/4 graphs published under/)).toBeInTheDocument();
+    expect(screen.getByText(/Graphs go to the triple store \(Fuseki\)/)).toBeInTheDocument();
+  });
+
+  it('says when graphs go to S3 only', async () => {
+    setup({
+      ...acme,
+      graphs: { published: 1, lastPublishedAt: '2026-10-14T11:00:00.000Z', endpoint: false },
+    });
+    expect(await screen.findByText(/1 graph published under/)).toBeInTheDocument();
+    expect(screen.getByText(/No triple store is configured/)).toBeInTheDocument();
   });
 });

@@ -1,5 +1,11 @@
 import type pg from 'pg';
-import { effectiveBaseIri, type LinkedDataHistoryEntry, type LinkedDataSettings } from '@ih/shared';
+import {
+  effectiveBaseIri,
+  GRAPH_PUBLISHED_EVENT,
+  type LinkedDataGraphs,
+  type LinkedDataHistoryEntry,
+  type LinkedDataSettings,
+} from '@ih/shared';
 
 /** Linked data settings (ADR 0011, migration 0034): one row, and the history of base changes. */
 
@@ -16,6 +22,8 @@ export interface LinkedDataRepo {
   history(): Promise<LinkedDataHistoryEntry[]>;
   /** RDF outputs published so far (job_outputs, format rdf, stage published). */
   rdfPublishedCount(): Promise<number>;
+  /** The current graphs minted under `base`, and whether the newest publish reached Fuseki. */
+  graphStatus(base: string | null): Promise<LinkedDataGraphs>;
   /** The .env defaults, written only when there is no row yet. */
   seed(defaults: LinkedDataInput): Promise<void>;
 }
@@ -33,6 +41,9 @@ export class MemoryLinkedDataRepo implements LinkedDataRepo {
   private readonly entries: LinkedDataHistoryEntry[] = [];
   /** Tests set how many RDF outputs were published. */
   rdfPublished = 0;
+  /** Tests set the current graphs (their base and publish time) and the newest `endpoint`. */
+  graphs: { base: string; at: string }[] = [];
+  endpoint: boolean | null = null;
 
   async get(): Promise<LinkedDataSettings> {
     return this.settings ?? EMPTY;
@@ -60,6 +71,15 @@ export class MemoryLinkedDataRepo implements LinkedDataRepo {
 
   async rdfPublishedCount(): Promise<number> {
     return this.rdfPublished;
+  }
+
+  async graphStatus(base: string | null): Promise<LinkedDataGraphs> {
+    const under = this.graphs.filter((g) => g.base === base).map((g) => g.at);
+    return {
+      published: under.length,
+      lastPublishedAt: under.length ? under.sort().at(-1)! : null,
+      endpoint: this.endpoint,
+    };
   }
 
   async seed(defaults: LinkedDataInput): Promise<void> {
@@ -148,6 +168,26 @@ export class PgLinkedDataRepo implements LinkedDataRepo {
       `SELECT count(*)::int AS n FROM job_outputs WHERE format = 'rdf' AND stage = 'published'`,
     );
     return rows[0]!.n;
+  }
+
+  async graphStatus(base: string | null): Promise<LinkedDataGraphs> {
+    const [graphs, event] = await Promise.all([
+      this.pool.query<{ n: number; last: Date | null }>(
+        `SELECT count(*)::int AS n, max(published_at) AS last
+           FROM published_graphs WHERE base_iri = $1`,
+        [base],
+      ),
+      this.pool.query<{ endpoint: boolean | null }>(
+        `SELECT (data->>'endpoint')::boolean AS endpoint FROM job_events
+          WHERE message = $1 ORDER BY at DESC, id DESC LIMIT 1`,
+        [GRAPH_PUBLISHED_EVENT],
+      ),
+    ]);
+    return {
+      published: graphs.rows[0]!.n,
+      lastPublishedAt: graphs.rows[0]!.last?.toISOString() ?? null,
+      endpoint: event.rows[0]?.endpoint ?? null,
+    };
   }
 
   async seed(defaults: LinkedDataInput): Promise<void> {

@@ -35,7 +35,9 @@ export async function linkedDataRoutes(app: FastifyInstance): Promise<void> {
       linkedData.history(),
       linkedData.rdfPublishedCount(),
     ]);
-    return { settings, effectiveBase: effectiveBaseIri(settings), rdfPublished, history };
+    const effectiveBase = effectiveBaseIri(settings);
+    const graphs = await linkedData.graphStatus(effectiveBase);
+    return { settings, effectiveBase, rdfPublished, graphs, history };
   };
 
   app.get(

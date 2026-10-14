@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shaclReportKey } from '@ih/shared';
+import { GRAPH_PUBLISHED_EVENT, shaclReportKey } from '@ih/shared';
 import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 import { DOCX_MIME } from '../src/uploads.js';
 import { docx } from './docx-fixtures.js';
@@ -601,5 +601,34 @@ describe('the SHACL report of a job (ADR 0011 step 5)', () => {
     expect(
       (await app.inject('/api/jobs/00000000-0000-4000-8000-000000000000/shacl-report')).statusCode,
     ).toBe(404);
+  });
+});
+
+describe('the graph a job published (ADR 0011 step 6)', () => {
+  it('is null until a graph published event, then the newest one', async () => {
+    const { app, repo, job } = await seedJob();
+    expect((await app.inject(`/api/jobs/${job.id}`)).json().graph).toBeNull();
+    const iri = 'https://data.acme.example/graph/source/ab/demo';
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, {
+      graph: iri,
+      version: 1,
+      triples: 40,
+      endpoint: false,
+    });
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, {
+      graph: iri,
+      version: 2,
+      triples: 42,
+      endpoint: true,
+    });
+    const graph = (await app.inject(`/api/jobs/${job.id}`)).json().graph;
+    expect(graph).toMatchObject({ iri, version: 2, triples: 42, endpoint: true });
+    expect(typeof graph.publishedAt).toBe('string');
+  });
+
+  it('reads a malformed event as none', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, { graph: 3 });
+    expect((await app.inject(`/api/jobs/${job.id}`)).json().graph).toBeNull();
   });
 });
