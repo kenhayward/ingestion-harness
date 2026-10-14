@@ -7,6 +7,7 @@ import { Icon } from '../ui/Icon.js';
 import { KIND_LABEL, isImporting, versionStatusText } from './derive.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { VersionLine } from './OntologiesPage.js';
+import type { GraphRenderer } from './graphRenderer.js';
 import { TermBrowser } from './TermBrowser.js';
 
 /** One ontology: its versions, metadata and, once a version is ready, its terms. */
@@ -16,12 +17,15 @@ export function OntologyPage({
   ontologyId,
   pollMs = 2000,
   searchDelayMs = 250,
+  graphRenderer,
 }: {
   api: Api;
   role: 'admin' | 'user';
   ontologyId: string;
   pollMs?: number;
   searchDelayMs?: number;
+  /** Draws term graphs (tests pass a fake: jsdom has no canvas). */
+  graphRenderer?: GraphRenderer;
 }) {
   const [detail, setDetail] = useState<OntologyDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +196,7 @@ export function OntologyPage({
                   version={current.version}
                   stats={current.stats}
                   searchDelayMs={searchDelayMs}
+                  {...(graphRenderer ? { renderer: graphRenderer } : {})}
                 />
               )}
             </>

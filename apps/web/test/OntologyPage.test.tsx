@@ -48,7 +48,16 @@ function view(role: 'admin' | 'user' = 'user', overrides: Partial<Api> = {}) {
     ),
     ...overrides,
   });
-  render(<OntologyPage api={api} role={role} ontologyId="pv" pollMs={10} searchDelayMs={0} />);
+  render(
+    <OntologyPage
+      api={api}
+      role={role}
+      ontologyId="pv"
+      pollMs={10}
+      searchDelayMs={0}
+      graphRenderer={() => () => {}}
+    />,
+  );
   return api;
 }
 
@@ -113,6 +122,24 @@ describe('OntologyPage', () => {
     expect(protocol).toHaveFocus();
     await userEvent.keyboard('{ArrowLeft}');
     expect(document).toHaveFocus();
+  });
+
+  it('shows a term as a graph', async () => {
+    view('user', {
+      getNeighbourhood: vi.fn(async () => ({
+        nodes: [
+          { iri: `${C}Protocol`, label: 'Protocol', kind: 'class' as const, focus: true },
+          { iri: `${C}Document`, label: 'Document', kind: 'class' as const, focus: false },
+        ],
+        edges: [{ source: `${C}Protocol`, target: `${C}Document`, kind: 'subClassOf' as const }],
+        truncated: false,
+      })),
+    });
+    const tree = await screen.findByRole('tree');
+    await userEvent.click(await within(tree).findByRole('treeitem', { name: /Document/ }));
+    const view_ = screen.getByRole('group', { name: 'View' });
+    await userEvent.click(within(view_).getByRole('button', { name: 'Graph' }));
+    expect(await screen.findByRole('list', { name: 'Links' })).toBeInTheDocument();
   });
 
   it('searches terms instead of the tree', async () => {

@@ -4,7 +4,9 @@ import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { GROUP_LABEL, groupCount } from './derive.js';
+import type { GraphRenderer } from './graphRenderer.js';
 import { TermDetailPanel } from './TermDetailPanel.js';
+import { TermGraph } from './TermGraph.js';
 import { TermTree } from './TermTree.js';
 
 const GROUPS: TermGroup[] = ['classes', 'properties', 'concepts', 'shapes'];
@@ -17,18 +19,22 @@ export function TermBrowser({
   version,
   stats,
   searchDelayMs,
+  renderer,
 }: {
   api: Api;
   ontologyId: string;
   version: number;
   stats: OntologyStats | null;
   searchDelayMs: number;
+  /** Draws the graph view (Cytoscape by default). */
+  renderer?: GraphRenderer;
 }) {
   const [group, setGroup] = useState<TermGroup>(
     () => GROUPS.find((g) => groupCount(stats, g) > 0) ?? 'classes',
   );
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<'details' | 'graph'>('details');
   return (
     <div className="term-browser">
       <div className="term-browser-bar">
@@ -81,13 +87,35 @@ export function TermBrowser({
         </div>
         <div className="term-detail-pane">
           {selected ? (
-            <TermDetailPanel
-              api={api}
-              ontologyId={ontologyId}
-              version={version}
-              iri={selected}
-              onSelect={setSelected}
-            />
+            <>
+              <Segmented
+                label="View"
+                options={[
+                  { value: 'details', label: 'Details' },
+                  { value: 'graph', label: 'Graph' },
+                ]}
+                value={view}
+                onChange={setView}
+              />
+              {view === 'details' ? (
+                <TermDetailPanel
+                  api={api}
+                  ontologyId={ontologyId}
+                  version={version}
+                  iri={selected}
+                  onSelect={setSelected}
+                />
+              ) : (
+                <TermGraph
+                  api={api}
+                  ontologyId={ontologyId}
+                  version={version}
+                  iri={selected}
+                  onSelect={setSelected}
+                  {...(renderer ? { renderer } : {})}
+                />
+              )}
+            </>
           ) : (
             <p className="muted">Pick a term to see its definition and neighbours.</p>
           )}
