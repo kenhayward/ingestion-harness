@@ -2090,6 +2090,269 @@
         }
       }
     },
+    "/api/specs/{id}/retirement": {
+      "put": {
+        "operationId": "retireDocumentType",
+        "summary": "Retire a document type",
+        "tags": [
+          "Specs"
+        ],
+        "description": "Retires every version of a document type (a recipe or a legacy spec). Nothing is\ndeleted: its jobs, results, references and versions stay readable, and jobs already\nqueued or running finish. It is left out of `GET /api/specs` (unless\n`?retired=include`) and of the Workbench list (unless `retired=include`), and new\nwork for it is refused with a 409 `{name} is retired: unretire it to use it again`:\nuploads, retries, test and regression runs, new drafts, publishing, imports and the\nWorkbench actions that queue jobs. Retiring a retired type keeps its first retirement.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The retirement (the first one when it was already retired).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "retired": {
+                      "type": "object",
+                      "properties": {
+                        "retiredAt": {
+                          "type": "string",
+                          "description": "When an admin retired the document type."
+                        },
+                        "retiredBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The label of the token that retired it; null without access control."
+                        }
+                      },
+                      "required": [
+                        "retiredAt",
+                        "retiredBy"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "retired"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The retirement (the first one when it was already retired)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document type not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unretireDocumentType",
+        "summary": "Unretire a document type",
+        "tags": [
+          "Specs"
+        ],
+        "description": "Makes a retired document type available again for uploads and new work. This route is\nthe only way to unretire a type: the web app has no Unretire button (retiring is also on\nthe Document types page). A type that is not retired is left as it is (still a 204).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Unretired."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document type not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents": {
       "post": {
         "operationId": "uploadDocument",
@@ -31723,7 +31986,7 @@
     },
     {
       "name": "Specs",
-      "description": "Document definitions loaded from the repository's `specs/` folder (legacy `spec.yaml` and\n`template.yaml`). Versions are immutable once published."
+      "description": "Document types as uploads see them: database recipes and the definitions loaded from the\nrepository's `specs/` folder (legacy `spec.yaml` and `template.yaml`). Versions are\nimmutable once published. An admin can retire a document type (hidden from new work, still\nreadable; also on the Document types page) and unretire it (here only)."
     },
     {
       "name": "Recipes",

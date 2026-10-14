@@ -25,8 +25,10 @@ export const TAGS = {
     values and their files.
   `,
   Specs: md`
-    Document definitions loaded from the repository's \`specs/\` folder (legacy \`spec.yaml\` and
-    \`template.yaml\`). Versions are immutable once published.
+    Document types as uploads see them: database recipes and the definitions loaded from the
+    repository's \`specs/\` folder (legacy \`spec.yaml\` and \`template.yaml\`). Versions are
+    immutable once published. An admin can retire a document type (hidden from new work, still
+    readable; also on the Document types page) and unretire it (here only).
   `,
   Recipes: md`
     Transformation recipes: each document type's definition (outputs, sections, pipeline steps,
