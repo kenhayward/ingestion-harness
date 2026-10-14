@@ -159,6 +159,8 @@ describe('HomePage live progress', () => {
   });
 });
 
+const NO_TIMES = { readAt: null, segmentedAt: null };
+
 describe('HomePage pushed progress', () => {
   type On = { update(live: JobLive): void; gone(): void; error(): void };
   function pushed(jobs: JobSummary[]) {
@@ -192,11 +194,16 @@ describe('HomePage pushed progress', () => {
     await waitFor(() => expect(r.watchJob).toHaveBeenCalledWith('j1', expect.anything()));
     const panel = await screen.findByRole('complementary', { name: 'Job details' });
     act(() =>
-      r.on().update({ job: running, progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 12 } }),
+      r.on().update({
+        stageTimes: NO_TIMES,
+        job: running,
+        progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 12 },
+      }),
     );
     expect(await within(panel).findByText('OCR 3 of 12 pages')).toBeInTheDocument();
     act(() =>
       r.on().update({
+        stageTimes: NO_TIMES,
         job: { ...running, updatedAt: '2030-01-01T00:00:00Z' },
         progress: { kind: 'step', step: 'head', index: 1, of: 2, attempt: 1, chunk: null },
       }),
@@ -207,6 +214,7 @@ describe('HomePage pushed progress', () => {
     expect(vi.mocked(r.api.getJob).mock.calls.length).toBeLessThanOrEqual(2);
     act(() =>
       r.on().update({
+        stageTimes: NO_TIMES,
         job: { ...running, status: 'succeeded', updatedAt: '2030-01-01T00:00:01Z' },
         progress: null,
       }),

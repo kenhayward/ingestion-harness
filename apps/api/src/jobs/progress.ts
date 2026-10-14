@@ -5,6 +5,7 @@ import {
   STEP_PROGRESS_EVENT,
   StepProgressSchema,
   type JobProgress,
+  type StageTimes,
   type JobSummary,
 } from '@ih/shared';
 import type { JobEventRecord } from '../repositories/types.js';
@@ -35,4 +36,23 @@ export function jobProgress(
   }
   const parsed = StepProgressSchema.safeParse(latest.data);
   return parsed.success ? { kind: 'step', ...parsed.data } : null;
+}
+
+/**
+ * When this attempt (events at or after `startedAt`) finished reading the document and found its
+ * sections. Kept after the job finishes, so a finished job's Progress list keeps its step times;
+ * nothing for a job never claimed.
+ */
+export function stageTimes(job: JobSummary, events: readonly JobEventRecord[]): StageTimes {
+  const since = job.startedAt ? Date.parse(job.startedAt) : null;
+  const latest = (message: string) => {
+    if (since === null) return null;
+    const at = events
+      .filter((e) => e.jobId === job.id && e.message === message && Date.parse(e.at) >= since)
+      .map((e) => e.at)
+      .sort()
+      .at(-1);
+    return at ?? null;
+  };
+  return { readAt: latest(PREPARE_PROGRESS_EVENT), segmentedAt: latest(SEGMENTED_EVENT) };
 }

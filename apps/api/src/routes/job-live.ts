@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { JobSummarySchema, type JobLive } from '@ih/shared';
 import { z } from 'zod';
 import { error, md } from '../openapi/zod.js';
-import { jobProgress, PROGRESS_EVENTS } from '../jobs/progress.js';
+import { jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
 
 const UUID = z.string().uuid();
 const JobParams = z.object({ id: z.string().describe('The job id.') });
@@ -30,9 +30,12 @@ export const jobLiveRoutes: FastifyPluginAsync = async (app) => {
     if (!job) return null;
     const parsed = JobSummarySchema.safeParse(job); // without outputs
     const summary = parsed.success ? parsed.data : job;
-    const events =
-      job.status === 'running' ? await app.deps.repo.latestEvents([id], PROGRESS_EVENTS) : [];
-    return { job: summary, progress: jobProgress(summary, events) };
+    const events = await app.deps.repo.latestEvents([id], PROGRESS_EVENTS);
+    return {
+      job: summary,
+      progress: jobProgress(summary, events),
+      stageTimes: stageTimes(summary, events),
+    };
   }
 
   app.get<{ Params: { id: string } }>(
@@ -44,7 +47,8 @@ export const jobLiveRoutes: FastifyPluginAsync = async (app) => {
         summary: "Follow a job's status and progress",
         description: md`
           A [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
-          stream. Each \`job\` event's data is JSON \`{ job, progress }\`: the job summary and,
+          stream. Each \`job\` event's data is JSON \`{ job, progress, stageTimes }\`: the job
+          summary, when this attempt finished reading the document and found its sections and,
           while an extraction runs, where it is (\`prepare\`: the text layer or OCR page
           \`page\` of \`of\`; \`segmented\`; \`step\`: extract step \`index\` of \`of\`, its
           attempt and chunk). It is sent at once and again whenever either changes. The stream

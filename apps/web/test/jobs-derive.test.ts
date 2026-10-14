@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { JobProgress, JobStatus, JobSummary, ModelChoice, StepRun } from '@ih/shared';
+import type {
+  JobProgress,
+  JobStatus,
+  JobSummary,
+  ModelChoice,
+  StageTimes,
+  StepRun,
+} from '@ih/shared';
 import {
   CHOICES_FAILED,
   CHOICES_LOADING,
@@ -14,6 +21,7 @@ import {
   modelLabel,
   primaryAction,
   progressSteps,
+  stepSeconds,
   relativeTime,
   statusLabel,
   statusTone,
@@ -247,6 +255,115 @@ describe('progressSteps with live progress', () => {
   it('is ignored once the job has left running', () => {
     const done = progressSteps(job({ status: 'succeeded' }), [run()], step);
     expect(done.map((s) => s.text)).toEqual(['Done', 'Done', 'Done', 'Done', 'Done']);
+  });
+});
+
+describe('stepSeconds', () => {
+  const at = (s: number) => new Date(Date.parse('2026-10-12T10:00:00Z') + s * 1000).toISOString();
+  const now = Date.parse(at(600));
+  const timed = (o: Partial<JobSummary>) =>
+    job({ startedAt: at(0), finishedAt: at(100), updatedAt: at(100), ...o });
+  const ran = (end: number) => run({ startedAt: at(30), finishedAt: at(end) });
+  const times: StageTimes = { readAt: at(20), segmentedAt: at(25) };
+  const seconds = (
+    j: JobSummary,
+    runs: StepRun[] | null,
+    t: StageTimes | null,
+    progress: JobProgress | null = null,
+  ) => stepSeconds(j, runs, t, progressSteps(j, runs, progress), now);
+
+  it.each<[string, JobSummary, StepRun[] | null, StageTimes | null, (number | null)[]]>([
+    [
+      'published without review',
+      timed({ status: 'succeeded' }),
+      [ran(90)],
+      times,
+      [20, 5, 65, 10, 0],
+    ],
+    [
+      'approved and published after review',
+      timed({ status: 'succeeded', updatedAt: at(400) }),
+      [ran(90)],
+      times,
+      [20, 5, 65, 10, 300],
+    ],
+    [
+      'waiting for review: counts up to now',
+      timed({ status: 'awaiting_review' }),
+      [ran(90)],
+      times,
+      [20, 5, 65, 10, 500],
+    ],
+    [
+      'rejected',
+      timed({ status: 'rejected', updatedAt: at(160) }),
+      [ran(90)],
+      times,
+      [20, 5, 65, 10, 60],
+    ],
+    [
+      'before reading progress was recorded: reading takes in the sections',
+      timed({ status: 'succeeded' }),
+      [ran(90)],
+      { readAt: null, segmentedAt: at(25) },
+      [25, null, 65, 10, 0],
+    ],
+    [
+      'never timed (before migration 0028)',
+      job({ status: 'succeeded' }),
+      [ran(90)],
+      times,
+      [null, null, null, null, null],
+    ],
+    ['queued again', timed({ status: 'queued' }), [], times, [null, null, null, null, null]],
+    [
+      'times not loaded',
+      timed({ status: 'succeeded' }),
+      [ran(90)],
+      null,
+      [null, null, null, 10, 0],
+    ],
+    [
+      'a step re-run is not the extraction',
+      timed({ status: 'succeeded' }),
+      [ran(90), run({ trigger: 'rerun', startedAt: at(500), finishedAt: at(520) })],
+      times,
+      [20, 5, 65, 10, 0],
+    ],
+    [
+      'stopped during extraction',
+      timed({ status: 'failed' }),
+      [run({ status: 'failed', startedAt: at(30), finishedAt: at(90) })],
+      times,
+      [20, 5, 65, null, null], // up to the failed step run's end, not the job's
+    ],
+  ])('%s', (_name, j, runs, t, expected) => expect(seconds(j, runs, t)).toEqual(expected));
+
+  it('counts the running step up to now', () => {
+    const running = job({ status: 'running', startedAt: at(0), finishedAt: null });
+    expect(
+      seconds(
+        running,
+        [],
+        { readAt: null, segmentedAt: null },
+        {
+          kind: 'prepare',
+          stage: 'ocr',
+          page: 1,
+          of: 9,
+        },
+      ),
+    ).toEqual([600, null, null, null, null]);
+    expect(
+      seconds(running, [], times, {
+        kind: 'step',
+        step: 'a',
+        index: 1,
+        of: 2,
+        attempt: 1,
+        chunk: null,
+      }),
+    ).toEqual([20, 5, 575, null, null]);
   });
 });
 

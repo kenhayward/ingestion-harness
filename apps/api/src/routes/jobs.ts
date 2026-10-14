@@ -12,7 +12,7 @@ import {
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
-import { jobProgress, PROGRESS_EVENTS } from '../jobs/progress.js';
+import { jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
 import { queueSummary } from '../jobs/queue-summary.js';
 import {
   draftOutputsSnapshot,
@@ -141,7 +141,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           A job with its outputs: the drafts written before review (\`stage: draft\`, outputs
           bucket) and the copies delivered to the final target (\`stage: published\`).
           Download one with \`GET /api/jobs/{id}/outputs/{outputId}\`. While an extraction
-          runs, \`progress\` says where it is (as \`GET /api/jobs/{id}/events\` sends it).
+          runs, \`progress\` says where it is (as \`GET /api/jobs/{id}/events\` sends it);
+          \`stageTimes\` says when this attempt finished reading the document and found its
+          sections.
         `,
         params: JobParams,
         response: { 200: res('The job.', JobDetailSchema), 404: NOT_FOUND },
@@ -153,9 +155,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       }
       const job = await app.deps.repo.getJob(req.params.id);
       if (!job) return reply.code(404).send({ error: 'not found' });
-      const events =
-        job.status === 'running' ? await app.deps.repo.latestEvents([job.id], PROGRESS_EVENTS) : [];
-      return { ...job, progress: jobProgress(job, events) };
+      const events = await app.deps.repo.latestEvents([job.id], PROGRESS_EVENTS);
+      return { ...job, progress: jobProgress(job, events), stageTimes: stageTimes(job, events) };
     },
   );
 
