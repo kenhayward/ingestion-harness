@@ -184,6 +184,40 @@ export function LinkedDataPage({ api, me }: { api: Api; me: Me }) {
               .
             </p>
           )}
+          {view.withdrawals.queued + view.withdrawals.running > 0 && (
+            <p className="muted">
+              {view.withdrawals.queued + view.withdrawals.running} withdrawals or republishes
+              waiting.
+            </p>
+          )}
+          {view.withdrawals.failed > 0 && (
+            <p role="alert">
+              {view.withdrawals.failed} failed: published outputs or graphs may not have been
+              withdrawn (see the worker logs).
+            </p>
+          )}
+          {view.endpoint && (
+            <dl className="meta">
+              <dt>SPARQL endpoint</dt>
+              <dd>
+                <code>{view.endpoint.sparql}</code>
+              </dd>
+              <dt>Graph Store (read)</dt>
+              <dd>
+                <code>{view.endpoint.get}</code>
+              </dd>
+              <dt>User</dt>
+              <dd>
+                <code>{view.endpoint.user}</code>
+              </dd>
+            </dl>
+          )}
+          {view.endpoint && (
+            <p className="muted">
+              IRIs are identifiers, not data: find entities by their values (their labels and
+              properties), never by reading meaning out of an IRI.
+            </p>
+          )}
           {view.graphs.endpoint === true && (
             <p className="muted">Graphs go to the triple store (Fuseki) and to S3.</p>
           )}

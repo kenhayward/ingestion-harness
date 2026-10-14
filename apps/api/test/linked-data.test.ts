@@ -123,3 +123,21 @@ describe('published graphs on the Linked data panel (ADR 0011 step 6)', () => {
     });
   });
 });
+
+describe('consumer access and withdrawals on the panel (ADR 0011 step 7)', () => {
+  it('names the public SPARQL endpoint and its read-only user', async () => {
+    const linkedData = new MemoryLinkedDataRepo();
+    const ctx = await testApp({ linkedData, rdfPublicUrl: 'https://sparql.acme.example/' });
+    const view = (await ctx.app.inject({ url: '/api/linked-data/settings' })).json();
+    expect(view.endpoint).toEqual({
+      sparql: 'https://sparql.acme.example/ct/sparql',
+      get: 'https://sparql.acme.example/ct/get',
+      user: 'ct-reader',
+    });
+    expect(view.withdrawals).toEqual({ queued: 0, running: 0, failed: 0 });
+    const none = await setup();
+    expect(
+      (await none.app.inject({ url: '/api/linked-data/settings' })).json().endpoint,
+    ).toBeNull();
+  });
+});

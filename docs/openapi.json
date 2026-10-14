@@ -41162,6 +41162,56 @@
                       ],
                       "additionalProperties": true
                     },
+                    "endpoint": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sparql": {
+                              "type": "string"
+                            },
+                            "get": {
+                              "type": "string"
+                            },
+                            "user": {
+                              "type": "string",
+                              "enum": [
+                                "ct-reader"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "sparql",
+                            "get",
+                            "user"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "withdrawals": {
+                      "type": "object",
+                      "properties": {
+                        "queued": {
+                          "type": "integer"
+                        },
+                        "running": {
+                          "type": "integer"
+                        },
+                        "failed": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "queued",
+                        "running",
+                        "failed"
+                      ],
+                      "additionalProperties": true
+                    },
                     "history": {
                       "type": "array",
                       "items": {
@@ -41208,6 +41258,8 @@
                     "effectiveBase",
                     "rdfPublished",
                     "graphs",
+                    "endpoint",
+                    "withdrawals",
                     "history"
                   ],
                   "additionalProperties": true,
@@ -41404,6 +41456,56 @@
                       ],
                       "additionalProperties": true
                     },
+                    "endpoint": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "sparql": {
+                              "type": "string"
+                            },
+                            "get": {
+                              "type": "string"
+                            },
+                            "user": {
+                              "type": "string",
+                              "enum": [
+                                "ct-reader"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "sparql",
+                            "get",
+                            "user"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "withdrawals": {
+                      "type": "object",
+                      "properties": {
+                        "queued": {
+                          "type": "integer"
+                        },
+                        "running": {
+                          "type": "integer"
+                        },
+                        "failed": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "queued",
+                        "running",
+                        "failed"
+                      ],
+                      "additionalProperties": true
+                    },
                     "history": {
                       "type": "array",
                       "items": {
@@ -41450,6 +41552,8 @@
                     "effectiveBase",
                     "rdfPublished",
                     "graphs",
+                    "endpoint",
+                    "withdrawals",
                     "history"
                   ],
                   "additionalProperties": true,

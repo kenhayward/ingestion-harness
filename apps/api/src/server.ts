@@ -99,6 +99,7 @@ const app = await buildApp({
   llmSecrets: secretsKeys(process.env),
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
+  rdfPublicUrl: config.RDF_PUBLIC_URL ?? null,
   logger: { level: config.LOG_LEVEL },
 });
 
