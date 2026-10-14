@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
+  applyChanges,
   changeBodyOf,
+  outputChanges,
   type DataPolicy,
   type DraftChange,
   type FeedbackItem,
@@ -11,6 +13,13 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
+import { ReprocessDialog } from '../ui/ReprocessDialog.js';
+import {
+  evaluateBlocker,
+  referenceCounts,
+  runningEvaluation,
+  type ReferenceCounts,
+} from './evaluate.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { ReviseFeedback } from './ReviseFeedback.js';
 import {
@@ -32,11 +41,23 @@ import { StaleBanner } from './StaleBanner.js';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-const NEXT = (projectId: string): NextStep => ({
+const NEXT = (projectId: string, action: NextStep['action']): NextStep => ({
   href: `#/workbench/${projectId}/evaluate`,
   label: 'Evaluate on dev',
   text: 'Run the dev set to see whether the changes helped; when dev looks right, run holdout to check the gate.',
+  action,
 });
+
+/** Output keys the chosen changes would add, remove or reshape (outdating their references). */
+function outputsChangedBy(definition: unknown, changes: DraftChange[]): string[] {
+  if (!definition || typeof definition !== 'object' || !changes.length) return [];
+  try {
+    const before = definition as Record<string, unknown>;
+    return outputChanges(before.outputs ?? {}, applyChanges(before, changes).outputs ?? {});
+  } catch {
+    return []; // a change that no longer applies is refused on Apply, with its reason
+  }
+}
 
 function AnswersBadge({ numbers }: { numbers: number[] }) {
   return (
@@ -58,6 +79,8 @@ interface Loaded {
   proposals: ProposalView[];
   samples: SampleView[];
   iterations: IterationSummary[];
+  /** Dev references (undefined when unreadable: the API decides then). */
+  refs: ReferenceCounts | undefined;
 }
 
 /**
@@ -102,15 +125,16 @@ export function ReviseTab({
     const id = ++seq.current;
     inFlight.current = true;
     try {
-      const [preview, feedback, proposals, samples, iterations] = await Promise.all([
+      const [preview, feedback, proposals, samples, iterations, refs] = await Promise.all([
         api.getRevisePreview(projectId),
         api.listFeedback(projectId),
         api.listProposals(projectId),
         api.listSamples(projectId),
         api.listIterations(projectId),
+        api.listReferenceRows(projectId, 'dev').then(referenceCounts, () => undefined),
       ]);
       if (id !== seq.current) return; // a newer load (or unmount) superseded this one
-      setData({ preview, feedback, proposals, samples, iterations });
+      setData({ preview, feedback, proposals, samples, iterations, refs });
       setError(null);
     } catch (err) {
       if (id === seq.current) setError((err as Error).message);
@@ -129,13 +153,26 @@ export function ReviseTab({
 
   const latest = data ? latestRevise(data.proposals) : null;
   const running = latest?.status === 'running';
+  /** The open draft's version: what an evaluation started here runs. */
+  const draftVersion = data?.preview.draft?.version ?? draft;
+  /** A dev evaluation of the draft still going (started here or on Evaluate). */
+  const evaluating = data ? runningEvaluation(data.iterations, draftVersion, 'dev') : null;
+  const [asking, setAsking] = useState(false);
   useEffect(() => {
-    if (!running) return;
+    if (!running && !evaluating) return;
     const timer = setInterval(() => {
       if (!inFlight.current) void load();
     }, pollMs);
     return () => clearInterval(timer);
-  }, [running, pollMs, load]);
+  }, [running, evaluating, pollMs, load]);
+
+  // The page learns when an evaluation followed here finishes (the overview's Next moves on).
+  const evaluatingId = evaluating?.id ?? null;
+  const lastEvaluating = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastEvaluating.current !== null && evaluatingId === null) onChanged();
+    lastEvaluating.current = evaluatingId;
+  }, [evaluatingId, onChanged]);
 
   // The page learns when a running revision finishes (its rail and header show the stage).
   const status = latest?.status ?? null;
@@ -230,6 +267,39 @@ export function ReviseTab({
           : preview.model === null
             ? 'Set the drafting model on the Models page first'
             : null);
+  const evaluateBlocked = evaluateBlocker({
+    retired,
+    draft: draftVersion,
+    set: 'dev',
+    refs: data.refs,
+    history: data.iterations,
+    comparing: false,
+    busy,
+  });
+  const outdatedBlock =
+    data.refs !== undefined && data.refs.verified === 0 && data.refs.outdated > 0;
+  const evaluateButton = (
+    <button
+      type="button"
+      className="primary"
+      disabled={evaluateBlocked !== null}
+      title={evaluateBlocked ?? undefined}
+      onClick={() => setAsking(true)}
+    >
+      Evaluate v{draftVersion} on dev…
+    </button>
+  );
+  /** The applied card offers Evaluate itself: one button on the page is enough. */
+  const cardOffers =
+    body !== null && (latest?.status === 'accepted' || latest?.status === 'partially_accepted');
+  /** What the chosen changes do to outputs, said before they are applied. */
+  const reshaped =
+    latest?.status === 'ready' && body
+      ? outputsChangedBy(
+          preview.draft?.definition,
+          body.changes.filter((_, i) => selected.has(i)),
+        )
+      : [];
   const badge = (c: DraftChange) => {
     const numbers = answerNumbers(c, shown);
     return numbers.length ? <AnswersBadge numbers={numbers} /> : null;
@@ -282,8 +352,9 @@ export function ReviseTab({
               {header && <span className="muted"> {header}</span>}
             </h3>
             {preview.failuresFrom === null ? (
-              <p className="muted">
-                No complete dev run yet. Evaluate on dev to send its failures.
+              <p className="muted revise-no-run">
+                <span>No complete dev run yet. Evaluate on dev to send its failures.</span>{' '}
+                {draftVersion !== null && !cardOffers && evaluateButton}
               </p>
             ) : preview.failures.length === 0 ? (
               <p className="muted">Every dev sample scored 100%.</p>
@@ -321,6 +392,17 @@ export function ReviseTab({
           The model is drafting a revision…
         </p>
       )}
+      {evaluating && (
+        <p role="status" aria-label="Dev evaluation" className="revise-running">
+          Evaluating v{evaluating.templateVersion} on dev · {evaluating.completed} of{' '}
+          {evaluating.total} samples <a href={`#/workbench/${projectId}/evaluate`}>Open Evaluate</a>
+        </p>
+      )}
+      {outdatedBlock && evaluateBlocked && (
+        <p role="note" aria-label="Why Evaluate is off" className="eval-runbar-why">
+          {evaluateBlocked}. <a href={`#/workbench/${projectId}/references`}>Open References</a>
+        </p>
+      )}
       {latest?.status === 'failed' && <p role="alert">{latest.error}</p>}
       {latest && body && (
         <ProposalCard
@@ -336,9 +418,37 @@ export function ReviseTab({
           onReject={() => void reject()}
           busy={busy}
           now={now}
-          next={NEXT(projectId)}
+          next={NEXT(projectId, draftVersion === null ? undefined : evaluateButton)}
           badge={badge}
-          footerNote="Feedback a change answers is marked answered when you apply it."
+          footerNote={[
+            reshaped.length
+              ? `Changes outputs (${reshaped.join(', ')}): references verified before must be verified again before you can evaluate.`
+              : null,
+            'Feedback a change answers is marked answered when you apply it.',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        />
+      )}
+      {asking && draftVersion !== null && (
+        <ReprocessDialog
+          title={`Evaluate v${draftVersion} on dev`}
+          confirmLabel="Evaluate"
+          choices={models}
+          emptyLabel="Document type's model"
+          dataPolicy={dataPolicy}
+          summary={
+            <p>
+              Runs v{draftVersion} on every verified dev reference and scores it, so the next
+              revision is sent its failures.
+            </p>
+          }
+          onConfirm={async (model) => {
+            await api.startEvaluation(projectId, model, { uncached: false, set: 'dev' });
+            onChanged();
+            await load();
+          }}
+          onClose={() => setAsking(false)}
         />
       )}
       {earlier.length > 0 && (

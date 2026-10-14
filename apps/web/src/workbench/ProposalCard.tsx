@@ -27,6 +27,8 @@ export interface NextStep {
   href: string;
   label: string;
   text: string;
+  /** Does the step here instead of linking to it (Revise: Evaluate on dev…). */
+  action?: ReactNode;
 }
 
 function ChangeText({ c }: { c: DraftChange }) {
@@ -119,9 +121,11 @@ export function ProposalCard({
           {accepted && next && (
             <>
               <p>{next.text}</p>
-              <a className="button primary" href={next.href}>
-                {next.label}
-              </a>
+              {next.action ?? (
+                <a className="button primary" href={next.href}>
+                  {next.label}
+                </a>
+              )}
             </>
           )}
         </div>
