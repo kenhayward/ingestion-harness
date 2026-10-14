@@ -75,6 +75,30 @@ services:
       timeout: 3s
       retries: 30
 
+  fuseki:
+    # The triple store (ADR 0011 step 6): Apache Jena Fuseki, TDB2 on the fuseki-data volume.
+    # Opt-in: COMPOSE_PROFILES=rdf with RDF_ENDPOINT, RDF_WRITER_PASSWORD and RDF_READER_PASSWORD
+    # in deploy/.env (without them the worker writes graphs to S3 only). Only the worker reaches
+    # it (internal network `rdf`; no ports). Backups and compaction: deploy/README.md.
+    profiles: [rdf]
+    image: ${IMAGE_PREFIX:-ingestion-harness}/fuseki:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/fuseki.Dockerfile
+    restart: unless-stopped
+    environment:
+      RDF_WRITER_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+      RDF_READER_PASSWORD: ${RDF_READER_PASSWORD:-}
+      JAVA_OPTIONS: ${FUSEKI_JAVA_OPTIONS:--Xmx2g}
+    volumes:
+      - fuseki-data:/fuseki
+    networks: [rdf]
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3030/$$/ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   converter:
     # Word (.docx) to PDF for the worker (docs/design/word-documents.md, ADR 0009): Gotenberg's
     # LibreOffice-only image, pinned to an exact release. It parses untrusted documents, so it
@@ -186,13 +210,19 @@ services:
       ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
       ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
       ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
-    networks: [default, converter]
+      # The triple store (ADR 0011 step 6); empty: delivered graphs go to S3 only.
+      RDF_ENDPOINT: ${RDF_ENDPOINT:-}
+      RDF_DATASET: ${RDF_DATASET:-ct}
+      RDF_USER: ct-writer
+      RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+    networks: [default, converter, rdf]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
       converter: { condition: service_healthy }
+      fuseki: { condition: service_healthy, required: false }
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     stop_grace_period: 2m # let an in-flight extraction finish
@@ -219,7 +249,11 @@ networks:
   # Only the worker and the converter: no route out of it (ADR 0009).
   converter:
     internal: true
+  # Only the worker and Fuseki (ADR 0011).
+  rdf:
+    internal: true
 
 volumes:
+  fuseki-data:
   postgres-data:
   seaweedfs-data:
