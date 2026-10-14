@@ -5,6 +5,7 @@ import { RetirementSchema } from '@ih/shared';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { TemplateIssueSchema, templateIssues, validateTemplate } from '../templates/definitions.js';
+import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { byHand, draftChange, startedChange } from '../templates/changes.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
 import {
@@ -163,6 +164,7 @@ async function summarise(
 
 export const templateRoutes: FastifyPluginAsync = async (app) => {
   const withIssues = issuesOf(app);
+  const notRetired = refuseRetired(app);
   const repo = () => app.deps.templates;
   const versionOf = (p: Params) => Number(p.version);
   const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'recipe not found' });
@@ -238,7 +240,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res('The v1 draft.', RecordView),
           400: error('Zod issues for an invalid id or name.'),
-          409: error('`document type {id} already exists`.'),
+          409: error('`document type {id} already exists`, or ' + RETIRED_DOC + '.'),
         },
       },
     },
@@ -248,6 +250,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if ((await repo().list()).some((r) => r.id === body.data.id)) {
         return reply.code(409).send({ error: `document type ${body.data.id} already exists` });
       }
+      // A retired legacy spec id stays retired: no new recipe type under it.
+      const retired = await retiredProblem(app.deps, body.data.id);
+      if (retired) return reply.code(409).send({ error: retired });
       const record = await repo().create(
         body.data.id,
         1,
@@ -338,6 +343,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: Params }>(
     '/templates/:id/versions/:version/publish',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Recipes'],
         operationId: 'publishTemplate',
@@ -353,8 +359,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           400: NOT_VALID,
           404: NOT_FOUND,
           409: error(
-            '`{id} v{version} is already published`, or `publish {id} from the Workbench ' +
-              '(holdout gate)` for a Workbench document type.',
+            '`{id} v{version} is already published`, `publish {id} from the Workbench ' +
+              '(holdout gate)` for a Workbench document type, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -381,6 +389,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string } }>(
     '/templates/:id/drafts',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Recipes'],
         operationId: 'createDraft',
@@ -395,7 +404,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           201: res('The new draft.', RecordView),
           400: error('Zod issues for an invalid body.'),
           404: NOT_FOUND,
-          409: error('`a draft already exists; edit or delete it first`.'),
+          409: error('`a draft already exists; edit or delete it first`, or ' + RETIRED_DOC + '.'),
         },
       },
     },
@@ -494,7 +503,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
             z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
           ),
           409: error(
-            'The version already exists, or `publish {id} from the Workbench (holdout gate)`.',
+            'The version already exists, `publish {id} from the Workbench (holdout gate)`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -515,6 +526,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (!ident.success) {
         return reply.code(400).send({ error: 'definition needs a valid id and version' });
       }
+      const retired = await retiredProblem(app.deps, ident.data.id);
+      if (retired) return reply.code(409).send({ error: retired });
       if (body.data.publish && (await app.deps.workbench.getProject(ident.data.id))) {
         // Importing as a draft is fine; publishing must go through the holdout gate (ADR 0007).
         return reply

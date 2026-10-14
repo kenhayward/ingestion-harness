@@ -18,6 +18,7 @@ import {
   resolveDefinition,
   runnableModels,
 } from '../templates/definitions.js';
+import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { storeFor } from '../storage/stage.js';
 
 const ListQuery = z.object({
@@ -199,7 +200,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
             '`model must be a model ref or null`, or a model that is no choice or is not offered.',
           ),
           404: NOT_FOUND,
-          409: error('`job not found or not in a retryable state`.'),
+          409: error('`job not found or not in a retryable state`, or ' + RETIRED_DOC + '.'),
         },
       },
     },
@@ -216,6 +217,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         if (problem) return reply.code(400).send({ error: problem });
       }
       const current = await app.deps.repo.getJob(req.params.id);
+      // A retry is new work: a retired document type is refused (its old jobs stay readable).
+      const retired = current ? await retiredProblem(app.deps, current.specId) : null;
+      if (retired) return reply.code(409).send({ error: retired });
       const job = await app.deps.repo.retryJob(req.params.id, {
         model,
         specVersion: current ? await latestVersionFor(current) : undefined,

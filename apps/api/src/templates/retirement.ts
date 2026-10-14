@@ -30,7 +30,9 @@ export async function retiredProblem(deps: Deps, id: string): Promise<string | n
 
 /**
  * preHandler for routes whose `:id` is a document type (or its Workbench project): a retired
- * type is refused before the body is read, so nothing is queued or written.
+ * type is refused before the handler runs (it runs after body parsing, so it reads only
+ * `req.params.id`), so nothing is queued or written. Routes keyed by a job id or by a body or
+ * multipart field call `retiredProblem` inside the handler, before storing or queueing.
  */
 export const refuseRetired =
   (app: FastifyInstance) => async (req: FastifyRequest, reply: FastifyReply) => {

@@ -2406,7 +2406,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft recipe version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
+        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft recipe version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n- A retired document type is refused (409) until an admin unretires it.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2714,6 +2714,38 @@
                   ],
                   "additionalProperties": true,
                   "description": "The request is not `multipart/form-data`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -3926,7 +3958,7 @@
             }
           },
           "409": {
-            "description": "`job not found or not in a retryable state`.",
+            "description": "`job not found or not in a retryable state`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3952,7 +3984,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`job not found or not in a retryable state`."
+                  "description": "`job not found or not in a retryable state`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -7793,7 +7825,7 @@
             }
           },
           "409": {
-            "description": "`document type {id} already exists`.",
+            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7819,7 +7851,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`document type {id} already exists`."
+                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -8551,7 +8583,7 @@
             }
           },
           "409": {
-            "description": "`{id} v{version} is already published`, or `publish {id} from the Workbench (holdout gate)` for a Workbench document type.",
+            "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8577,7 +8609,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`{id} v{version} is already published`, or `publish {id} from the Workbench (holdout gate)` for a Workbench document type."
+                  "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -8794,7 +8826,7 @@
             }
           },
           "409": {
-            "description": "`a draft already exists; edit or delete it first`.",
+            "description": "`a draft already exists; edit or delete it first`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8820,7 +8852,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a draft already exists; edit or delete it first`."
+                  "description": "`a draft already exists; edit or delete it first`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -9101,7 +9133,7 @@
             }
           },
           "409": {
-            "description": "The version already exists, or `publish {id} from the Workbench (holdout gate)`.",
+            "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9127,7 +9159,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The version already exists, or `publish {id} from the Workbench (holdout gate)`."
+                  "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -9999,6 +10031,38 @@
                   ],
                   "additionalProperties": true,
                   "description": "`recipe version not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
