@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { multipart, testApp } from './helpers.js';
+import type { InjectOptions } from 'fastify';
 
 const RETIRED = 'Letter is retired: unretire it to use it again';
 const pdf = Buffer.from('%PDF-1.7\n% sample\n%%EOF\n');
@@ -42,7 +43,7 @@ describe('Workbench work for a retired document type (D4)', () => {
   ] as const)('refuses %s with a 409 and queues nothing', async (_name, request) => {
     const ctx = await retiredProject();
     const before = ctx.counts();
-    const res = await ctx.app.inject(request as Parameters<typeof ctx.app.inject>[0]);
+    const res = await ctx.app.inject(request as InjectOptions);
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe(RETIRED);
     expect(ctx.counts()).toEqual(before);
@@ -98,7 +99,7 @@ describe('what a retired Workbench project still allows (D5)', () => {
     ['deleting the project', { method: 'DELETE', url: P }],
   ] as const)('allows %s', async (_name, request) => {
     const ctx = await retiredProject();
-    const res = await ctx.app.inject(request as Parameters<typeof ctx.app.inject>[0]);
+    const res = await ctx.app.inject(request as InjectOptions);
     // Other refusals (no samples yet, …) are fine: only the retired one must not happen.
     const body = (res.body ? res.json() : {}) as { error?: unknown };
     expect(body.error ?? '').not.toBe(RETIRED);
