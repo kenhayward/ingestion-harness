@@ -722,3 +722,35 @@ describe('http api: retired document types', () => {
     expect('unretireType' in api).toBe(false);
   });
 });
+
+describe('http api: ontologies', () => {
+  it('sends ontology fields before the file', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ontologyId: 'pv', version: 1 }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['x'], 'pv.ttl');
+    await createHttpApi('/api').importOntology(file, {
+      id: 'pv',
+      label: 'PV',
+      tags: ['a', 'b'],
+      localOnly: true,
+    });
+    const form = fetchMock.mock.calls[0]![1]!.body as FormData;
+    expect([...form.keys()]).toEqual(['id', 'label', 'tags', 'localOnly', 'file']);
+    expect(form.get('tags')).toBe('a,b');
+  });
+
+  it('builds term queries', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 100 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await createHttpApi('/api').listOntologyTerms('pv', 2, { group: 'classes', root: true });
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      '/api/ontologies/pv/versions/2/terms?group=classes&root=1',
+    );
+  });
+});

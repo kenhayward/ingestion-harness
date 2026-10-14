@@ -23,6 +23,8 @@ export type Route =
   | { name: 'templates' }
   | { name: 'access' }
   | { name: 'models' }
+  | { name: 'ontologies' }
+  | { name: 'ontology'; ontologyId: string }
   | { name: 'results' }
   | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number }
@@ -42,6 +44,8 @@ export function parseHash(hash: string): Route {
   }
   const result = /^#\/results\/([^/]+)$/.exec(hash);
   if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
+  const ontology = /^#\/ontologies\/([^/]+)$/.exec(hash);
+  if (ontology) return { name: 'ontology', ontologyId: decodeURIComponent(ontology[1]!) };
   const project = /^#\/workbench\/([^/]+)(?:\/([a-z]+))?$/.exec(hash);
   if (project) {
     const tab = PROJECT_TABS.find((t) => t === project[2]) ?? 'overview';
@@ -53,12 +57,13 @@ export function parseHash(hash: string): Route {
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
   if (hash === '#/models') return { name: 'models' };
+  if (hash === '#/ontologies') return { name: 'ontologies' };
   return { name: 'home' };
 }
 
 /**
  * Minimal hash routing: #/ (home), #/jobs, #/review/<jobId>, #/results, #/results/<jobId>,
- * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>] (Overview by default).
+ * #/templates, #/templates/<id>/<version>, #/ontologies, #/ontologies/<id>, #/workbench, #/workbench/<id>[/<tab>] (Overview by default).
  */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));

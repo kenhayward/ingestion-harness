@@ -126,6 +126,10 @@ function SignedInApp({
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
   } else if (route.name === 'access') {
     page = <AccessPage api={api} me={me} query={query} />;
+  } else if (route.name === 'ontologies') {
+    page = <p>Ontologies</p>;
+  } else if (route.name === 'ontology') {
+    page = <p>{route.ontologyId}</p>;
   } else if (route.name === 'models') {
     page = <ModelsPage api={api} me={me} />;
   } else if (route.name === 'templates') {
