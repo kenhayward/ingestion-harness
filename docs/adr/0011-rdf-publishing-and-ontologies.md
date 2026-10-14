@@ -74,9 +74,16 @@ accepts each change. Mapping should work the same way.
     a published document is rendered once (rdflib, worker only). The Turtle goes to the S3
     target next to the CSV and JSON, so S3 stays the system of record and Fuseki can be rebuilt
     from it.
-  - **Fuseki:** the same bytes are then loaded into Fuseki, one named graph per document, with
-    a SPARQL Graph Store Protocol `PUT` that replaces the graph. Republishing and retries are
-    idempotent; deleting a document is `DROP GRAPH`.
+  - **Fuseki:** the same bytes are then loaded into Fuseki with a SPARQL Graph Store Protocol
+    `PUT` that replaces the graph. Republishing and retries are idempotent.
+  - **One original document, one graph.** The graph is keyed by the uploaded file's sha256
+    (`graph/source/{sha256}`), however many times the file is processed, re-uploaded or
+    published under another type; the newest publish replaces it. Publishes of one source are
+    serialised.
+  - **Versioned from day one.** `published_graphs` keeps the current version and
+    `published_graph_versions` every publish. The graph carries `ct:graphVersion`, and each
+    version's Turtle is kept in S3 (`graphs/{sha256}/v{n}.ttl`), so graph history can come
+    later without re-rendering. For now, a correction simply replaces the graph.
   - **Provenance:** PROV-O and Dublin Core terms for the job, recipe version, models, reviewer
     and source sha256 go in the same graph.
   - **Ontologies in Fuseki:** each ontology version is also loaded into its own named graph, so
@@ -107,13 +114,30 @@ accepts each change. Mapping should work the same way.
   - **Changing it:** after graphs have been published, a change must be confirmed and
     applies to new publishes only. Re-minting the published graphs is an explicit operator
     rebuild.
-  - **Layout under the base:** `doc/`, `job/`, `graph/document/`, `graph/ontology/`, entity
+  - **Layout under the base:** `doc/{sha256}`, `job/`, `graph/source/{sha256}`, `graph/ontology/`, entity
     paths from the recipe's IRI templates, and `def/{type}/` for the default vocabulary.
+- **Deleting withdraws what was delivered.**
+  - **Deleting a job:** removes its published S3 outputs (CSV, JSON, Turtle), and its graph when
+    that job published the current version.
+  - **Retiring a document type:** withdraws every graph and published output the type
+    delivered.
+  - **Unretiring:** re-delivers them from the reviewed documents kept in the runs bucket.
+  - **How it runs:** the API queues worker `withdraw` and `republish` jobs. Only the worker can
+    write to the target and reach Fuseki.
+  - **What it changes:** this reverses the earlier rule that published copies are kept, so
+    ADR 0005 and the retirement rules are amended where it is implemented.
+- **Hybrid retrieval with embeddings.** Mapping shortlists merge lexical search (Postgres
+  trigram and full text) with embedding similarity (pgvector) by reciprocal rank fusion.
+  - **Model:** a new `embedding_model` pipeline setting chooses it. Providers gain `embed`,
+    available on OpenAI-compatible endpoints.
+  - **Data policy:** it applies to embeddings as to chat models.
 - **Fuseki deployment.**
   - **Service:** a pinned compose service on TDB2 with a persistent volume.
   - **Access:** only the worker holds write credentials, for Graph Store Protocol writes.
-    Consumers get read-only SPARQL through a separate user and proxy, as with the lake S3 keys
-    ([ADR 0008](0008-s3-read-keys.md)). The admin endpoints are never exposed.
+    Consumers share one read-only SPARQL user (`ct-reader`) through the reverse proxy, which
+    sees every graph, ontology graphs included. Exposing library ontologies such as IDMP-O to
+    customers is agreed; each version records its licence. Per-consumer credentials are
+    possible later but not planned. The admin endpoints are never exposed.
   - **Recovery:** backups and compaction are scheduled. A rebuild command reloads every graph
     from S3.
 
@@ -123,7 +147,8 @@ accepts each change. Mapping should work the same way.
   - the brief's `ontologies` section, which also changes `brief.json` in bundles; older
     deployments refuse those bundles under their strict schemas, as with `completedStages`;
   - mapping change ops;
-  - job tasks `ontology` (import and parse) and `graph` (preview renders);
+  - job tasks `ontology` (import and parse), `graph` (preview renders), `embed`, `withdraw`
+    and `republish`;
   - object keys for ontology sources and graphs.
 - **The worker gains rdflib and pySHACL.** The API stays free of RDF parsing and LLM logic: it
   stores uploads, queues jobs and serves the parsed term tables.
@@ -141,9 +166,13 @@ accepts each change. Mapping should work the same way.
   type.
 - **Operations.** Fuseki and TDB2 are a new stateful service, with backups, compaction and
   storage growth from graph replaces. Consumers must not treat Fuseki as the record: S3 is.
-- **Retrieval.** Shortlists rely on lexical search over labels, synonyms and definitions
-  (Postgres trigram and full text). Embedding search may be needed for large ontologies or
-  ones with poor labels.
+- **Postgres needs pgvector.** The database image moves to a pinned `pgvector/pgvector`
+  Postgres 17 image everywhere (dev-infra, compose, test databases). Without an embedding
+  model, retrieval is lexical only.
+- **Deletion becomes destructive for delivered data.** Consumers lose outputs and graphs when a
+  job is deleted or a type retired. The delete and retire dialogs say so.
+- **Graphs replace one another across types.** Processing the same file under two document
+  types leaves one graph: the newest publish's.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).

@@ -25,6 +25,12 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Opt-in | Per document type: only recipes with a published mapping produce RDF |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
+| Graph identity | One original document (the uploaded file's sha256) = one graph, however often it is processed; the newest publish replaces it, with a version number kept from day one |
+| Consumer access | One shared read-only SPARQL user for now |
+| Ontology licensing | Library ontologies (IDMP-O etc.) are exposed to customers as ontology graphs |
+| Retrieval | Hybrid lexical and embedding search, shipped in the mapping-stage PR |
+| Deletion and retirement | Deleting a job or retiring a type withdraws its graphs **and** its published S3 outputs |
+| Corrections | Replace the graph for now; record a version for future history |
 | Base IRI | The published data belongs to the customer: one customer per deployment, under the customer's own domain, set by an admin in a new Linked data panel; when none is set, `https://id.stocks-hayward.com/{customer}/` |
 
 ## Goals and non-goals
@@ -98,9 +104,9 @@ identifier domain, `https://id.stocks-hayward.com/`.
 
 ### Layout under the base
 ```
-{base}doc/{document_id}               the document (uuid, opaque)
+{base}doc/{sha256}                    the original document (its uploaded file's sha256)
 {base}job/{job_id}                    provenance activity
-{base}graph/document/{document_id}    the document's named graph
+{base}graph/source/{sha256}           the original document's named graph (one, however often processed)
 {base}graph/ontology/{id}/{version}   an ontology version's graph (TBox)
 {base}{entity}/{key}                  entities from recipe IRI templates (batch, substance, …)
 {base}def/{typeId}/{term}             default vocabulary and recipe-local terms
@@ -197,6 +203,9 @@ IRIs are identities, so changing the base re-mints every IRI for consumers.
     properties, concepts, shapes), `imports jsonb` (each `owl:imports` IRI and what resolved it:
     a library version, a fetched URL, or unresolved);
   - `kinds text[]` (`owl`, `skos`, `shacl`, detected from content);
+  - `license` (`dcterms:license` or `cc:license` from the source, else entered at import),
+    shown in the browser: library ontologies are exposed to customers as ontology graphs
+    (decided), and the importing admin is responsible for the licence allowing it;
   - `imported_by`, `imported_at`.
 
   A `ready` version is immutable (trigger, as for published templates). Importing new content
@@ -251,7 +260,10 @@ The worker (`worker/src/ingest_worker/ontology.py`):
    write `normalized.nt`.
 5. **Load the TBox into Fuseki** (when configured): a Graph Store Protocol `PUT` of
    `normalized.nt` to `{base}graph/ontology/{id}/{version}`.
-6. **Finish:** set `status = ready`, with the `stats`.
+6. **Embed** the terms with the `embedding_model` (see *Embeddings*). When no embedding model
+   is set or the data policy refuses it, this step is skipped, the version stays lexical only,
+   and the browser says so.
+7. **Finish:** set `status = ready`, with the `stats`.
 
 Parse errors become `status = failed` with the message, and the job goes to `needs_review` (a
 `DocumentError`). Transport errors on a URL fetch are retried like any transient error.
@@ -342,7 +354,7 @@ semantics:
     acme: https://data.acme.example/def/pv/
   document:
     class: acme:ProcessValidationProtocol
-    iri: "doc/{document_id}"         # relative to the base IRI
+    iri: "doc/{source}"              # relative to the base IRI; {source} = the file's sha256
   fields:
     protocol_number: { property: acme:protocolNumber }        # datatype from the field type
     execution_date:  { property: acme:executionDate }
@@ -403,7 +415,9 @@ semantics:
   so nothing is silently dropped. The recipe checks list them (warn), and a shape can require
   them.
 - **IRIs** are relative to the deployment's base IRI (see *IRI policy*) unless absolute. Templates may
-  use `{document_id}`, `{type}`, `{version}`, `{value}` (fields), or column ids (rows).
+  use `{source}` (the original file's sha256), `{type}`, `{version}`, `{value}` (fields), or
+  column ids (rows). `{document_id}` is deliberately not offered: a document row is one upload,
+  not the original document.
 
 **Validation** (`semanticsIssues` in TS inside `templateIssues`; `Semantics.issues` in Python;
 shared fixture `packages/shared/test/fixtures/semantics-issues.json`):
@@ -455,9 +469,15 @@ term sets from `PgOntologyStore`.
    samples are never read, the same rule as revise.
 3. **Brief:** purpose, glossary and `ontologyGuidance`.
 4. **Candidate shortlist** per output and per document. `PgOntologyStore.candidates` searches
-   the selected vocabulary versions:
-   - **matching:** trigram on labels and synonyms plus full text on definitions, using the
+   the selected vocabulary versions with **hybrid retrieval** (decided: embeddings ship in this
+   stage's PR):
+   - **lexical:** trigram on labels and synonyms plus full text on definitions, using the
      output's name, description, id words and its top observed values;
+   - **semantic:** cosine similarity between an embedding of the output (name, description,
+     type and up to 5 observed values) and the term embeddings (see *Embeddings*);
+   - **fusion:** the two rankings merge by reciprocal rank fusion (`k = 60`). When a version
+     has no embeddings for the current model yet, retrieval is lexical only and the proposal
+     says so;
    - **kinds:** properties ranked by datatype or object compatibility with the `ValueType`;
      classes for the document and each table;
    - **concept candidates** per enum value or frequent text value, from schemes whose concepts
@@ -467,6 +487,42 @@ term sets from `PgOntologyStore`.
    and parents. All candidates are recorded in the proposal so people can see the alternatives.
 5. **Budget:** the context is capped at `drafting.MAX_MAPPING_TERMS` (300 terms in total). The
    worst-matching candidates are dropped first.
+
+### Embeddings
+- **Model.** A new pipeline model setting, `embedding_model` in `llm_settings` (migration; like
+  `ocr_model`, never a model choice). It must be an offered model on an endpoint whose kind
+  supports embeddings.
+- **Providers.** `LLMProvider` gains an optional `embed(texts) -> list[list[float]]`, with the
+  `openai-chat` and `openai-responses` kinds calling `/v1/embeddings`. That covers LM Studio,
+  vLLM and OpenAI. Anthropic has no embeddings endpoint, so an `anthropic` endpoint cannot be
+  the embedding model. Provider tests use stub SDK clients that assert the exact request
+  shape, as for completions.
+- **Default.** A local embedding model, so the default is local-only. The Models page shows the
+  setting under Pipeline models.
+- **Storage (pgvector).** Postgres needs the `vector` extension, so the database image changes
+  from `postgres:17-alpine` to the pinned `pgvector/pgvector` image for Postgres 17 (dev-infra,
+  compose and the throwaway test databases).
+  - **Table:** `ontology_term_embeddings` (`term_id`, `model_ref`, `dims`, `embedding vector`,
+    `text_sha256`).
+  - **Index:** an HNSW index is created per model as an expression index,
+    `((embedding::vector(N))) WHERE model_ref = '…'`, when the worker first stores that model's
+    vectors.
+- **When terms are embedded.**
+  - **At import:** step 6 of the import job, *Embed*, which runs after indexing. The text
+    is the label, synonyms, definition and parent labels, in batches of 64.
+  - **When the model changes:** changing `embedding_model` queues an `embed` job per ready
+    version, and retrieval stays lexical until each finishes.
+  - **Unchanged terms are reused:** a term whose `text_sha256` and model already have a vector
+    is not embedded again.
+- **Data policy.** Embedding the outputs sends observed values to the embedding model, so the
+  project's data policy and `localOnly` ontologies apply to the embedding endpoint as to the
+  chat model. An external embedding model is refused for a local-only project, and retrieval
+  falls back to lexical. Embedding the terms of a `localOnly` ontology on an external endpoint
+  is refused at import, which then stays lexical only.
+- **Measuring it.** `worker/tests/fixtures/mapping-recall/` holds a small hand-labelled set:
+  outputs, a fixture ontology, the expected terms. A table-driven test checks recall@15 of
+  lexical, semantic and hybrid retrieval with a deterministic fake embedder, so changes to the
+  ranking are visible. Real-model recall is measured offline and never in CI.
 
 ### Model output
 A flat schema (no union types, the same constraint as revise). Each change has an op, a target
@@ -531,8 +587,40 @@ Provenance in each graph:
     ct:reviewedBy "jane (token label)" ; prov:endedAtTime "2026-10-14T…"^^xsd:dateTime .
 ```
 
-Graph IRIs: `{base}graph/document/{document_id}`. Re-uploading the same file creates a
-new document, and so a new graph; `dcterms:source` lets consumers group them by sha256.
+### Graph identity and versions
+
+**Decided:** one original document creates one graph, however many times it is processed.
+- **What "the same document" means.** The original document is the uploaded file, identified
+  by its sha256 (`documents.sha256`, which is the `.docx` itself for Word, see ADR 0009). The
+  graph is `{base}graph/source/{sha256}` and the document node is `{base}doc/{sha256}`. These
+  all publish into that one graph:
+  - a retry, a re-process or a step re-run that is then approved;
+  - a re-upload of the same file;
+  - processing the file under another document type.
+
+  The newest publish replaces the graph. The provenance records the job, the recipe and the
+  document row that produced the current version.
+- **Serialised per source.** A publish takes `pg_advisory_xact_lock(hashtext('graph:' ||
+  sha256))` around reading and incrementing the version and the Graph Store Protocol `PUT`, so
+  two jobs of the same file can never interleave. A job whose reviewed document is older than
+  the graph's current version (approved earlier, published later after a retry) still
+  publishes: the newest *publish* wins, which is what a person approving last expects.
+- **A version from day one** (for corrections later). The table `published_graphs`
+  (`sha256` primary key, `graph_iri`, `version`, `job_id`, `document_id`, `template_id`,
+  `template_version`, `base_iri`, `triples`, `published_at`) holds the current version. The
+  append-only `published_graph_versions` holds one row per publish. Each publish increments
+  `version`, and the graph says so:
+
+  ```turtle
+  <graph/source/ab12…> ct:graphVersion 3 ;
+      dcterms:modified "2026-10-14T…"^^xsd:dateTime ;
+      prov:wasRevisionOf <graph/source/ab12…/v2> .   # names the previous version; not stored yet
+  ```
+
+  Each version's Turtle is also kept in the S3 target at `graphs/{sha256}/v{n}.ttl`, beside the
+  job's own outputs. So a later phase can offer history (versioned graphs, a change feed)
+  without re-rendering anything. In this phase only the current version is in Fuseki.
+- **Counts and status:** the Linked data panel reads `published_graphs`.
 
 ### Graph previews
 A `graph` job (document-less, `priority = -5`, one per project; a new preview deletes the old,
@@ -566,13 +654,51 @@ slow. The UI polls as it does for segment previews. Previews never call a model.
      - **Transient failures:** a 5xx or a transport error raises, and the publish task is
        retried with backoff. The S3 writes and the `PUT` are both idempotent.
      - **Permanent failures:** a 4xx goes to `needs_review` with the response.
-  5. Record the event `graph published` (`graph`, `triples`).
+  5. Record the new version in `published_graphs`/`published_graph_versions` (same
+     transaction as the lock) and the event `graph published` (`graph`, `version`, `triples`).
 - **Test runs** (`deliver=False`) write the Turtle and report to the runs bucket only. They
   never touch Fuseki.
 
 The publisher is a port (`publishers.py`): `Publisher.publish(rendered) -> list[Published]`,
 with `S3Publisher` (today's `Target`) and `GraphStorePublisher`. Unit tests use
 `FakeGraphStore`, which records the requests.
+
+### Deletion and retirement remove what was delivered
+
+**Decided:** deleting removes the graph, and with it the job's published S3 outputs. This
+changes today's rule that published target copies are kept (ADR 0005, migration 0030). The
+change applies to CSV and JSON as well as RDF, and it needs its own short ADR amendment.
+
+- **Withdrawals are worker jobs.** Only the worker can reach Fuseki, and only the worker has
+  write access to the target (ADR 0004), so the API never deletes from them itself. It queues a
+  document-less `withdraw` job (new task, `priority = 0`) in the same transaction as the
+  deletion. Its params name what to remove: the graph's `sha256`, and the target keys from the
+  job's published `job_outputs` rows. A withdrawal is retried until it succeeds, like any
+  transient failure. Its job is kept and visible to admins on the Jobs page (task filter), so a
+  stuck withdrawal is noticed.
+- **Deleting a job** (`DELETE /api/jobs/:id`, and the bulk delete):
+  - **Its own outputs:** its published target objects are removed.
+  - **The graph:** the source's graph is dropped (`DROP GRAPH`, a Graph Store Protocol
+    `DELETE`) only if that job published the graph's **current** version. Its rows in
+    `published_graphs` and `published_graph_versions` are removed, and so are its
+    `graphs/{sha256}/v{n}.ttl` copies.
+  - **Another job's graph is untouched:** if another job published the current version, the
+    graph stays. Only the deleted job's version rows and copies go.
+  - **No automatic restore:** deleting the current version's job does not bring back an earlier
+    version. An operator re-publishes if wanted.
+- **Deleting a Workbench project** needs nothing new: only never-published types can be deleted,
+  and test runs never publish.
+- **Retiring a document type** withdraws everything the type delivered: each graph whose
+  current version came from that type, and its jobs' published target objects. The type and
+  its jobs stay readable, as retirement promises. The reviewed documents stay in the runs bucket.
+- **Unretiring** queues one `republish` job (document-less, `priority = -10`). For each
+  withdrawn job it re-renders the CSV, JSON and Turtle from `{job}/reviewed-document.json` with
+  that job's recipe version, writes them back to the target and re-publishes the graphs as new
+  versions. Retirement can therefore be undone, at the cost of re-delivery. `rdf_rebuild` uses
+  the same code.
+- **Contract and docs:** the retirement rules in CLAUDE.md ("Nothing is deleted") and ADR 0005
+  must be amended in the same PR that implements this. The web's delete and retire dialogs
+  say that published outputs and graphs will be withdrawn.
 
 ## Fuseki deployment
 
@@ -590,8 +716,14 @@ with `S3Publisher` (today's `Target`) and `GraphStorePublisher`. Unit tests use
   `RDF_ENDPOINT` is unset, no Fuseki writes happen, and the Turtle still goes to S3. The base
   IRI is not an environment variable: it is the admin's Linked data setting (see
   *IRI policy*).
-- **Consumers:** read-only SPARQL through the reverse proxy, like the lake S3 host. Phase 1
-  uses one shared reader credential. Per-consumer credentials are an open question.
+- **Consumers (decided):** one shared read-only user, `ct-reader`, reaches `/ct/sparql` and
+  `/ct/get` through the reverse proxy, like the lake S3 host.
+  - **Credentials:** its password is `RDF_READER_PASSWORD` in the deploy host's env file,
+    written into the Shiro config at start. Changing it means a restart.
+  - **The panel:** shows the endpoint URL and the user name, never the password.
+  - **Later:** per-consumer credentials are possible but not planned.
+  - **What consumers see:** the reader sees every graph, document data and ontology graphs
+    alike. Exposing IDMP-O and the other library ontologies to the customer is agreed.
 - **Operations:**
   - **Backups:** a nightly `/$/backup/ct` (via the deploy host's cron) to the backups volume.
   - **Compaction:** a weekly `/$/compact/ct?deleteOld=true`, because graph replaces leave
@@ -657,7 +789,7 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 | Recipe `semantics` block, validation | `SemanticsSchema`, `semanticsIssues` in `packages/shared/src/template.ts` | `template.Semantics`, `Semantics.issues`; fixture `semantics-issues.json` |
 | Brief ontologies | `BriefBodySchema.ontologies/ontologyGuidance`, `BRIEF_SECTIONS` | `drafting.DraftParams` (brief passed in params) |
 | Mapping change ops | `DraftChangeSchema` (5 ops), `applyChanges` | `draft_changes.apply_changes`, `draft_stages.MAPPING`; fixture `draft-changes.json` |
-| Job tasks `ontology`, `graph`; `publish → awaiting_review` | `packages/shared/src/jobs.ts` | migration CHECK list, `queue.py` |
+| Job tasks `ontology`, `graph`, `embed`, `withdraw`, `republish`; `publish → awaiting_review` | `packages/shared/src/jobs.ts` | migration CHECK list, `queue.py` |
 | Object keys | `ontologySourceKey`, `graphPreviewKey`, `.ttl` in `outputKey` | `storage.ontology_source_key`, `graph_preview_key`, `output_key(…, "ttl")` |
 | Ontology tables | `OntologyRepo` (`apps/api/src/ontologies/`) | `PgOntologyStore` (worker reads terms, writes parse results) |
 | Linked data settings, base IRI | `LinkedDataSettingsSchema`, `effectiveBaseIri`, `FALLBACK_BASE_IRI` in `packages/shared/src/linked-data.ts`; `LinkedDataRepo` | `rdf.effective_base_iri`, `PgLinkedDataSettings` (reads `linked_data_settings`); shared fixture `packages/shared/test/fixtures/base-iri.json` |
@@ -670,14 +802,17 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 3. **Recipe `semantics` and rendering:** contract on both sides, validation, the recipe
    editor's Mapping sub-tab (hand mapping), Turtle in test runs, graph previews, sample graph
    view, and the Linked data admin panel (`linked_data_settings`, base IRI with fallback).
-4. **Brief and the LLM mapping stage:** brief ontologies, `mapping` stage, shortlist
-   retrieval, Mapping tab, overview stage, bundle changes.
+4. **Brief and the LLM mapping stage:** brief ontologies, `mapping` stage, hybrid shortlist
+   retrieval with embeddings (`embed` on providers, `embedding_model` setting, pgvector image,
+   term embeddings, recall fixture), Mapping tab, overview stage, bundle changes.
 5. **SHACL:** validation in process and publish, review reasons, the
    `publish → awaiting_review` transition, the Review screen's Graph tab.
-6. **Fuseki:** compose service, config, `GraphStorePublisher`, TBox loads, job graph status,
+6. **Fuseki:** compose service, config, `GraphStorePublisher`, graph identity per source with
+   `published_graphs` versions and versioned Turtle copies, TBox loads, job graph status,
    rebuild and backfill commands, backups and compaction docs, smoke test.
-7. **Consumer access:** reader credentials through the proxy (and per-consumer credentials if
-   decided), docs for consumers.
+7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
+   retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
+   `ct-reader` user through the proxy, docs for consumers.
 
 Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). Step 6 can be
 pulled forward if consumers need SPARQL early with hand-written mappings.
@@ -685,16 +820,16 @@ pulled forward if consumers need SPARQL early with hand-written mappings.
 ## Open questions (for the chief architect)
 1. **Entity IRI opacity:** should entity IRIs be readable (`batch/acme-site-1/pv-2301`) or
    opaque (a hash of the scoped key)? Readable IRIs leak values into identifiers. Either way
-   they change when a value is corrected. The base IRI itself is decided (see *IRI policy*).
-2. **Graph identity:** one graph per uploaded document (proposed), or per source file (sha256)
-   so re-uploads replace earlier graphs?
-3. **Consumer access:** one shared read-only SPARQL user, per-consumer credentials (as with
-   lake S3 keys), or a SPARQL gateway that applies per-type visibility?
-4. **Licensing:** may industry ontologies (for example IDMP-O, or licensed terminologies) be
-   stored in the library and in Fuseki, and exposed to consumers in the TBox graphs?
-5. **Retrieval quality:** is lexical shortlisting enough for the ontologies in scope, or should
-   phase 4 include embedding search (pgvector) from the start?
-6. **Deletion and retirement:** should deleting a job or retiring a type remove its graphs?
-   Today published S3 copies are kept, and the proposal keeps graphs the same way.
-7. **Corrections after publication:** if a published document is later re-reviewed, the graph
-   is replaced. Do consumers need history (graph versions or a change feed)?
+   they change when a value is corrected.
+2. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from
+   the kept reviewed documents when the type is unretired. Is re-delivery acceptable, or should
+   retiring only hide the type and leave delivered data in place?
+
+Resolved on 2026-10-14 (see *Scope decisions*):
+- base IRI;
+- graph identity;
+- consumer access;
+- ontology licensing;
+- retrieval;
+- deletion and retirement;
+- corrections.
