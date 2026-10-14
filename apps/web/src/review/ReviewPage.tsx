@@ -6,6 +6,7 @@ import { Icon } from '../ui/Icon.js';
 import { DecisionBar } from './DecisionBar.js';
 import { EditableValue } from './EditableValue.js';
 import { FieldsGrid } from './FieldsGrid.js';
+import { GraphTab } from './GraphTab.js';
 import { display, effectiveView } from './effective.js';
 import { PageViewer } from './PageViewer.js';
 import { flaggedTargets, targetKey } from './queue.js';
@@ -126,6 +127,19 @@ export function ReviewPage({
 
   const fieldsFlagged = template.outputs.fields.some((f) => view.fields[f.id]?.flags.length);
   const extractSteps = template.pipeline.filter((p) => p.type === 'extract').length;
+  const hasGraph = job.outputs.some((o) => o.stage === 'draft' && o.format === 'rdf');
+  const shaclReasons = (job.reviewReasons ?? []).filter((r) => r.startsWith('SHACL:')).length;
+  /** A SHACL result's output: a field, a table or `table.column`; path IRIs open nothing. */
+  const openOutput = (output: string) => {
+    const table = template.outputs.tables.find(
+      (t) => output === t.id || output.startsWith(`${t.id}.`),
+    );
+    if (table) setTab(table.id);
+    else if (template.outputs.fields.some((f) => f.id === output)) {
+      setTab('fields');
+      setSelectedField(output);
+    }
+  };
   const nextFlagged = () => {
     const next = (cursor + 1) % targets.length;
     const target = targets[next]!;
@@ -190,6 +204,7 @@ export function ReviewPage({
               )}
               {tabButton('edits', 'Edits', edits.length)}
               {tabButton('steps', 'Steps', extractSteps)}
+              {hasGraph && tabButton('graph', 'Graph', shaclReasons, shaclReasons > 0)}
             </div>
             {targets.length > 0 && (
               <button type="button" className="next-flagged" onClick={nextFlagged}>
@@ -198,6 +213,10 @@ export function ReviewPage({
               </button>
             )}
           </div>
+
+          {tab === 'graph' && hasGraph && (
+            <GraphTab api={api} jobId={jobId} onOpenOutput={openOutput} />
+          )}
 
           {tab === 'fields' && (
             <FieldsGrid

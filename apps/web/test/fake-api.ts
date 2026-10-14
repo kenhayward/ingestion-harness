@@ -364,6 +364,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     upload: vi.fn(async () => job()),
     outputUrl: (jobId, outputId, opts) => outputPath('/api', jobId, outputId, opts),
     getOutputText: vi.fn(async () => ''),
+    getShaclReport: vi.fn(async () => null),
     listResults: vi.fn(async () => []),
     getResult: vi.fn(async () => {
       throw new Error('getResult not stubbed');

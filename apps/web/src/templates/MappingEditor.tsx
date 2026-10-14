@@ -7,6 +7,7 @@ import type {
   OntologyTermKind,
   OutputMapping,
   Semantics,
+  ShaclReport,
   TermGroup,
 } from '@ih/shared';
 import { CURIE_PREFIXES } from '@ih/shared';
@@ -382,6 +383,27 @@ function PrefixRows({
 
 const ACTIVE = new Set(['queued', 'running']);
 
+/** A previewed sample's SHACL violations (ADR 0011 step 5). */
+function ReportSummary({ report }: { report: ShaclReport }) {
+  const violations = report.results.filter((r) => r.severity === 'Violation');
+  if (violations.length === 0) return <p className="muted">Conforms to the shapes.</p>;
+  return (
+    <div className="shacl-summary">
+      <p className="field-error">
+        {violations.length} {violations.length === 1 ? 'violation' : 'violations'}: publishing would
+        go back to review.
+      </p>
+      <ul>
+        {violations.map((v, i) => (
+          <li key={i}>
+            {v.output}: {v.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Render the saved draft's mapping over the dev samples' newest finished runs. */
 export function GraphPreview({
   api,
@@ -445,6 +467,7 @@ export function GraphPreview({
           <summary>
             {s.fileName} · {s.triples} {s.triples === 1 ? 'triple' : 'triples'}
           </summary>
+          {s.report && <ReportSummary report={s.report} />}
           <pre className="turtle">{s.turtle}</pre>
         </details>
       ))}
@@ -513,8 +536,8 @@ export function MappingEditor({
 
   return (
     <div className="mapping-editor">
-      <section>
-        <h3>Ontologies</h3>
+      <section aria-labelledby="mapping-ontologies">
+        <h3 id="mapping-ontologies">Ontologies</h3>
         <ul className="pins">
           {s.ontologies.map((p, i) => (
             <li key={`${p.id}@${p.version}`}>
@@ -537,6 +560,36 @@ export function MappingEditor({
             set({
               ontologies: [...s.ontologies.filter((p) => p.id !== id), { id, version }],
             })
+          }
+        />
+      </section>
+
+      <section aria-labelledby="mapping-shapes">
+        <h3 id="mapping-shapes">Shapes</h3>
+        <p className="muted">
+          SHACL shapes the document&apos;s graph is checked against: a violation sends the job to
+          review, and publishing its graph waits until it is fixed.
+        </p>
+        <ul className="pins">
+          {s.shapes.map((p, i) => (
+            <li key={`${p.id}@${p.version}`}>
+              <a href={`#/ontologies/${encodeURIComponent(p.id)}`}>
+                {p.id} v{p.version}
+              </a>{' '}
+              <button
+                type="button"
+                aria-label={`Unpin shapes ${p.id} v${p.version}`}
+                onClick={() => set({ shapes: s.shapes.filter((_, j) => j !== i) })}
+              >
+                Unpin
+              </button>
+            </li>
+          ))}
+        </ul>
+        <PinForm
+          api={api}
+          onPin={(id, version) =>
+            set({ shapes: [...s.shapes.filter((p) => p.id !== id), { id, version }] })
           }
         />
       </section>

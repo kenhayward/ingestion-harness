@@ -447,3 +447,61 @@ describe('ReviewPage between documents', () => {
     expect(screen.getByRole('img', { name: /page 3 of 3/i })).toBeInTheDocument();
   });
 });
+
+describe('ReviewPage graph (ADR 0011 step 5)', () => {
+  const graphOutput = {
+    outputId: 'graph',
+    stage: 'draft' as const,
+    format: 'rdf' as const,
+    bucket: 'outputs',
+    key: `${JOB_ID}/graph.ttl`,
+    rowCount: null,
+  };
+
+  it('has no Graph tab without a graph output', async () => {
+    setup();
+    await screen.findByRole('tab', { name: /Fields/ });
+    expect(screen.queryByRole('tab', { name: /Graph/ })).toBeNull();
+  });
+
+  it('shows the graph and its SHACL results, each opening the output it names', async () => {
+    const data = reviewData();
+    data.job = { ...data.job, outputs: [graphOutput] };
+    data.job.reviewReasons = ['SHACL: LetterShape on results.batch: batches are known'];
+    const { api } = setup({
+      getReview: vi.fn(async () => data),
+      getOutputText: vi.fn(async () => '<a> <b> <c> .'),
+      getShaclReport: vi.fn(async () => ({
+        conforms: false,
+        results: [
+          {
+            severity: 'Violation' as const,
+            shape: 'https://a/LetterShape',
+            focus: 'https://d/x',
+            path: 'https://a/batch',
+            output: 'results.batch',
+            message: 'batches are known',
+            value: 'GX',
+          },
+          {
+            severity: 'Warning' as const,
+            shape: 'https://a/LetterShape',
+            focus: 'https://d/x',
+            path: 'https://a/product',
+            output: 'product',
+            message: 'short product',
+            value: 'R',
+          },
+        ],
+      })),
+    });
+    await userEvent.click(await screen.findByRole('tab', { name: /Graph 1 \(flagged\)/ }));
+    expect(await screen.findByText('<a> <b> <c> .')).toBeInTheDocument();
+    expect(api.getShaclReport).toHaveBeenCalledWith(JOB_ID);
+    await userEvent.click(screen.getByRole('button', { name: 'Show results.batch' }));
+    expect(screen.getByRole('tab', { name: /results/ })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(screen.getByRole('tab', { name: /Graph/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Show product' }));
+    expect(screen.getByRole('tab', { name: /Fields/ })).toHaveAttribute('aria-selected', 'true');
+  });
+});

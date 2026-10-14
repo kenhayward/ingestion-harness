@@ -1,5 +1,6 @@
 import type {
   GraphPreviewView,
+  ShaclReport,
   LinkedDataBody,
   LinkedDataView,
   Neighbourhood,
@@ -379,6 +380,8 @@ export interface Api {
   outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
   /** Published or draft output body as text (Results previews). Rejects with the API error. */
   getOutputText(jobId: string, outputId: string, stage: 'draft' | 'published'): Promise<string>;
+  /** The job's SHACL report of its graph (ADR 0011 step 5); null when it has none. */
+  getShaclReport(jobId: string): Promise<ShaclReport | null>;
   listResults(query?: {
     templateId?: string;
     /** File name substring (case-insensitive). */
@@ -1006,6 +1009,11 @@ export function createHttpApi(base = '/api'): Api {
       const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));
       if (!res.ok) throw new Error(await errorMessage(res));
       return res.text();
+    },
+    getShaclReport: async (jobId) => {
+      const res = await apiFetch(`${base}/jobs/${jobId}/shacl-report`);
+      if (res.status === 404) return null;
+      return json<ShaclReport>(res);
     },
     listResults: (query = {}) => {
       const params = new URLSearchParams();

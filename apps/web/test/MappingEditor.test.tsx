@@ -87,11 +87,12 @@ describe('MappingEditor', () => {
       })) as unknown as Api['getOntology'],
     });
     const { last } = setup({ ...mapped, ontologies: [] }, api);
-    await userEvent.selectOptions(await screen.findByLabelText('Ontology'), 'acme');
-    const version = await screen.findByLabelText('Version');
+    const pins = screen.getByRole('region', { name: 'Ontologies' });
+    await userEvent.selectOptions(await within(pins).findByLabelText('Ontology'), 'acme');
+    const version = await within(pins).findByLabelText('Version');
     expect(within(version).queryByRole('option', { name: 'v2' })).toBeNull();
     await userEvent.selectOptions(version, '1');
-    await userEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    await userEvent.click(within(pins).getByRole('button', { name: 'Pin' }));
     expect(last()?.ontologies).toEqual([{ id: 'acme', version: 1 }]);
   });
 
@@ -217,5 +218,61 @@ describe('MappingEditor prefixes', () => {
     expect(last()?.prefixes).toEqual({ ex: 'https://ex.example/', e: 'https://ey.example/' });
     await userEvent.type(second, '2');
     expect(last()?.prefixes).toEqual({ ex: 'https://ex.example/', ex2: 'https://ey.example/' });
+  });
+});
+
+describe('MappingEditor shapes (ADR 0011 step 5)', () => {
+  it('pins a ready version as the shapes the graph is checked against', async () => {
+    const api = fakeApi({
+      listOntologies: vi.fn(async () => [
+        { id: 'acme-shapes', label: 'Acme shapes' } as Awaited<
+          ReturnType<Api['listOntologies']>
+        >[number],
+      ]),
+      getOntology: vi.fn(async () => ({
+        id: 'acme-shapes',
+        label: 'Acme shapes',
+        versions: [{ version: 1, status: 'ready' }],
+      })) as unknown as Api['getOntology'],
+    });
+    const { last } = setup(mapped, api);
+    const shapes = screen.getByRole('region', { name: 'Shapes' });
+    await userEvent.selectOptions(await within(shapes).findByLabelText('Ontology'), 'acme-shapes');
+    await userEvent.selectOptions(await within(shapes).findByLabelText('Version'), '1');
+    await userEvent.click(within(shapes).getByRole('button', { name: 'Pin' }));
+    expect(last()?.shapes).toEqual([{ id: 'acme-shapes', version: 1 }]);
+  });
+
+  it('shows each previewed sample violations', async () => {
+    const report = {
+      conforms: false,
+      results: [
+        {
+          severity: 'Violation' as const,
+          shape: 'https://a/S',
+          focus: 'https://d/x',
+          path: 'https://a/p',
+          output: 'sender',
+          message: 'a letter names its sender',
+          value: '',
+        },
+      ],
+    };
+    const startGraphPreview = vi.fn(async () => ({
+      jobId: 'g1',
+      status: 'queued' as const,
+      error: null,
+      result: null,
+    }));
+    const getGraphPreview = vi.fn(async () => ({
+      jobId: 'g1',
+      status: 'succeeded' as const,
+      error: null,
+      result: { samples: [{ sampleId: 's1', fileName: 's1.pdf', turtle: '', triples: 0, report }] },
+    }));
+    setup(mapped, fakeApi({ startGraphPreview, getGraphPreview }), { projectId: 'letter' });
+    await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
+    expect(await screen.findByText(/1 violation/)).toBeInTheDocument();
+    expect(screen.getByText(/sender: a letter names its sender/)).toBeInTheDocument();
   });
 });
