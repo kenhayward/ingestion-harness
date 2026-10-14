@@ -21,6 +21,7 @@ from pypdf.errors import FileNotDecryptedError, PdfReadError, WrongPasswordError
 from .anchor_hints import suggest_anchor
 from .convert import ConversionRejected
 from .ocr import pages_needing_ocr
+from .pipeline import PREPARE_PROGRESS as PREPARE_PROGRESS  # re-exported: the Samples tab's
 from .pipeline import (
     DocumentError,
     JobCancelled,
@@ -41,8 +42,8 @@ log = logging.getLogger("ingest_worker")
 LINE_LIMIT = 200
 
 
-#: Job events the API reads for the Samples tab (TS: PREPARE_PROGRESS_EVENT, PREPARE_FAILED_EVENT).
-PREPARE_PROGRESS = "prepare progress"
+#: Job event the API reads for the Samples tab (TS: PREPARE_FAILED_EVENT). Progress is
+#: `pipeline.PREPARE_PROGRESS` (TS: PREPARE_PROGRESS_EVENT), shared with production jobs.
 PREPARE_FAILED = "prepare failed"
 
 #: TS: PREPARE_ERROR_CODES (packages/shared/src/workbench.ts).

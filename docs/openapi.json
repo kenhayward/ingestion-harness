@@ -2863,7 +2863,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`.",
+        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it).",
         "parameters": [
           {
             "schema": {
@@ -3075,6 +3075,125 @@
                         ],
                         "additionalProperties": true
                       }
+                    },
+                    "progress": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "stage": {
+                                  "type": "string",
+                                  "enum": [
+                                    "text",
+                                    "ocr"
+                                  ]
+                                },
+                                "page": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "of": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "prepare"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "stage",
+                                "page",
+                                "of",
+                                "kind"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "segmented"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "step": {
+                                  "type": "string"
+                                },
+                                "index": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "of": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "attempt": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "chunk": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "n": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "of": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "n",
+                                        "of"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "step"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "step",
+                                "index",
+                                "of",
+                                "attempt",
+                                "chunk",
+                                "kind"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -4517,6 +4636,93 @@
         }
       }
     },
+    "/api/jobs/{id}/events": {
+      "get": {
+        "operationId": "watchJob",
+        "summary": "Follow a job's status and progress",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "A [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)\nstream. Each `job` event's data is JSON `{ job, progress }`: the job summary and,\nwhile an extraction runs, where it is (`prepare`: the text layer or OCR page\n`page` of `of`; `segmented`; `step`: extract step `index` of `of`, its\nattempt and chunk). It is sent at once and again whenever either changes. The stream\nends after the job leaves `queued` and `running` (it is sent first), and with a\n`gone` event when the job is deleted. A comment line keeps it open every 15 s.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models": {
       "get": {
         "operationId": "listModels",
@@ -4937,6 +5143,125 @@
                             ],
                             "additionalProperties": true
                           }
+                        },
+                        "progress": {
+                          "anyOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text",
+                                        "ocr"
+                                      ]
+                                    },
+                                    "page": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "of": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "prepare"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "page",
+                                    "of",
+                                    "kind"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "segmented"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "step": {
+                                      "type": "string"
+                                    },
+                                    "index": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "of": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "attempt": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "chunk": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "n": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "of": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "n",
+                                            "of"
+                                          ],
+                                          "additionalProperties": true
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "step"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "step",
+                                    "index",
+                                    "of",
+                                    "attempt",
+                                    "chunk",
+                                    "kind"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [

@@ -19,6 +19,7 @@ import type {
   IterationView,
   ExportView,
   JobDetail,
+  JobLive,
   JobSummary,
   KeepableStage,
   LlmChoicesView,
@@ -234,6 +235,12 @@ export interface CleanupResult {
 }
 
 /** API port — components take this as a prop so tests can pass a fake. */
+export interface JobWatchHandlers {
+  update(live: JobLive): void;
+  gone(): void;
+  error(): void;
+}
+
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
@@ -288,6 +295,12 @@ export interface Api {
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
   listJobs(opts?: { mine?: boolean }): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
+  /**
+   * Follow a job live (Server-Sent Events, `GET /api/jobs/:id/events`): `update` on every change
+   * until it leaves queued and running, `gone` once deleted, `error` when the stream is not
+   * available (the caller polls instead). Returns stop.
+   */
+  watchJob(id: string, on: JobWatchHandlers): () => void;
   /** model: a ref to retry with, or null for the spec default (clears the override). */
   retryJob(id: string, model?: string | null): Promise<JobSummary>;
   cancelJob(id: string): Promise<JobSummary>;
@@ -643,6 +656,7 @@ export function createHttpApi(base = '/api'): Api {
     listJobs: (opts) =>
       apiFetch(`${base}/jobs${opts?.mine ? '?mine=1' : ''}`).then(json<JobSummary[]>),
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
+    watchJob: (id, on) => watchJobEvents(`${base}/jobs/${id}/events`, on),
     retryJob: (id, model) =>
       post<JobSummary>(`${base}/jobs/${id}/retry`, model === undefined ? {} : { model }),
     cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
@@ -929,3 +943,35 @@ export function createHttpApi(base = '/api'): Api {
 }
 
 export const httpApi = createHttpApi();
+
+/**
+ * A job's live stream. The browser reconnects a dropped stream by itself (the server says after
+ * 3 s), so `error` is only reported once it gives up (a refused request: signed out, not found)
+ * or when there is no EventSource at all. A finished job's stream is closed here: the server
+ * ends it, and the browser would otherwise reconnect.
+ */
+function watchJobEvents(url: string, on: JobWatchHandlers): () => void {
+  if (typeof EventSource === 'undefined') {
+    let stopped = false;
+    queueMicrotask(() => {
+      if (!stopped) on.error();
+    });
+    return () => {
+      stopped = true;
+    };
+  }
+  const source = new EventSource(url);
+  source.addEventListener('job', (e) => {
+    const live = JSON.parse((e as MessageEvent<string>).data) as JobLive;
+    if (live.job.status !== 'queued' && live.job.status !== 'running') source.close();
+    on.update(live);
+  });
+  source.addEventListener('gone', () => {
+    source.close();
+    on.gone();
+  });
+  source.onerror = () => {
+    if (source.readyState === EventSource.CLOSED) on.error();
+  };
+  return () => source.close();
+}

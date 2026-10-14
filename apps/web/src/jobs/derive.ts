@@ -1,5 +1,6 @@
 import {
   pickedChoice,
+  type JobProgress,
   type JobStatus,
   type JobSummary,
   type ModelChoice,
@@ -95,25 +96,35 @@ const STATE_TEXT: Record<StepState, string> = {
 };
 
 /**
- * The five-step progress list, derived from the status and the step runs: the worker doesn't
- * record its stage yet (handoff A1, phase 2). A step run proves text and sections were done;
- * every run succeeding proves extraction. `runs` is null while they load.
+ * The five-step progress list, derived from the status, the step runs and, while the job runs,
+ * its latest progress (`GET /api/jobs/:id/events`). Without progress a step run proves text and
+ * sections were done; every run succeeding proves extraction. `runs` is null while they load.
  */
 export function progressSteps(
   job: JobSummary,
   runs: readonly StepRun[] | null,
+  progress: JobProgress | null = null,
 ): { label: string; state: StepState; text: string }[] {
   const upTo = (done: number, next: StepState | null): StepState[] =>
     STEP_LABELS.map((_, i) => (i < done ? 'done' : i === done && next ? next : 'todo'));
   const ran = runs !== null && runs.length > 0;
   const extracted = ran && runs.every((r) => r.status === 'succeeded');
   let states: StepState[];
+  let running: string | null = null;
   switch (job.status) {
     case 'queued':
       states = upTo(0, null);
       break;
     case 'running':
-      states = ran ? upTo(2, 'current') : upTo(0, 'current');
+      if (progress?.kind === 'prepare') {
+        states = upTo(0, 'current');
+        running = readingText(progress);
+      } else if (progress) {
+        states = upTo(2, 'current');
+        running = progress.kind === 'step' ? stepText(progress) : 'Starting';
+      } else {
+        states = ran ? upTo(2, 'current') : upTo(0, 'current');
+      }
       break;
     case 'awaiting_review':
       states = upTo(4, 'wait');
@@ -136,8 +147,20 @@ export function progressSteps(
   return STEP_LABELS.map((label, i) => ({
     label,
     state: states[i]!,
-    text: STATE_TEXT[states[i]!],
+    text: states[i] === 'current' && running ? running : STATE_TEXT[states[i]!],
   }));
+}
+
+const pages = (n: number) => `${n} ${n === 1 ? 'page' : 'pages'}`;
+
+function readingText(p: Extract<JobProgress, { kind: 'prepare' }>): string {
+  return p.stage === 'ocr' ? `OCR ${p.page} of ${pages(p.of)}` : `Reading ${pages(p.of)}`;
+}
+
+function stepText(p: Extract<JobProgress, { kind: 'step' }>): string {
+  const where = `Step ${p.index} of ${p.of}`;
+  if (p.chunk) return `${where} · part ${p.chunk.n} of ${p.chunk.of}`;
+  return p.attempt > 1 ? `${where} · try ${p.attempt}` : where;
 }
 
 /** "6 min ago", "Yesterday", … ; a timestamp slightly in the future (clock skew) is "Just now". */

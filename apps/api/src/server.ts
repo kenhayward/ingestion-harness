@@ -2,6 +2,7 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { buildApp } from './app.js';
 import { loadConfig, s3KeysConfig, targetConfig } from './config.js';
+import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgRepo } from './repositories/pg.js';
@@ -44,8 +45,13 @@ const s3Keys =
     ...s3KeySettings,
   });
 
+// One LISTEN connection for every live job stream; errors are logged once the app has a logger.
+let logWatchError: (err: unknown) => void = () => {};
+const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err));
+
 const app = await buildApp({
   repo,
+  jobWatch,
   templates,
   workbench,
   store: new S3ObjectStore(s3),
@@ -72,11 +78,14 @@ const app = await buildApp({
   logger: { level: config.LOG_LEVEL },
 });
 
+logWatchError = (err) => app.log.warn({ err }, 'job change notifications lost; reconnecting');
+
 let stopReconciler = () => {};
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
     stopReconciler();
     await app.close();
+    await jobWatch.close();
     await repo.close();
     process.exit(0);
   });

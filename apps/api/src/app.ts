@@ -3,7 +3,9 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
+import type { JobWatch } from './jobs/watch.js';
 import { registerOpenApi } from './openapi/plugin.js';
+import { jobLiveRoutes } from './routes/job-live.js';
 import type { S3KeyService } from './s3keys/service.js';
 import type { LlmConfigRepo } from './llm/repo.js';
 import type { SecretsKeys } from './llm/secrets.js';
@@ -48,6 +50,10 @@ export interface AppDeps {
   llm: LlmConfigRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
+  /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
+  jobWatch?: JobWatch | null;
+  /** How often a live job stream re-reads its job and pings (default 15 s; tests shorten it). */
+  liveHeartbeatMs?: number;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };
@@ -82,6 +88,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(specRoutes, { prefix: '/api' });
   await app.register(documentRoutes, { prefix: '/api' });
   await app.register(jobRoutes, { prefix: '/api' });
+  await app.register(jobLiveRoutes, { prefix: '/api' });
   await app.register(modelRoutes, { prefix: '/api' });
   await app.register(reviewRoutes, { prefix: '/api' });
   await app.register(templateRoutes, { prefix: '/api' });

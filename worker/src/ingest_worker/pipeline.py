@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,24 @@ from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
+log = logging.getLogger("ingest_worker")
+
+#: Job events the API reads to show where a running extraction is (TS: PREPARE_PROGRESS_EVENT,
+#: SEGMENTED_EVENT in packages/shared/src/jobs.ts): the text layer read, then each OCR page
+#: (`{stage, page, of}`; Workbench `prepare` jobs write it too), then the sections found.
+PREPARE_PROGRESS = "prepare progress"
+SEGMENTED = "segmented"
+
+
+def advisory_event(job: ClaimedJob, queue: JobQueue, message: str, data: dict[str, Any]) -> None:
+    """Progress is advisory: a failed event write (job deleted mid-run, database blip) is logged,
+    never raised, so it can neither fail a good run nor replace the error being raised."""
+    try:
+        queue.event(job.id, "info", message, data)
+    except Exception:
+        log.exception("could not record %r for job %s", message, job.id)
+
+
 PAGE_IMAGE_LONGEST_DIM = 1288
 
 
@@ -204,13 +223,27 @@ def prepare_document(
     pdf = source.pdf
     pages = deps.extract_text(pdf)
     total_pages = len(pages)
+
+    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
+        advisory_event(job, queue, PREPARE_PROGRESS, {"stage": stage, "page": page, "of": of})
+
+    report("text", total_pages, total_pages)
     if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):
         raise DocumentError(
             f"page count {len(pages)} outside expected range "
             f"{document.pages.min}-{document.pages.max}"
         )
 
-    pages = ocr_pages(job, deps, queue, pdf, pages, document.ocr, sha256=source.sha256)
+    pages = ocr_pages(
+        job,
+        deps,
+        queue,
+        pdf,
+        pages,
+        document.ocr,
+        sha256=source.sha256,
+        progress=lambda done, total: report("ocr", done, total),
+    )
     first = 0
     if document.copies:
         first, pages = select_copy(pages, document.copies)
@@ -233,7 +266,7 @@ def prepare_document(
         sections = segment(pages, document.sections, page_marker=marker)
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
-    queue.event(job.id, "info", "segmented", {"pages": len(pages), "sections": list(sections)})
+    queue.event(job.id, "info", SEGMENTED, {"pages": len(pages), "sections": list(sections)})
     return Prepared(pdf, total_pages, sections)
 
 

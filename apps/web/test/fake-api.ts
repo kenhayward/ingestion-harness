@@ -292,6 +292,11 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listPickerChoices: vi.fn(async () => MODEL_CHOICES),
     listJobs: vi.fn(async () => []),
     getJob: vi.fn(async (id: string) => ({ ...job({ id }), outputs: [] })),
+    // No live stream by default: callers fall back to polling, as in a browser without one.
+    watchJob: vi.fn((_id: string, on: { error(): void }) => {
+      queueMicrotask(() => on.error());
+      return () => {};
+    }),
     retryJob: vi.fn(async () => job()),
     cancelJob: vi.fn(async (id: string) => job({ id, status: 'cancelled' })),
     deleteJob: vi.fn(async () => undefined),

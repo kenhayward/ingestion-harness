@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
-import { JobStatusSchema } from './jobs.js';
+import { JobStatusSchema, PrepareProgressSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
 export const SAMPLE_ROLES = ['dev', 'holdout'] as const;
@@ -103,17 +103,8 @@ export type PreparedTriage = z.infer<typeof PreparedTriageSchema>;
 export const SampleStateSchema = z.enum(['preparing', 'ready', 'failed']);
 export type SampleState = z.infer<typeof SampleStateSchema>;
 
-/** Job events the worker's prepare task writes (worker: workbench.PREPARE_PROGRESS / _FAILED). */
-export const PREPARE_PROGRESS_EVENT = 'prepare progress';
+/** Job event a failed preparation writes (worker: workbench.PREPARE_FAILED). */
 export const PREPARE_FAILED_EVENT = 'prepare failed';
-
-/** Where a running preparation is: the text layer read, or `page` of `of` OCR pages done. */
-export const PrepareProgressSchema = z.object({
-  stage: z.enum(['text', 'ocr']),
-  page: z.number().int().nonnegative(),
-  of: z.number().int().nonnegative(),
-});
-export type PrepareProgress = z.infer<typeof PrepareProgressSchema>;
 
 /** Why a preparation failed (worker: workbench.PrepareErrorCode). */
 export const PREPARE_ERROR_CODES = ['password', 'corrupt', 'too_large', 'other'] as const;
