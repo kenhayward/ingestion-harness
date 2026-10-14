@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { PreparedText } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
 
 export type TextMark = { page: number; line: string; label: string; color?: string };
 
@@ -80,7 +81,7 @@ export function SampleText({
   marks?: TextMark[];
   /** A mark label to scroll into view once the text is shown. */
   focus?: string;
-  /** One page at a time with page chips (Samples preview); off: every page (Sections). */
+  /** One page at a time with a pager (Samples preview); off: every page (Sections). */
   paged?: boolean;
 }) {
   const [text, setText] = useState<PreparedText | null>(null);
@@ -89,6 +90,7 @@ export function SampleText({
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setPage(1); // another sample opens on its first page
     api.getSampleText(projectId, sampleId).then(setText, (err: Error) => setError(err.message));
   }, [api, projectId, sampleId]);
 
@@ -107,24 +109,51 @@ export function SampleText({
   if (error) return <p role="alert">{error}</p>;
   if (!text) return <p>Loading text…</p>;
   if (paged) {
+    const total = text.pages.length;
     const current = text.pages.find((p) => p.number === page) ?? text.pages[0];
+    const n = current?.number ?? 1;
+    const go = (to: number) => setPage(Math.min(Math.max(to, 1), total));
+    // ← and → turn pages while focus is in the panel (never while typing in a field).
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowLeft' && n > 1) go(n - 1);
+      else if (e.key === 'ArrowRight' && n < total) go(n + 1);
+      else return;
+      e.preventDefault();
+    };
     return (
-      <div className="sample-text paged" ref={root}>
-        <div role="group" aria-label="Pages" className="page-chips">
-          {text.pages.map((p) => (
+      <div className="sample-text paged" ref={root} onKeyDown={onKeyDown}>
+        <nav className="page-pager" aria-label="Pages">
+          <span className="pager">
             <button
-              key={p.number}
               type="button"
-              aria-pressed={p.number === current?.number}
-              onClick={() => setPage(p.number)}
+              aria-label="Previous page"
+              disabled={n <= 1}
+              onClick={() => go(n - 1)}
             >
-              Page {p.number}
-              {p.ocr && <span className="ocr-flag"> OCR</span>}
+              <Icon name="chevronLeft" />
             </button>
-          ))}
-        </div>
+            <span className="pager-label" aria-live="polite">
+              <strong>Page {n}</strong> <span className="muted">of {total}</span>
+            </span>
+            <button
+              type="button"
+              aria-label="Next page"
+              disabled={n >= total}
+              onClick={() => go(n + 1)}
+            >
+              <Icon name="chevronRight" />
+            </button>
+          </span>
+          {current?.ocr && (
+            <span className="tag tone-info" title="This page was read by OCR">
+              OCR
+            </span>
+          )}
+        </nav>
         {current && (
-          <section aria-label={`Page ${current.number}`}>
+          // Focusable so the keyboard can scroll a long page and turn pages with the arrows.
+          <section aria-label={`Page ${current.number}`} tabIndex={0}>
             <PageBody
               text={`[page ${current.number}]
 ${current.text}`}

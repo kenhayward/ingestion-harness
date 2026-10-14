@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
@@ -115,6 +115,31 @@ describe('Dialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
     const dialog = screen.getByRole('dialog', { name: 'New document type' });
     expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByLabelText('Id')).toHaveFocus();
+  });
+
+  it('has no description or icon unless given (other dialogs look as before)', async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByRole('button', { name: 'New document type' }));
+    const dialog = screen.getByRole('dialog', { name: 'New document type' });
+    expect(dialog).not.toHaveAttribute('aria-describedby');
+    expect(within(dialog).getByRole('heading', { name: 'New document type' })).toBeInTheDocument();
+  });
+
+  it('shows an icon and a description that describes the dialog', () => {
+    render(
+      <Dialog
+        title="New project"
+        icon={<svg data-testid="tile-icon" />}
+        description="Drafts a document type."
+        onClose={() => {}}
+      >
+        <input aria-label="Id" />
+      </Dialog>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    expect(dialog).toHaveAccessibleDescription('Drafts a document type.');
+    expect(screen.getByTestId('tile-icon').parentElement).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByLabelText('Id')).toHaveFocus();
   });
 

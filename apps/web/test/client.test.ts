@@ -722,3 +722,48 @@ describe('http api: retired document types', () => {
     expect('unretireType' in api).toBe(false);
   });
 });
+
+describe('http api: error messages', () => {
+  /** Zod issues, as routes send them for a body that fails validation. */
+  const issues = [
+    { code: 'invalid_string', path: ['id'], message: 'lowercase id: [a-z][a-z0-9_-]*' },
+    { code: 'unrecognized_keys', path: [], message: 'Unrecognized key(s): "x"' },
+  ];
+
+  it.each([
+    ['json', (api: ReturnType<typeof createHttpApi>) => api.createProject('Bad Id')],
+    ['204', (api: ReturnType<typeof createHttpApi>) => api.deleteProject('Bad Id')],
+    ['delete job', (api: ReturnType<typeof createHttpApi>) => api.deleteJob('j')],
+    [
+      'output text',
+      (api: ReturnType<typeof createHttpApi>) => api.getOutputText('j', 'o', 'draft'),
+    ],
+  ])('reads validation issues as text, never [object Object] (%s)', async (_, call) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(400, { error: issues })),
+    );
+    await expect(call(createHttpApi('/api'))).rejects.toThrow(
+      'id: lowercase id: [a-z][a-z0-9_-]*; Unrecognized key(s): "x"',
+    );
+  });
+
+  it('keeps a plain message, and falls back to the status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          respond(409, { error: 'a workbench project for letter already exists' }),
+        )
+        .mockResolvedValueOnce(respond(500, { error: { unexpected: true } }))
+        .mockResolvedValueOnce(new Response('oops', { status: 502, statusText: 'Bad Gateway' })),
+    );
+    const api = createHttpApi('/api');
+    await expect(api.createProject('letter')).rejects.toThrow(
+      'a workbench project for letter already exists',
+    );
+    await expect(api.createProject('letter')).rejects.toThrow('500');
+    await expect(api.createProject('letter')).rejects.toThrow('502 Bad Gateway');
+  });
+});

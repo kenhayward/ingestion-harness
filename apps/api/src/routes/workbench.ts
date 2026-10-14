@@ -1219,7 +1219,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res('The new project.', ProjectViewSchema),
           400: error(
-            'Zod issues for an invalid id, or `name is required for a new document type`.',
+            'Zod issues for an invalid id, or `there is no document type {id} yet: give it a name to create it`.',
           ),
           409: error('`a workbench project for {id} already exists`, or ' + RETIRED_DOC + '.'),
         },
@@ -1238,7 +1238,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       let name = body.data.name;
       if (latest === null) {
         if (!name)
-          return reply.code(400).send({ error: 'name is required for a new document type' });
+          return reply.code(400).send({
+            error: `there is no document type ${id} yet: give it a name to create it`,
+          });
         await templates.create(
           id,
           1,

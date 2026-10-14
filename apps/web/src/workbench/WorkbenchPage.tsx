@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type {
-  DataPolicy,
-  OverviewPhase,
-  ProjectListItem,
-  ProjectListPage,
-  ProjectListQuery,
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  ID_PATTERN,
+  type DataPolicy,
+  type OverviewPhase,
+  type ProjectListItem,
+  type ProjectListPage,
+  type ProjectListQuery,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { FilterChips } from '../ui/FilterChips.js';
+import { Icon } from '../ui/Icon.js';
 import { ImportBundle } from './ImportBundle.js';
 import {
   formatCount,
@@ -409,6 +411,14 @@ export function WorkbenchPage({
   );
 }
 
+/** What the API accepts as a project (document type) id, said in words. */
+const ID_RULE = 'Use lowercase letters, digits, hyphens and underscores, starting with a letter.';
+
+/**
+ * New project (Workbench dialog handoff): a required Id, checked as typed against the API's rule
+ * so a refused id is explained before anything is sent, and an optional Name (empty opens an
+ * existing document type).
+ */
 function NewProjectDialog({
   api,
   onNavigate,
@@ -422,14 +432,22 @@ function NewProjectDialog({
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const idField = useId();
+  const idProblem = useId();
+  const nameField = useId();
+  const nameHint = useId();
+
+  const wanted = id.trim();
+  const invalid = wanted !== '' && !ID_PATTERN.test(wanted);
+  const blocked = !wanted ? 'Enter an id first' : invalid ? 'Fix the id first' : undefined;
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
-    if (!id.trim()) return;
+    if (blocked) return;
     setBusy(true);
     setError(null);
     try {
-      const { project } = await api.createProject(id.trim(), name.trim() || undefined);
+      const { project } = await api.createProject(wanted, name.trim() || undefined);
       onNavigate(`#/workbench/${project.id}`);
     } catch (err) {
       setError((err as Error).message);
@@ -440,28 +458,78 @@ function NewProjectDialog({
   return (
     <Dialog
       title="New project"
+      icon={<Icon name="workbench" size={36} strokeWidth={1.6} />}
+      description="A Workbench project drafts a document type with the model, step by step."
       onClose={onClose}
       actions={
-        <button type="submit" form="new-project" className="primary" disabled={!id.trim() || busy}>
+        <button
+          type="submit"
+          form="new-project"
+          className="primary"
+          disabled={blocked !== undefined || busy}
+          title={blocked}
+        >
+          <Icon name="plus" />
           Create project
         </button>
       }
     >
-      <form id="new-project" onSubmit={(e) => void create(e)} className="new-project-form">
-        <label>
-          Id
+      <form
+        id="new-project"
+        onSubmit={(e) => void create(e)}
+        className="new-project-form"
+        noValidate
+      >
+        <div className="np-field">
+          <div className="np-label-row">
+            <label htmlFor={idField}>Id</label>
+            <span className="np-tag" aria-hidden="true">
+              Required
+            </span>
+          </div>
           <input
+            id={idField}
+            className="np-input mono"
             value={id}
             onChange={(e) => setId(e.target.value)}
             placeholder="e.g. supplier-invoice"
+            autoComplete="off"
+            spellCheck={false}
+            required
+            aria-invalid={invalid || undefined}
+            aria-describedby={invalid ? idProblem : undefined}
           />
-        </label>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <p className="muted">Leave the name empty to open an existing document type.</p>
-        {error && <p role="alert">{error}</p>}
+          {invalid && (
+            <p id={idProblem} className="np-problem">
+              {ID_RULE}
+            </p>
+          )}
+        </div>
+        <div className="np-field">
+          <div className="np-label-row">
+            <label htmlFor={nameField}>Name</label>
+            <span className="np-tag" aria-hidden="true">
+              Optional
+            </span>
+          </div>
+          <input
+            id={nameField}
+            className="np-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Supplier invoice"
+            aria-describedby={nameHint}
+          />
+          <p id={nameHint} className="np-hint">
+            <Icon name="info" size={14} />
+            Leave the name empty to open an existing document type.
+          </p>
+        </div>
+        {error && (
+          <p role="alert" className="np-problem">
+            {error}
+          </p>
+        )}
       </form>
     </Dialog>
   );

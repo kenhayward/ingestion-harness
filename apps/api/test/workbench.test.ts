@@ -25,8 +25,11 @@ describe('workbench projects', () => {
 
   it('needs a name for a new type and a valid id', async () => {
     const { app } = await testApp();
-    expect((await app.inject(post('/api/workbench/projects', { id: 'memo' }))).statusCode).toBe(
-      400,
+    const unnamed = await app.inject(post('/api/workbench/projects', { id: 'memo' }));
+    expect(unnamed.statusCode).toBe(400);
+    // Said for the New project dialog, whose Name may be left empty to open an existing type.
+    expect(unnamed.json().error).toBe(
+      'there is no document type memo yet: give it a name to create it',
     );
     expect(
       (await app.inject(post('/api/workbench/projects', { id: 'Bad Id', name: 'x' }))).statusCode,
