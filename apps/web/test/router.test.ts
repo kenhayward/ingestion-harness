@@ -25,6 +25,7 @@ describe('parseHash', () => {
     ['', { name: 'home' }],
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
+    ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {
     expect(parseHash(hash)).toEqual(route);

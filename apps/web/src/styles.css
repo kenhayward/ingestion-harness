@@ -322,6 +322,23 @@ html {
   background: var(--ih-surface);
   border-bottom: 1px solid var(--ih-border);
 }
+/* Installed app with the title bar hidden (manifest display_override, docs/design/pwa.md): the
+   top bar is the title bar. Its empty space drags the window, its controls stay clickable, and it
+   keeps clear of the window buttons (minimise, maximise, close) the OS draws over its right end.
+   The env() values exist only in this mode; the window's chevron turns the mode off again. */
+@media (display-mode: window-controls-overlay) {
+  .top-bar {
+    min-height: env(titlebar-area-height, 0px);
+    padding-left: max(24px, calc(env(titlebar-area-x, 0px) + 12px));
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px);
+    app-region: drag;
+    -webkit-app-region: drag;
+  }
+  .top-bar > * {
+    app-region: no-drag;
+    -webkit-app-region: no-drag;
+  }
+}
 .brand {
   display: flex;
   align-items: center;

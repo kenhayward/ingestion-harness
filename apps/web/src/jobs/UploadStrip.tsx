@@ -3,6 +3,7 @@ import { pickedChoice, type ModelChoice, type SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { CHOICES_FAILED, CHOICES_LOADING } from './derive.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
+import type { LaunchedFiles } from '../pwa/launch.js';
 import { Icon } from '../ui/Icon.js';
 import { ModelPicker, typeModelLabel } from '../ui/ModelPicker.js';
 
@@ -48,12 +49,21 @@ export function UploadStrip({
   onUploaded,
   pickPending = false,
   onPicked,
+  launched,
+  focusRequest = 0,
 }: {
   api: Api;
   onUploaded: () => void;
   /** Upload document (top bar) was pressed: open the file picker, then report it with onPicked. */
   pickPending?: boolean;
   onPicked?: () => void;
+  /** Files opened with the installed app (Explorer: Open with CT Studio) join the list. */
+  launched?: LaunchedFiles;
+  /**
+   * Bumped by the Upload documents shortcut: focus the file chooser. Browsers only open it after
+   * a click or key press, so the shortcut leaves it one key or click away.
+   */
+  focusRequest?: number;
 }) {
   const inputId = useId();
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
@@ -84,6 +94,18 @@ export function UploadStrip({
     // onPicked is a callback prop: the picker opens once per request, not per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickPending]);
+
+  useEffect(() => {
+    if (!launched) return;
+    // take() empties the store: each file is listed once, StrictMode's second run finds none.
+    const takeLaunched = () => add(launched.take());
+    takeLaunched();
+    return launched.subscribe(takeLaunched);
+  }, [launched]);
+
+  useEffect(() => {
+    if (focusRequest > 0) fileInput.current?.focus({ focusVisible: true } as FocusOptions);
+  }, [focusRequest]);
 
   useEffect(() => {
     api.listSpecs().then(

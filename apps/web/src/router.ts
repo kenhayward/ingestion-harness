@@ -17,7 +17,8 @@ export const PROJECT_TABS = [
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export type Route =
-  | { name: 'home' }
+  /** `focusUpload`: #/upload (the installed app's Upload documents shortcut, docs/design/pwa.md). */
+  | { name: 'home'; focusUpload?: true }
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
@@ -48,6 +49,7 @@ export function parseHash(hash: string): Route {
     return { name: 'project', projectId: decodeURIComponent(project[1]!), tab };
   }
   if (hash === '#/jobs') return { name: 'jobs' };
+  if (hash === '#/upload') return { name: 'home', focusUpload: true };
   if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
@@ -57,7 +59,7 @@ export function parseHash(hash: string): Route {
 }
 
 /**
- * Minimal hash routing: #/ (home), #/jobs, #/review/<jobId>, #/results, #/results/<jobId>,
+ * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs, #/review/<jobId>, #/results, #/results/<jobId>,
  * #/templates, #/templates/<id>/<version>, #/workbench, #/workbench/<id>[/<tab>] (Overview by default).
  */
 export function useHashRoute(): Route {
