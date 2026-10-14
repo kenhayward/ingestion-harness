@@ -23,7 +23,8 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Visualisation | Class/property browser, interactive neighbourhood graph, mapping view, sample document graph |
 | SHACL failures | Violations are review reasons; invalid graphs are never delivered |
 | Opt-in | Per recipe: delivered formats are chosen per recipe (`delivery.formats`, any of CSV, JSON, RDF; default CSV and JSON, as today). RDF needs a mapping |
-| Chaining types | Direction chosen, not built this phase: follow-on types (`then`), chains of any length (A → B → C) and branches; each link reads upstream reviewed values and is reviewed on its own |
+| Chaining types | Direction chosen, not built this phase: follow-on types (`then`), chains of any length (A → B → C) and branches; each link reads upstream reviewed values and is reviewed on its own; a chain is withdrawn as one atomic unit |
+| Fact provenance | Every published fact links to its page, quote, section and step (`ct:Evidence`); structural links publish their sections, and all types share the page nodes |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
 | Graph identity | One graph per original document (the uploaded file's sha256) **and document type**, however often it is processed; the newest publish replaces it, a version number is kept from day one, and the document node `doc/{sha256}` is shared across types |
@@ -439,7 +440,7 @@ semantics:
   | `list` | one triple per item |
 
   A value that failed normalisation (an issue was recorded) is written as a plain string with
-  `ct:normalisationIssue` on a reified statement. It is never written as an invalid typed
+  `ct:normalisationIssue` on its `ct:Evidence` node (see *Fact provenance*). It is never written as an invalid typed
   literal.
 - **`object`.** The value becomes an entity. Its IRI is minted by the template from the value
   or the row's columns. Filters: `slug` (lowercase ASCII, `-`) and `upper` (readable IRIs, see
@@ -717,6 +718,40 @@ other.
   without re-rendering anything. In this phase only the current version is in Fuseki.
 - **Counts and status:** the Linked data panel reads `published_graphs`.
 
+### Fact provenance
+**Decided (2026-10-14):** every published fact says where it came from, in plain RDF so that
+rdflib, pySHACL and every SPARQL client handle it. RDF-star is avoided because rdflib's support
+is incomplete.
+
+```turtle
+<doc/ab12…/fact/execution_date> a ct:Evidence ;
+    ct:subject <doc/ab12…> ; ct:property acme:executionDate ;
+    ct:value "2023-02-11"^^xsd:date ;
+    ct:page <doc/ab12…/page/4> ;
+    ct:quote "Execution date: 11/02/2023" ;
+    ct:section <doc/ab12…/process-validation-protocol/section/approvals> ;
+    ct:step "identification" ;
+    prov:wasGeneratedBy <job/41c…> .
+<doc/ab12…/page/4> a ct:Page ; ct:pageNumber 4 ; ct:of <doc/ab12…> .
+```
+
+- **Fields:** each mapped field value gets one `ct:Evidence` node with its page, quote (the
+  extraction's `evidence`), section and extract step.
+- **Table rows:** each row node gets one `ct:Evidence` with the step and the sections it read.
+  There is no page or quote, because extraction does not record one per cell.
+- **Shared page nodes.** `doc/{sha256}/page/{n}` are shared by every type and chain link of the
+  same file. Pages agree across types because every type runs on the same PDF; for Word files
+  that is the cached conversion, ADR 0009. So facts from a semantic link and sections from a
+  structural link meet at the same pages.
+- **Sections** are `doc/{sha256}/{typeId}/section/{sectionId}`, per type, because each recipe
+  segments the file its own way.
+- **Normalisation issues and corrections.** A value that failed normalisation carries
+  `ct:normalisationIssue` on its `ct:Evidence` node; this replaces the earlier reified
+  statement. A value a reviewer corrected carries `ct:correctedFrom` with the model's value, so
+  the correction history (safeguard 5) is in the graph too.
+- **Size.** Evidence roughly doubles a graph's triple count. It is on for every recipe that
+  delivers `rdf`, with no switch, until size becomes a problem.
+
 ### Graph previews
 A `graph` job (document-less, `priority = -5`, one per project; a new preview deletes the old,
 like segment previews) renders and validates the selected samples' latest outputs. It uses the
@@ -969,17 +1004,37 @@ fix the direction so that nothing built now works against it.
 - **Provenance.** Each link's activity says `prov:wasInformedBy` the upstream job's activity,
   so consumers can follow the chain in the graph.
 
-### Open points for the chain design
-- **Deleting upstream:** withdrawing an upstream link (job deletion or retirement) does not
-  cascade by default. Should downstream outputs built from its values be withdrawn too, or
-  only flagged as derived from withdrawn data?
-- **Testing in the Workbench:** a downstream type's test runs need upstream values. The
-  proposal is to use the newest published upstream document of the same file, with a *Run
-  upstream first* action when there is none.
-- **UI:** where a chain is shown, for example a chain strip on the job detail and Home's live
-  progress across links.
-- **Structural links in the graph:** whether a structural type also publishes a thin RDF layer
-  (sections and the entities each mentions) so narrative and facts link in the graph.
+### Chain decisions (2026-10-14)
+- **A chain is an atomic unit of work.** A chain is the root job and every link queued from it
+  (`jobs.chain_root_id`, the root's job id; migration with the chain design). It is withdrawn as
+  a whole:
+  - **Deleting any job in a chain** withdraws every link of that chain, upstream and
+    downstream: graphs, published S3 outputs, `published_entities` sources. Downstream values
+    were built from upstream ones, and upstream outputs belong to the same unit of work.
+  - **Retiring a type that appears in a chain** withdraws every chain that contains it.
+    Unretiring re-delivers them, using the same `republish` path as for single jobs.
+  - **What the user sees:** the delete and retire dialogs list the other links that will be
+    withdrawn with it.
+  - **Delivery is not atomic:** each link still delivers as soon as its own job is published,
+    so upstream data is not held back while a long chain runs. Only withdrawal treats the
+    chain as one.
+- **Testing in the Workbench.** A downstream type's test runs read upstream values from the
+  newest published job of the upstream type for the same file. When there is none, the test run
+  dialog offers *Run upstream first*: it queues the upstream type on the same sample, and the
+  downstream run follows once that job is reviewed. A test chain never delivers anything,
+  however many links it has.
+- **UI: one link each way.**
+  - **Job detail:** the job detail panel gains *Previous in chain* (a link to the upstream job)
+    and *Next in chain* (a link per downstream job; branches give several). Nothing else in job
+    details changes.
+  - **Home:** Home's live progress follows the chain. When one link finishes and the next
+    starts, the panel switches to the next job and its step progress starts again from the
+    beginning.
+  - **Refinement:** the UI will be refined in Claude Design once it is built.
+- **Structural links publish where facts came from.** A structural link that delivers `rdf`
+  publishes a thin layer: its sections as nodes, with heading, order and page range. Facts from
+  any link point at the same shared page nodes (see *Fact provenance*), so a consumer can go
+  from a fact to the section and narrative it came from.
 
 ## Open questions (for the chief architect)
 1. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from

@@ -197,7 +197,17 @@ accepts each change. Mapping should work the same way.
   (A → B → C) and branches, with no cycles and a depth cap. Each link reads upstream reviewed
   values as step context, is reviewed on its own and has its own graph. Shared document IRIs,
   one graph per file and type, the OCR cache keyed by sha256 and per-recipe delivery already
-  support it. It gets its own design before implementation.
+  support it. It gets its own design before implementation. Decided so far:
+  - **Withdrawal:** a chain is one atomic unit of work. Deleting any link, or retiring a type in
+    it, withdraws the whole chain. Delivery stays per link.
+  - **Testing:** Workbench test runs read the newest published upstream document for the same
+    file, offering *Run upstream first* when there is none.
+  - **Job detail:** it only gains previous and next links.
+  - **Home:** it follows the chain, and step progress starts again for each link.
+- **Every fact carries its provenance.** Plain-RDF `ct:Evidence` nodes link each field value to
+  its page, quote, section and step, and each table row to its step and sections. Page nodes
+  `doc/{sha256}/page/{n}` are shared across types, so a structural link's sections and a
+  semantic link's facts meet at the same pages.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).
