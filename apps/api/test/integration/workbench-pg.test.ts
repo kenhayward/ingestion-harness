@@ -1627,4 +1627,24 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       ),
     ).rejects.toThrow(/check constraint/);
   });
+
+  it('retires and unretires a document type (migration 0030)', async () => {
+    const id = `it-${randomUUID().slice(0, 8)}`;
+    expect(await templates.retirement(id)).toBeNull();
+    // Two concurrent retires: one row, both answer the same retirement, one is "created".
+    const [a, b] = await Promise.all([templates.retire(id, 'ken'), templates.retire(id, 'ann')]);
+    expect([a.created, b.created].sort()).toEqual([false, true]);
+    expect(a.retirement).toEqual(b.retirement);
+    expect((await templates.listRetirements()).get(id)).toEqual(a.retirement);
+    expect(await templates.unretire(id)).toBe(true);
+    expect(await templates.unretire(id)).toBe(false);
+  });
+
+  it('deletes the retirement with a never-published project (D11)', async () => {
+    const projectId = await newProject();
+    await templates.create(projectId, 1, { id: projectId, version: 1, name: 'x' }, 'draft');
+    await templates.retire(projectId, 'ken');
+    expect(await workbench.deleteProject(projectId)).not.toBeNull();
+    expect(await templates.retirement(projectId)).toBeNull();
+  });
 });

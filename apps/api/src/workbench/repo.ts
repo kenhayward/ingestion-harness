@@ -667,6 +667,8 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       const listed = documents.some((o) => o.bucket === doc.bucket && o.key === doc.objectKey);
       if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
     }
+    // The type is gone: a stale retirement would block reusing the id (D11).
+    this.templates.retirements.delete(id);
     this.projects.delete(id);
     // ON DELETE CASCADE (migration 0022).
     this.listCacheRows.delete(id);
@@ -1540,6 +1542,8 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         );
         if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
       }
+      // The type is gone: a stale retirement would block reusing the id (D11).
+      await client.query('DELETE FROM document_type_retirements WHERE type_id = $1', [id]);
       await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
       // The cascade from templates would take them too; deleted explicitly as a child (TP1).
       await client.query('DELETE FROM template_changes WHERE template_id = $1', [id]);

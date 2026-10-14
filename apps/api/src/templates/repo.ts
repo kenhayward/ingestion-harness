@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { z } from 'zod';
-import type { TemplateChange, TemplateChangeInput } from '@ih/shared';
+import type { Retirement, TemplateChange, TemplateChangeInput } from '@ih/shared';
 
 export const TemplateStatusSchema = z.enum(['draft', 'published']);
 export type TemplateStatus = z.infer<typeof TemplateStatusSchema>;
@@ -57,6 +57,13 @@ export interface TemplateRepo {
   deleteDraft(id: string, version: number): Promise<boolean>;
   /** The version's change log, newest first (migration 0029). */
   listChanges(id: string, version: number): Promise<TemplateChange[]>;
+  /** Retired document types by id (migration 0030); a type is a recipe or a legacy spec. */
+  listRetirements(): Promise<Map<string, Retirement>>;
+  retirement(id: string): Promise<Retirement | null>;
+  /** Retires the type; one already retired keeps its first retirement (`created` false). */
+  retire(id: string, by: string | null): Promise<{ retirement: Retirement; created: boolean }>;
+  /** False when the type was not retired. */
+  unretire(id: string): Promise<boolean>;
 }
 
 const byIdVersion = (a: TemplateRecord, b: TemplateRecord) =>
@@ -66,6 +73,8 @@ export class MemoryTemplateRepo implements TemplateRepo {
   readonly records = new Map<string, TemplateRecord>();
   /** The change log (template_changes), oldest first. */
   readonly changes: (TemplateChange & { templateId: string })[] = [];
+  /** document_type_retirements, by type id. */
+  readonly retirements = new Map<string, Retirement>();
   private changeSeq = 0;
   private lastTime = 0;
   private key = (id: string, version: number) => `${id}@${version}`;
@@ -172,6 +181,26 @@ export class MemoryTemplateRepo implements TemplateRepo {
         return change as TemplateChange;
       });
   }
+
+  async listRetirements() {
+    return new Map(this.retirements);
+  }
+
+  async retirement(id: string) {
+    return this.retirements.get(id) ?? null;
+  }
+
+  async retire(id: string, by: string | null) {
+    const existing = this.retirements.get(id);
+    if (existing) return { retirement: existing, created: false };
+    const retirement: Retirement = { retiredAt: this.now(), retiredBy: by };
+    this.retirements.set(id, retirement);
+    return { retirement, created: true };
+  }
+
+  async unretire(id: string) {
+    return this.retirements.delete(id);
+  }
 }
 
 interface Row {
@@ -237,6 +266,17 @@ const changeParams = (c: TemplateChangeInput | undefined) => [
 ];
 
 /** Postgres-backed (migration 0003; published rows are also protected by triggers). */
+interface RetirementRow {
+  type_id: string;
+  retired_at: Date;
+  retired_by: string | null;
+}
+
+const toRetirement = (r: RetirementRow): Retirement => ({
+  retiredAt: r.retired_at.toISOString(),
+  retiredBy: r.retired_by,
+});
+
 export class PgTemplateRepo implements TemplateRepo {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -321,6 +361,49 @@ export class PgTemplateRepo implements TemplateRepo {
       [id, version],
     );
     return rows.map(toChange);
+  }
+
+  async listRetirements() {
+    const { rows } = await this.pool.query<RetirementRow>(
+      'SELECT type_id, retired_at, retired_by FROM document_type_retirements',
+    );
+    return new Map(rows.map((r) => [r.type_id, toRetirement(r)]));
+  }
+
+  async retirement(id: string) {
+    const { rows } = await this.pool.query<RetirementRow>(
+      'SELECT type_id, retired_at, retired_by FROM document_type_retirements WHERE type_id = $1',
+      [id],
+    );
+    return rows[0] ? toRetirement(rows[0]) : null;
+  }
+
+  async retire(id: string, by: string | null) {
+    // The outer SELECT sees the snapshot from before the insert: it answers the existing row
+    // only when the insert did nothing.
+    const { rows } = await this.pool.query<RetirementRow & { created: boolean }>(
+      `WITH ins AS (
+         INSERT INTO document_type_retirements (type_id, retired_by) VALUES ($1, $2)
+         ON CONFLICT (type_id) DO NOTHING
+         RETURNING type_id, retired_at, retired_by)
+       SELECT type_id, retired_at, retired_by, true AS created FROM ins
+       UNION ALL
+       SELECT type_id, retired_at, retired_by, false AS created FROM document_type_retirements
+        WHERE type_id = $1 AND NOT EXISTS (SELECT 1 FROM ins)`,
+      [id, by],
+    );
+    const row = rows[0];
+    if (row) return { retirement: toRetirement(row), created: row.created };
+    // A concurrent retire committed after this statement's snapshot: read its row.
+    return { retirement: (await this.retirement(id))!, created: false };
+  }
+
+  async unretire(id: string) {
+    const { rowCount } = await this.pool.query(
+      'DELETE FROM document_type_retirements WHERE type_id = $1',
+      [id],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   async publish(id: string, version: number) {
