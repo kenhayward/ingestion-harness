@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
@@ -15,6 +15,58 @@ export function latestJob(jobs: readonly JobSummary[], me: string): JobSummary |
   return newest(jobs.filter((j) => j.createdBy === me)) ?? newest(jobs);
 }
 
+const isActive = (j: JobSummary) => j.status === 'queued' || j.status === 'running';
+
+/**
+ * Follow one job closely while it is queued or running: re-read it every `ms` (the list poll is
+ * slower and a short job often finished between two of its reads). Returns the fresher copy and
+ * a tick that moves on every read; `onFinished` runs once when the job leaves running.
+ */
+function useLiveJob(
+  api: Api,
+  job: JobSummary | null,
+  ms: number,
+  onFinished: () => void,
+): { job: JobSummary | null; tick: number; following: boolean } {
+  const [fresh, setFresh] = useState<JobSummary | null>(null);
+  const [tick, setTick] = useState(0);
+  const finished = useRef(onFinished);
+  finished.current = onFinished;
+  // The fresher of the list's copy and ours (a reload of the list may be the newer one).
+  const current =
+    job && fresh && fresh.id === job.id && fresh.updatedAt >= job.updatedAt ? fresh : job;
+  const following = ms > 0 && current !== null && isActive(current);
+  const id = following ? current.id : null;
+
+  useEffect(() => {
+    if (id === null) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async () => {
+      try {
+        const summary: JobSummary = await api.getJob(id);
+        if (stopped) return;
+        setFresh(summary);
+        setTick((t) => t + 1);
+        if (!isActive(summary)) {
+          finished.current();
+          return; // the effect ends with `following`
+        }
+      } catch {
+        if (stopped) return; // a missed read: the list poll still runs, try again next tick
+      }
+      timer = setTimeout(() => void read(), ms);
+    };
+    timer = setTimeout(() => void read(), ms);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [api, id, ms]);
+
+  return { job: current, tick, following };
+}
+
 /**
  * Home: upload documents, then watch the latest one run (the job you queued last, else the
  * newest job). The full list, filters and clean-up are on Jobs.
@@ -26,6 +78,7 @@ export function HomePage({
   error,
   refresh,
   pollMs,
+  livePollMs = 1000,
   pickPending,
   onPicked,
 }: {
@@ -38,6 +91,8 @@ export function HomePage({
   refresh: () => Promise<void>;
   /** Poll interval, for the live indicator; <= 0 = not polling. */
   pollMs: number;
+  /** While the latest job is queued or running it is re-read this often; <= 0 = never. */
+  livePollMs?: number;
   /** Upload document (top bar) was pressed: the upload strip opens the file picker. */
   pickPending: boolean;
   onPicked: () => void;
@@ -57,7 +112,10 @@ export function HomePage({
       () => {}, // titles are cosmetic: ids are shown instead
     );
   }, [api]);
-  const latest = latestJob(jobs, me);
+  const live = useLiveJob(api, latestJob(jobs, me), pollMs > 0 ? livePollMs : 0, () => {
+    void refresh();
+  });
+  const latest = live.job;
 
   return (
     <div className="home-page">
@@ -71,7 +129,11 @@ export function HomePage({
         {pollMs > 0 && (
           <span className={error ? 'live live-warn' : 'live'}>
             <span className="live-dot" aria-hidden="true" />
-            {error ? 'Reconnecting…' : `Live · refreshes every ${pollMs / 1000} s`}
+            {error
+              ? 'Reconnecting…'
+              : live.following
+                ? 'Live · following this job'
+                : `Live · refreshes every ${pollMs / 1000} s`}
           </span>
         )}
       </div>
@@ -98,6 +160,7 @@ export function HomePage({
           typeModels={typeModels}
           now={Date.now()}
           wide
+          liveTick={live.tick}
         />
       ) : (
         <p className="muted">No jobs yet: upload a document to start.</p>

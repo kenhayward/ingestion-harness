@@ -96,3 +96,65 @@ describe('HomePage', () => {
     expect(screen.queryByRole('complementary', { name: 'Job details' })).toBeNull();
   });
 });
+
+describe('HomePage live progress', () => {
+  function live(
+    jobs: JobSummary[],
+    api: ReturnType<typeof fakeApi>,
+    refresh = vi.fn(async () => {}),
+  ) {
+    render(
+      <HomePage
+        api={api}
+        me="ken"
+        jobs={jobs}
+        error={null}
+        refresh={refresh}
+        pollMs={3000}
+        livePollMs={10}
+        pickPending={false}
+        onPicked={() => {}}
+      />,
+    );
+    return refresh;
+  }
+
+  it('follows a running job quickly, then refreshes the list once it finishes', async () => {
+    const running = job({ id: 'j1', createdBy: 'ken', status: 'running', filename: 'a.pdf' });
+    let calls = 0;
+    const getJob = vi.fn(async () => {
+      calls += 1;
+      return calls < 3
+        ? { ...running, outputs: [] }
+        : {
+            ...running,
+            status: 'succeeded' as const,
+            updatedAt: '2030-01-01T00:00:00Z',
+            outputs: [],
+          };
+    });
+    const api = fakeApi({ getJob });
+    const refresh = live([running], api);
+    const panel = await screen.findByRole('complementary', { name: 'Job details' });
+    await waitFor(() => expect(within(panel).getAllByText('Succeeded').length).toBeGreaterThan(0));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    // Step runs are re-read while it runs, so Extracting shows as soon as a step is recorded.
+    expect(vi.mocked(api.getStepRuns).mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('does not poll a finished job', async () => {
+    const done = job({ id: 'j2', createdBy: 'ken', status: 'succeeded' });
+    const api = fakeApi();
+    live([done], api);
+    await screen.findByRole('complementary', { name: 'Job details' });
+    await new Promise((r) => setTimeout(r, 60));
+    // The panel's own load only.
+    expect(vi.mocked(api.getJob).mock.calls.length).toBe(1);
+  });
+
+  it('says it is live while following a job', async () => {
+    const api = fakeApi({ getJob: vi.fn(() => new Promise<never>(() => {})) });
+    live([job({ createdBy: 'ken', status: 'queued' })], api);
+    expect(await screen.findByText('Live · following this job')).toBeInTheDocument();
+  });
+});
