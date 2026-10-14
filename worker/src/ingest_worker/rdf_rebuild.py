@@ -26,9 +26,15 @@ from typing import Any, Protocol
 import psycopg
 from pydantic import ValidationError
 
+from .graph_store import GraphStoreUnavailable
 from .pipeline import DocumentError, PipelineDeps
 from .queue import ClaimedJob, JobQueue
-from .storage import graph_version_key, ontology_normalized_key, reviewed_document_key
+from .storage import (
+    graph_version_key,
+    ontology_normalized_key,
+    output_key,
+    reviewed_document_key,
+)
 from .template import Template
 from .template_pipeline import build_graph, publish_graph
 
@@ -80,7 +86,9 @@ class PgRebuildSource:
     _JOBS = """SELECT j.id::text, j.document_id::text, d.spec_id, d.spec_version, d.sha256,
                       d.bucket, d.object_key
                  FROM jobs j JOIN documents d ON d.id = j.document_id
-                WHERE j.task = 'publish' AND j.status = 'succeeded' AND NOT j.test"""
+                WHERE j.status = 'succeeded' AND NOT j.test
+                  AND EXISTS (SELECT 1 FROM job_outputs o
+                               WHERE o.job_id = j.id AND o.stage = 'published')"""
 
     def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
         rows = self._conn.execute(
@@ -116,7 +124,13 @@ def _claimed(job: DeliveredJob, template: Template) -> ClaimedJob:
 
 
 def _reviewed(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] | None:
+    """The delivered document: the reviewed one, else (delivered without review) the draft."""
     raw = deps.store.get_optional(deps.buckets.runs, reviewed_document_key(job.job_id))
+    if raw is None:
+        draft = output_key(
+            job.template_id, job.template_version, "document", job.document_id, "json"
+        )
+        raw = deps.store.get_optional(deps.buckets.outputs, draft)
     if raw is None:
         return None
     document: dict[str, Any] = json.loads(raw)
@@ -176,7 +190,9 @@ def _mapped(definition: dict[str, Any]) -> Template | None:
         template = Template.model_validate(definition)
     except ValidationError:
         return None
-    return template if template.semantics is not None else None
+    if template.semantics is None or "rdf" not in template.delivery_formats():
+        return None
+    return template
 
 
 def backfill(
@@ -185,7 +201,7 @@ def backfill(
     published = source.published_templates(template_id)
     mapped = [t for v in sorted(published, reverse=True) if (t := _mapped(published[v]))]
     if not mapped or deps.graph_registry is None:
-        return [f"{template_id} has no published recipe with an ontology mapping"]
+        return [f"{template_id} has no published recipe with an ontology mapping that delivers rdf"]
     template = mapped[0]
     lines: list[str] = []
     done = skipped = 0
@@ -211,12 +227,14 @@ def backfill(
 
 
 def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
+    """The graph under the old base is dropped first: a failure after that leaves the version
+    under the old base, so the next run picks the graph up again (never two copies)."""
     registry, store = deps.graph_registry, deps.graph_store
     base = deps.linked_data.effective_base() if deps.linked_data else None
     if registry is None or base is None:
         return ["remint needs the database and a Linked data base"]
     lines: list[str] = []
-    moved = already = 0
+    moved = already = failed = 0
     for g in registry.all_current():
         if g.base_iri == base:
             already += 1
@@ -225,21 +243,26 @@ def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[s
         definition = source.published_templates(g.template_id).get(g.template_version)
         template = _mapped(definition) if definition else None
         if job is None or template is None:
+            failed += 1
             lines.append(f"skipped {g.graph_iri}: its job or recipe version is gone")
             continue
         try:
+            if store is not None:
+                store.delete(g.graph_iri)
             version = _publish(deps, queue, job, template)
-        except DocumentError as exc:
-            lines.append(f"skipped {g.graph_iri}: {exc}")
+        except (DocumentError, GraphStoreUnavailable) as exc:
+            failed += 1
+            lines.append(f"failed {g.graph_iri}: {exc} (run --remint again)")
             continue
         if version is None:
-            lines.append(f"skipped {g.graph_iri}: no reviewed document")
+            failed += 1
+            lines.append(f"skipped {g.graph_iri}: no delivered document")
             continue
-        if store is not None:
-            store.delete(g.graph_iri)
         moved += 1
         lines.append(f"re-minted {g.graph_iri} as v{version}")
-    lines.append(f"remint under {base}: {moved} re-minted, {already} already there")
+    lines.append(
+        f"remint under {base}: {moved} re-minted, {already} already there, {failed} failed"
+    )
     return lines
 
 

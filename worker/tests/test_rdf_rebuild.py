@@ -139,7 +139,7 @@ def test_backfill_needs_a_published_mapping(tmp_path: Path) -> None:
     deps, source = setup(tmp_path, job(1, "aa" * 32))
     source.templates = {1: TEMPLATE}
     assert backfill(deps, FakeQueue(), source, "letter") == [
-        "letter has no published recipe with an ontology mapping"
+        "letter has no published recipe with an ontology mapping that delivers rdf"
     ]
 
 
@@ -169,12 +169,52 @@ def test_remint_moves_every_graph_under_the_new_base(tmp_path: Path) -> None:
     current = registry_of(deps).current("aa" * 32, "letter")
     assert current is not None and (current.graph_iri, current.version) == (new, 2)
     assert current.template_version == 2  # the mapping version the graph was rendered with
-    assert lines[-1] == f"remint under {NEW_BASE}: 1 re-minted, 0 already there"
+    assert lines[-1] == f"remint under {NEW_BASE}: 1 re-minted, 0 already there, 0 failed"
     assert (
         remint(deps, FakeQueue(), source)[-1]
-        == f"remint under {NEW_BASE}: 0 re-minted, 1 already there"
+        == f"remint under {NEW_BASE}: 0 re-minted, 1 already there, 0 failed"
     )
 
 
 def test_the_templates_are_read_as_recipes() -> None:
     Template.model_validate(MAPPED)  # the fixture is a valid recipe
+
+
+def test_backfill_ignores_mappings_that_do_not_deliver_rdf(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    source.templates = {1: TEMPLATE, 2: {**MAPPED, "delivery": {"formats": ["json"]}}}
+    assert backfill(deps, FakeQueue(), source, "letter") == [
+        "letter has no published recipe with an ontology mapping that delivers rdf"
+    ]
+    assert store_of(deps).requests == []
+
+
+def test_backfill_reads_a_document_delivered_without_review(tmp_path: Path) -> None:
+    from ingest_worker.storage import output_key
+
+    direct = job(4, "dd" * 32)
+    deps, source = setup(tmp_path, direct)
+    reviewed = deps.store.get("runs", f"{direct.job_id}/reviewed-document.json")
+    deps.store.delete("runs", f"{direct.job_id}/reviewed-document.json")
+    draft = output_key("letter", 1, "document", direct.document_id, "json")
+    deps.store.put("outputs", draft, reviewed, "application/json")
+    assert backfill(deps, FakeQueue(), source, "letter")[-1].endswith("1 published, 0 skipped")
+
+
+def test_remint_drops_the_old_graph_first_and_a_failure_is_retried_by_the_next_run(
+    tmp_path: Path,
+) -> None:
+    from ingest_worker.graph_store import GraphStoreUnavailable
+
+    deps, source = setup(tmp_path, job(1, "aa" * 32), job(2, "bb" * 32))
+    backfill(deps, FakeQueue(), source, "letter")
+    deps.linked_data = MemoryLinkedDataSettings(NEW_BASE)
+    store_of(deps).fail = GraphStoreUnavailable("graph store answered 503")
+    lines = remint(deps, FakeQueue(), source)
+    assert lines[-1] == f"remint under {NEW_BASE}: 0 re-minted, 0 already there, 2 failed"
+    assert all(g.base_iri == BASE for g in registry_of(deps).all_current())
+    store_of(deps).fail = None
+    assert remint(deps, FakeQueue(), source)[-1] == (
+        f"remint under {NEW_BASE}: 2 re-minted, 0 already there, 0 failed"
+    )
+    assert not any(iri.startswith(f"{BASE}graph/source/") for iri in store_of(deps).graphs)

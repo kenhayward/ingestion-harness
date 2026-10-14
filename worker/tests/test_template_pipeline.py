@@ -762,3 +762,33 @@ def test_the_pinned_ontologies_are_loaded_once_per_base(tmp_path: Path) -> None:
     ]
     assert requests[0][2] == nt
     assert deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
+
+
+def test_a_document_delivered_without_review_publishes_its_graph(tmp_path: Path) -> None:
+    from ingest_worker.graph_registry import MemoryGraphRegistry
+
+    from .fakes import FakeGraphStore
+
+    template = {**TEMPLATE, "review": {"required": "never"}, "semantics": ENTITY,
+                "delivery": {"formats": ["json", "rdf"]}}  # fmt: skip
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.awaiting
+    assert [r[1] for r in deps.graph_store.requests] == [GRAPH_IRI]  # type: ignore[union-attr]
+    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert graph_event(queue)["version"] == 1
+    assert queue.published  # its outputs are recorded too
+
+
+def test_delivered_outputs_are_recorded_even_when_the_store_then_fails(tmp_path: Path) -> None:
+    from ingest_worker.graph_store import GraphStoreUnavailable
+
+    deps, target, queue = to_publish(tmp_path)
+    deps.graph_store.fail = GraphStoreUnavailable("graph store answered 503")  # type: ignore[union-attr]
+    run_once(queue, deps, "w1")
+    assert queue.failed
+    [(_, published, _)] = queue.published  # written to the target, so recorded
+    assert {o.format for o in published} == {"json", "rdf"}
+    assert has(target, "published", "pvp/" + GRAPH_KEY)

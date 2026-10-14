@@ -215,7 +215,14 @@ def process_template_job(
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
+    formats: list[str] = list(template.delivery_formats())
+    delivered_graph = graph
+    deliver_graph = (
+        (lambda: publish_graph(job, deps, queue, template, document, delivered_graph))
+        if delivered_graph is not None and "rdf" in formats
+        else None
+    )
+    return ProcessResult(outputs, reasons, formats, deliver_graph)
 
 
 def publish_template_job(
@@ -225,6 +232,7 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
+    on_published: Callable[[list[RenderedOutput]], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
     the runs bucket and, when `deliver`, publish it to the final target. Approved test runs
@@ -277,6 +285,8 @@ def publish_template_job(
         raise ShapesViolated([v.reason() for v in report.violations()])
     rendered = render_document(template, document, graph)
     published = publish_outputs(deps, [o for o in rendered if o.format in formats])
+    if on_published is not None:
+        on_published(published)  # recorded before the graph: a store failure keeps the record
     if graph is not None and "rdf" in formats:
         publish_graph(job, deps, queue, template, document, graph)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})

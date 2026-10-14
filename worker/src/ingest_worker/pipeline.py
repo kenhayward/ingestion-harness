@@ -103,6 +103,9 @@ class ProcessResult:
     review_reasons: list[str] = field(default_factory=list)
     #: The output formats delivered on publishing (None: every output).
     formats: list[str] | None = None
+    #: Publishes the document's graph to the triple store once its outputs are delivered
+    #: without review (None: no graph is delivered).
+    deliver_graph: Callable[[], object] | None = None
 
     def delivered(self) -> list[RenderedOutput]:
         if self.formats is None:

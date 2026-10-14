@@ -38,7 +38,7 @@ switch ($Action) {
     $fusekiPort = if ($cfg.FUSEKI_PORT) { $cfg.FUSEKI_PORT } else { '3030' }
     $env:RDF_ENDPOINT = "http://localhost:$fusekiPort"
     $env:RDF_USER = 'ct-writer'
-    $env:RDF_PASSWORD = $cfg.RDF_WRITER_PASSWORD
+    $env:RDF_PASSWORD = if ($cfg.RDF_WRITER_PASSWORD) { $cfg.RDF_WRITER_PASSWORD } else { 'dev-writer' }
     Push-Location $RepoRoot; try { npm run migrate } finally { Pop-Location }
     Push-Location (Join-Path $RepoRoot 'worker'); try { uv run python -m ingest_worker.admin init-buckets } finally { Pop-Location }
     Write-Host "Infra ready. DATABASE_URL=$($env:DATABASE_URL -replace ':[^:@]+@', ':***@')  S3_ENDPOINT=$($env:S3_ENDPOINT)  CONVERTER_URL=$($env:CONVERTER_URL)  RDF_ENDPOINT=$($env:RDF_ENDPOINT)"

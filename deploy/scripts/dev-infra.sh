@@ -27,7 +27,7 @@ Infra ready. Export these for npm run dev:api / uv run ingest-worker:
   export DATABASE_URL=$DATABASE_URL
   export S3_ENDPOINT=$S3_ENDPOINT S3_ACCESS_KEY=$S3_ACCESS_KEY S3_SECRET_KEY=<from $ENV_FILE>
   export CONVERTER_URL=http://localhost:${CONVERTER_PORT:-3010}
-  export RDF_ENDPOINT=http://localhost:${FUSEKI_PORT:-3030} RDF_USER=ct-writer RDF_PASSWORD=<RDF_WRITER_PASSWORD from $ENV_FILE>
+  export RDF_ENDPOINT=http://localhost:${FUSEKI_PORT:-3030} RDF_USER=ct-writer RDF_PASSWORD=<RDF_WRITER_PASSWORD from $ENV_FILE, else dev-writer>
 EOF
     ;;
   down) compose down ;;

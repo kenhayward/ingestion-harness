@@ -70,16 +70,19 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     try:
         if job.task == "publish":
             check_cancelled(job, queue)
+
+            def record(outputs: list[RenderedOutput]) -> None:
+                if deps.target is not None and not job.test:  # approved test runs: not delivered
+                    queue.record_published(job, outputs, deps.target.bucket)
+
             try:
-                published = publish_job(job, deps, queue)
+                published = publish_job(job, deps, queue, record)
             except ShapesViolated as refused:
                 # Nothing was delivered: the reviewer fixes the values and approves again.
                 queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
                 queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
                 log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
                 return True
-            if deps.target is not None and not job.test:  # approved test runs are not delivered
-                queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s published %d outputs", job.id, len(published))
             return True
@@ -141,6 +144,8 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             published = [] if job.test else publish_outputs(deps, result.delivered())
             if deps.target is not None and published:
                 queue.record_published(job, published, deps.target.bucket)
+                if result.deliver_graph is not None:
+                    result.deliver_graph()
             queue.complete(job, result.outputs, deps.buckets.outputs)
             log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
     except JobCancelled:
@@ -168,13 +173,20 @@ def _quietly(job: ClaimedJob, write: Callable[[], None]) -> None:
         log.exception("could not record the outcome of job %s (deleted?)", job.id)
 
 
-def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
+def publish_job(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    on_published: Callable[[list[RenderedOutput]], None] | None = None,
+) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to the target."""
     loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only documents run by a recipe go through review/publish")
-    return publish_template_job(job, deps, queue, loaded, deliver=not job.test)
+    return publish_template_job(
+        job, deps, queue, loaded, deliver=not job.test, on_published=on_published
+    )
 
 
 def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
