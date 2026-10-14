@@ -467,8 +467,14 @@ describe('EvaluateTab', () => {
   });
 
   it.each([
-    ['dev', 'No verified dev references yet — save some on the References tab'],
-    ['holdout', 'No verified holdout references yet — save some on the References tab'],
+    [
+      'dev',
+      '1 dev reference is outdated by output changes in v2: re-verify it on the References tab',
+    ],
+    [
+      'holdout',
+      '1 holdout reference is outdated by output changes in v2: re-verify it on the References tab',
+    ],
   ] as const)('needs a verified %s reference to evaluate, and says so', async (set, reason) => {
     const rows = vi.fn(async (_id: string, s?: string) =>
       s === set
@@ -491,5 +497,55 @@ describe('EvaluateTab', () => {
         COMPARE_HOLDOUT_REASON,
       );
     }
+  });
+
+  it('says when there are no references at all', async () => {
+    tab({ listReferenceRows: vi.fn(async () => [referenceRow()]) });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate v2 on dev…' });
+    await waitFor(() =>
+      expect(evaluate).toHaveAttribute(
+        'title',
+        'No verified dev references yet — save some on the References tab',
+      ),
+    );
+  });
+
+  it('links to References when an output change outdated every reference', async () => {
+    tab({
+      listReferenceRows: vi.fn(async () => [
+        referenceRow({ reference: referenceInfo({ outdated: ['field:sent_on'] }) }),
+        referenceRow({ reference: referenceInfo({ outdated: ['field:sent_on'] }) }),
+      ]),
+    });
+    const note = await screen.findByRole('note', { name: 'Why Evaluate is off' });
+    expect(note).toHaveTextContent(
+      '2 dev references are outdated by output changes in v2: re-verify them on the References tab',
+    );
+    expect(within(note).getByRole('link', { name: 'Open References' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/references',
+    );
+  });
+
+  it("is not held up by an earlier version's run that never finished", async () => {
+    const stuck = iterationView({ templateVersion: 1, status: 'running', score: null });
+    tab({
+      listIterations: vi.fn(async () => [stuck]),
+      getIteration: vi.fn(async () => stuck),
+    });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate v2 on dev…' });
+    await waitFor(() => expect(evaluate).toBeEnabled());
+  });
+
+  it('waits while a run of this draft is still going', async () => {
+    const going = iterationView({ templateVersion: 2, status: 'running', score: null });
+    tab({
+      listIterations: vi.fn(async () => [going]),
+      getIteration: vi.fn(async () => going),
+    });
+    const evaluate = await screen.findByRole('button', { name: 'Evaluate v2 on dev…' });
+    await waitFor(() =>
+      expect(evaluate).toHaveAttribute('title', 'An evaluation of v2 on dev is still running'),
+    );
   });
 });

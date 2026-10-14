@@ -247,6 +247,23 @@ export async function overviewParts(
   const revise = proposals
     .filter((p) => p.stage === 'revise' && p.createdAt > since)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  // The newest revision applied to the open draft since the last publication: evaluated yet?
+  const appliedAt =
+    proposals
+      .filter(
+        (p) =>
+          p.stage === 'revise' &&
+          p.createdAt > since &&
+          p.decidedAt !== null &&
+          (p.decision === 'accepted' || p.decision === 'partially_accepted'),
+      )
+      .map((p) => p.decidedAt!)
+      .sort()
+      .at(-1) ?? null;
+  const revisedSince =
+    view.draft !== null &&
+    appliedAt !== null &&
+    !iterations.some((i) => i.templateVersion === view.draft && i.createdAt > appliedAt);
   const jobById = new Map(jobs.map((j) => [j.id, j]));
   const active = (jobId: string) => {
     const status = jobById.get(jobId)?.status;
@@ -269,6 +286,7 @@ export async function overviewParts(
       running:
         view.draft !== null &&
         iterations.some((i) => i.templateVersion === view.draft && i.jobIds.some(active)),
+      revisedSince,
     },
     gate: {
       threshold: gate.threshold,

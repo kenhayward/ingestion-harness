@@ -15,8 +15,13 @@ import { Segmented, type SegmentedOption } from '../ui/Segmented.js';
 import { AccuracyCard, HistoryCard } from './EvaluateHistory.js';
 import { LatestRun } from './EvaluateLatest.js';
 import { GateCard, useGate } from './GateCard.js';
-import { devScore, latestOf } from './evaluate.js';
-import { verified } from './references.js';
+import {
+  devScore,
+  evaluateBlocker,
+  latestOf,
+  referenceCounts,
+  type ReferenceCounts,
+} from './evaluate.js';
 
 const POLICY_NOTE: Record<DataPolicy, string> = {
   local: 'Runs on local models; holdout samples are never sent.',
@@ -86,8 +91,8 @@ export function EvaluateTab({
   const [actionError, setActionError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
   const error = actionError ?? pollError;
-  /** Verified references per set (null: not known yet; an unknown count never blocks). */
-  const [verifiedCount, setVerifiedCount] = useState<Partial<Record<EvaluationSet, number>>>({});
+  /** Verified and outdated references per set (absent: not known yet; never blocks). */
+  const [refCounts, setRefCounts] = useState<Partial<Record<EvaluationSet, ReferenceCounts>>>({});
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -113,7 +118,7 @@ export function EvaluateTab({
     let stale = false;
     api.listReferenceRows(projectId, set).then(
       (rows) => {
-        if (!stale) setVerifiedCount((c) => ({ ...c, [set]: rows.filter(verified).length }));
+        if (!stale) setRefCounts((c) => ({ ...c, [set]: referenceCounts(rows) }));
       },
       () => {
         // The API decides when a start is refused; an unreadable list never blocks.
@@ -175,24 +180,18 @@ export function EvaluateTab({
 
   const holdout = set === 'holdout';
   const shown = current?.set === set ? current : null;
-  const running = shown?.status === 'running';
-  const noReferences =
-    verifiedCount[set] === 0
-      ? `No verified ${set} references yet — save some on the References tab`
-      : null;
-  const evaluateBlocked =
-    retired ??
-    (draft === null
-      ? 'Start a draft version first'
-      : noReferences
-        ? noReferences
-        : running
-          ? 'An evaluation of this set is still running'
-          : comparing
-            ? 'A model comparison is still running'
-            : busy
-              ? 'Starting…'
-              : null);
+  const refs = refCounts[set];
+  const evaluateBlocked = evaluateBlocker({
+    retired,
+    draft,
+    set,
+    refs,
+    history: history ?? [],
+    comparing,
+    busy,
+  });
+  /** Every reference was outdated by output changes: re-verifying them is the way on. */
+  const outdatedBlock = refs !== undefined && refs.verified === 0 && refs.outdated > 0;
   const compareBlocked =
     retired ?? (draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked);
 
@@ -253,6 +252,11 @@ export function EvaluateTab({
         <span className="muted eval-runbar-note">
           {holdout ? "Holdout: recipe's models only" : 'Dev: any model choice, or compare'}
         </span>
+        {outdatedBlock && evaluateBlocked && (
+          <p role="note" aria-label="Why Evaluate is off" className="eval-runbar-why">
+            {evaluateBlocked}. <a href={`#/workbench/${projectId}/references`}>Open References</a>
+          </p>
+        )}
         <div className="eval-runbar-actions">
           <button
             type="button"

@@ -304,6 +304,16 @@ describe('nextAction', () => {
       { kind: 'publish', stage: 'publish', label: 'Publish v2' },
     ],
     [
+      'a revision applied since the last evaluation: evaluate it on dev',
+      inputs({ revise: 'accepted', evaluation: { running: false, revisedSince: true } }),
+      { kind: 'continue', stage: 'evaluate', label: 'Evaluate v2 on dev' },
+    ],
+    [
+      'an evaluation of the revision running beats evaluating it again',
+      inputs({ revise: 'accepted', evaluation: { running: true, revisedSince: true } }),
+      { kind: 'running', stage: 'evaluate', label: 'Evaluate running' },
+    ],
+    [
       'no references yet: references are optional',
       inputs({
         stages: drafted({
@@ -746,6 +756,15 @@ describe('overviewNext', () => {
         stage: 'publish',
         title: 'Next: publish v2',
         reason: 'References and evaluation are optional.',
+      },
+    ],
+    [
+      'suggests evaluating a revision before publishing',
+      inputs({ revise: 'partially_accepted', evaluation: { running: false, revisedSince: true } }),
+      {
+        stage: 'evaluate',
+        title: 'Next: evaluate v2 on dev',
+        reason: 'A revision was applied since the last evaluation: see whether it helped.',
       },
     ],
     [

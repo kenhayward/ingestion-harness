@@ -8,6 +8,9 @@ import {
   changeProposalView,
   fakeApi,
   feedbackItem,
+  iterationView,
+  referenceInfo,
+  referenceRow,
   revisePreview,
   reviseProposal,
 } from './fake-api.js';
@@ -204,9 +207,10 @@ describe('ReviseTab', () => {
     expect(api.decideProposal).toHaveBeenCalledWith('letter', ready.id, 'accepted', [0, 1]);
     await waitFor(() => expect(screen.getAllByText('ANSWERED')).toHaveLength(2));
     expect(onApplied).toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: 'Evaluate on dev' })).toHaveAttribute(
-      'href',
-      '#/workbench/letter/evaluate',
+    // Evaluating the revision is offered right here (no references in this fake: explained).
+    expect(screen.getByRole('button', { name: 'Evaluate v4 on dev…' })).toHaveAttribute(
+      'title',
+      'No verified dev references yet — save some on the References tab',
     );
   });
 
@@ -368,5 +372,118 @@ describe('ReviseTab', () => {
     const calls = listProposals.mock.calls.length;
     await new Promise((r) => setTimeout(r, 60));
     expect(listProposals.mock.calls.length).toBe(calls);
+  });
+
+  describe('evaluating the revision without leaving the tab', () => {
+    const verifiedRows = vi.fn(async () => [referenceRow({ reference: referenceInfo() })]);
+    const applied = () => {
+      const ready = reviseProposal();
+      return { ...ready, status: 'accepted' as const, acceptedChanges: [0, 1] };
+    };
+
+    it('starts a dev evaluation from the applied card, then follows it', async () => {
+      const going = iterationView({
+        templateVersion: 4,
+        status: 'running',
+        score: null,
+        completed: 1,
+        total: 3,
+      });
+      const { api, onChanged } = tab(
+        {
+          listProposals: vi.fn(async () => [applied()]),
+          listReferenceRows: verifiedRows,
+          listIterations: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([going]),
+          startEvaluation: vi.fn(async () => going),
+        },
+        { pollMs: 1 },
+      );
+      await userEvent.click(await screen.findByRole('button', { name: 'Evaluate v4 on dev…' }));
+      const dialog = screen.getByRole('dialog', { name: 'Evaluate v4 on dev' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Evaluate' }));
+      expect(api.startEvaluation).toHaveBeenCalledWith('letter', null, {
+        uncached: false,
+        set: 'dev',
+      });
+      expect(onChanged).toHaveBeenCalled();
+      const strip = await screen.findByRole('status', { name: 'Dev evaluation' });
+      expect(strip).toHaveTextContent('Evaluating v4 on dev · 1 of 3 samples');
+      expect(within(strip).getByRole('link', { name: 'Open Evaluate' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/evaluate',
+      );
+      expect(screen.getByRole('button', { name: 'Evaluate v4 on dev…' })).toHaveAttribute(
+        'title',
+        'An evaluation of v4 on dev is still running',
+      );
+    });
+
+    it('reloads what the model will see once the evaluation finishes', async () => {
+      const going = iterationView({ templateVersion: 4, status: 'running', score: null });
+      const done = { ...going, status: 'complete' as const, score: 0.9 };
+      const getRevisePreview = vi
+        .fn()
+        .mockResolvedValueOnce(revisePreview())
+        .mockResolvedValueOnce(revisePreview())
+        .mockResolvedValue(revisePreview({ ...failing }));
+      tab(
+        {
+          getRevisePreview,
+          listProposals: vi.fn(async () => [applied()]),
+          listReferenceRows: verifiedRows,
+          listIterations: vi.fn().mockResolvedValueOnce([going]).mockResolvedValue([done]),
+        },
+        { pollMs: 1 },
+      );
+      expect(await screen.findByText('inv-0039-hooli.pdf')).toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: 'Dev evaluation' })).toBeNull();
+    });
+
+    it('offers it where there is no dev run to send yet', async () => {
+      tab({ listReferenceRows: verifiedRows });
+      const none = (await screen.findByText(/No complete dev run yet/)).closest('p')!;
+      expect(within(none).getByRole('button', { name: 'Evaluate v4 on dev…' })).toBeEnabled();
+    });
+
+    it('explains outdated references, with a link to References', async () => {
+      tab({
+        listProposals: vi.fn(async () => [applied()]),
+        listReferenceRows: vi.fn(async () => [
+          referenceRow({ reference: referenceInfo({ outdated: ['field:due_date'] }) }),
+        ]),
+      });
+      const button = await screen.findByRole('button', { name: 'Evaluate v4 on dev…' });
+      await waitFor(() =>
+        expect(button).toHaveAttribute(
+          'title',
+          '1 dev reference is outdated by output changes in v4: re-verify it on the References tab',
+        ),
+      );
+      const why = screen.getByRole('note', { name: 'Why Evaluate is off' });
+      expect(within(why).getByRole('link', { name: 'Open References' })).toHaveAttribute(
+        'href',
+        '#/workbench/letter/references',
+      );
+    });
+
+    it('warns before applying changes that would outdate dev references', async () => {
+      const ready = reviseProposal({
+        body: {
+          notes: '',
+          changes: [
+            { op: 'putField', field: { id: 'due_date', type: 'date' }, reason: 'feedback 1' },
+            { op: 'setPreamble', preamble: 'Supplier invoices.', reason: 'feedback 2' },
+          ],
+        },
+      });
+      tab({ listProposals: vi.fn(async () => [ready]), listReferenceRows: verifiedRows });
+      const proposal = await screen.findByRole('region', { name: 'Proposal' });
+      expect(proposal).toHaveTextContent(
+        'Changes outputs (field:due_date): references verified before must be verified again before you can evaluate.',
+      );
+      // Only the preamble ticked: no output changes, no warning.
+      await userEvent.click(within(proposal).getAllByRole('checkbox')[0]!);
+      expect(proposal).not.toHaveTextContent('Changes outputs');
+    });
   });
 });
