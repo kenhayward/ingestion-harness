@@ -7,6 +7,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { choiceName } from '../jobs/derive.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { Meter } from '../ui/Meter.js';
 import { offOutputs, outputsDiffering, tableDiff } from './evaluate.js';
 
@@ -25,6 +26,22 @@ export const SEALED_NOTE =
   'Holdout is sealed: you can see the differences, but comments are off so nothing from it reaches the model in Revise.';
 
 type Target = { target: 'field' | 'table'; id: string };
+
+/** A comment being written on a run, kept per project in this browser (ui/keptDraft.ts). */
+type CommentDraft = { iterationId: string; open: string; on: Target; body: string };
+function keptComment(value: unknown): CommentDraft | null {
+  const v = value as Partial<CommentDraft> | null;
+  const on = v?.on as Partial<Target> | undefined;
+  return v &&
+    typeof v.iterationId === 'string' &&
+    typeof v.open === 'string' &&
+    typeof v.body === 'string' &&
+    on &&
+    (on.target === 'field' || on.target === 'table') &&
+    typeof on.id === 'string'
+    ? (v as CommentDraft)
+    : null;
+}
 
 function Verdict({ match }: { match: boolean }) {
   return match ? (
@@ -62,11 +79,25 @@ export function LatestRun({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const iterationId = iteration?.id;
+  const draftKey = `ih.commentDraft.${projectId}`;
   useEffect(() => {
-    setOpen(null);
-    setCommenting(null);
+    // A comment left unsaved on this run reopens; another run starts closed.
+    const kept = loadKept(draftKey, keptComment)?.value;
+    const mine = kept && kept.iterationId === iterationId ? kept : null;
+    setOpen(mine?.open ?? null);
+    setCommenting(mine?.on ?? null);
+    setBody(mine?.body ?? '');
     setSaved(false);
-  }, [iterationId]);
+  }, [draftKey, iterationId]);
+  useEffect(() => {
+    if (!iterationId) return;
+    keepDraft(
+      draftKey,
+      commenting && open && body.trim()
+        ? { base: null, value: { iterationId, open, on: commenting, body } }
+        : null,
+    );
+  }, [draftKey, iterationId, open, commenting, body]);
 
   if (!iteration) {
     return (

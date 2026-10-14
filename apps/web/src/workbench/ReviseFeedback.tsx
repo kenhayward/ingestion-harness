@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   FEEDBACK_MAX_CHARS,
   FEEDBACK_TARGETS,
@@ -8,8 +8,22 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { Segmented } from '../ui/Segmented.js';
 import { feedbackOrigin, feedbackTargetIds, TARGET_TAG } from './revise.js';
+
+/** A feedback note being written, kept per project in this browser (ui/keptDraft.ts). */
+type FeedbackDraft = { target: FeedbackTarget; chosen: string; body: string };
+function keptFeedback(value: unknown): FeedbackDraft | null {
+  const v = value as Partial<FeedbackDraft> | null;
+  return v &&
+    typeof v === 'object' &&
+    (FEEDBACK_TARGETS as readonly string[]).includes(v.target as string) &&
+    typeof v.chosen === 'string' &&
+    typeof v.body === 'string'
+    ? (v as FeedbackDraft)
+    : null;
+}
 
 const TARGET_LABEL: Record<FeedbackTarget, string> = {
   field: 'Field',
@@ -53,9 +67,14 @@ export function ReviseFeedback({
 }) {
   const headingId = useId();
   const heldId = useId();
-  const [target, setTarget] = useState<FeedbackTarget>('field');
-  const [chosen, setChosen] = useState('');
-  const [body, setBody] = useState('');
+  const draftKey = `ih.feedbackDraft.${projectId}`;
+  const [kept] = useState(() => loadKept(draftKey, keptFeedback)?.value ?? null);
+  const [target, setTarget] = useState<FeedbackTarget>(kept?.target ?? 'field');
+  const [chosen, setChosen] = useState(kept?.chosen ?? '');
+  const [body, setBody] = useState(kept?.body ?? '');
+  useEffect(() => {
+    keepDraft(draftKey, body.trim() ? { base: null, value: { target, chosen, body } } : null);
+  }, [draftKey, target, chosen, body]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

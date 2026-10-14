@@ -1,5 +1,7 @@
 import {
   BRIEF_SECTIONS,
+  BriefBodySchema,
+  briefDiff,
   type BriefBody,
   type BriefSection,
   type BriefVersionView,
@@ -8,6 +10,7 @@ import {
 } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { parseCsv } from '../results/csv.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { formatBytes, plural } from './samples.js';
 
 export type TextSection = Exclude<BriefSection, 'answers'>;
@@ -92,4 +95,49 @@ export function exportStatusText(e: ExportView): string {
   if (e.status === 'queued' || e.status === 'running') return `Export ${e.status}…`;
   if (e.status === 'cancelled') return 'Export cancelled';
   return `Export failed${e.error ? `: ${e.error}` : ''}`;
+}
+
+/**
+ * Unsaved Brief edits, kept per project in this browser (ui/keptDraft.ts) so leaving the tab
+ * loses nothing. Only the sections that were edited are kept, with the version they were made
+ * on: restored, they go on top of whatever is saved by then, so a newer version's other sections
+ * are never undone.
+ */
+export type BriefDraft = { base: number | null; changes: Partial<BriefBody> };
+
+const draftKey = (projectId: string) => `ih.briefDraft.${projectId}`;
+const briefChanges = (value: unknown): Partial<BriefBody> | null => {
+  const changes = BriefBodySchema.partial().safeParse(value);
+  return changes.success ? changes.data : null;
+};
+
+export function loadBriefDraft(projectId: string): BriefDraft | null {
+  const kept = loadKept(draftKey(projectId), briefChanges);
+  if (!kept || typeof kept.base === 'string') return null;
+  return { base: kept.base, changes: kept.value };
+}
+
+/** Remembers `body`'s edits against `saved`, or forgets them when there are none. */
+export function keepBriefDraft(
+  projectId: string,
+  base: number | null,
+  saved: BriefBody,
+  body: BriefBody,
+): void {
+  const changed = briefDiff(saved, body).map((d) => d.section);
+  keepDraft(
+    draftKey(projectId),
+    changed.length
+      ? { base, value: Object.fromEntries(changed.map((s) => [s, body[s]])) as Partial<BriefBody> }
+      : null,
+  );
+}
+
+/** What the Brief tab says above edits it put back (`from`: their version; `now`: the saved one). */
+export function restoredNote(from: number | null, now: number | null): string {
+  if (from === now) {
+    return 'Restored your unsaved changes from your last visit: save them as a new version, or discard them.';
+  }
+  const made = from === null ? 'made before the first version' : `made on v${from}`;
+  return `Restored your unsaved changes, ${made}. The brief is now v${now}: check them before saving.`;
 }
