@@ -143,7 +143,7 @@ def test_an_import_embeds_its_terms(fixture_specs_dir: Path) -> None:
 def embed_job(**params: Any) -> ClaimedJob:
     return ClaimedJob(
         "job-e", "", "", 0, "", "", None, 1, 3, task="embed",
-        params={"ontologyId": "pv", "version": 1, **params},
+        params={"ontologyId": "pv", "version": 1, "model": "emb/nomic", **params},
     )  # fmt: skip
 
 
@@ -200,4 +200,88 @@ def test_pg_store_embeddings_round_trip() -> None:
         [("class", "https://ex.org/Batch", "s2", [1.0, 0.0, 0.0])],
     )
     conn.execute("DELETE FROM ontologies WHERE id = 'emb-worker-test'")
+    conn.close()
+
+
+def test_an_embed_job_uses_the_model_it_was_queued_for_not_the_workers_setting(
+    fixture_specs_dir: Path,
+) -> None:
+    """The setting changes and the job is queued in one request; a worker that has not
+    refreshed yet (old or no model) must still embed under the new one."""
+    deps, _, ontologies = make(fixture_specs_dir, model=None)
+    saved(ontologies)
+    queue = FakeQueue(jobs=[embed_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert ("pv", 1, "emb/nomic") in ontologies.embeddings
+
+
+def test_an_embed_job_whose_model_cannot_resolve_yet_is_retried(fixture_specs_dir: Path) -> None:
+    deps, _, ontologies = make(fixture_specs_dir)
+    saved(ontologies)
+    queue = FakeQueue(jobs=[embed_job(model="new-endpoint/model")])  # not in this registry yet
+    run_once(queue, deps, "w1")
+    assert queue.failed and not queue.reviewed  # retried with backoff, a refresh may fix it
+
+
+def test_terms_imported_from_a_local_only_ontology_never_reach_an_external_embedder(
+    fixture_specs_dir: Path,
+) -> None:
+    deps, provider, ontologies = make(fixture_specs_dir, location="external")
+    parsed = parse_ontology(TTL, "text/turtle", "pv.ttl")
+    parsed.terms[0].defined_in = "secret@1"
+    ontologies.saved[("pv", 1)] = parsed
+    ontologies.local_only_ids.add("secret")
+    queue = FakeQueue()
+    assert embed_version(deps, queue, "j", "pv", 1) == 0
+    assert not provider.embed_calls
+    assert any("secret" in str(e[3]) for e in queue.event_details if e[2] == "embedding skipped")
+
+
+@pytest.mark.integration
+def test_pg_vectors_of_any_size_and_a_search_filtered_to_the_versions_asked() -> None:
+    """Exact search over the asked versions: another version's many closer terms must not
+    crowd them out, and vectors over HNSW's 2000 dimensions store fine."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore
+
+    conn = psycopg.connect(url, autocommit=True)
+    for oid in ("crowd-a", "crowd-b"):
+        conn.execute("DELETE FROM ontologies WHERE id = %s", (oid,))
+        conn.execute("INSERT INTO ontologies (id, label) VALUES (%s, %s)", (oid, oid))
+        conn.execute(
+            """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, sha256, bytes)
+               VALUES (%s, 1, 'x.ttl', 'text/turtle', 'abc', 10)""",
+            (oid,),
+        )
+    store = PgOntologyStore(conn)
+    many = "".join(f"<https://b.example/C{i}> a owl:Class .\n" for i in range(80)).encode()
+    head = b"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n"
+    store.save(
+        "crowd-a",
+        1,
+        parse_ontology(head + b"<https://a.example/Far> a owl:Class .\n", "text/turtle", "a.ttl"),
+    )
+    store.save("crowd-b", 1, parse_ontology(head + many, "text/turtle", "b.ttl"))
+    near, far = [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]
+    store.store_embeddings(
+        "crowd-a", 1, "emb/crowd", [("class", "https://a.example/Far", "s", far)]
+    )
+    store.store_embeddings(
+        "crowd-b", 1, "emb/crowd",
+        [("class", f"https://b.example/C{i}", "s", near) for i in range(80)],
+    )  # fmt: skip
+    hits = store.semantic([("crowd-a", 1)], "emb/crowd", near, ["class"], 50)
+    assert [t.iri for t in hits] == ["https://a.example/Far"]
+    big = [0.001] * 2048
+    store.store_embeddings("crowd-a", 1, "emb/big", [("class", "https://a.example/Far", "s", big)])
+    assert [t.iri for t in store.semantic([("crowd-a", 1)], "emb/big", big, ["class"], 5)] == [
+        "https://a.example/Far"
+    ]
+    for oid in ("crowd-a", "crowd-b"):
+        conn.execute("DELETE FROM ontologies WHERE id = %s", (oid,))
     conn.close()

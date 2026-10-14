@@ -265,8 +265,15 @@ def convert_mapping(
     draft: dict[str, Any],
     inputs: MappingInputs,
     shortlists: dict[str, list[Candidate]],
+    *,
+    local_namespace: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """The model's flat changes as typed mapping changes, and every rule they break."""
+    """The model's flat changes as typed mapping changes, and every rule they break.
+
+    Each change stands on its own, so any subset can be applied: field and table changes keep
+    full IRIs unless the draft already declares their prefix; the document change declares
+    prefixes for the namespaces the proposal uses. Local terms live under `local_namespace`
+    (`{base}def/{type}/`); without a base none can be declared."""
     outputs = {o.path: o for o in outputs_of(draft)}
     changes = list(data.get("changes") or [])
     local = {
@@ -380,6 +387,12 @@ def convert_mapping(
                 continue
             if _IRI_UNSAFE.search(iri):
                 errors.append(f"{where}: {iri} is not a valid IRI")
+            if local_namespace is None:
+                errors.append(
+                    f"{where}: local terms need a base IRI: set the customer on the Linked data page"
+                )
+            elif not iri.startswith(local_namespace) or iri == local_namespace:
+                errors.append(f"{where}: local terms live under {local_namespace}, not {iri}")
             term_ = {"iri": iri, "kind": kind, "label": label}
             if str(c.get("localDefinition") or "").strip():
                 term_["definition"] = str(c["localDefinition"]).strip()
@@ -462,12 +475,18 @@ def convert_mapping(
             name, n = f"{base}{n}", n + 1
         prefixes[name] = ns
     document_change = next((c for c in typed if c["op"] == "setDocumentMapping"), None)
+    if (
+        not semantics
+        and document_change is None
+        and any(c["op"] in ("putFieldMapping", "putTableMapping") for c in typed)
+    ):
+        errors.append("map the document first (setDocumentMapping): the recipe has no mapping yet")
     if document_change is not None:
         document_change["prefixes"] = {
             k: v for k, v in prefixes.items() if k not in existing_prefixes
         }
-    declared = prefixes if document_change is not None or semantics else existing_prefixes
-    _compact_terms(typed, declared)
+        _compact_terms([document_change], prefixes)
+    _compact_terms([c for c in typed if c is not document_change], existing_prefixes)
     return {"notes": str(data.get("notes") or ""), "changes": typed}, errors
 
 
@@ -614,8 +633,12 @@ def run_mapping(
         inputs = MappingInputs.model_validate(params.mapping)
     except Exception as exc:
         raise DocumentError(f"invalid mapping parameters: {exc}") from exc
-    local_only = params.data_policy == "local" or any(v.local_only for v in inputs.versions)
-    restricted = [f"{v.id} v{v.version}" for v in inputs.versions if v.local_only]
+    versions = [(v.id, v.version) for v in inputs.versions]
+    restricted = sorted(
+        {f"{v.id} v{v.version}" for v in inputs.versions if v.local_only}
+        | set(store.local_only_sources(versions))
+    )
+    local_only = params.data_policy == "local" or bool(restricted)
     if restricted and deps.models.location(provider.name) == "external":
         raise DocumentError(
             f"{', '.join(restricted)} is local only: the mapping needs a local drafting model"
@@ -630,7 +653,6 @@ def run_mapping(
     observed = {p: v for p, v in observed.items() if v}
 
     notes: list[str] = []
-    versions = [(v.id, v.version) for v in inputs.versions]
     embedder = _embedder(job, deps, queue, local_only, notes)
     outputs = outputs_of(draft)
     queries = {o.path: query_text(o, observed.get(o.path, [])) for o in outputs}
@@ -648,9 +670,13 @@ def run_mapping(
             )
         if len(missing) < len(versions):
             paths = list(queries)
-            embedded = embedder.provider.embed(embedder.model_id, [queries[p] for p in paths])
-            vectors = dict(zip(paths, embedded, strict=True))
-            if deps.models.location(embedder.provider.name) == "external":
+            try:
+                embedded = embedder.provider.embed(embedder.model_id, [queries[p] for p in paths])
+                vectors = dict(zip(paths, embedded, strict=True))
+            except Exception as exc:  # an outage costs the semantic half, never the run
+                notes.append(f"Retrieval was lexical only: the embedding model failed: {exc}.")
+                embedder = None
+            if embedder is not None and deps.models.location(embedder.provider.name) == "external":
                 queue.event(
                     job.id,
                     "info",
@@ -705,8 +731,13 @@ def run_mapping(
             },
         )
 
+    base = deps.linked_data.effective_base() if deps.linked_data else None
+    local_namespace = f"{base}def/{draft.get('id')}/" if base else None
+    if local_namespace:
+        context += f"\n\n<local_terms>\nDeclare local terms under {local_namespace}\n</local_terms>"
+
     def check(data: dict[str, Any]) -> list[str]:
-        return convert_mapping(data, draft, inputs, shortlists)[1]
+        return convert_mapping(data, draft, inputs, shortlists, local_namespace=local_namespace)[1]
 
     label = "draft-mapping"
     try:
@@ -727,7 +758,9 @@ def run_mapping(
     except RefusalError as exc:
         raise DocumentError(f"drafting model refused: {exc}") from exc
     drafting._audit(deps, job, label, result.attempts)
-    body, _ = convert_mapping(result.data, draft, inputs, shortlists)
+    body, _ = convert_mapping(
+        result.data, draft, inputs, shortlists, local_namespace=local_namespace
+    )
     body["notes"] = "\n".join(n for n in [body["notes"].strip(), *notes] if n)
     last = result.attempts[-1]
     output = {

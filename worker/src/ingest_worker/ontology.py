@@ -489,6 +489,11 @@ class OntologyStore(Protocol):
         """The ontology may only be sent to local models."""
         ...
 
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        """The local-only ontologies among `versions` and the ontologies their terms were
+        imported from (`defined_in`), sorted: their text may only reach local models."""
+        ...
+
     def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
         """Every term but shapes, its parents as labels."""
         ...
@@ -761,6 +766,23 @@ class PgOntologyStore:
         ).fetchone()
         return str(row[0]) if row else None
 
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        if not versions:
+            return []
+        rows = self._conn.execute(
+            """SELECT o.id FROM ontologies o
+                WHERE o.local_only
+                  AND (o.id = ANY(%(ids)s::text[])
+                       OR o.id IN (SELECT DISTINCT split_part(t.defined_in, '@', 1)
+                                     FROM ontology_terms t
+                                     JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                                       ON t.ontology_id = p.id AND t.version = p.v
+                                    WHERE t.defined_in IS NOT NULL))
+                ORDER BY o.id""",
+            {"ids": [v[0] for v in versions], "vs": [v[1] for v in versions]},
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
     def local_only(self, ontology_id: str) -> bool:
         row = self._conn.execute(
             "SELECT local_only FROM ontologies WHERE id = %s", (ontology_id,)
@@ -808,7 +830,6 @@ class PgOntologyStore:
     ) -> None:
         if not rows:
             return
-        dims = len(rows[0][3])
         with self._conn.transaction(), self._conn.cursor() as cur:
             cur.executemany(
                 """INSERT INTO ontology_term_embeddings
@@ -822,7 +843,6 @@ class PgOntologyStore:
                     for kind, iri, sha, vec in rows
                 ],
             )
-        self._ensure_index(model_ref, dims)
 
     def lexical(
         self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
@@ -830,7 +850,11 @@ class PgOntologyStore:
         if not versions or not query.strip():
             return []
         rows = self._conn.execute(
-            f"""WITH q AS (SELECT lower(%(q)s) AS text, plainto_tsquery('simple', %(q)s) AS ts),
+            # Any word of the query may meet a definition (OR): an output's description is
+            # never all in one term's text.
+            f"""WITH q AS (SELECT lower(%(q)s) AS text,
+                       to_tsquery('simple', replace(plainto_tsquery('simple', %(q)s)::text,
+                                                    ' & ', ' | ')) AS ts),
                 scored AS (
                   SELECT {_READ_COLUMNS},
                          greatest(word_similarity(lower(t.label), q.text),
@@ -872,14 +896,18 @@ class PgOntologyStore:
         if not versions or not vector:
             return []
         dims = len(vector)
+        # An exact search over the asked versions only: an approximate index scan filtered
+        # afterwards lets other ontologies' closer terms crowd these out, and HNSW cannot index
+        # more than 2000 dimensions.
         query = sql.SQL(
-            """SELECT {cols} FROM ontology_term_embeddings e
-                 JOIN ontology_terms t USING (ontology_id, version, kind, iri)
-                 JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
-                   ON e.ontology_id = p.id AND e.version = p.v
-                WHERE e.model_ref = {ref} AND e.dims = {dims} AND e.kind = ANY(%(kinds)s::text[])
-                ORDER BY e.embedding::vector({dims}) <=> %(vec)s::vector({dims})
-                LIMIT %(limit)s"""
+            """WITH c AS MATERIALIZED (
+                 SELECT {cols}, e.embedding FROM ontology_term_embeddings e
+                   JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+                   JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                     ON e.ontology_id = p.id AND e.version = p.v
+                  WHERE e.model_ref = {ref} AND e.dims = {dims}
+                    AND e.kind = ANY(%(kinds)s::text[]))
+               SELECT * FROM c ORDER BY embedding <=> %(vec)s::vector LIMIT %(limit)s"""
         ).format(cols=sql.SQL(_READ_COLUMNS), ref=sql.Literal(model_ref), dims=sql.Literal(dims))
         rows = self._conn.execute(
             query,
@@ -904,23 +932,6 @@ class PgOntologyStore:
             ([v[0] for v in versions], [v[1] for v in versions], model_ref),
         ).fetchone()
         return bool(row and row[0])
-
-    def _ensure_index(self, model_ref: str, dims: int) -> None:
-        """An HNSW index per model and dimension, on the cast the semantic query uses."""
-        from psycopg import sql
-
-        digest = hashlib.sha256(f"{model_ref}|{dims}".encode()).hexdigest()[:12]
-        self._conn.execute(
-            sql.SQL(
-                "CREATE INDEX IF NOT EXISTS {name} ON ontology_term_embeddings"
-                " USING hnsw ((embedding::vector({dims})) vector_cosine_ops)"
-                " WHERE model_ref = {ref} AND dims = {dims}"
-            ).format(
-                name=sql.Identifier(f"ontology_term_embeddings_hnsw_{digest}"),
-                dims=sql.Literal(dims),
-                ref=sql.Literal(model_ref),
-            )
-        )
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self._conn.execute(

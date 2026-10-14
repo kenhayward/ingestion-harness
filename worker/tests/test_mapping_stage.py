@@ -4,6 +4,7 @@ schema, conversion to typed mapping changes, and the rules fed back to the model
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +77,7 @@ def shortlist_of(*iris: str) -> list[Candidate]:
         Candidate(
             i,
             "datatype_property",
-            i.rsplit("#", 1)[1],
+            re.split(r"[#/]", i)[-1],
             "",
             [],
             [],
@@ -129,7 +130,13 @@ def blank(op: str, target: str = "", **over: Any) -> dict[str, Any]:
 
 def convert(changes: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
     inputs = MappingInputs.model_validate(PARAMS_MAPPING)
-    return convert_mapping({"notes": "n", "changes": changes}, DRAFT, inputs, SHORTLISTS)
+    return convert_mapping(
+        {"notes": "n", "changes": changes},
+        DRAFT,
+        inputs,
+        SHORTLISTS,
+        local_namespace="https://ex.example/local#",
+    )
 
 
 def test_the_model_schema_has_no_union_types() -> None:
@@ -200,20 +207,22 @@ def test_converts_flat_changes_to_mapping_ops_with_curies_and_alternatives() -> 
     assert lot == {
         "op": "putFieldMapping",
         "field": "lot",
-        "mapping": {"property": "pharma:batchNumber"},
+        # Full IRI: the draft declares no prefix, and the change must stand without the
+        # document change that declares one.
+        "mapping": {"property": f"{PH}batchNumber"},
         "reason": "r",
         "confidence": "high",
         "evidence": ["G17230211"],
         "alternatives": [{"iri": f"{PH}productName", "label": "productName", "score": 0.01}],
     }
-    assert form["mapping"] == {"property": "pharma:dosageForm", "concepts": {}}
+    assert form["mapping"] == {"property": f"{PH}dosageForm", "concepts": {}}
     assert form["confidence"] == "low"
     # Columns are merged into their table's mapping.
     assert table["mapping"] == {
-        "link": "pharma:hasResult",
-        "class": "pharma:TestResult",
+        "link": f"{PH}hasResult",
+        "class": f"{PH}TestResult",
         "columns": {
-            "assay": {"property": "pharma:testName"},
+            "assay": {"property": f"{PH}testName"},
             "ok": {"property": "https://ex.example/local#stage"},
         },
     }
@@ -349,7 +358,7 @@ def test_a_mapping_run_writes_typed_changes_from_the_shortlists(fixture_specs_di
     assert result["stage"] == "mapping"
     ops = [c["op"] for c in result["body"]["changes"]]
     assert ops == ["setDocumentMapping", "putFieldMapping"]
-    assert result["body"]["changes"][1]["mapping"] == {"property": "pharma:batchNumber"}
+    assert result["body"]["changes"][1]["mapping"] == {"property": f"{PH}batchNumber"}
     [(_, request)] = drafting.calls
     assert "Prefer the pharma vocabulary." in request.prompt
     assert f"{PH}batchNumber" in request.prompt
@@ -423,3 +432,118 @@ def test_external_calls_are_logged_with_the_samples_and_ontologies(fixture_specs
 
 def test_the_context_stays_within_the_term_budget() -> None:
     assert MAX_MAPPING_TERMS == 300
+
+
+# --- review fixes ----------------------------------------------------------------------------
+
+
+def convert_with(
+    draft: dict[str, Any], changes: list[dict[str, Any]], **kw: Any
+) -> tuple[dict[str, Any], list[str]]:
+    inputs = MappingInputs.model_validate(PARAMS_MAPPING)
+    return convert_mapping({"notes": "", "changes": changes}, draft, inputs, SHORTLISTS, **kw)
+
+
+MAPPED_DRAFT = {
+    **DRAFT,
+    "semantics": {"prefixes": {"pharma": PH}, "document": {"class": "pharma:BatchRecord"}},
+}
+
+
+def test_with_a_mapping_terms_stay_iris_unless_the_draft_declares_their_prefix() -> None:
+    other = {**SHORTLISTS, "expires": shortlist_of("http://purl.org/dc/terms/date")}
+    inputs = MappingInputs.model_validate(PARAMS_MAPPING)
+    body, errors = convert_mapping(
+        {
+            "notes": "",
+            "changes": [
+                blank("putFieldMapping", "lot", property=f"{PH}batchNumber"),
+                blank("putFieldMapping", "expires", property="http://purl.org/dc/terms/date"),
+            ],
+        },
+        MAPPED_DRAFT,
+        inputs,
+        other,
+    )
+    assert errors == []
+    lot, expires = body["changes"]
+    assert lot["mapping"]["property"] == "pharma:batchNumber"  # declared by the draft
+    assert expires["mapping"]["property"] == "http://purl.org/dc/terms/date"  # never a bare CURIE
+
+
+def test_a_field_change_stays_valid_without_the_document_change() -> None:
+    """Each change is applied on its own: a field change never relies on a prefix only the
+    document change declares."""
+    body, errors = convert(
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putFieldMapping", "lot", property=f"{PH}batchNumber"),
+        ]
+    )
+    assert errors == []
+    document, lot = body["changes"]
+    assert document["document"]["class"] == "pharma:BatchRecord"
+    assert lot["mapping"]["property"] == f"{PH}batchNumber"
+
+
+def test_a_first_mapping_needs_the_document_change() -> None:
+    _, errors = convert([blank("putFieldMapping", "lot", property=f"{PH}batchNumber")])
+    assert any("map the document first" in e for e in errors)
+
+
+def test_local_terms_live_under_the_recipe_namespace() -> None:
+    ns = "https://data.acme.example/def/batch/"
+    _, errors = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putLocalTerm", localIri=f"{PH}invented", localKind="class", localLabel="x"),
+        ],
+        local_namespace=ns,
+    )
+    assert any(f"local terms live under {ns}" in e for e in errors)
+    _, ok = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putLocalTerm", localIri=f"{ns}stage", localKind="class", localLabel="stage"),
+        ],
+        local_namespace=ns,
+    )
+    assert ok == []
+    _, none = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putLocalTerm", localIri=f"{ns}stage", localKind="class", localLabel="stage"),
+        ],
+        local_namespace=None,
+    )
+    assert any("set the customer on the Linked data page" in e for e in none)
+
+
+def test_terms_imported_from_a_local_only_ontology_refuse_an_external_drafter(
+    fixture_specs_dir: Path,
+) -> None:
+    drafting, _, _, deps = make(fixture_specs_dir, drafter="external")
+    assert deps.ontologies is not None
+    store = deps.ontologies
+    assert isinstance(store, MemoryOntologyStore)
+    store.saved[("pharma", 1)].terms[0].defined_in = "secret@1"
+    store.local_only_ids.add("secret")
+    queue = run(deps, mapping_job(dataPolicy="external"))
+    [(_, reason)] = queue.reviewed
+    assert "secret" in reason and "local only" in reason
+    assert drafting.calls == []
+
+
+def test_an_embedding_outage_falls_back_to_lexical(fixture_specs_dir: Path) -> None:
+    from ingest_worker.llm.base import LLMError
+
+    drafting, embedding, store, deps = make(fixture_specs_dir)
+    embedding.embed = lambda model, texts: (_ for _ in ()).throw(LLMError("down"))  # type: ignore[method-assign]
+    drafting.responses = [GOOD]
+    queue = run(deps, mapping_job())
+    assert queue.completed
+    notes = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]["notes"]
+    assert "lexical only" in notes and "down" in notes

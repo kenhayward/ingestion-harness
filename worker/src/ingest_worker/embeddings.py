@@ -51,12 +51,21 @@ def _sha(text: str) -> str:
 
 
 def embed_version(
-    deps: PipelineDeps, queue: JobQueue, job_id: str, ontology_id: str, version: int
+    deps: PipelineDeps,
+    queue: JobQueue,
+    job_id: str,
+    ontology_id: str,
+    version: int,
+    *,
+    model_ref: str | None = None,
+    strict: bool = False,
 ) -> int:
-    """Embed the version's terms whose text changed under the current embedding model; the
-    number embedded. Policy and configuration problems skip (an event), never raise."""
+    """Embed the version's terms whose text changed under `model_ref` (default: the current
+    setting); the number embedded. Policy problems skip with an event. A model that does not
+    resolve skips too, unless `strict` (an `embed` job: the worker's registry may not have
+    caught up with the setting yet, so it raises and the job is retried)."""
     store = deps.ontologies
-    model_ref = deps.embedding_model
+    model_ref = model_ref or deps.embedding_model
     if store is None or model_ref is None:
         return 0
 
@@ -67,9 +76,15 @@ def embed_version(
     try:
         provider, model_id = deps.models.resolve_embedding(model_ref)
     except ModelResolutionError as exc:
+        if strict:
+            raise RuntimeError(f"embedding model {model_ref} does not resolve yet: {exc}") from exc
         return skip(str(exc))
-    if store.local_only(ontology_id) and deps.models.location(provider.name) == "external":
-        return skip(f"{ontology_id} is local only and {model_ref} is an external model")
+    if deps.models.location(provider.name) == "external":
+        restricted = store.local_only_sources([(ontology_id, version)])
+        if restricted:
+            return skip(
+                f"{', '.join(restricted)} is local only and {model_ref} is an external model"
+            )
 
     existing = store.existing_embeddings(ontology_id, version, model_ref)
     todo: list[tuple[str, str, str, str]] = []  # kind, iri, sha, text
@@ -117,6 +132,8 @@ class EmbedParams(BaseModel):
 
     ontology_id: str = Field(alias="ontologyId", min_length=1)
     version: int = Field(gt=0)
+    #: The model the job was queued for: the worker may not have seen the new setting yet.
+    model: str = Field(min_length=1)
 
 
 def run_embed(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
@@ -126,4 +143,6 @@ def run_embed(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
         params = EmbedParams.model_validate(job.params or {})
     except ValidationError as exc:
         raise DocumentError(f"invalid embed parameters: {exc}") from exc
-    return embed_version(deps, queue, job.id, params.ontology_id, params.version)
+    return embed_version(
+        deps, queue, job.id, params.ontology_id, params.version, model_ref=params.model, strict=True
+    )

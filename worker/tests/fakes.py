@@ -356,6 +356,15 @@ class MemoryOntologyStore:
     def local_only(self, ontology_id: str) -> bool:
         return ontology_id in self.local_only_ids
 
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        ids = {v[0] for v in versions}
+        for version in versions:
+            parsed = self.saved.get(version)
+            ids |= {
+                t.defined_in.split("@")[0] for t in (parsed.terms if parsed else []) if t.defined_in
+            }
+        return sorted(i for i in ids if i in self.local_only_ids)
+
     def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
         parsed = self.saved.get((ontology_id, version))
         terms = [t for t in (parsed.terms if parsed else []) if t.kind != "shape"]

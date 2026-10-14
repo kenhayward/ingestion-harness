@@ -180,3 +180,44 @@ def test_pg_lexical_and_semantic_retrieval() -> None:
     assert used and found[0].iri == "https://ex.example/pharma#batchNumber"
     conn.execute("DELETE FROM ontologies WHERE id = 'pharma-worker-test'")
     conn.close()
+
+
+@pytest.mark.integration
+def test_pg_definitions_bring_terms_in_and_recall_holds_on_the_real_sql() -> None:
+    """The recall fixture against PgOntologyStore (lexical only), and a query whose words meet
+    in a definition but not all in one term."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore
+
+    conn = psycopg.connect(url, autocommit=True)
+    conn.execute("DELETE FROM ontologies WHERE id = 'pharma-recall'")
+    conn.execute("INSERT INTO ontologies (id, label) VALUES ('pharma-recall', 'P')")
+    conn.execute(
+        """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, sha256, bytes)
+           VALUES ('pharma-recall', 1, 'p.ttl', 'text/turtle', 'abc', 10)"""
+    )
+    pg = PgOntologyStore(conn)
+    pg.save(
+        "pharma-recall",
+        1,
+        parse_ontology((FIXTURE / "ontology.ttl").read_bytes(), "text/turtle", "o.ttl"),
+    )
+    versions = [("pharma-recall", 1)]
+    found = pg.lexical(versions, "quantity zzz manufacturing run", ["class"], 10)
+    assert "https://ex.example/pharma#Batch" in [t.iri for t in found]
+    hits = 0
+    for case in CASES:
+        iris = {
+            c.iri
+            for c in shortlist(
+                pg, versions, case["query"], case["kinds"], vector=None, model_ref=None, k=15
+            )[0]
+        }
+        hits += sum(1 for e in case["expected"] if e in iris)
+    assert hits / sum(len(c["expected"]) for c in CASES) >= 0.6
+    conn.execute("DELETE FROM ontologies WHERE id = 'pharma-recall'")
+    conn.close()
