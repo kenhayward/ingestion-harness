@@ -93,7 +93,11 @@ describe('HomePage', () => {
 });
 
 describe('HomePage live progress', () => {
-  function live(jobs: JobSummary[], api: ReturnType<typeof fakeApi>, refresh = vi.fn(async () => {})) {
+  function live(
+    jobs: JobSummary[],
+    api: ReturnType<typeof fakeApi>,
+    refresh = vi.fn(async () => {}),
+  ) {
     render(
       <HomePage
         api={api}
@@ -117,7 +121,12 @@ describe('HomePage live progress', () => {
       calls += 1;
       return calls < 3
         ? { ...running, outputs: [] }
-        : { ...running, status: 'succeeded' as const, updatedAt: '2030-01-01T00:00:00Z', outputs: [] };
+        : {
+            ...running,
+            status: 'succeeded' as const,
+            updatedAt: '2030-01-01T00:00:00Z',
+            outputs: [],
+          };
     });
     const api = fakeApi({ getJob });
     const refresh = live([running], api);
