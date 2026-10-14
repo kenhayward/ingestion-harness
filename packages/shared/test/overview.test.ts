@@ -75,6 +75,8 @@ describe('briefSaved', () => {
       variants: '',
       rules: '',
       answers: [],
+      ontologies: [],
+      ontologyGuidance: '',
       ...body,
     },
   });
