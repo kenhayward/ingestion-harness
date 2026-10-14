@@ -5,6 +5,7 @@ import {
   SurveyBodySchema,
   briefDiff,
   type Brief,
+  type DataPolicy,
   type BriefBody,
   type BriefSection,
   type BriefVersionView,
@@ -13,6 +14,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
+import { BriefOntologies } from './BriefOntologies.js';
 import { Icon } from '../ui/Icon.js';
 import {
   BRIEF_HINT,
@@ -156,9 +158,12 @@ export function BriefTab({
   onSaved,
   onNavigate,
   aside,
+  dataPolicy = null,
 }: {
   api: Api;
   projectId: string;
+  /** The project's data policy: a local-only ontology on an external project gets a note. */
+  dataPolicy?: DataPolicy | null;
   brief: Brief | null;
   /** The Brief entry of the project overview (status line); null until it loads. */
   item: OverviewItem | null;
@@ -381,6 +386,16 @@ export function BriefTab({
               Open Survey
             </button>
           </section>
+          <BriefOntologies
+            api={api}
+            ontologies={body.ontologies}
+            guidance={body.ontologyGuidance}
+            dataPolicy={dataPolicy}
+            onChange={(next) => {
+              setMessage(null);
+              setBody({ ...body, ...next });
+            }}
+          />
         </form>
 
         <div className="brief-side">

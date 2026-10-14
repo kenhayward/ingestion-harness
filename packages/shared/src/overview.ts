@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BRIEF_SECTIONS, briefSectionText } from './brief.js';
 import { RetirementSchema } from './retirement.js';
 import { STAGE_ORDER, type StageState, type StageView } from './drafting.js';
 import { GateViewSchema, percent, type GateView } from './evaluation.js';
@@ -125,8 +126,7 @@ const firstToDo = (entries: readonly OverviewEntry[]) =>
 /** A brief counts as saved once any field or survey answer has text. */
 export function briefSaved(brief: Brief | null): boolean {
   if (brief === null) return false;
-  const { answers, ...text } = brief.body;
-  return answers.length > 0 || Object.values(text).some((value) => value.trim() !== '');
+  return BRIEF_SECTIONS.some((section) => briefSectionText(brief.body, section).trim() !== '');
 }
 
 function samplesState({ total, preparing, failed }: OverviewInputs['samples']): OverviewState {

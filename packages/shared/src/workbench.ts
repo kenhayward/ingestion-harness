@@ -15,6 +15,16 @@ export const DATA_POLICIES = ['local', 'external'] as const;
 export const DataPolicySchema = z.enum(DATA_POLICIES);
 export type DataPolicy = z.infer<typeof DataPolicySchema>;
 
+/** An ontology the brief chooses (ADR 0011): a vocabulary to map to, or SHACL shapes. */
+export const BriefOntologySchema = z
+  .object({
+    ontologyId: z.string().min(1),
+    version: z.number().int().positive(),
+    role: z.enum(['vocabulary', 'shapes']),
+  })
+  .strict();
+export type BriefOntology = z.infer<typeof BriefOntologySchema>;
+
 export const BriefBodySchema = z
   .object({
     purpose: z.string().default(''),
@@ -25,6 +35,10 @@ export const BriefBodySchema = z
     rules: z.string().default(''),
     /** Survey questions and the user's answers (drafting stage `survey`). */
     answers: z.array(z.object({ question: z.string(), answer: z.string() }).strict()).default([]),
+    /** The ontologies this document type maps to (vocabulary) or is checked against (shapes). */
+    ontologies: z.array(BriefOntologySchema).max(20).default([]),
+    /** Free text sent to the mapping stage. */
+    ontologyGuidance: z.string().default(''),
   })
   .strict();
 export type BriefBody = z.infer<typeof BriefBodySchema>;
@@ -37,6 +51,8 @@ export const EMPTY_BRIEF: BriefBody = {
   variants: '',
   rules: '',
   answers: [],
+  ontologies: [],
+  ontologyGuidance: '',
 };
 
 export const BriefSchema = z.object({

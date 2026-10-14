@@ -14062,6 +14062,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -14400,6 +14435,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -14703,6 +14773,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -15416,6 +15521,41 @@
                                         "additionalProperties": false
                                       },
                                       "default": []
+                                    },
+                                    "ontologies": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "ontologyId": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "version": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "role": {
+                                            "type": "string",
+                                            "enum": [
+                                              "vocabulary",
+                                              "shapes"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "ontologyId",
+                                          "version",
+                                          "role"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 20,
+                                      "default": []
+                                    },
+                                    "ontologyGuidance": {
+                                      "type": "string",
+                                      "default": ""
                                     }
                                   },
                                   "additionalProperties": false
@@ -17283,6 +17423,41 @@
                       "additionalProperties": false
                     },
                     "default": []
+                  },
+                  "ontologies": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "ontologyId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "vocabulary",
+                            "shapes"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ontologyId",
+                        "version",
+                        "role"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20,
+                    "default": []
+                  },
+                  "ontologyGuidance": {
+                    "type": "string",
+                    "default": ""
                   }
                 },
                 "additionalProperties": false
@@ -17361,6 +17536,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -17440,6 +17650,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -17618,7 +17863,8 @@
                             "exampleOutput",
                             "variants",
                             "rules",
-                            "answers"
+                            "answers",
+                            "ontologies"
                           ]
                         }
                       },
@@ -17795,6 +18041,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -19542,6 +19823,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -28649,6 +28965,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -29004,6 +29355,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -29978,6 +30364,41 @@
                                         "additionalProperties": false
                                       },
                                       "default": []
+                                    },
+                                    "ontologies": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "ontologyId": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "version": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "role": {
+                                            "type": "string",
+                                            "enum": [
+                                              "vocabulary",
+                                              "shapes"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "ontologyId",
+                                          "version",
+                                          "role"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 20,
+                                      "default": []
+                                    },
+                                    "ontologyGuidance": {
+                                      "type": "string",
+                                      "default": ""
                                     }
                                   },
                                   "additionalProperties": false

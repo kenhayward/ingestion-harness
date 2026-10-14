@@ -5,6 +5,9 @@ import {
   briefDiff,
   briefSectionText,
   briefVersions,
+  BriefBodySchema,
+  ontologySelectionKey,
+  vocabularyOf,
   type Brief,
   type BriefBody,
   type BriefSectionDiff,
@@ -82,7 +85,8 @@ describe('briefDiff', () => {
   });
 
   it('covers every brief field', () => {
-    expect([...BRIEF_SECTIONS].sort()).toEqual(Object.keys(EMPTY_BRIEF).sort());
+    // The ontologies section covers the picks and their guidance.
+    expect([...BRIEF_SECTIONS, 'ontologyGuidance'].sort()).toEqual(Object.keys(EMPTY_BRIEF).sort());
     expect(briefSectionText(body({ glossary: 'PO' }), 'glossary')).toBe('PO');
   });
 });
@@ -155,5 +159,42 @@ describe('briefVersions', () => {
 
   it('sorts briefs given out of order', () => {
     expect(briefVersions([v2, v1], []).map((v) => v.version)).toEqual([2, 1]);
+  });
+});
+
+describe('brief ontologies (ADR 0011)', () => {
+  const acme = { ontologyId: 'acme', version: 1, role: 'vocabulary' as const };
+  const shapes = { ontologyId: 'acme-shapes', version: 2, role: 'shapes' as const };
+
+  it('defaults to no ontologies and no guidance', () => {
+    expect(BriefBodySchema.parse({})).toMatchObject({ ontologies: [], ontologyGuidance: '' });
+    expect(() => BriefBodySchema.parse({ ontologies: [{ ...acme, role: 'other' }] })).toThrow();
+  });
+
+  it('shows the picks and the guidance as one section', () => {
+    const after = body({ ontologies: [acme, shapes], ontologyGuidance: 'Prefer IDMP-O' });
+    expect(briefSectionText(after, 'ontologies')).toBe(
+      'acme v1 (vocabulary)\nacme-shapes v2 (shapes)\nGuidance: Prefer IDMP-O',
+    );
+    expect(briefDiff(body(), after)).toEqual([
+      { section: 'ontologies', before: '', after: briefSectionText(after, 'ontologies') },
+    ]);
+    expect(briefDiff(after, body({ ...after, ontologyGuidance: 'Use IDMP-O' }))).toHaveLength(1);
+  });
+
+  it('keys the vocabulary selection, ignoring shapes and order', () => {
+    const b = body({ ontologies: [acme, { ...acme, ontologyId: 'b' }], ontologyGuidance: 'g' });
+    const reordered = body({
+      ontologies: [shapes, { ...acme, ontologyId: 'b' }, acme],
+      ontologyGuidance: 'g',
+    });
+    expect(ontologySelectionKey(reordered)).toBe(ontologySelectionKey(b));
+    expect(ontologySelectionKey(body({ ...b, ontologyGuidance: 'h' }))).not.toBe(
+      ontologySelectionKey(b),
+    );
+    expect(vocabularyOf(reordered)).toEqual([
+      { ontologyId: 'acme', version: 1 },
+      { ontologyId: 'b', version: 1 },
+    ]);
   });
 });

@@ -42,6 +42,17 @@ export const BundleManifestSchema = z
      * accepts the survey from `survey.json` and records the others as skipped.
      */
     completedStages: z.array(z.enum(['survey', 'outputs', 'sections', 'steps'])).optional(),
+    /**
+     * The ontology versions the brief chooses (ADR 0011). A bundle names them but does not carry
+     * them: import needs the library to hold the same bytes.
+     */
+    ontologies: z
+      .array(
+        z
+          .object({ id: z.string().min(1), version: z.number().int().positive(), sha256: Sha256 })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export type BundleManifest = z.infer<typeof BundleManifestSchema>;

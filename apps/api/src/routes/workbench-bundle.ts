@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { MultipartFile } from '@fastify/multipart';
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyInstance,
+  FastifyPluginAsync,
+  FastifyReply,
+  FastifyRequest,
+} from 'fastify';
 import { z } from 'zod';
 import {
   BriefBodySchema,
@@ -132,6 +137,31 @@ const exportView = (
   };
 };
 
+/** The brief's ontology versions with their bytes' sha256 (a version not found is left out). */
+async function briefOntologies(app: FastifyInstance, brief: BriefBody) {
+  const out: { id: string; version: number; sha256: string }[] = [];
+  for (const pick of brief.ontologies ?? []) {
+    const detail = await app.deps.ontologies.get(pick.ontologyId);
+    const version = detail?.versions.find((v) => v.version === pick.version);
+    if (version?.sha256)
+      out.push({ id: pick.ontologyId, version: pick.version, sha256: version.sha256 });
+  }
+  return out;
+}
+
+/** The bundle's ontologies the library holds no version of with the same bytes, as `id vN`. */
+async function missingOntologies(
+  app: FastifyInstance,
+  wanted: { id: string; version: number; sha256: string }[],
+) {
+  const missing: string[] = [];
+  for (const o of wanted) {
+    const detail = await app.deps.ontologies.get(o.id);
+    if (!detail?.versions.some((v) => v.sha256 === o.sha256)) missing.push(`${o.id} v${o.version}`);
+  }
+  return missing;
+}
+
 export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
   const { repo, store, buckets, templates, workbench } = app.deps;
 
@@ -242,6 +272,12 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     if (retired) return answer(409, { error: retired });
     const samples = await sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return answer(400, { error: samples });
+    const missing = await missingOntologies(app, manifest.value.ontologies ?? []);
+    if (missing.length) {
+      return answer(400, {
+        error: `bundle needs ontologies not in the library: ${missing.join(', ')}`,
+      });
+    }
 
     // Only now write: the draft, the project, the brief, then the samples.
     try {
@@ -434,6 +470,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         draft: record.definition,
         survey: await acceptedSurvey(app, id),
         completedStages,
+        ontologies: await briefOntologies(app, brief?.body ?? EMPTY_BRIEF),
         samples,
       };
       const { job, removed } = await repo.createExportJob(id, params);
