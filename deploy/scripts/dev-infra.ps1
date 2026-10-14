@@ -35,7 +35,7 @@ switch ($Action) {
     $env:S3_SECRET_KEY = $cfg.S3_SECRET_KEY
     $converterPort = if ($cfg.CONVERTER_PORT) { $cfg.CONVERTER_PORT } else { '3010' }
     $env:CONVERTER_URL = "http://localhost:$converterPort"
-    $fusekiPort = if ($cfg.FUSEKI_PORT) { $cfg.FUSEKI_PORT } else { '3030' }
+    $fusekiPort = if ($cfg.FUSEKI_PUBLIC_PORT) { $cfg.FUSEKI_PUBLIC_PORT } else { '3030' }
     $env:RDF_ENDPOINT = "http://localhost:$fusekiPort"
     $env:RDF_USER = 'ct-writer'
     $env:RDF_PASSWORD = if ($cfg.RDF_WRITER_PASSWORD) { $cfg.RDF_WRITER_PASSWORD } else { 'dev-writer' }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { MetricsData } from '../metrics.js';
 import type {
+  JobStatus,
   JobDetail,
   JobOutput,
   JobSummary,
@@ -33,6 +34,9 @@ import {
   type StoredObject,
   WORKBENCH_PRIORITY,
   type WorkbenchJobOptions,
+  type WithdrawalStatus,
+  REPUBLISH_JOB,
+  WITHDRAW_JOB,
 } from './types.js';
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
@@ -53,6 +57,28 @@ export class MemoryRepo implements IngestionRepo {
   /** jobs.params of workbench jobs. */
   readonly jobParams = new Map<string, Record<string, unknown>>();
   readonly outputs = new Map<string, JobOutput[]>();
+  /** Published outputs a retirement withdrew (Postgres: job_outputs.withdrawn_at). */
+  readonly withdrawnOutputs = new Map<string, JobOutput[]>();
+  /** Graph versions as the worker records them (published_graph_versions); tests add them. */
+  readonly graphVersions: {
+    sha256: string;
+    templateId: string;
+    graphIri: string;
+    version: number;
+    jobId: string;
+  }[] = [];
+  /** The current graph of each (sha256, type) (published_graphs). */
+  private readonly graphs = new Map<string, { graphIri: string; version: number; jobId: string }>();
+  /** Document-less withdraw/republish jobs queued (ADR 0011 step 7). */
+  readonly backgroundJobs: {
+    id: string;
+    task: 'withdraw' | 'republish';
+    priority: number;
+    maxAttempts: number;
+    params: unknown;
+    status: JobStatus;
+    createdBy: string | null;
+  }[] = [];
   /** job_events: what the API writes itself (cancellations) and what tests add for the worker. */
   readonly events = new Map<
     string,
@@ -429,6 +455,94 @@ export class MemoryRepo implements IngestionRepo {
     return this.update(id, { status: 'cancelled' });
   }
 
+  /** Tests: the worker published a graph version for `jobId`. */
+  publishGraph(g: { sha256: string; templateId: string; graphIri: string; jobId: string }): number {
+    const key = `${g.sha256}:${g.templateId}`;
+    const version =
+      Math.max(
+        0,
+        ...this.graphVersions
+          .filter((v) => v.sha256 === g.sha256 && v.templateId === g.templateId)
+          .map((v) => v.version),
+      ) + 1;
+    this.graphVersions.push({ ...g, version });
+    this.graphs.set(key, { graphIri: g.graphIri, version, jobId: g.jobId });
+    return version;
+  }
+
+  currentGraphs() {
+    return [...this.graphs.entries()].map(([key, g]) => {
+      const [sha256, templateId] = key.split(':') as [string, string];
+      return { sha256, templateId, ...g };
+    });
+  }
+
+  private queueBackground(
+    task: 'withdraw' | 'republish',
+    params: unknown,
+    by: string | null,
+  ): string {
+    const id = randomUUID();
+    const { priority, maxAttempts } = task === 'withdraw' ? WITHDRAW_JOB : REPUBLISH_JOB;
+    this.backgroundJobs.push({
+      id,
+      task,
+      priority,
+      maxAttempts,
+      params,
+      status: 'queued',
+      createdBy: by,
+    });
+    return id;
+  }
+
+  async withdrawType(typeId: string, by: string | null): Promise<string | null> {
+    const objects: { bucket: string; key: string }[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.specId !== typeId) continue;
+      const outputs = this.outputs.get(job.id) ?? [];
+      const delivered = outputs.filter((o) => o.stage === 'published');
+      if (!delivered.length) continue;
+      objects.push(...delivered.map((o) => ({ bucket: o.bucket, key: o.key })));
+      this.withdrawnOutputs.set(job.id, [
+        ...(this.withdrawnOutputs.get(job.id) ?? []),
+        ...delivered,
+      ]);
+      this.outputs.set(
+        job.id,
+        outputs.filter((o) => o.stage !== 'published'),
+      );
+    }
+    const graphs = this.currentGraphs()
+      .filter((g) => g.templateId === typeId)
+      .map((g) => {
+        this.graphs.delete(`${g.sha256}:${g.templateId}`);
+        const versions = this.graphVersions
+          .filter((v) => v.sha256 === g.sha256 && v.templateId === g.templateId)
+          .map((v) => v.version)
+          .sort((a, b) => a - b);
+        return { sha256: g.sha256, templateId: g.templateId, graphIri: g.graphIri, versions };
+      });
+    if (!objects.length && !graphs.length) return null;
+    return this.queueBackground('withdraw', { objects, graphs }, by);
+  }
+
+  async republishType(typeId: string, by: string | null): Promise<string | null> {
+    const withdrawn = [...this.withdrawnOutputs.keys()].some(
+      (id) => this.jobs.get(id)?.specId === typeId,
+    );
+    return withdrawn ? this.queueBackground('republish', { templateId: typeId }, by) : null;
+  }
+
+  async withdrawalStatus(): Promise<WithdrawalStatus> {
+    const count = (s: JobStatus) => this.backgroundJobs.filter((j) => j.status === s).length;
+    return {
+      queued: count('queued'),
+      running: count('running'),
+      failed: count('failed') + count('needs_review'),
+    };
+  }
+
   async deleteJob(id: string): Promise<DeleteJobResult> {
     const job = this.jobs.get(id);
     if (!job) return { result: 'not_found' };
@@ -436,6 +550,39 @@ export class MemoryRepo implements IngestionRepo {
     const draftObjects = (this.outputs.get(id) ?? [])
       .filter((o) => o.stage === 'draft')
       .map((o) => ({ bucket: o.bucket, key: o.key }));
+    const objects = (this.outputs.get(id) ?? [])
+      .filter((o) => o.stage === 'published')
+      .map((o) => ({ bucket: o.bucket, key: o.key }));
+    const graphs: {
+      sha256: string;
+      templateId: string;
+      graphIri: string | null;
+      versions: number[];
+    }[] = [];
+    for (const v of this.graphVersions.filter((g) => g.jobId === id)) {
+      const key = `${v.sha256}:${v.templateId}`;
+      let entry = graphs.find((g) => g.sha256 === v.sha256 && g.templateId === v.templateId);
+      if (!entry) {
+        const current = this.graphs.get(key);
+        const drop = current?.jobId === id;
+        if (drop) this.graphs.delete(key);
+        entry = {
+          sha256: v.sha256,
+          templateId: v.templateId,
+          graphIri: drop ? current!.graphIri : null,
+          versions: [],
+        };
+        graphs.push(entry);
+      }
+      entry.versions.push(v.version);
+    }
+    for (let i = this.graphVersions.length - 1; i >= 0; i--) {
+      if (this.graphVersions[i]!.jobId === id) this.graphVersions.splice(i, 1);
+    }
+    const withdrawJobId =
+      objects.length || graphs.length
+        ? this.queueBackground('withdraw', { objects, graphs }, null)
+        : null;
     this.jobs.delete(id);
     this.outputs.delete(id);
     this.edits.delete(id);
@@ -455,7 +602,7 @@ export class MemoryRepo implements IngestionRepo {
       );
       if (!shared) inboxObject = { bucket: doc.bucket, key: doc.objectKey };
     }
-    return { result: 'deleted', removed: { jobId: id, draftObjects, inboxObject } };
+    return { result: 'deleted', removed: { jobId: id, draftObjects, inboxObject, withdrawJobId } };
   }
 
   async finishedJobIdsBefore(cutoffIso: string, includeRegression = false): Promise<string[]> {

@@ -148,3 +148,12 @@ def test_concurrent_publishes_of_one_graph_serialise() -> None:
     for t in threads:
         t.join()
     assert order == [1, 2]
+
+
+def test_locked_reads_the_current_graph_and_its_versions(registry: GraphRegistry) -> None:
+    seen: list[tuple[int | None, set[int]]] = []
+    registry.locked(SHA, "letter", lambda cur, vs: seen.append((cur and cur.version, vs)))
+    registry.publish(record(), lambda _v: None)
+    registry.publish(record(), lambda _v: None)
+    registry.locked(SHA, "letter", lambda cur, vs: seen.append((cur and cur.version, vs)))
+    assert seen == [(None, set()), (2, {1, 2})]

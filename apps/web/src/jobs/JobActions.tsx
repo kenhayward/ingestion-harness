@@ -13,7 +13,7 @@ type InlineAction = 'cancel' | 'delete';
 
 /** Inline confirmation text per action (also the Confirm button's description). */
 const PROMPTS: Record<InlineAction, (filename: string) => string> = {
-  delete: (f) => `Delete ${f}? Published copies in the target are kept.`,
+  delete: (f) => `Delete ${f}? Published outputs and its graph are withdrawn.`,
   cancel: () => 'Cancel job?',
 };
 

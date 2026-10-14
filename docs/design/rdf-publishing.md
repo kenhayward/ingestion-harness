@@ -1070,6 +1070,37 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
    retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
    `ct-reader` user through the proxy, docs for consumers.
+   *As built:*
+   - **Outputs of a retired type** keep their `job_outputs` rows, marked `withdrawn_at`
+     (migration 0037), so unretiring knows what to re-deliver. Readers skip them.
+   - **Retirement keeps the graph version rows**, so a republish continues the numbering. Graph
+     versions are now always `max(published_graph_versions) + 1`.
+   - **Withdrawals and republishes are not `JobSummary`s** (they are document-less). Their
+     waiting and failed counts show on the Linked data panel instead of the Jobs page.
+   - **Retiring withdraws on every `PUT`,** and is idempotent. A `PUT` withdraws what was
+     delivered since the last one, such as a review approved after the retirement. It does
+     **not** repeat a withdrawal that failed: those outputs are already marked withdrawn. A
+     failed or stopped withdrawal shows on the Linked data panel (failed counts include
+     `needs_review`) for an operator to retry.
+   - **What has been delivered again is spared.** The worker's withdrawal checks under each
+     graph's lock: it never drops a graph that has a current version again, never deletes a
+     version copy whose version row exists again, and never deletes an object that a live output
+     row has. So a withdrawal that runs after a newer publish or a republish removes only what is
+     still withdrawn.
+   - **Republish runs in a set order.** A republish of a type retired again meanwhile does
+     nothing. It publishes a job's graph before recording its outputs, so a failure leaves the
+     job withdrawn and the retry finds it. It skips, with an event, a job it cannot render (a
+     legacy spec, no document); legacy spec outputs stay withdrawn.
+   - **Retirement takes no per-graph locks,** so a large type cannot exhaust them. The entity
+     sweep only touches the IRIs the removed sources named, locked first.
+   - **Consumers** reach Fuseki through the host's reverse proxy at
+     `FUSEKI_BIND:FUSEKI_PUBLIC_PORT`, with only `/ct/sparql` and `/ct/get` forwarded.
+     `RDF_PUBLIC_URL` puts the endpoint on the panel, and `docs/consumers/sparql.md` is the
+     consumer guide.
+   - **No chains exist yet.** Withdrawal is keyed by job and type, and follow-on chains will
+     build their atomic unit on it.
+   - **Not built:** `ct:correctedFrom` on corrected values (see *Fact provenance*). The consumer
+     guide documents only what is published.
 
 Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). Step 6 can be
 pulled forward if consumers need SPARQL early with hand-written mappings.

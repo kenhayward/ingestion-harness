@@ -29,7 +29,7 @@ describe('JobCleanup', () => {
       includeRegression: false,
     });
     expect(
-      await screen.findByText('150 jobs will be deleted (published copies are kept).', {
+      await screen.findByText('150 jobs will be deleted (what they published is withdrawn).', {
         exact: false,
       }),
     ).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe('JobCleanup', () => {
     render(<JobCleanup api={fakeApi({ cleanupJobs })} onChanged={vi.fn()} />);
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
     expect(
-      await screen.findByText('1 job will be deleted (published copies are kept).', {
+      await screen.findByText('1 job will be deleted (what they published is withdrawn).', {
         exact: false,
       }),
     ).toBeInTheDocument();

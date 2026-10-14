@@ -40,6 +40,7 @@ from .pipeline import (
     publish_outputs,
 )
 from .queue import ClaimedJob, JobQueue, PgJobQueue
+from .rdf_rebuild import PgRebuildSource
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
 from .template_pipeline import (
@@ -48,6 +49,7 @@ from .template_pipeline import (
     publish_template_job,
     rerun_template_job,
 )
+from .withdrawal import run_republish, run_withdraw
 from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
@@ -125,6 +127,16 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             embedded = run_embed(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s embedded %d terms", job.id, embedded)
+            return True
+        if job.task == "withdraw":
+            withdrawn = run_withdraw(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s withdrew %d objects, %d graphs", job.id, *withdrawn)
+            return True
+        if job.task == "republish":
+            count = run_republish(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s re-delivered %d jobs", job.id, count)
             return True
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
@@ -266,6 +278,7 @@ def main() -> None:
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
         graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
         graph_store=graph_store_from_env(os.environ),
+        delivered_jobs=PgRebuildSource(library),
         ontology_max_triples=settings.ontology_max_triples,
         ontology_fetch=(
             functools.partial(

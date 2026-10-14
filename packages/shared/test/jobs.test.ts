@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { JobSummarySchema, StepProgressSchema, TestRunSchema } from '../src/index.js';
+import {
+  JobSummarySchema,
+  RepublishParamsSchema,
+  StepProgressSchema,
+  TestRunSchema,
+  WithdrawParamsSchema,
+} from '../src/index.js';
 
 const summary = {
   id: '6f1c2c1e-0000-4000-8000-000000000001',
@@ -81,5 +87,23 @@ describe('step progress (TR3)', () => {
     };
     expect(TestRunSchema.parse(run).progress).toEqual(fixture.templateRun[2]);
     expect(TestRunSchema.safeParse({ ...run, progress: null }).success).toBe(true);
+  });
+});
+
+describe('withdraw and republish params (ADR 0011 step 7; shared with the worker)', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('./fixtures/withdraw-params.json', import.meta.url), 'utf8'),
+  ) as Record<string, unknown[]> & { republish: Record<string, unknown[]> };
+  it.each(fixture.valid!.map((v) => [v]))('accepts %j', (params) => {
+    expect(WithdrawParamsSchema.parse(params)).toEqual(params);
+  });
+  it.each(fixture.invalid!.map((v) => [v]))('refuses %j', (params) => {
+    expect(WithdrawParamsSchema.safeParse(params).success).toBe(false);
+  });
+  it('republish names the type', () => {
+    for (const v of fixture.republish.valid!) expect(RepublishParamsSchema.parse(v)).toEqual(v);
+    for (const v of fixture.republish.invalid!) {
+      expect(RepublishParamsSchema.safeParse(v).success).toBe(false);
+    }
   });
 });

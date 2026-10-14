@@ -4,6 +4,7 @@ import {
   LinkedDataBodySchema,
   LinkedDataViewSchema,
   baseIriProblem,
+  consumerEndpoint,
   effectiveBaseIri,
   type LinkedDataView,
 } from '@ih/shared';
@@ -36,8 +37,12 @@ export async function linkedDataRoutes(app: FastifyInstance): Promise<void> {
       linkedData.rdfPublishedCount(),
     ]);
     const effectiveBase = effectiveBaseIri(settings);
-    const graphs = await linkedData.graphStatus(effectiveBase);
-    return { settings, effectiveBase, rdfPublished, graphs, history };
+    const [graphs, withdrawals] = await Promise.all([
+      linkedData.graphStatus(effectiveBase),
+      app.deps.repo.withdrawalStatus(),
+    ]);
+    const endpoint = consumerEndpoint(app.deps.rdfPublicUrl);
+    return { settings, effectiveBase, rdfPublished, graphs, endpoint, withdrawals, history };
   };
 
   app.get(

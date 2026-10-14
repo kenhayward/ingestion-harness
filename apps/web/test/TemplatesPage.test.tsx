@@ -284,7 +284,8 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
       within(coa).getByRole('button', { name: 'Retire Certificate of analysis…' }),
     );
     const dialog = screen.getByRole('dialog', { name: 'Retire Certificate of analysis' });
-    expect(dialog).toHaveTextContent('Nothing is deleted');
+    expect(dialog).toHaveTextContent('What it delivered is withdrawn');
+    expect(dialog).toHaveTextContent('unretiring delivers it again');
     expect(dialog).toHaveTextContent('DELETE /api/specs/coa/retirement');
     expect(api.retireType).not.toHaveBeenCalled();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));

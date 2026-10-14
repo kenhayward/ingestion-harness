@@ -19,6 +19,8 @@ const view = (over: Partial<LinkedDataView> = {}): LinkedDataView => ({
   effectiveBase: null,
   rdfPublished: 0,
   graphs: { published: 0, lastPublishedAt: null, endpoint: null },
+  endpoint: null,
+  withdrawals: { queued: 0, running: 0, failed: 0 },
   history: [],
   ...over,
 });
@@ -131,5 +133,27 @@ describe('LinkedDataPage published graphs (ADR 0011 step 6)', () => {
     });
     expect(await screen.findByText(/1 graph published under/)).toBeInTheDocument();
     expect(screen.getByText(/No triple store is configured/)).toBeInTheDocument();
+  });
+});
+
+describe('LinkedDataPage consumer access and withdrawals (ADR 0011 step 7)', () => {
+  it('shows the SPARQL endpoint and its read-only user, never a password', async () => {
+    setup({
+      ...acme,
+      endpoint: {
+        sparql: 'https://sparql.acme.example/ct/sparql',
+        get: 'https://sparql.acme.example/ct/get',
+        user: 'ct-reader',
+      },
+    });
+    expect(await screen.findByText('https://sparql.acme.example/ct/sparql')).toBeInTheDocument();
+    expect(screen.getByText('ct-reader')).toBeInTheDocument();
+    expect(screen.getByText(/find entities by their values/i)).toBeInTheDocument();
+  });
+
+  it('says when withdrawals are pending or failed', async () => {
+    setup({ ...acme, withdrawals: { queued: 2, running: 0, failed: 1 } });
+    expect(await screen.findByText(/2 withdrawals or republishes waiting/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('1 failed');
   });
 });

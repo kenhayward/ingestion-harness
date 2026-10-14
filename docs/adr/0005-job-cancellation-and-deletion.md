@@ -15,7 +15,7 @@ their files. The worker owns status transitions while a job runs.
   transaction removes the job (cascading its history) and its document unless another job or a
   regression reference uses it; then internal files (drafts, `runs/{jobId}/`, the inbox PDF when
   no other document row shares it) are deleted best-effort. Published target copies and the OCR
-  cache are kept.
+  cache are kept (amended 2026-10-14: published copies are withdrawn, see below).
 - A run is identified by its claim (`jobs.locked_at`). `is_cancelled` and every worker status
   write require `status = 'running'` *and* that claim, so a job that was cancelled, deleted,
   retried or re-claimed stops its old run, whose late writes are no-ops. Outcome writes that fail
@@ -53,3 +53,17 @@ one, a new export replaces the previous export job, and deleting a Workbench pro
 project-less test jobs. A worker running one of those jobs finds its status writes guarded (the
 claim above), so the deleted row stays deleted, but files it writes after the clean-up (drafts,
 `runs/{jobId}/` audit objects) can be left behind as orphans.
+
+## Amendment (2026-10-14): deleting withdraws what was delivered (ADR 0011 step 7)
+Published data belongs to the customer, and a deleted job's data should not stay published.
+Deleting a job (`DELETE /api/jobs/:id` and the bulk clean-up) now also withdraws what it
+delivered: in the same transaction the API queues a document-less `withdraw` job naming the job's
+published target objects (`job_outputs`, stage `published`) and its graph versions, and removes
+those versions from `published_graph_versions`. The worker removes the objects, the versioned
+Turtle copies and, only when the job published the graph's current version, the graph itself in
+the triple store; the same file's graphs under other document types are never touched, and no
+earlier version is restored. A withdrawal retries until it succeeds (`max_attempts` 100); its
+state shows on the Linked data page. Retiring a document type withdraws everything the type
+delivered the same way (its outputs are marked `withdrawn_at`, not deleted, so unretiring can
+re-deliver them through a `republish` job). The OCR cache, prepared text and step cache are still
+kept (content-keyed).

@@ -35,6 +35,9 @@ import {
   type StoredObject,
   WORKBENCH_PRIORITY,
   type WorkbenchJobOptions,
+  type WithdrawalStatus,
+  REPUBLISH_JOB,
+  WITHDRAW_JOB,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -182,6 +185,112 @@ const toReference = (r: ReferenceRow): Reference => ({
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
+type Withdrawn = {
+  sha256: string;
+  templateId: string;
+  graphIri: string | null;
+  versions: number[];
+};
+
+async function queueBackground(
+  client: pg.PoolClient,
+  task: 'withdraw' | 'republish',
+  params: unknown,
+  by: string | null,
+): Promise<string> {
+  const { priority, maxAttempts } = task === 'withdraw' ? WITHDRAW_JOB : REPUBLISH_JOB;
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO jobs (task, priority, max_attempts, params, created_by)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [task, priority, maxAttempts, JSON.stringify(params), by],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Forget graphs' current versions and their entity sources, then the entities no source names
+ * any more: only those the removed sources named, locked first so that the sweep (a new
+ * statement, a new snapshot) sees a source a concurrent publish committed meanwhile.
+ */
+async function forgetGraphs(client: pg.PoolClient, where: string, args: unknown[]) {
+  const sources = await client.query<{ iri: string }>(
+    `DELETE FROM published_entity_sources WHERE ${where} RETURNING iri`,
+    args,
+  );
+  await client.query(`DELETE FROM published_graphs WHERE ${where}`, args);
+  const iris = [...new Set(sources.rows.map((r) => r.iri))];
+  if (!iris.length) return;
+  await client.query(
+    'SELECT 1 FROM published_entities WHERE iri = ANY($1) ORDER BY iri FOR UPDATE',
+    [iris],
+  );
+  await client.query(
+    `DELETE FROM published_entities e WHERE e.iri = ANY($1)
+        AND NOT EXISTS (SELECT 1 FROM published_entity_sources s WHERE s.iri = e.iri)`,
+    [iris],
+  );
+}
+
+/** Each graph's lock (the worker's publish takes the same one), in a stable order. */
+async function lockGraphs(client: pg.PoolClient, keys: { sha256: string; template_id: string }[]) {
+  const sorted = [...keys].sort((a, b) =>
+    `${a.sha256}:${a.template_id}`.localeCompare(`${b.sha256}:${b.template_id}`),
+  );
+  for (const k of sorted) {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('graph:' || $1 || ':' || $2))", [
+      k.sha256,
+      k.template_id,
+    ]);
+  }
+}
+
+/**
+ * Inside a job deletion: what the job delivered (its published target objects and graph
+ * versions) is queued for withdrawal; the graph itself only when the job published its current
+ * version. Its version rows go. Null when it delivered nothing.
+ */
+async function withdrawJob(client: pg.PoolClient, jobId: string): Promise<string | null> {
+  const objects = await client.query<{ bucket: string; key: string }>(
+    `SELECT bucket, object_key AS key FROM job_outputs
+      WHERE job_id = $1 AND stage = 'published' AND withdrawn_at IS NULL ORDER BY object_key`,
+    [jobId],
+  );
+  const keys = await client.query<{ sha256: string; template_id: string }>(
+    'SELECT DISTINCT sha256, template_id FROM published_graph_versions WHERE job_id = $1',
+    [jobId],
+  );
+  await lockGraphs(client, keys.rows);
+  const versions = await client.query<{
+    sha256: string;
+    template_id: string;
+    versions: number[];
+    current_iri: string | null;
+  }>(
+    `SELECT v.sha256, v.template_id, array_agg(v.version ORDER BY v.version) AS versions,
+            (SELECT g.graph_iri FROM published_graphs g
+              WHERE g.sha256 = v.sha256 AND g.template_id = v.template_id AND g.job_id = $1)
+              AS current_iri
+       FROM published_graph_versions v WHERE v.job_id = $1
+      GROUP BY v.sha256, v.template_id ORDER BY v.sha256, v.template_id`,
+    [jobId],
+  );
+  const graphs: Withdrawn[] = [];
+  for (const r of versions.rows) {
+    if (r.current_iri) {
+      await forgetGraphs(client, 'sha256 = $1 AND template_id = $2', [r.sha256, r.template_id]);
+    }
+    graphs.push({
+      sha256: r.sha256,
+      templateId: r.template_id,
+      graphIri: r.current_iri,
+      versions: r.versions,
+    });
+  }
+  await client.query('DELETE FROM published_graph_versions WHERE job_id = $1', [jobId]);
+  if (!objects.rows.length && !graphs.length) return null;
+  return queueBackground(client, 'withdraw', { objects: objects.rows, graphs }, null);
+}
+
 export class PgRepo implements IngestionRepo {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -548,7 +657,7 @@ export class PgRepo implements IngestionRepo {
       row_count: number | null;
     }>(
       `SELECT output_id, stage, format, bucket, object_key, row_count FROM job_outputs
-        WHERE job_id = $1 ORDER BY stage, output_id`,
+        WHERE job_id = $1 AND withdrawn_at IS NULL ORDER BY stage, output_id`,
       [id],
     );
     return {
@@ -597,7 +706,7 @@ export class PgRepo implements IngestionRepo {
                        ORDER BY o.output_id) AS outputs
          FROM jobs j
          JOIN documents d ON d.id = j.document_id
-         JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published'
+         JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published' AND o.withdrawn_at IS NULL
         WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
           AND ($5::text IS NULL OR d.filename ILIKE '%' || $5 || '%' ESCAPE '!')
         GROUP BY j.id, d.id
@@ -641,7 +750,7 @@ export class PgRepo implements IngestionRepo {
   async getPublishedAt(jobId: string): Promise<string | null> {
     const { rows } = await this.pool.query<{ published_at: Date | null }>(
       `SELECT date_trunc('milliseconds', max(created_at)) AS published_at
-         FROM job_outputs WHERE job_id = $1 AND stage = 'published'`,
+         FROM job_outputs WHERE job_id = $1 AND stage = 'published' AND withdrawn_at IS NULL`,
       [jobId],
     );
     return rows[0]?.published_at?.toISOString() ?? null;
@@ -703,6 +812,91 @@ export class PgRepo implements IngestionRepo {
     return rowCount ? await this.getJob(id) : null;
   }
 
+  async withdrawType(typeId: string, by: string | null): Promise<string | null> {
+    return this.inTransaction(async (client) => {
+      const objects = await client.query<{ bucket: string; key: string }>(
+        `UPDATE job_outputs o SET withdrawn_at = now()
+           FROM jobs j JOIN documents d ON d.id = j.document_id
+          WHERE o.job_id = j.id AND d.spec_id = $1 AND o.stage = 'published'
+            AND o.withdrawn_at IS NULL
+        RETURNING o.bucket, o.object_key AS key`,
+        [typeId],
+      );
+      // No per-graph locks (a large type would exhaust them): a publish committed meanwhile
+      // keeps its current row, and the worker's withdrawal spares a graph that has one.
+      const graphs = await client.query<{
+        sha256: string;
+        template_id: string;
+        graph_iri: string;
+        versions: number[];
+      }>(
+        `SELECT g.sha256, g.template_id, g.graph_iri,
+                (SELECT array_agg(v.version ORDER BY v.version) FROM published_graph_versions v
+                  WHERE v.sha256 = g.sha256 AND v.template_id = g.template_id) AS versions
+           FROM published_graphs g WHERE g.template_id = $1 ORDER BY g.sha256`,
+        [typeId],
+      );
+      await forgetGraphs(client, 'template_id = $1', [typeId]);
+      if (!objects.rows.length && !graphs.rows.length) return null;
+      return queueBackground(
+        client,
+        'withdraw',
+        {
+          objects: [...objects.rows].sort((a, b) => a.key.localeCompare(b.key)),
+          graphs: graphs.rows.map((g) => ({
+            sha256: g.sha256,
+            templateId: g.template_id,
+            graphIri: g.graph_iri,
+            versions: g.versions ?? [],
+          })),
+        },
+        by,
+      );
+    });
+  }
+
+  async republishType(typeId: string, by: string | null): Promise<string | null> {
+    return this.inTransaction(async (client) => {
+      const { rowCount } = await client.query(
+        `SELECT 1 FROM job_outputs o JOIN jobs j ON j.id = o.job_id
+           JOIN documents d ON d.id = j.document_id
+          WHERE d.spec_id = $1 AND o.withdrawn_at IS NOT NULL LIMIT 1`,
+        [typeId],
+      );
+      return rowCount ? queueBackground(client, 'republish', { templateId: typeId }, by) : null;
+    });
+  }
+
+  async withdrawalStatus(): Promise<WithdrawalStatus> {
+    const { rows } = await this.pool.query<{ status: string; n: number }>(
+      `SELECT status, count(*)::int AS n FROM jobs
+        WHERE task IN ('withdraw', 'republish')
+          AND status IN ('queued', 'running', 'failed', 'needs_review')
+        GROUP BY status`,
+    );
+    const n = (s: string) => rows.find((r) => r.status === s)?.n ?? 0;
+    return {
+      queued: n('queued'),
+      running: n('running'),
+      failed: n('failed') + n('needs_review'),
+    };
+  }
+
+  private async inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async deleteJob(id: string): Promise<DeleteJobResult> {
     const client = await this.pool.connect();
     try {
@@ -731,6 +925,7 @@ export class PgRepo implements IngestionRepo {
         `SELECT bucket, object_key FROM job_outputs WHERE job_id = $1 AND stage = 'draft'`,
         [id],
       );
+      const withdrawJobId = await withdrawJob(client, id);
       await client.query('DELETE FROM jobs WHERE id = $1', [id]);
       const doc = await client.query(
         `DELETE FROM documents d WHERE d.id = $1
@@ -754,6 +949,7 @@ export class PgRepo implements IngestionRepo {
           jobId: id,
           draftObjects: drafts.rows.map((d) => ({ bucket: d.bucket, key: d.object_key })),
           inboxObject,
+          withdrawJobId,
         },
       };
     } catch (err) {

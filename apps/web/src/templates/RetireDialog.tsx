@@ -45,8 +45,10 @@ export function RetireDialog({
     >
       <p>
         Retiring {name} (<span className="mono">{id}</span>) takes every version off this page,
-        uploads and new work. Nothing is deleted: its jobs, results and references stay readable,
-        and jobs already queued finish.
+        uploads and new work. Its jobs and references stay readable, and jobs already queued finish.
+        What it delivered is withdrawn: its published outputs are removed from the target and its
+        graphs from the triple store; unretiring delivers it again (recipe outputs; legacy spec
+        outputs stay withdrawn).
       </p>
       <p className="muted">{unretireHint(id)}</p>
       {error && <p role="alert">{error}</p>}

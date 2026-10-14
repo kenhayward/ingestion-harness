@@ -61,6 +61,16 @@ class GraphRegistry(Protocol):
 
     def current(self, sha256: str, template_id: str) -> PublishedGraph | None: ...
 
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        """`work(current, versions)` under the graph's lock, as a publish takes it: what a
+        withdrawal must spare (a version published since it was queued)."""
+        ...
+
     def all_current(self) -> list[PublishedGraph]: ...
 
     def entity(self, iri: str) -> tuple[str, list[str]] | None: ...
@@ -94,8 +104,10 @@ class MemoryGraphRegistry:
     def publish(self, record: GraphPublish, write: Callable[[int], None]) -> int:
         with self._lock:
             key = (record.sha256, record.template_id)
-            current = self.graphs.get(key)
-            version = (current.version if current else 0) + 1
+            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
+            version = 1 + max(
+                (v.version for v in self.versions if (v.sha256, v.template_id) == key), default=0
+            )
             write(version)
             graph = PublishedGraph(
                 record.sha256,
@@ -120,6 +132,17 @@ class MemoryGraphRegistry:
 
     def current(self, sha256: str, template_id: str) -> PublishedGraph | None:
         return self.graphs.get((sha256, template_id))
+
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        with self._lock:
+            key = (sha256, template_id)
+            versions = {v.version for v in self.versions if (v.sha256, v.template_id) == key}
+            work(self.graphs.get(key), versions)
 
     def all_current(self) -> list[PublishedGraph]:
         return sorted(self.graphs.values(), key=lambda g: (g.sha256, g.template_id))
@@ -176,8 +199,10 @@ class PgGraphRegistry:
             self._conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtext('graph:' || %s || ':' || %s))", key
             )
+            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
             row = self._conn.execute(
-                "SELECT version FROM published_graphs WHERE sha256 = %s AND template_id = %s",
+                """SELECT coalesce(max(version), 0) FROM published_graph_versions
+                    WHERE sha256 = %s AND template_id = %s""",
                 key,
             ).fetchone()
             version = (row[0] if row else 0) + 1
@@ -234,6 +259,23 @@ class PgGraphRegistry:
             (sha256, template_id),
         ).fetchone()
         return _graph(row) if row else None
+
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        key = (sha256, template_id)
+        with self._conn.transaction():
+            self._conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext('graph:' || %s || ':' || %s))", key
+            )
+            rows = self._conn.execute(
+                "SELECT version FROM published_graph_versions WHERE sha256 = %s AND template_id = %s",
+                key,
+            ).fetchall()
+            work(self.current(sha256, template_id), {r[0] for r in rows})
 
     def all_current(self) -> list[PublishedGraph]:
         rows = self._conn.execute(

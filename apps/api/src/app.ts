@@ -70,6 +70,8 @@ export interface AppDeps {
    * is then SameSite=None; Secure; Partitioned. null/absent: SameSite=Strict, no framing.
    */
   frameAncestors?: string | null;
+  /** `RDF_PUBLIC_URL`: where consumers query the triple store (shown on the Linked data page). */
+  rdfPublicUrl?: string | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };

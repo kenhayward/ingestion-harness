@@ -40,6 +40,28 @@ export const LinkedDataGraphsSchema = z.object({
 });
 export type LinkedDataGraphs = z.infer<typeof LinkedDataGraphsSchema>;
 
+/** Where consumers query (ADR 0011 step 7): the proxy's URLs and the shared read-only user. */
+export const LinkedDataEndpointSchema = z.object({
+  sparql: z.string(),
+  get: z.string(),
+  user: z.literal('ct-reader'),
+});
+export type LinkedDataEndpoint = z.infer<typeof LinkedDataEndpointSchema>;
+
+/** Background `withdraw`/`republish` jobs (job deletion, retirement, unretirement). */
+export const WithdrawalStatusSchema = z.object({
+  queued: z.number().int(),
+  running: z.number().int(),
+  failed: z.number().int(),
+});
+
+/** The consumer endpoint under `RDF_PUBLIC_URL` (the proxy in front of Fuseki's dataset). */
+export function consumerEndpoint(publicUrl: string | null | undefined): LinkedDataEndpoint | null {
+  if (!publicUrl) return null;
+  const base = publicUrl.replace(/\/+$/, '');
+  return { sparql: `${base}/ct/sparql`, get: `${base}/ct/get`, user: 'ct-reader' };
+}
+
 export const LinkedDataViewSchema = z.object({
   settings: LinkedDataSettingsSchema,
   /** Null: RDF is skipped until a customer or base is set. */
@@ -47,6 +69,9 @@ export const LinkedDataViewSchema = z.object({
   /** RDF outputs published under the current base. */
   rdfPublished: z.number().int(),
   graphs: LinkedDataGraphsSchema,
+  /** Null without `RDF_PUBLIC_URL`. */
+  endpoint: LinkedDataEndpointSchema.nullable(),
+  withdrawals: WithdrawalStatusSchema,
   /** Newest first. */
   history: z.array(LinkedDataHistoryEntrySchema),
 });

@@ -132,7 +132,7 @@ export class PgLinkedDataRepo implements LinkedDataRepo {
         await client.query(
           `INSERT INTO linked_data_base_history (from_base, to_base, changed_by, rdf_published)
            VALUES ($1, $2, $3,
-             (SELECT count(*)::int FROM job_outputs WHERE format = 'rdf' AND stage = 'published'))`,
+             (SELECT count(*)::int FROM job_outputs WHERE format = 'rdf' AND stage = 'published' AND withdrawn_at IS NULL))`,
           [before, after, by],
         );
       }
@@ -165,7 +165,7 @@ export class PgLinkedDataRepo implements LinkedDataRepo {
 
   async rdfPublishedCount(): Promise<number> {
     const { rows } = await this.pool.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM job_outputs WHERE format = 'rdf' AND stage = 'published'`,
+      `SELECT count(*)::int AS n FROM job_outputs WHERE format = 'rdf' AND stage = 'published' AND withdrawn_at IS NULL`,
     );
     return rows[0]!.n;
   }

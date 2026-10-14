@@ -196,7 +196,7 @@ describe('JobList confirmations', () => {
     await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Delete' }));
     expect(within(row('a.pdf')).getByText(/Delete a\.pdf\?/)).toHaveTextContent(
-      'Published copies in the target are kept.',
+      'Published outputs and its graph are withdrawn.',
     );
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
     expect(api.deleteJob).not.toHaveBeenCalled();
@@ -311,7 +311,7 @@ describe('JobList confirmations', () => {
     const confirm = within(row('a.pdf')).getByRole('button', { name: 'Confirm delete a.pdf' });
     expect(confirm).toHaveFocus();
     expect(confirm).toHaveAccessibleDescription(
-      'Delete a.pdf? Published copies in the target are kept.',
+      'Delete a.pdf? Published outputs and its graph are withdrawn.',
     );
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
     expect(

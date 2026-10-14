@@ -78,8 +78,10 @@ services:
   fuseki:
     # The triple store (ADR 0011 step 6): Apache Jena Fuseki, TDB2 on the fuseki-data volume.
     # Opt-in: COMPOSE_PROFILES=rdf with RDF_ENDPOINT, RDF_WRITER_PASSWORD and RDF_READER_PASSWORD
-    # in deploy/.env (without them the worker writes graphs to S3 only). Only the worker reaches
-    # it (internal network `rdf`; no ports). Backups and compaction: deploy/README.md.
+    # in deploy/.env (without them the worker writes graphs to S3 only). The worker writes over
+    # the internal network `rdf`; consumers read through the host's reverse proxy, which forwards
+    # only /ct/sparql and /ct/get to FUSEKI_PUBLIC_PORT (bound to localhost by default; ADR 0011
+    # step 7). Backups, compaction and the proxy: deploy/README.md.
     profiles: [rdf]
     image: ${IMAGE_PREFIX:-ingestion-harness}/fuseki:${IMAGE_TAG:-dev}
     build:
@@ -92,7 +94,9 @@ services:
       JAVA_OPTIONS: ${FUSEKI_JAVA_OPTIONS:--Xmx2g}
     volumes:
       - fuseki-data:/fuseki
-    networks: [rdf]
+    networks: [default, rdf]
+    ports:
+      - ${FUSEKI_BIND:-127.0.0.1}:${FUSEKI_PUBLIC_PORT:-3030}:3030
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3030/$$/ping']
       interval: 10s
@@ -155,6 +159,8 @@ services:
       ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
       LINKED_DATA_CUSTOMER: ${LINKED_DATA_CUSTOMER:-}
       LINKED_DATA_BASE_IRI: ${LINKED_DATA_BASE_IRI:-}
+      # Where consumers query the triple store (the proxy); shown on the Linked data page.
+      RDF_PUBLIC_URL: ${RDF_PUBLIC_URL:-}
       # Proxies whose X-Forwarded-* the API trusts (empty = private networks; ADR 0006).
       TRUST_PROXY: ${TRUST_PROXY:-}
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}

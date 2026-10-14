@@ -48,6 +48,8 @@ const EnvSchema = z
     TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
     /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
     S3_PUBLIC_URL: optional(z.string().url()),
+    /** The URL consumers reach Fuseki's dataset through (the proxy, ADR 0011); display only. */
+    RDF_PUBLIC_URL: optional(z.string().url()),
     SPECS_DIR: z.string().default(defaultSpecsDir),
     MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
     /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */

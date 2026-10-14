@@ -266,6 +266,8 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       effectiveBase: null,
       rdfPublished: 0,
       graphs: { published: 0, lastPublishedAt: null, endpoint: null },
+      endpoint: null,
+      withdrawals: { queued: 0, running: 0, failed: 0 },
       history: [],
     })),
     saveLinkedData: vi.fn(async () => {
