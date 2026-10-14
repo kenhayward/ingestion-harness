@@ -252,25 +252,35 @@ IRIs are identities, so changing the base re-mints every IRI for consumers.
   under an existing id creates the next version, and importing identical content (same
   `sha256`) is refused with a 409 that names the existing version.
 - **`ontology_terms`:** one row per term of a ready version.
-  - identity: `version_id`, `iri`, `kind` (`class`, `object_property`, `datatype_property`,
-    `annotation_property`, `concept`, `scheme`, `shape`);
+  - identity: `ontology_id`, `version`, `iri`, `kind` (`class`, `object_property`,
+    `datatype_property`, `annotation_property`, `concept`, `scheme`, `shape`);
   - names: `label` (preferred `skos:prefLabel` or `rdfs:label`, English first), `alt_labels
     text[]`, `definition` (`skos:definition`, `rdfs:comment`, `IAO:0000115`);
   - structure: `parents text[]` (`rdfs:subClassOf`, `rdfs:subPropertyOf`, `skos:broader`),
-    `domain text[]`, `range text[]`, `scheme` (for a concept), `deprecated`;
-  - `defined_in` (the version that defines the term, when it was pulled in by an import).
+    `domains text[]`, `ranges text[]`, `scheme` (for a concept), `deprecated`;
+  - tree: `root` (no parent in its group, or unreachable from one, so cycles stay findable)
+    and `child_count`, both computed by the worker at import;
+  - `defined_in` (the version that defines the term, when it was pulled in by an import;
+    rollout step 2).
 
-  A trigram index on `label || alt_labels` and a full-text index on the definition serve search
-  and mapping retrieval.
+  A trigram index on `lower(label)` serves search (labels, synonyms and IRIs match, exact and
+  prefix first); a full-text index on the definition comes with mapping retrieval.
 - **`ontology_usage`** is a view, not a table: the recipes, briefs and published versions that
   pin each ontology version. Deleting a version is refused while anything published uses it;
   an unused version can be deleted. Retiring an ontology (`retired_at`) hides it from brief
   pickers without breaking pinned uses.
 
-Object keys (runs bucket; `ontologySourceKey`/`storage.ontology_source_key`):
-- `ontologies/{id}/{version}/source.{ext}`: as received;
-- `ontologies/{id}/{version}/normalized.nt`: canonical N-Triples, used for the Fuseki load and
+Object keys (runs bucket; `ontologySourceKey`, `ontologyNormalizedKey` /
+`storage.ontology_normalized_key`):
+- `ontologies/{id}/sources/{sha256}.{ext}`: the file as received, named by its bytes, so the
+  API stores it before the transaction that creates the version and its job;
+- `ontologies/{id}/v{version}/normalized.nt`: canonical N-Triples, used for the Fuseki load and
   for rebuilds.
+
+Implemented in rollout step 1 (file upload): migration 0032, the `ontology` job (document- and
+project-less: `jobs_document_or_project` allows it), `PgOntologyStore`, `OntologyRepo`, the
+routes below and the Ontologies pages. Deleting a version is allowed whenever it is not being
+imported; the usage check arrives with recipe mappings.
 
 ### Import
 
