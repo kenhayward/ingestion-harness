@@ -127,6 +127,32 @@ export const GraphPublishedSchema = z.object({
   endpoint: z.boolean(),
 });
 
+/**
+ * A `withdraw` job's params (ADR 0011 step 7; worker `withdrawal.WithdrawParams`): what a job
+ * deletion or a retirement removes from the target and the triple store. `objects` are target
+ * keys as recorded; each graph's version copies (`graphs/{sha256}/{type}/v{n}.ttl`) go, and the
+ * graph itself when `graphIri` is set (the current version's job was deleted, or the type retired).
+ */
+export const WithdrawParamsSchema = z
+  .object({
+    objects: z.array(z.object({ bucket: z.string().min(1), key: z.string().min(1) }).strict()),
+    graphs: z.array(
+      z
+        .object({
+          sha256: z.string().min(1),
+          templateId: z.string().min(1),
+          graphIri: z.string().min(1).nullable(),
+          versions: z.array(z.number().int().positive()),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type WithdrawParams = z.infer<typeof WithdrawParamsSchema>;
+
+/** A `republish` job's params: unretiring re-delivers the type's withdrawn outputs. */
+export const RepublishParamsSchema = z.object({ templateId: z.string().min(1) }).strict();
+
 /** `JobDetail.graph`: the newest graph this job published. */
 export const JobGraphSchema = z.object({
   iri: z.string(),

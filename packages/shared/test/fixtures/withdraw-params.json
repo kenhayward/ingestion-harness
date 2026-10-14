@@ -1,0 +1,27 @@
+{
+  "valid": [
+    {
+      "objects": [{ "bucket": "ingest-published", "key": "letter/v2/fields/doc-1.csv" }],
+      "graphs": [
+        {
+          "sha256": "ab12",
+          "templateId": "letter",
+          "graphIri": "https://data.acme.example/graph/source/ab12/letter",
+          "versions": [1, 2]
+        },
+        { "sha256": "ab12", "templateId": "memo", "graphIri": null, "versions": [3] }
+      ]
+    },
+    { "objects": [], "graphs": [] }
+  ],
+  "invalid": [
+    { "objects": [] },
+    { "objects": [], "graphs": [], "extra": true },
+    { "objects": [{ "bucket": "b" }], "graphs": [] },
+    {
+      "objects": [],
+      "graphs": [{ "sha256": "ab", "templateId": "t", "graphIri": null, "versions": [0] }]
+    }
+  ],
+  "republish": { "valid": [{ "templateId": "letter" }], "invalid": [{}, { "templateId": "" }] }
+}
