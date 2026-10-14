@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from jsonschema import Draft202012Validator
 
@@ -36,6 +36,9 @@ from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
 from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
 from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
+
+if TYPE_CHECKING:
+    from .ontology import OntologyStore
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -114,6 +117,10 @@ class PipelineDeps:
     example_template: str | None = None
     #: Converts Word (.docx) sources to PDF (None: Word documents go to needs_review).
     converter: DocumentConverter | None = None
+    #: The ontology library's tables (None: ontology jobs go to review).
+    ontologies: OntologyStore | None = None
+    #: Imports over this many triples are refused (ONTOLOGY_MAX_TRIPLES).
+    ontology_max_triples: int = 2_000_000
 
 
 @dataclass(frozen=True)

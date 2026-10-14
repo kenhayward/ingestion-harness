@@ -2663,7 +2663,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -3142,7 +3143,8 @@
                           "prepare",
                           "segment",
                           "draft",
-                          "export"
+                          "export",
+                          "ontology"
                         ]
                       },
                       "test": {
@@ -3476,7 +3478,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -4087,7 +4090,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -4434,7 +4438,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -5654,7 +5659,8 @@
                             "prepare",
                             "segment",
                             "draft",
-                            "export"
+                            "export",
+                            "ontology"
                           ]
                         },
                         "test": {
@@ -6954,7 +6960,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -7324,7 +7331,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -7883,7 +7891,8 @@
                         "prepare",
                         "segment",
                         "draft",
-                        "export"
+                        "export",
+                        "ontology"
                       ]
                     },
                     "test": {
@@ -10716,7 +10725,8 @@
                               "prepare",
                               "segment",
                               "draft",
-                              "export"
+                              "export",
+                              "ontology"
                             ]
                           },
                           "test": {
@@ -11954,7 +11964,8 @@
                             "prepare",
                             "segment",
                             "draft",
-                            "export"
+                            "export",
+                            "ontology"
                           ]
                         },
                         "test": {
@@ -17517,7 +17528,8 @@
                               "prepare",
                               "segment",
                               "draft",
-                              "export"
+                              "export",
+                              "ontology"
                             ]
                           },
                           "test": {
@@ -17857,7 +17869,8 @@
                           "prepare",
                           "segment",
                           "draft",
-                          "export"
+                          "export",
+                          "ontology"
                         ]
                       },
                       "test": {
@@ -20155,7 +20168,8 @@
                               "prepare",
                               "segment",
                               "draft",
-                              "export"
+                              "export",
+                              "ontology"
                             ]
                           },
                           "test": {
@@ -22284,7 +22298,8 @@
                               "prepare",
                               "segment",
                               "draft",
-                              "export"
+                              "export",
+                              "ontology"
                             ]
                           },
                           "test": {
@@ -22660,7 +22675,8 @@
                               "prepare",
                               "segment",
                               "draft",
-                              "export"
+                              "export",
+                              "ontology"
                             ]
                           },
                           "test": {
@@ -33832,6 +33848,2691 @@
           }
         }
       }
+    },
+    "/api/ontologies": {
+      "get": {
+        "operationId": "listOntologies",
+        "summary": "List the ontology library",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "retired",
+            "required": false,
+            "description": "`include` lists retired ontologies too."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The library.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "localOnly": {
+                        "type": "boolean"
+                      },
+                      "retiredAt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "createdBy": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "latest": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "parsing",
+                                  "ready",
+                                  "failed"
+                                ]
+                              },
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "mediaType": {
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              },
+                              "ontologyIri": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "versionIri": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "license": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "kinds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owl",
+                                    "skos",
+                                    "shacl"
+                                  ]
+                                }
+                              },
+                              "stats": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "triples": {
+                                        "type": "integer"
+                                      },
+                                      "classes": {
+                                        "type": "integer"
+                                      },
+                                      "properties": {
+                                        "type": "integer"
+                                      },
+                                      "concepts": {
+                                        "type": "integer"
+                                      },
+                                      "schemes": {
+                                        "type": "integer"
+                                      },
+                                      "shapes": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "triples",
+                                      "classes",
+                                      "properties",
+                                      "concepts",
+                                      "schemes",
+                                      "shapes"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "imports": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "iri": {
+                                      "type": "string"
+                                    },
+                                    "resolution": {
+                                      "type": "string",
+                                      "enum": [
+                                        "unresolved"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "iri",
+                                    "resolution"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              "error": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "importedBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "importedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "status",
+                              "fileName",
+                              "mediaType",
+                              "sha256",
+                              "bytes",
+                              "ontologyIri",
+                              "versionIri",
+                              "license",
+                              "kinds",
+                              "stats",
+                              "imports",
+                              "error",
+                              "importedBy",
+                              "importedAt"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "versionCount": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label",
+                      "description",
+                      "tags",
+                      "localOnly",
+                      "retiredAt",
+                      "createdBy",
+                      "createdAt",
+                      "latest",
+                      "versionCount"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The library."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "importOntology",
+        "summary": "Import an ontology file",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "**Admin token required.** Stores the file and queues its import as the next\nversion of the ontology `id` (a new ontology needs `label`). The worker parses\nit (Turtle, RDF/XML, JSON-LD, N-Triples or N3, judged by the file name) and indexes\nits classes, properties, SKOS concepts and SHACL shapes; the version's `status`\nmoves from `queued` to `ready` or `failed`. The same file twice under one id\nis refused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Ontology id (new or existing), e.g. `idmp-o`."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Name; required for a new ontology."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Optional description (new ontologies)."
+                  },
+                  "tags": {
+                    "type": "string",
+                    "description": "Comma-separated tags, e.g. `industry:pharma`."
+                  },
+                  "localOnly": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true`: its content is never sent to external models."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The ontology file (.ttl,.owl,.rdf,.jsonld,.nt,.n3). Send it last."
+                  }
+                },
+                "required": [
+                  "id",
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "202": {
+            "description": "The queued version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ontologyId": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "parsing",
+                        "ready",
+                        "failed"
+                      ]
+                    },
+                    "fileName": {
+                      "type": "string"
+                    },
+                    "mediaType": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    },
+                    "ontologyIri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "versionIri": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "license": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "kinds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "owl",
+                          "skos",
+                          "shacl"
+                        ]
+                      }
+                    },
+                    "stats": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "triples": {
+                              "type": "integer"
+                            },
+                            "classes": {
+                              "type": "integer"
+                            },
+                            "properties": {
+                              "type": "integer"
+                            },
+                            "concepts": {
+                              "type": "integer"
+                            },
+                            "schemes": {
+                              "type": "integer"
+                            },
+                            "shapes": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "triples",
+                            "classes",
+                            "properties",
+                            "concepts",
+                            "schemes",
+                            "shapes"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "imports": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "unresolved"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "resolution"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "importedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "importedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ontologyId",
+                    "version",
+                    "status",
+                    "fileName",
+                    "mediaType",
+                    "sha256",
+                    "bytes",
+                    "ontologyIri",
+                    "versionIri",
+                    "license",
+                    "kinds",
+                    "stats",
+                    "imports",
+                    "error",
+                    "importedBy",
+                    "importedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queued version."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A missing or invalid field, or an empty file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "A missing or invalid field, or an empty file."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or sent from another site's page: refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or sent from another site's page: refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The same file is already a version of this ontology.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The same file is already a version of this ontology."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is over the upload limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The file is over the upload limit."
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Not a supported RDF format.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Not a supported RDF format."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/{id}": {
+      "get": {
+        "operationId": "getOntology",
+        "summary": "One ontology with its versions",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "The ontology's metadata and every version, newest first, with each version's\nstatus, counts and the `owl:imports` it names (listed, not resolved).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ontology.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "localOnly": {
+                      "type": "boolean"
+                    },
+                    "retiredAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "latest": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ontologyId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "parsing",
+                                "ready",
+                                "failed"
+                              ]
+                            },
+                            "fileName": {
+                              "type": "string"
+                            },
+                            "mediaType": {
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "type": "string"
+                            },
+                            "bytes": {
+                              "type": "integer"
+                            },
+                            "ontologyIri": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "versionIri": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "license": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "kinds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "owl",
+                                  "skos",
+                                  "shacl"
+                                ]
+                              }
+                            },
+                            "stats": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "triples": {
+                                      "type": "integer"
+                                    },
+                                    "classes": {
+                                      "type": "integer"
+                                    },
+                                    "properties": {
+                                      "type": "integer"
+                                    },
+                                    "concepts": {
+                                      "type": "integer"
+                                    },
+                                    "schemes": {
+                                      "type": "integer"
+                                    },
+                                    "shapes": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "triples",
+                                    "classes",
+                                    "properties",
+                                    "concepts",
+                                    "schemes",
+                                    "shapes"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "imports": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "iri": {
+                                    "type": "string"
+                                  },
+                                  "resolution": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unresolved"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "iri",
+                                  "resolution"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "error": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "importedBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "importedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "ontologyId",
+                            "version",
+                            "status",
+                            "fileName",
+                            "mediaType",
+                            "sha256",
+                            "bytes",
+                            "ontologyIri",
+                            "versionIri",
+                            "license",
+                            "kinds",
+                            "stats",
+                            "imports",
+                            "error",
+                            "importedBy",
+                            "importedAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "versionCount": {
+                      "type": "integer"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ontologyId": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "parsing",
+                              "ready",
+                              "failed"
+                            ]
+                          },
+                          "fileName": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "type": "integer"
+                          },
+                          "ontologyIri": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "versionIri": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "license": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "kinds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "owl",
+                                "skos",
+                                "shacl"
+                              ]
+                            }
+                          },
+                          "stats": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "triples": {
+                                    "type": "integer"
+                                  },
+                                  "classes": {
+                                    "type": "integer"
+                                  },
+                                  "properties": {
+                                    "type": "integer"
+                                  },
+                                  "concepts": {
+                                    "type": "integer"
+                                  },
+                                  "schemes": {
+                                    "type": "integer"
+                                  },
+                                  "shapes": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "triples",
+                                  "classes",
+                                  "properties",
+                                  "concepts",
+                                  "schemes",
+                                  "shapes"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "imports": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "iri": {
+                                  "type": "string"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unresolved"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "iri",
+                                "resolution"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "importedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "importedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ontologyId",
+                          "version",
+                          "status",
+                          "fileName",
+                          "mediaType",
+                          "sha256",
+                          "bytes",
+                          "ontologyIri",
+                          "versionIri",
+                          "license",
+                          "kinds",
+                          "stats",
+                          "imports",
+                          "error",
+                          "importedBy",
+                          "importedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "description",
+                    "tags",
+                    "localOnly",
+                    "retiredAt",
+                    "createdBy",
+                    "createdAt",
+                    "latest",
+                    "versionCount",
+                    "versions"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The ontology."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateOntology",
+        "summary": "Edit an ontology",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "**Admin token required.** Changes the name, description, tags or the _Local only_\nflag, or retires the ontology (`retired: true`): a retired ontology is hidden\nfrom the library, and everything that pins it keeps working.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9:._-]{0,62}$"
+                    },
+                    "maxItems": 20
+                  },
+                  "localOnly": {
+                    "type": "boolean"
+                  },
+                  "retired": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The ontology.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "localOnly": {
+                      "type": "boolean"
+                    },
+                    "retiredAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "latest": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "ontologyId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "parsing",
+                                "ready",
+                                "failed"
+                              ]
+                            },
+                            "fileName": {
+                              "type": "string"
+                            },
+                            "mediaType": {
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "type": "string"
+                            },
+                            "bytes": {
+                              "type": "integer"
+                            },
+                            "ontologyIri": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "versionIri": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "license": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "kinds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "owl",
+                                  "skos",
+                                  "shacl"
+                                ]
+                              }
+                            },
+                            "stats": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "triples": {
+                                      "type": "integer"
+                                    },
+                                    "classes": {
+                                      "type": "integer"
+                                    },
+                                    "properties": {
+                                      "type": "integer"
+                                    },
+                                    "concepts": {
+                                      "type": "integer"
+                                    },
+                                    "schemes": {
+                                      "type": "integer"
+                                    },
+                                    "shapes": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "triples",
+                                    "classes",
+                                    "properties",
+                                    "concepts",
+                                    "schemes",
+                                    "shapes"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "imports": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "iri": {
+                                    "type": "string"
+                                  },
+                                  "resolution": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unresolved"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "iri",
+                                  "resolution"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "error": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "importedBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "importedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "ontologyId",
+                            "version",
+                            "status",
+                            "fileName",
+                            "mediaType",
+                            "sha256",
+                            "bytes",
+                            "ontologyIri",
+                            "versionIri",
+                            "license",
+                            "kinds",
+                            "stats",
+                            "imports",
+                            "error",
+                            "importedBy",
+                            "importedAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "versionCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "description",
+                    "tags",
+                    "localOnly",
+                    "retiredAt",
+                    "createdBy",
+                    "createdAt",
+                    "latest",
+                    "versionCount"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The ontology."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "An invalid body."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or sent from another site's page: refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or sent from another site's page: refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/{id}/versions/{version}": {
+      "delete": {
+        "operationId": "deleteOntologyVersion",
+        "summary": "Delete an ontology version",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "**Admin token required.** Deletes a version that is `ready` or `failed`, with\nits indexed terms and files; deleting the last version deletes the ontology. A\nversion still being imported cannot be deleted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "Version number (1 is the first import)."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or sent from another site's page: refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or sent from another site's page: refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The version is still being imported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The version is still being imported."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/{id}/versions/{version}/source": {
+      "get": {
+        "operationId": "downloadOntologySource",
+        "summary": "Download an ontology file",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "The file of this version exactly as it was imported, as an attachment named after\nthe uploaded file.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "Version number (1 is the first import)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ontology file.",
+            "content": {
+              "text/turtle": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/rdf+xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/ld+json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/n-triples": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/n3": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/{id}/versions/{version}/terms": {
+      "get": {
+        "operationId": "listOntologyTerms",
+        "summary": "Search and page ontology terms",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "One page of a version's terms, by label. `group` keeps one browser tab\n(`classes`, `properties`, `concepts` for schemes and their concepts, or\n`shapes`); `root=1` keeps the tops of the hierarchy and `parent` one term's\nchildren (a top concept's parent is its scheme); `q` searches labels, synonyms\nand IRIs, exact and prefix matches first. At most 500 per page.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "classes",
+                "properties",
+                "concepts",
+                "shapes"
+              ]
+            },
+            "in": "query",
+            "name": "group",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "in": "query",
+            "name": "parent",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "true"
+              ]
+            },
+            "in": "query",
+            "name": "root",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "Version number (1 is the first import)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of terms.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": "string"
+                          },
+                          "parents": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "domain": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "range": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "scheme": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          },
+                          "childCount": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label",
+                          "altLabels",
+                          "definition",
+                          "parents",
+                          "domain",
+                          "range",
+                          "scheme",
+                          "deprecated",
+                          "childCount"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "offset",
+                    "limit"
+                  ],
+                  "additionalProperties": true,
+                  "description": "One page of terms."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid query.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "An invalid query."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/{id}/versions/{version}/term": {
+      "get": {
+        "operationId": "getOntologyTerm",
+        "summary": "Describe one ontology term",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "A term with its neighbours in this version: parents and children, the classes a\nproperty's domain and range name, the properties whose domain or range is this\nclass, a scheme's concepts and the SHACL shapes targeting it (each list at most\n200).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "in": "query",
+            "name": "iri",
+            "required": true,
+            "description": "The term IRI."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "Version number (1 is the first import)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The term.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "iri": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "class",
+                        "object_property",
+                        "datatype_property",
+                        "annotation_property",
+                        "concept",
+                        "scheme",
+                        "shape"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "altLabels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "definition": {
+                      "type": "string"
+                    },
+                    "parents": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "domain": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "range": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scheme": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deprecated": {
+                      "type": "boolean"
+                    },
+                    "childCount": {
+                      "type": "integer"
+                    },
+                    "parentTerms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "domainTerms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "rangeTerms": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "schemeTerm": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "iri": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "class",
+                                "object_property",
+                                "datatype_property",
+                                "annotation_property",
+                                "concept",
+                                "scheme",
+                                "shape"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "iri",
+                            "kind",
+                            "label"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "asDomain": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "asRange": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "concepts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "shapes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "class",
+                              "object_property",
+                              "datatype_property",
+                              "annotation_property",
+                              "concept",
+                              "scheme",
+                              "shape"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "kind",
+                          "label"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "iri",
+                    "kind",
+                    "label",
+                    "altLabels",
+                    "definition",
+                    "parents",
+                    "domain",
+                    "range",
+                    "scheme",
+                    "deprecated",
+                    "childCount",
+                    "parentTerms",
+                    "children",
+                    "domainTerms",
+                    "rangeTerms",
+                    "schemeTerm",
+                    "asDomain",
+                    "asRange",
+                    "concepts",
+                    "shapes"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The term."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`iri` is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`iri` is missing."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such version or term.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such version or term."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -33922,6 +36623,10 @@
       "description": "Read-only S3 credentials for data-lake consumers of the publish bucket. Secrets are shown\nonce. See [ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md)."
     },
     {
+      "name": "Ontologies",
+      "description": "The ontology library: customer and industry ontologies (OWL/RDFS, SKOS, SHACL) that\ndocument types map their outputs to. Admins import a file as a new immutable version;\nthe worker parses it and indexes its terms, which anyone signed in can browse. See\n[ADR 0011](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0011-rdf-publishing-and-ontologies.md)."
+    },
+    {
       "name": "Health",
       "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
     }
@@ -33942,7 +36647,8 @@
         "Specs",
         "Recipes",
         "References & regression",
-        "Models"
+        "Models",
+        "Ontologies"
       ]
     },
     {

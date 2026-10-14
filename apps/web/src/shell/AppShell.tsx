@@ -382,6 +382,13 @@ export function AppShell({
             compact={compact}
           />
           <NavLink
+            href="#/ontologies"
+            icon="graph"
+            label="Ontologies"
+            current={section === 'ontologies'}
+            compact={compact}
+          />
+          <NavLink
             href="#/workbench"
             icon="workbench"
             label="Workbench"

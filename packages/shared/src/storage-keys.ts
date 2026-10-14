@@ -7,6 +7,8 @@
  *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
  *   runs bucket:    segmentation/{projectId}/{jobId}.json   (workbench segment task)
  *   runs bucket:    drafting/{projectId}/{jobId}.json   (workbench draft task)
+ *   runs bucket:    ontologies/{ontologyId}/sources/{sha256}.{ext}   (imported ontology files)
+ *   runs bucket:    ontologies/{ontologyId}/v{version}/normalized.nt   (ontology task)
  */
 export function inboxKey(
   specId: string,
@@ -66,4 +68,14 @@ export function draftingKey(projectId: string, jobId: string): string {
 /** A project's exported drafting bundle (runs bucket, export task). */
 export function exportKey(projectId: string, jobId: string): string {
   return `exports/${projectId}/${jobId}.zip`;
+}
+
+/** An imported ontology file, named by its bytes (runs bucket; ADR 0011). */
+export function ontologySourceKey(ontologyId: string, sha256: string, ext: string): string {
+  return `ontologies/${ontologyId}/sources/${sha256}.${ext}`;
+}
+
+/** A version's canonical N-Triples (runs bucket, ontology task). */
+export function ontologyNormalizedKey(ontologyId: string, version: number): string {
+  return `ontologies/${ontologyId}/v${version}/normalized.nt`;
 }

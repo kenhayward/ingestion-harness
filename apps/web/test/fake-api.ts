@@ -1,5 +1,10 @@
 import { vi } from 'vitest';
 import type {
+  OntologyDetail,
+  OntologySummary,
+  OntologyTerm,
+  OntologyVersionView,
+  TermDetail,
   FeedbackItem,
   GateView,
   PublishGateView,
@@ -249,6 +254,23 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     deleteToken: vi.fn(async () => undefined),
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
+    listOntologies: vi.fn(async () => []),
+    getOntology: vi.fn(async () => {
+      throw new Error('getOntology not stubbed');
+    }),
+    importOntology: vi.fn(async () => {
+      throw new Error('importOntology not stubbed');
+    }),
+    updateOntology: vi.fn(async () => {
+      throw new Error('updateOntology not stubbed');
+    }),
+    deleteOntologyVersion: vi.fn(async () => {
+      throw new Error('deleteOntologyVersion not stubbed');
+    }),
+    listOntologyTerms: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 100 })),
+    getOntologyTerm: vi.fn(async () => {
+      throw new Error('getOntologyTerm not stubbed');
+    }),
     createLlmEndpoint: vi.fn(async () => {
       throw new Error('createLlmEndpoint not stubbed');
     }),
@@ -725,4 +747,79 @@ export function reviseProposal(overrides: Partial<ProposalView> = {}): ProposalV
     },
     ...overrides,
   });
+}
+
+export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyVersionView {
+  return {
+    ontologyId: 'pv',
+    version: 1,
+    status: 'ready',
+    fileName: 'pv.ttl',
+    mediaType: 'text/turtle',
+    sha256: 'abc',
+    bytes: 120,
+    ontologyIri: 'https://example.org/pv',
+    versionIri: null,
+    license: null,
+    kinds: ['owl'],
+    stats: { triples: 40, classes: 3, properties: 2, concepts: 0, schemes: 0, shapes: 0 },
+    imports: [],
+    error: null,
+    importedBy: 'Ken',
+    importedAt: '2026-10-14T10:00:00.000Z',
+    ...o,
+  };
+}
+
+export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySummary {
+  return {
+    id: 'pv',
+    label: 'Process validation',
+    description: '',
+    tags: ['industry:pharma'],
+    localOnly: false,
+    retiredAt: null,
+    createdBy: 'Ken',
+    createdAt: '2026-10-14T10:00:00.000Z',
+    latest: ontologyVersion(),
+    versionCount: 1,
+    ...o,
+  };
+}
+
+export function ontologyDetail(o: Partial<OntologyDetail> = {}): OntologyDetail {
+  return { ...ontologySummary(), versions: [ontologyVersion()], ...o };
+}
+
+export function ontologyTerm(o: Partial<OntologyTerm> = {}): OntologyTerm {
+  return {
+    iri: 'https://example.org/pv#Document',
+    kind: 'class',
+    label: 'Document',
+    altLabels: [],
+    definition: '',
+    parents: [],
+    domain: [],
+    range: [],
+    scheme: null,
+    deprecated: false,
+    childCount: 0,
+    ...o,
+  };
+}
+
+export function termDetail(o: Partial<TermDetail> = {}): TermDetail {
+  return {
+    ...ontologyTerm(),
+    parentTerms: [],
+    children: [],
+    domainTerms: [],
+    rangeTerms: [],
+    schemeTerm: null,
+    asDomain: [],
+    asRange: [],
+    concepts: [],
+    shapes: [],
+    ...o,
+  };
 }

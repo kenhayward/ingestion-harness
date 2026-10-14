@@ -1,4 +1,11 @@
 import type {
+  OntologyDetail,
+  OntologyPatch,
+  OntologySummary,
+  OntologyVersionView,
+  TermDetail,
+  TermGroup,
+  TermPage,
   Brief,
   BriefBody,
   ChoiceCreateInput,
@@ -244,6 +251,25 @@ export interface JobWatchHandlers {
   error(): void;
 }
 
+/** Fields of an ontology import; a new ontology needs `label`. */
+export interface OntologyImportFields {
+  id: string;
+  label?: string;
+  description?: string;
+  tags?: string[];
+  localOnly?: boolean;
+}
+
+/** One page of an ontology version's terms (`root` or `parent` for the tree, `q` to search). */
+export interface OntologyTermQuery {
+  group?: TermGroup;
+  q?: string;
+  parent?: string;
+  root?: boolean;
+  offset?: number;
+  limit?: number;
+}
+
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
@@ -278,6 +304,20 @@ export interface Api {
   deleteS3Consumer(consumerId: string): Promise<void>;
   /** LLM endpoints and their models (admins; ADR 0010). */
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
+  /** The ontology library (ADR 0011); retired ontologies only when asked. */
+  listOntologies(opts?: { retired?: boolean }): Promise<OntologySummary[]>;
+  /** One ontology with every version, newest first. */
+  getOntology(id: string): Promise<OntologyDetail>;
+  /** Admin: import a file as the next version of `fields.id`. */
+  importOntology(file: File, fields: OntologyImportFields): Promise<OntologyVersionView>;
+  /** Admin: name, description, tags, local only, retired. */
+  updateOntology(id: string, patch: OntologyPatch): Promise<OntologySummary>;
+  /** Admin: delete a version that is ready or failed. */
+  deleteOntologyVersion(id: string, version: number): Promise<void>;
+  /** Tree levels, search hits. */
+  listOntologyTerms(id: string, version: number, query: OntologyTermQuery): Promise<TermPage>;
+  /** One term with its neighbours. */
+  getOntologyTerm(id: string, version: number, iri: string): Promise<TermDetail>;
   createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
   /** `apiKey`: a new key (stored encrypted), or null to remove the stored one. */
   updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
@@ -622,6 +662,50 @@ export function createHttpApi(base = '/api'): Api {
       await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
     },
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
+    listOntologies: (opts = {}) =>
+      apiFetch(`${base}/ontologies${opts.retired ? '?retired=include' : ''}`).then(
+        json<OntologySummary[]>,
+      ),
+    getOntology: (id) =>
+      apiFetch(`${base}/ontologies/${encodeURIComponent(id)}`).then(json<OntologyDetail>),
+    importOntology: (file, fields) => {
+      const form = new FormData();
+      // Fields precede the file part: the API reads them from the file's preamble.
+      form.append('id', fields.id);
+      if (fields.label) form.append('label', fields.label);
+      if (fields.description) form.append('description', fields.description);
+      if (fields.tags?.length) form.append('tags', fields.tags.join(','));
+      if (fields.localOnly) form.append('localOnly', 'true');
+      form.append('file', file);
+      return apiFetch(`${base}/ontologies`, { method: 'POST', body: form }).then(
+        json<OntologyVersionView>,
+      );
+    },
+    updateOntology: (id, patch) =>
+      post<OntologySummary>(`${base}/ontologies/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    deleteOntologyVersion: (id, version) =>
+      noContent(
+        apiFetch(`${base}/ontologies/${encodeURIComponent(id)}/versions/${version}`, {
+          method: 'DELETE',
+        }),
+      ),
+    listOntologyTerms: (id, version, query) => {
+      const params = new URLSearchParams();
+      if (query.group) params.set('group', query.group);
+      if (query.q) params.set('q', query.q);
+      if (query.parent) params.set('parent', query.parent);
+      if (query.root) params.set('root', '1');
+      if (query.offset) params.set('offset', String(query.offset));
+      if (query.limit) params.set('limit', String(query.limit));
+      const qs = params.toString();
+      return apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/terms${qs ? `?${qs}` : ''}`,
+      ).then(json<TermPage>);
+    },
+    getOntologyTerm: (id, version, iri) =>
+      apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/term?iri=${encodeURIComponent(iri)}`,
+      ).then(json<TermDetail>),
     createLlmEndpoint: (body) => post<LlmEndpointView>(`${base}/llm/endpoints`, body),
     updateLlmEndpoint: (name, patch) =>
       post<LlmEndpointView>(`${base}/llm/endpoints/${encodeURIComponent(name)}`, patch, 'PATCH'),
@@ -963,6 +1047,11 @@ export function createHttpApi(base = '/api'): Api {
 }
 
 export const httpApi = createHttpApi();
+
+/** The imported file of an ontology version (a plain link: the browser downloads it). */
+export function ontologySourceUrl(id: string, version: number): string {
+  return `/api/ontologies/${encodeURIComponent(id)}/versions/${version}/source`;
+}
 
 /**
  * A job's live stream. The browser reconnects a dropped stream by itself (the server says after
