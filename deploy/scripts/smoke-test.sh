@@ -76,6 +76,13 @@ security_headers /sw.js "sw.js"
 grep -qi '^Content-Type: text/html' <<<"$(headers /offline.html)" || fail "offline.html must be served"
 echo "ok   manifest, service worker and offline page"
 
+# Dashboard widget page (ADR 0012): frames the app by the absolute origin it was asked under.
+grep -qi '^Cache-Control: no-cache' <<<"$(headers /widget.html)" || fail "widget.html must be no-cache"
+security_headers /widget.html "widget.html"
+widget="$(curl -fsS -H 'Host: ct.example' -H 'X-Forwarded-Proto: https' "$BASE_URL/widget.html")"
+grep -qF 'src="https://ct.example/"' <<<"$widget" || fail "widget.html must frame the absolute origin"
+echo "ok   widget page"
+
 [[ "$(status "$BASE_URL/api/specs")" == 401 ]] || fail "/api/specs must need a session"
 echo "ok   /api/specs without a session -> 401"
 
