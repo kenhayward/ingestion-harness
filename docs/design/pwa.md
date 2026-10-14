@@ -72,6 +72,50 @@ whenever `offline.html` changes**; the new worker drops the old cache on activat
 activates straight away (`skipWaiting`, `clients.claim`), which is safe because nothing it caches
 depends on the build.
 
+## Taskbar badge and notifications
+
+These replace a system-tray app: the installed app shows what needs you on its taskbar icon and
+tells you when your own jobs finish. There is no API change; both run on the jobs poll the app
+already makes.
+
+**Badge** (`src/pwa/badge.ts`, `useAppBadge`): the number on the nav's Jobs badge
+(`attentionCount`: awaiting review, needs review, failed; everyone's jobs, as in the nav), set
+with `navigator.setAppBadge` and cleared at zero and on sign-out. Only the installed app has a
+badge; in a browser tab, or a browser without the API, nothing happens.
+
+**Toasts** (`src/pwa/notify.ts`): `jobNotices(previous, next, me)` compares two job lists. A job
+of yours (`createdBy` = your sign-in label) that was queued or running, or was not listed yet
+(started and finished between two polls), and now:
+
+| Is | Toast | Click opens |
+| --- | --- | --- |
+| awaiting review | *Ready for review*, the file name | `#/review/<id>` |
+| succeeded | *Done*, the file name | `#/results/<id>`; a test run (never delivered) `#/jobs` |
+| needs review or failed | *Needs attention*, the file name and the error | `#/jobs` |
+| cancelled or rejected | none | |
+
+Several at once (a batch of Workbench test runs) become one summary, *n of your jobs finished*
+with the counts, opening `#/jobs`. Each toast is tagged (`ct-job-<id>`, `ct-jobs-summary`), so
+the same job never shows twice. `useJobNotifications` shows them only while the bell is on and
+nobody is looking at the app (the page is hidden or the window has no focus: Home and Jobs show
+the change otherwise). The first list after a load is only a baseline, and lists seen while off
+or watched are absorbed, so turning it on never announces old news. Clicking a toast focuses the
+window and goes to its page.
+
+**The bell** (top bar, `NotifyBell` in `AppShell`, `useNotifySetting`): browsers ask for
+permission only after a click, so the bell does that. Off: a click asks, then turns it on. On
+(`aria-pressed`, accent): a click turns it off. Blocked (permission refused): a crossed-out bell
+whose tooltip says where to allow it again (site permissions). The choice is `ih.notify` per
+browser and counts only while the permission stands; the permission is re-read when the window
+regains focus. Absent where the browser has no notifications. On Windows, toasts come from
+"CT Studio" in the notification centre, and Windows' own per-app settings and Do Not Disturb
+apply.
+
+**Delay:** a window minimised for more than about five minutes has its timers slowed to about
+once a minute, so a toast can come up to a minute after the job finishes. If that is too slow, a
+push of "your jobs changed" over Server-Sent Events (the API already has the database
+notifications) would remove it.
+
 ## Title bar (window controls overlay)
 
 In `@media (display-mode: window-controls-overlay)` (`styles.css`) the top bar is the title bar:
@@ -99,6 +143,10 @@ types, the caching and the security headers.
   `registerServiceWorker`.
 - `test/pwa-app.test.tsx`: opened files reach the upload strip (after sign-in, from another page),
   `#/upload` focuses the chooser, the install button and menu item.
+- `test/job-notices.test.ts`: `jobNotices`, a table of status changes, other people's jobs,
+  jobs listed for the first time, summaries.
+- `test/pwa-notify.test.tsx`: the bell (permission asked, refused, remembered, unsupported),
+  toasts only in the background and never for old news, a click going to the job, the badge.
 
 ## Checking it by hand on Windows
 
@@ -112,4 +160,7 @@ without the proxy. After a change:
    the upload strip on Home (sign in first if asked).
 4. Stop the app container: reloading shows the offline page; start it again and **Try again**.
 5. Toggle the title bar chevron, and check light and dark.
-6. Uninstall from Start.
+6. Turn the bell on and allow notifications. Minimise the app, upload a document from a browser
+   tab signed in as the same token: the toast arrives when it finishes, and clicking it opens the
+   job. Leave a job awaiting review: the taskbar icon shows the count.
+7. Uninstall from Start.

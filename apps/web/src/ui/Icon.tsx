@@ -94,6 +94,18 @@ const PATHS = {
       <path d="M4 20h16" />
     </>
   ),
+  bell: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0" />
+    </>
+  ),
+  bellOff: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0M3 3l18 18" />
+    </>
+  ),
   install: (
     <>
       <rect x="3" y="4" width="18" height="12" rx="2" />
