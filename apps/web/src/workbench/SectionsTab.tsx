@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AnchorSuggestion, SampleView, SegmentDocument } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { sectionTone, TONE_COLOR } from '../ui/stageStyle.js';
 import { SampleText, type TextMark } from './SampleText.js';
 import { SegmentationGrid } from './SegmentationGrid.js';
@@ -44,6 +45,22 @@ function candidate(rows: Row[], copies: Copies, pageMarkers: boolean): SegmentDo
   };
 }
 
+/** Kept anchor edits (`ih.sectionsDraft.<project>.<draft>`): the edited document block. */
+function keptSections(value: unknown): SegmentDocument | null {
+  if (!value || typeof value !== 'object') return null;
+  const { sections, pageMarkers } = value as { sections?: unknown; pageMarkers?: unknown };
+  const ok =
+    Array.isArray(sections) &&
+    sections.every(
+      (s) =>
+        s &&
+        typeof (s as { id?: unknown }).id === 'string' &&
+        typeof (s as { anchor?: unknown }).anchor === 'string',
+    ) &&
+    typeof pageMarkers === 'boolean';
+  return ok ? (value as SegmentDocument) : null;
+}
+
 /** Edit section anchors and see, live, where they land in every prepared sample. */
 export function SectionsTab({
   api,
@@ -73,6 +90,17 @@ export function SectionsTab({
   const [pending, setPending] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextKey = useRef(0);
+  /** Anchor edits put back from an earlier visit; `stale` when the anchors were saved since. */
+  const [restored, setRestored] = useState<{ stale: boolean } | null>(null);
+  const draftKey = `ih.sectionsDraft.${projectId}.${draft}`;
+  const toRows = (doc: SegmentDocument): Row[] =>
+    doc.sections.map((s) => ({
+      key: nextKey.current++,
+      id: s.id,
+      anchor: s.anchor,
+      required: s.required ?? true,
+      ...(s.description !== undefined ? { description: s.description } : {}),
+    }));
 
   useEffect(() => {
     if (draft === null) return;
@@ -96,14 +124,24 @@ export function SectionsTab({
           required: s.required ?? true,
           ...(s.description !== undefined ? { description: s.description } : {}),
         }));
-        const loadedCopies = block.copies ?? null;
-        const loadedMarkers = block.pageMarkers ?? true;
-        setRows(loaded);
-        setCopies(loadedCopies);
-        setPageMarkers(loadedMarkers);
-        setSaved(JSON.stringify(candidate(loaded, loadedCopies, loadedMarkers)));
+        const savedJson = JSON.stringify(
+          candidate(loaded, block.copies ?? null, block.pageMarkers ?? true),
+        );
+        // Edits left unsaved on an earlier visit replace the saved anchors, marked unsaved.
+        const kept = loadKept(`ih.sectionsDraft.${projectId}.${draft}`, keptSections);
+        const edits = kept && JSON.stringify(kept.value) !== savedJson ? kept : null;
+        const rowsNow = edits ? toRows(edits.value) : loaded;
+        const copiesNow = edits ? (edits.value.copies ?? null) : (block.copies ?? null);
+        const markersNow = edits ? edits.value.pageMarkers : (block.pageMarkers ?? true);
+        setRows(rowsNow);
+        setCopies(copiesNow);
+        setPageMarkers(markersNow);
+        setSaved(savedJson);
+        setRestored(edits ? { stale: edits.base !== savedJson } : null);
         setSamples(list);
-        if (loaded.length) preview(candidate(loaded, loadedCopies, loadedMarkers));
+        if (rowsNow.length && isComplete(rowsNow)) {
+          preview(candidate(rowsNow, copiesNow, markersNow));
+        }
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
       }
@@ -121,6 +159,15 @@ export function SectionsTab({
   );
 
   const dirtyNow = rows !== null && JSON.stringify(candidate(rows, copies, pageMarkers)) !== saved;
+  // Keep unsaved anchor edits in this browser while there are any (against the saved anchors).
+  const editsJson = rows === null ? null : JSON.stringify(candidate(rows, copies, pageMarkers));
+  useEffect(() => {
+    if (editsJson === null || draft === null) return;
+    keepDraft(
+      draftKey,
+      editsJson !== saved ? { base: saved, value: JSON.parse(editsJson) as SegmentDocument } : null,
+    );
+  }, [draftKey, draft, editsJson, saved]);
   const reportDirty = useRef(onDirtyChange);
   reportDirty.current = onDirtyChange;
   useEffect(() => {
@@ -188,6 +235,20 @@ export function SectionsTab({
     edit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   };
 
+  /** Back to the saved anchors (and forget the kept edits). */
+  const discard = () => {
+    const doc = JSON.parse(saved) as SegmentDocument;
+    const savedRows = toRows(doc);
+    if (timer.current) clearTimeout(timer.current);
+    setPending(false);
+    setRows(savedRows);
+    setCopies(doc.copies ?? null);
+    setPageMarkers(doc.pageMarkers ?? true);
+    setRestored(null);
+    setMessage(null);
+    if (savedRows.length) preview(doc);
+  };
+
   const save = async () => {
     if (saving) return;
     setSaving(true);
@@ -206,6 +267,7 @@ export function SectionsTab({
         },
       });
       setSaved(JSON.stringify(current));
+      setRestored(null);
       setMessage(`Saved to v${draft}`);
     } catch (err) {
       setError((err as Error).message);
@@ -261,6 +323,11 @@ export function SectionsTab({
               </span>
               {dirty && <span className="tone-text-warn unsaved-note">Unsaved anchors</span>}
               <span className="anchors-actions">
+                {dirty && (
+                  <button type="button" disabled={saving} onClick={discard}>
+                    Discard
+                  </button>
+                )}
                 <button type="button" onClick={addSection}>
                   <Icon name="plus" /> Add section
                 </button>
@@ -275,6 +342,14 @@ export function SectionsTab({
                 </button>
               </span>
             </div>
+            {restored && dirty && (
+              <p role="status" className="kept-note">
+                <Icon name="info" size={14} />
+                {restored.stale
+                  ? 'Restored your unsaved anchor edits from your last visit. The anchors were saved again since: check them before saving, or Discard.'
+                  : 'Restored your unsaved anchor edits from your last visit.'}
+              </p>
+            )}
             {slowAnchor && <p className="muted">Fix the slow anchor to save.</p>}
             {invalidAnchor && !slowAnchor && (
               <p className="muted">Fix the invalid anchor to save.</p>

@@ -1512,8 +1512,9 @@ label.inline.list-select {
 }
 
 /* Brief tab (handoff §2) */
-/* Brief edits kept from an earlier visit (BriefTab): put back, unsaved. */
-.brief-restored {
+/* Unsaved edits put back from an earlier visit (ui/keptDraft.ts): Brief, Recipe, Sections,
+   Survey. */
+.kept-note {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1524,7 +1525,7 @@ label.inline.list-select {
   color: var(--ih-info-fg);
   font-size: var(--ih-text-md);
 }
-.brief-restored .icon {
+.kept-note .icon {
   flex: none;
 }
 .unsaved-note {

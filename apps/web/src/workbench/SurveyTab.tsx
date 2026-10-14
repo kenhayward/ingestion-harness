@@ -13,6 +13,7 @@ import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
+import { keepDraft, loadKept, stringRecord } from '../ui/keptDraft.js';
 import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { StaleBanner } from './StaleBanner.js';
@@ -88,9 +89,18 @@ export function SurveyTab({
   }, [refresh]);
 
   const proposalId = proposal?.id;
-  useEffect(() => {
-    setTyped({});
-  }, [proposalId]);
+  /** Answers typed for this proposal but not saved, kept in this browser (ui/keptDraft.ts). */
+  const answersKey = proposalId ? `ih.surveyAnswers.${projectId}.${proposalId}` : null;
+  const [restored, setRestored] = useState(false);
+  // Another proposal's questions: start from its kept answers, if any (set while rendering, so
+  // the boxes never show empty first).
+  const [typedFor, setTypedFor] = useState<string | null>(null);
+  if (answersKey !== typedFor) {
+    setTypedFor(answersKey);
+    const kept = answersKey ? loadKept(answersKey, stringRecord) : null;
+    setTyped(kept?.value ?? {});
+    setRestored(kept !== null);
+  }
 
   const running = proposal?.status === 'running';
   useEffect(() => {
@@ -117,6 +127,10 @@ export function SurveyTab({
   const saved = brief?.body.answers ?? [];
   const progress = body ? answerProgress(body.questions, saved, typed) : null;
   const unsavedAnswers = (progress?.unsaved.length ?? 0) > 0;
+  useEffect(() => {
+    if (!answersKey) return;
+    keepDraft(answersKey, unsavedAnswers ? { base: brief?.version ?? null, value: typed } : null);
+  }, [answersKey, unsavedAnswers, typed, brief?.version]);
   const banner = skipBanner(stages, proposal ?? null);
   const savedAnswer = (q: string) => saved.find((a) => a.question === q)?.answer ?? '';
 
@@ -192,6 +206,12 @@ export function SurveyTab({
       {running && <p className="muted">Surveying the dev samples…</p>}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
+      {restored && unsavedAnswers && (
+        <p role="status" className="kept-note">
+          <Icon name="info" size={14} />
+          Restored your unsaved answers from your last visit.
+        </p>
+      )}
       {message && <p role="status">{message}</p>}
       {banner && <StaleBanner tone="skip">{skipBannerText(banner)}</StaleBanner>}
       {proposal?.status === 'accepted' && (

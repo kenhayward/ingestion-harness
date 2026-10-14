@@ -10,6 +10,7 @@ import {
 } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { parseCsv } from '../results/csv.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { formatBytes, plural } from './samples.js';
 
 export type TextSection = Exclude<BriefSection, 'answers'>;
@@ -97,26 +98,23 @@ export function exportStatusText(e: ExportView): string {
 }
 
 /**
- * Unsaved Brief edits, kept per project in this browser so leaving the tab loses nothing. Only
- * the sections that were edited are kept, with the version they were made on: restored, they go
- * on top of whatever is saved by then, so a newer version's other sections are never undone.
+ * Unsaved Brief edits, kept per project in this browser (ui/keptDraft.ts) so leaving the tab
+ * loses nothing. Only the sections that were edited are kept, with the version they were made
+ * on: restored, they go on top of whatever is saved by then, so a newer version's other sections
+ * are never undone.
  */
 export type BriefDraft = { base: number | null; changes: Partial<BriefBody> };
 
 const draftKey = (projectId: string) => `ih.briefDraft.${projectId}`;
+const briefChanges = (value: unknown): Partial<BriefBody> | null => {
+  const changes = BriefBodySchema.partial().safeParse(value);
+  return changes.success ? changes.data : null;
+};
 
 export function loadBriefDraft(projectId: string): BriefDraft | null {
-  try {
-    const raw = localStorage.getItem(draftKey(projectId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { base?: unknown; changes?: unknown };
-    const changes = BriefBodySchema.partial().safeParse(parsed.changes);
-    const base = parsed.base;
-    if (!changes.success || !(base === null || typeof base === 'number')) return null;
-    return { base, changes: changes.data };
-  } catch {
-    return null; // storage blocked or unreadable: start from the saved brief
-  }
+  const kept = loadKept(draftKey(projectId), briefChanges);
+  if (!kept || typeof kept.base === 'string') return null;
+  return { base: kept.base, changes: kept.value };
 }
 
 /** Remembers `body`'s edits against `saved`, or forgets them when there are none. */
@@ -127,16 +125,12 @@ export function keepBriefDraft(
   body: BriefBody,
 ): void {
   const changed = briefDiff(saved, body).map((d) => d.section);
-  try {
-    if (!changed.length) {
-      localStorage.removeItem(draftKey(projectId));
-      return;
-    }
-    const changes = Object.fromEntries(changed.map((s) => [s, body[s]]));
-    localStorage.setItem(draftKey(projectId), JSON.stringify({ base, changes }));
-  } catch {
-    // storage blocked or full: the edits last while the tab is open, as before
-  }
+  keepDraft(
+    draftKey(projectId),
+    changed.length
+      ? { base, value: Object.fromEntries(changed.map((s) => [s, body[s]])) as Partial<BriefBody> }
+      : null,
+  );
 }
 
 /** What the Brief tab says above edits it put back (`from`: their version; `now`: the saved one). */

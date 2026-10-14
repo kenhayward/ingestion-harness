@@ -302,7 +302,7 @@ export function BriefTab({
         }
       />
       {restored && changed.length > 0 && (
-        <p role="status" className="brief-restored">
+        <p role="status" className="kept-note">
           <Icon name="info" size={14} />
           {restoredNote(restored.base, base)}
         </p>
