@@ -72,6 +72,12 @@ END $$;
 CREATE TRIGGER ontology_versions_immutable BEFORE UPDATE ON ontology_versions
   FOR EACH ROW EXECUTE FUNCTION ontology_versions_immutable();
 
+-- Ontology imports belong to no document and no Workbench project (project_id references
+-- workbench_projects): the version row points at its job instead.
+ALTER TABLE jobs DROP CONSTRAINT jobs_document_or_project;
+ALTER TABLE jobs ADD CONSTRAINT jobs_document_or_project
+  CHECK (document_id IS NOT NULL OR project_id IS NOT NULL OR task = 'ontology');
+
 ALTER TABLE jobs DROP CONSTRAINT jobs_task_check;
 ALTER TABLE jobs ADD CONSTRAINT jobs_task_check
   CHECK (task IN ('process', 'publish', 'rerun', 'prepare', 'segment', 'draft', 'export',
