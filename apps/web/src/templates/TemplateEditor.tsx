@@ -7,8 +7,11 @@ import {
   type JobSummary,
   type OverviewItem,
 } from '@ih/shared';
+import type { Retirement } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { RETIRED_REASON } from '../ui/retired.js';
+import { RetiredBanner } from '../ui/RetiredBanner.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
 import { TabHeader } from '../workbench/TabHeader.js';
 import { EditorHeader } from './EditorHeader.js';
@@ -116,6 +119,8 @@ export function TemplateEditor({
   const [openStep, setOpenStep] = useState<number | null>(null);
   /** Latest published version of this type, for "from published vN" (null: never published). */
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
+  /** The type's retirement (D17: read-only); null when active. */
+  const [retired, setRetired] = useState<Retirement | null>(null);
   /** A save refused with 409 (written elsewhere meanwhile, or published): offer a reload. */
   const [conflict, setConflict] = useState(false);
   /** Counts draft writes by this editor (save, reload), so the change log reloads after each. */
@@ -138,8 +143,15 @@ export function TemplateEditor({
   useEffect(() => {
     api.getTemplate(templateId, version).then(accept, (err: Error) => setError(err.message));
     api.listTemplates().then(
-      (items) => setPublishedVersion(items.find((t) => t.id === templateId)?.published ?? null),
-      () => setPublishedVersion(null),
+      (items) => {
+        const item = items.find((t) => t.id === templateId);
+        setPublishedVersion(item?.published ?? null);
+        setRetired(item?.retired ?? null);
+      },
+      () => {
+        setPublishedVersion(null);
+        setRetired(null);
+      },
     );
   }, [api, templateId, version]);
 
@@ -182,7 +194,10 @@ export function TemplateEditor({
   }
 
   const { record } = view;
-  const editable = record.status === 'draft';
+  /** A retired type's recipe is read-only, like a published version (D17). */
+  const editable = record.status === 'draft' && retired === null;
+  /** Why nothing new may run: a retired document type (null when active). */
+  const blockedBy = retired ? RETIRED_REASON : null;
   const dirty = JSON.stringify(def) !== saved;
   const update = (path: Path, value: unknown) => setDef((d) => setIn(d, path, value));
 
@@ -316,7 +331,8 @@ export function TemplateEditor({
           issues={issues.length}
           item={embedded.item ?? null}
           exportUrl={api.exportUrl(templateId, version)}
-          publishBlocker={publishBlocker(dirty, issues.length)}
+          publishBlocker={publishBlocker(dirty, issues.length, retired !== null)}
+          retired={blockedBy}
           onQueued={() => embedded.onSaved?.()}
           onPublish={() => void publish()}
           onNewDraft={() => void newDraft()}
@@ -333,12 +349,14 @@ export function TemplateEditor({
           issues={issues.length}
           exportUrl={api.exportUrl(templateId, version)}
           saving={saving}
+          retired={retired !== null}
           onSave={() => void save()}
           onPublish={() => void publish()}
           onNewDraft={() => void newDraft()}
           onDeleteDraft={() => void removeDraft()}
         />
       )}
+      {!embedded && retired && <RetiredBanner retirement={retired} typeId={templateId} />}
       {message && <p role="status">{message}</p>}
       {error && (
         <p role="alert">
@@ -399,7 +417,7 @@ export function TemplateEditor({
           </div>
 
           {tab === 'quality' && !embedded && (
-            <QualityPanel api={api} templateId={templateId} version={version} />
+            <QualityPanel api={api} templateId={templateId} version={version} retired={blockedBy} />
           )}
 
           <fieldset disabled={!editable} className="editor-body">
@@ -722,6 +740,7 @@ export function TemplateEditor({
             version={version}
             jobs={jobs}
             typeModel={typeModel ? { model: typeModel } : {}}
+            retired={blockedBy}
           />
         )}
       </div>

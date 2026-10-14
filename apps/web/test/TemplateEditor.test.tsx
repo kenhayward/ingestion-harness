@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
 import { fakeApi, job, projectOverview, projectView, publication, sampleView } from './fake-api.js';
+import { RETIRED_REASON } from '../src/ui/retired.js';
 import { validDefinition } from './template-fixture.js';
 import { setYaml } from './yaml-editor.js';
 
@@ -1352,5 +1353,84 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
       'aria-pressed',
       'true',
     );
+  });
+});
+
+describe('TemplateEditor of a retired type (D17: read-only)', () => {
+  const retirement = { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' };
+  const retiredList = (published: number | null, draft: number | null) =>
+    vi.fn(async () => [{ ...listItem(published, draft), retired: retirement }]);
+  const blocked = (element: HTMLElement) => {
+    expect(element).toBeDisabled();
+    expect(element).toHaveAttribute('title', RETIRED_REASON);
+  };
+
+  it('opens a draft read-only with the banner; publish, save and test runs carry the reason', async () => {
+    setup(view({ ...validDefinition(), version: 2 }), { listTemplates: retiredList(1, 2) });
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent('Retired by ken on 14 Oct 2026');
+    expect(note).toHaveTextContent('DELETE /api/specs/letter/retirement');
+    blocked(screen.getByRole('button', { name: /^Publish v2/ }));
+    blocked(screen.getByRole('button', { name: 'Save draft' }));
+    expect(screen.getByLabelText('Name')).toBeDisabled(); // the form is read-only
+    blocked(screen.getByLabelText('Sample document'));
+    blocked(screen.getByRole('button', { name: 'Run test' }));
+    // Still allowed: export, and deleting the draft (D5).
+    expect(screen.getByRole('link', { name: 'Export YAML' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /unretire/i })).toBeNull();
+  });
+
+  it('disables New draft from vN on a published version', async () => {
+    setup(view({ ...validDefinition(), version: 1 }, 'published'), {
+      listTemplates: retiredList(1, null),
+    });
+    await screen.findByRole('note');
+    blocked(screen.getByRole('button', { name: 'New draft from v1' }));
+  });
+
+  it('disables Run regression on the Quality tab', async () => {
+    setup(view({ ...validDefinition(), version: 1 }, 'published'), {
+      listTemplates: retiredList(1, null),
+      listReferences: vi.fn(async () => [
+        {
+          id: 'r1',
+          templateId: 'letter',
+          name: 'acme',
+          documentId: 'd',
+          sourceJobId: 'j',
+          expected: { fields: {}, tables: {} },
+          createdAt: '',
+        },
+      ]),
+    });
+    await screen.findByRole('note');
+    await userEvent.click(await tab(/Quality/));
+    blocked(await screen.findByRole('button', { name: 'Run regression on v1…' }));
+  });
+
+  it('embedded: read-only, Try on and Publish carry the reason, and no banner of its own', async () => {
+    setup(
+      view({ ...validDefinition(), version: 2 }),
+      {
+        listTemplates: retiredList(1, 2),
+        listSamples: vi.fn(async () => [sampleView()]),
+      },
+      { onChanged: vi.fn() },
+    );
+    const publish = await screen.findByRole('button', { name: /^Publish v2/ });
+    await waitFor(() => expect(publish).toHaveAttribute('title', RETIRED_REASON));
+    expect(publish).toBeDisabled();
+    blocked(screen.getByRole('button', { name: 'Test run' }));
+    expect(screen.queryByRole('note')).toBeNull(); // the project page shows the banner
+  });
+
+  it('stays editable for an active type', async () => {
+    setup(view({ ...validDefinition(), version: 2 }), {
+      listTemplates: vi.fn(async () => [listItem(1, 2)]),
+    });
+    await screen.findByText('from published v1 · letter');
+    expect(screen.getByLabelText('Name')).toBeEnabled();
+    expect(screen.queryByRole('note')).toBeNull();
   });
 });

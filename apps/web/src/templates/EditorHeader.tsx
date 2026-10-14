@@ -1,4 +1,5 @@
 import { Icon } from '../ui/Icon.js';
+import { RETIRED_REASON } from '../ui/retired.js';
 import { DraftMenu } from './DraftMenu.js';
 import { publishBlocker } from './editor-derive.js';
 
@@ -16,6 +17,7 @@ export function EditorHeader({
   issues,
   exportUrl,
   saving = false,
+  retired = false,
   onSave,
   onPublish,
   onNewDraft,
@@ -31,13 +33,15 @@ export function EditorHeader({
   issues: number;
   exportUrl: string;
   saving?: boolean;
+  /** The document type is retired: read-only, nothing new runs (D17). */
+  retired?: boolean;
   onSave: () => void;
   onPublish: () => void;
   onNewDraft: () => void;
   onDeleteDraft: () => void;
 }) {
   const draft = status === 'draft';
-  const blocker = publishBlocker(dirty, issues);
+  const blocker = publishBlocker(dirty, issues, retired);
 
   return (
     <header className="editor-header">
@@ -87,15 +91,21 @@ export function EditorHeader({
             <button
               type="button"
               className="primary"
-              disabled={!dirty || saving}
-              title={saving ? 'Saving…' : undefined}
+              disabled={retired || !dirty || saving}
+              title={retired ? RETIRED_REASON : saving ? 'Saving…' : undefined}
               onClick={onSave}
             >
               Save draft
             </button>
           </>
         ) : (
-          <button type="button" className="primary" onClick={onNewDraft}>
+          <button
+            type="button"
+            className="primary"
+            disabled={retired}
+            title={retired ? RETIRED_REASON : undefined}
+            onClick={onNewDraft}
+          >
             New draft from v{version}
           </button>
         )}

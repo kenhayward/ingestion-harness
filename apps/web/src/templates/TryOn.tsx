@@ -17,6 +17,7 @@ export function TryOn({
   dirty,
   dataPolicy,
   issues,
+  retired = null,
   onQueued,
 }: {
   api: Api;
@@ -26,6 +27,8 @@ export function TryOn({
   dataPolicy: DataPolicy;
   /** Validation issues in the draft: the API refuses a test run of an invalid draft. */
   issues: number;
+  /** Why nothing may run (a retired document type); null otherwise. */
+  retired?: string | null;
   onQueued: () => void;
 }) {
   const [samples, setSamples] = useState<SampleChoice[] | null>(null);
@@ -52,7 +55,8 @@ export function TryOn({
 
   const ready = samples ?? [];
   const current = ready.find((c) => c.sample.id === picked) ?? ready[0] ?? null;
-  const blocked = tryOnBlockedReason(dirty, samples === null ? null : ready.length, issues);
+  const blocked =
+    retired ?? tryOnBlockedReason(dirty, samples === null ? null : ready.length, issues);
   return (
     <div className="try-on">
       {/* A separate label: a select inside its label would add the picked file to its name. */}
