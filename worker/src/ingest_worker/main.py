@@ -39,7 +39,12 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
-from .template_pipeline import publish_template_job, rerun_template_job
+from .template_pipeline import (
+    PUBLISH_REFUSED,
+    ShapesViolated,
+    publish_template_job,
+    rerun_template_job,
+)
 from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
@@ -62,7 +67,14 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     try:
         if job.task == "publish":
             check_cancelled(job, queue)
-            published = publish_job(job, deps, queue)
+            try:
+                published = publish_job(job, deps, queue)
+            except ShapesViolated as refused:
+                # Nothing was delivered: the reviewer fixes the values and approves again.
+                queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
+                queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
+                log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
+                return True
             if deps.target is not None and not job.test:  # approved test runs are not delivered
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, [], deps.buckets.outputs)

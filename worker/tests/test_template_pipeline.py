@@ -509,3 +509,60 @@ def test_missing_shapes_send_the_job_to_review(tmp_path: Path) -> None:
     run_once(queue, deps, "w1")  # the shapes version's file was never stored
     [(_, reason)] = queue.reviewed
     assert "ex-shapes v1 is not available" in reason
+
+
+def shaped_review(
+    tmp_path: Path, formats: list[str]
+) -> tuple[PipelineDeps, MemoryObjectStore, FakeQueue]:
+    template = {
+        **TEMPLATE,
+        "review": {"required": "always"},
+        "semantics": SHAPED,
+        "delivery": {"formats": formats},
+    }
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, with_shapes(deps), "w1")
+    assert queue.awaiting
+    queue.jobs = [replace(JOB, task="publish")]
+    queue.decisions["job-1"] = {
+        "reviewer": "kh",
+        "note": None,
+        "reviewed_at": "2026-10-14T10:05:00Z",
+    }
+    return deps, target, queue
+
+
+def product_edit(value: str) -> dict[str, Any]:
+    return {
+        "field": "product", "table": None, "row": None, "column": None, "value": value,
+        "editor": "kh", "reason": None, "at": "2026-10-14T10:00:00Z",
+    }  # fmt: skip
+
+
+def test_a_publish_that_delivers_rdf_is_refused_while_the_graph_violates_shapes(
+    tmp_path: Path,
+) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
+    run_once(queue, deps, "w1")
+    assert not queue.completed and not queue.published and not target.objects
+    (_, outputs, reasons) = queue.awaiting[-1]
+    assert len(queue.awaiting) == 2 and outputs == []
+    assert "SHACL: ProtocolShape on product: a product code is short" in reasons
+    assert any(e[2] == "publish refused: graph violates shapes" for e in queue.events)
+
+
+def test_after_an_edit_that_fixes_the_value_the_publish_goes_through(tmp_path: Path) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
+    queue.edits["job-1"] = [product_edit("Rich")]
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert has(target, "published", "pvp/" + GRAPH_KEY)
+
+
+def test_without_rdf_delivered_a_violation_never_stops_the_publish(tmp_path: Path) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+    assert any(e[2] == "graph violates shapes" for e in queue.events)

@@ -69,6 +69,18 @@ GRAPH_FAILED = "graph failed"
 GRAPH_VIOLATES = "graph violates shapes"
 
 
+#: Job event when a publish is sent back to review because its graph violates the shapes.
+PUBLISH_REFUSED = "publish refused: graph violates shapes"
+
+
+class ShapesViolated(Exception):
+    """A publish that delivers RDF whose graph violates the recipe's shapes: back to review."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__("; ".join(reasons))
+        self.reasons = reasons
+
+
 @dataclass(frozen=True)
 class RenderedGraph:
     """A document's graph, already serialised: a graph that cannot be written never gets here."""
@@ -237,6 +249,10 @@ def publish_template_job(
         ).hexdigest()
     graph = build_graph(job, deps, queue, template, document)
     formats = template.delivery_formats()
+    # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
+    report = shacl_check(job, deps, queue, template, graph)
+    if report is not None and report.violations() and "rdf" in formats:
+        raise ShapesViolated([v.reason() for v in report.violations()])
     rendered = render_document(template, document, graph)
     published = publish_outputs(deps, [o for o in rendered if o.format in formats])
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
