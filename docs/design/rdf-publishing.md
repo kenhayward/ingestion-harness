@@ -25,7 +25,8 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Opt-in | Per document type: only recipes with a published mapping produce RDF |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
-| Graph identity | One original document (the uploaded file's sha256) = one graph, however often it is processed; the newest publish replaces it, with a version number kept from day one |
+| Graph identity | One graph per original document (the uploaded file's sha256) **and document type**, however often it is processed; the newest publish replaces it, a version number is kept from day one, and the document node `doc/{sha256}` is shared across types |
+| Entity IRIs | Readable (`batch/site-1/pv-2301`), with five safeguards that keep a later move to registered surrogate IDs non-breaking |
 | Consumer access | One shared read-only SPARQL user for now |
 | Ontology licensing | Library ontologies (IDMP-O etc.) are exposed to customers as ontology graphs |
 | Retrieval | Hybrid lexical and embedding search, shipped in the mapping-stage PR |
@@ -106,7 +107,7 @@ identifier domain, `https://id.stocks-hayward.com/`.
 ```
 {base}doc/{sha256}                    the original document (its uploaded file's sha256)
 {base}job/{job_id}                    provenance activity
-{base}graph/source/{sha256}           the original document's named graph (one, however often processed)
+{base}graph/source/{sha256}/{typeId}  the named graph of one original document under one document type
 {base}graph/ontology/{id}/{version}   an ontology version's graph (TBox)
 {base}{entity}/{key}                  entities from recipe IRI templates (batch, substance, …)
 {base}def/{typeId}/{term}             default vocabulary and recipe-local terms
@@ -115,6 +116,43 @@ A recipe may still give an absolute IRI template, for example when a customer ma
 separate namespace for one kind of entity. Entity keys must be scoped (for example
 `batch/{site|slug}/{batch_number|slug}`) so that values that repeat across sites or
 manufacturers do not collide.
+
+### Entity IRIs: readable, with five safeguards
+
+**Decided (2026-10-14):** entity IRIs are readable (`batch/site-1/pv-2301`), built from the
+scoped key with the `slug` filter. That choice exposes the values in identifiers, which is
+accepted. A later move to a **registry of surrogate IDs** (a stored, minted IRI per scoped key,
+which survives corrections and allows merges) must stay non-breaking. The registry would adopt
+every readable IRI already published as the registered IRI for its key, so existing entities
+keep their IRIs. Five safeguards keep that move cheap:
+
+1. **Identifying values are always published as literals.** Every minted entity also carries
+   the values its key was built from (the mapped properties, for example `acme:batchNumber
+   "PV-2301"`) and an `rdfs:label`. `semanticsIssues` refuses an entity mapping whose IRI
+   template uses a value that no mapped property publishes. So the registry can always be
+   rebuilt from the graphs, and consumers never need the IRI to know what an entity is.
+2. **Every entity's scoped key is recorded when it is published.**
+   - **Where:** `published_entities` (`iri` primary key, `kind`, `scoped_key` as the ordered
+     key values in JSON, `first_published_at`) and `published_entity_sources` (`iri`,
+     `sha256`, `template_id`, `job_id`). Both are written in the publish transaction and
+     removed with a withdrawal when no other source still mentions the entity.
+   - **Why:** this is the registry's seed. Without it, building the registry later would mean
+     re-deriving keys from old IRI templates.
+3. **One minting function.** Every entity IRI comes from `rdf.mint_entity_iri(kind,
+   scoped_key, template)`, used by the renderer, graph previews, the rebuild and backfill
+   alike. Moving to a registry swaps its implementation (look up, else mint and record) behind
+   the same call. Recipes, templates and the publish path do not change.
+4. **Consumers are told that IRIs are opaque.** The consumer documentation (rollout step 7)
+   says to find entities by their literal values and never to parse meaning out of an IRI,
+   whatever it looks like. The Linked data panel repeats this next to the endpoint.
+5. **Correction history is kept.** Review edits already record old value → new value per
+   field and cell, and graph versions keep each published Turtle (see *Graph identity and
+   versions*). A future registry uses both to recognise that `PV-23O1` became `PV-2301` and
+   re-point the key instead of minting a second entity.
+
+What readable IRIs rule out is only this: making *existing* IRIs non-revealing later. That would
+mean re-minting them, the same operator rebuild as a base change, and a breaking change for
+consumers.
 
 ### Rules for a base IRI
 `LinkedDataSettingsSchema` checks these; the API refuses anything else with a 400 naming the rule:
@@ -403,7 +441,8 @@ semantics:
   `ct:normalisationIssue` on a reified statement. It is never written as an invalid typed
   literal.
 - **`object`.** The value becomes an entity. Its IRI is minted by the template from the value
-  or the row's columns. Filters: `slug` (lowercase ASCII, `-`), `upper`, `sha1` (an opaque id).
+  or the row's columns. Filters: `slug` (lowercase ASCII, `-`) and `upper` (readable IRIs, see
+  *Entity IRIs*); minting always goes through `mint_entity_iri`.
   An empty value means no triple.
 - **`concepts`.**
   - **Explicit:** `values` maps enum values or exact strings to concept IRIs.
@@ -589,35 +628,50 @@ Provenance in each graph:
 
 ### Graph identity and versions
 
-**Decided:** one original document creates one graph, however many times it is processed.
+**Decided:** one graph per original document **and document type**, however many times it is
+processed. A file may be extracted through two types for different purposes: for example one
+type pulls the tabular data for intelligence systems, and another pulls the structure and
+narrative to rebuild the document in a structured content system. Neither should replace the
+other.
 - **What "the same document" means.** The original document is the uploaded file, identified
-  by its sha256 (`documents.sha256`, which is the `.docx` itself for Word, see ADR 0009). The
-  graph is `{base}graph/source/{sha256}` and the document node is `{base}doc/{sha256}`. These
-  all publish into that one graph:
+  by its sha256 (`documents.sha256`, which is the `.docx` itself for Word, see ADR 0009).
+- **One graph per type, one shared document node.** The graph is
+  `{base}graph/source/{sha256}/{typeId}`. The document node is `{base}doc/{sha256}` in every
+  type's graph. With the union default graph, consumers see one document described by both
+  types, and each graph keeps its own replace, version and withdraw lifecycle.
+- **What replaces a type's graph.** These all publish into the same `(sha256, typeId)` graph:
   - a retry, a re-process or a step re-run that is then approved;
   - a re-upload of the same file;
-  - processing the file under another document type.
+  - a newer recipe version of the same type.
 
-  The newest publish replaces the graph. The provenance records the job, the recipe and the
-  document row that produced the current version.
-- **Serialised per source.** A publish takes `pg_advisory_xact_lock(hashtext('graph:' ||
-  sha256))` around reading and incrementing the version and the Graph Store Protocol `PUT`, so
-  two jobs of the same file can never interleave. A job whose reviewed document is older than
+  The newest publish replaces the graph. The provenance records the job, the recipe version and
+  the document row that produced the current version.
+- **Entities are shared too.** A batch minted with the same scoped key by both types is the same
+  IRI, and both graphs add triples to it.
+- **Overlaps are visible, not resolved.** When two types state the same property of the
+  document or an entity with different values, the union shows both, and each value's graph
+  (`GRAPH ?g`) and its provenance tell them apart. The Mapping tab warns when another published
+  type of the same files maps the document node to a property this mapping also uses, so the
+  overlap is a choice.
+- **Serialised per graph.** A publish takes `pg_advisory_xact_lock(hashtext('graph:' ||
+  sha256 || ':' || typeId))` around reading and incrementing the version and the Graph Store
+  Protocol `PUT`, so two jobs of the same file and type can never interleave. A job whose reviewed document is older than
   the graph's current version (approved earlier, published later after a retry) still
   publishes: the newest *publish* wins, which is what a person approving last expects.
 - **A version from day one** (for corrections later). The table `published_graphs`
-  (`sha256` primary key, `graph_iri`, `version`, `job_id`, `document_id`, `template_id`,
+  (primary key `(sha256, template_id)`, `graph_iri`, `version`, `job_id`, `document_id`,
   `template_version`, `base_iri`, `triples`, `published_at`) holds the current version. The
   append-only `published_graph_versions` holds one row per publish. Each publish increments
   `version`, and the graph says so:
 
   ```turtle
-  <graph/source/ab12…> ct:graphVersion 3 ;
+  <graph/source/ab12…/process-validation-protocol> ct:graphVersion 3 ;
       dcterms:modified "2026-10-14T…"^^xsd:dateTime ;
-      prov:wasRevisionOf <graph/source/ab12…/v2> .   # names the previous version; not stored yet
+      prov:wasRevisionOf <graph/source/ab12…/process-validation-protocol/v2> .  # not stored yet
   ```
 
-  Each version's Turtle is also kept in the S3 target at `graphs/{sha256}/v{n}.ttl`, beside the
+  Each version's Turtle is also kept in the S3 target at `graphs/{sha256}/{typeId}/v{n}.ttl`,
+  beside the
   job's own outputs. So a later phase can offer history (versioned graphs, a change feed)
   without re-rendering anything. In this phase only the current version is in Fuseki.
 - **Counts and status:** the Linked data panel reads `published_graphs`.
@@ -678,18 +732,20 @@ change applies to CSV and JSON as well as RDF, and it needs its own short ADR am
   stuck withdrawal is noticed.
 - **Deleting a job** (`DELETE /api/jobs/:id`, and the bulk delete):
   - **Its own outputs:** its published target objects are removed.
-  - **The graph:** the source's graph is dropped (`DROP GRAPH`, a Graph Store Protocol
-    `DELETE`) only if that job published the graph's **current** version. Its rows in
+  - **The graph:** the job's `(sha256, typeId)` graph is dropped (`DROP GRAPH`, a Graph Store
+    Protocol `DELETE`) only if that job published the graph's **current** version. Its rows in
     `published_graphs` and `published_graph_versions` are removed, and so are its
-    `graphs/{sha256}/v{n}.ttl` copies.
+    `graphs/{sha256}/{typeId}/v{n}.ttl` copies. The same file's graphs under other types are
+    never touched.
   - **Another job's graph is untouched:** if another job published the current version, the
     graph stays. Only the deleted job's version rows and copies go.
   - **No automatic restore:** deleting the current version's job does not bring back an earlier
     version. An operator re-publishes if wanted.
 - **Deleting a Workbench project** needs nothing new: only never-published types can be deleted,
   and test runs never publish.
-- **Retiring a document type** withdraws everything the type delivered: each graph whose
-  current version came from that type, and its jobs' published target objects. The type and
+- **Retiring a document type** withdraws everything the type delivered: every
+  `graph/source/*/{typeId}` graph, and its jobs' published target objects. Graphs of the same
+  files under other types stay. The type and
   its jobs stay readable, as retirement promises. The reviewed documents stay in the runs bucket.
 - **Unretiring** queues one `republish` job (document-less, `priority = -10`). For each
   withdrawn job it re-renders the CSV, JSON and Turtle from `{job}/reviewed-document.json` with
@@ -808,7 +864,8 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 5. **SHACL:** validation in process and publish, review reasons, the
    `publish → awaiting_review` transition, the Review screen's Graph tab.
 6. **Fuseki:** compose service, config, `GraphStorePublisher`, graph identity per source with
-   `published_graphs` versions and versioned Turtle copies, TBox loads, job graph status,
+   `published_graphs` versions and versioned Turtle copies, `published_entities` and
+   `mint_entity_iri`, TBox loads, job graph status,
    rebuild and backfill commands, backups and compaction docs, smoke test.
 7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
    retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
@@ -818,16 +875,14 @@ Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). S
 pulled forward if consumers need SPARQL early with hand-written mappings.
 
 ## Open questions (for the chief architect)
-1. **Entity IRI opacity:** should entity IRIs be readable (`batch/acme-site-1/pv-2301`) or
-   opaque (a hash of the scoped key)? Readable IRIs leak values into identifiers. Either way
-   they change when a value is corrected.
-2. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from
+1. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from
    the kept reviewed documents when the type is unretired. Is re-delivery acceptable, or should
    retiring only hide the type and leave delivered data in place?
 
 Resolved on 2026-10-14 (see *Scope decisions*):
 - base IRI;
-- graph identity;
+- graph identity (per file and document type);
+- entity IRIs (readable, five safeguards);
 - consumer access;
 - ontology licensing;
 - retrieval;

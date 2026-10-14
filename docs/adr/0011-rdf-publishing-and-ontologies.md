@@ -67,8 +67,17 @@ accepts each change. Mapping should work the same way.
   policy, and any `localOnly` ontology in the brief also forces local models.
 - **Value linking, not entity resolution.** Enum and controlled values link to SKOS concepts.
   Entities such as a substance or a batch get deterministic IRIs from templates over the
-  extracted values (for example `batch/{batch_number|slug}`). Resolving values against external
-  reference data is out of scope.
+  extracted values. Resolving values against external reference data is out of scope.
+- **Readable entity IRIs, kept upgradeable.** Entity IRIs are readable, built from a scoped
+  key (`batch/{site|slug}/{batch_number|slug}`), and that exposes the values in identifiers.
+  A later move to a registry of surrogate IDs, which survive corrections and allow merges,
+  stays non-breaking because the registry adopts the IRIs already published. Five safeguards
+  apply from the start:
+  1. the identifying values are always published as literals, with `rdfs:label`;
+  2. each entity's scoped key is recorded at publish (`published_entities`);
+  3. every IRI is minted by one function, `mint_entity_iri`;
+  4. consumer docs say IRIs are opaque and never to be parsed;
+  5. correction history (review edits and graph versions) is kept.
 - **Turtle is an output format; Fuseki is a sink.**
   - **Turtle in S3:** when its recipe has a published mapping and RDF publishing is configured,
     a published document is rendered once (rdflib, worker only). The Turtle goes to the S3
@@ -76,13 +85,16 @@ accepts each change. Mapping should work the same way.
     from it.
   - **Fuseki:** the same bytes are then loaded into Fuseki with a SPARQL Graph Store Protocol
     `PUT` that replaces the graph. Republishing and retries are idempotent.
-  - **One original document, one graph.** The graph is keyed by the uploaded file's sha256
-    (`graph/source/{sha256}`), however many times the file is processed, re-uploaded or
-    published under another type; the newest publish replaces it. Publishes of one source are
-    serialised.
+  - **One graph per original document and document type.** The graph is keyed by the
+    uploaded file's sha256 and the type (`graph/source/{sha256}/{typeId}`), however many times
+    the file is processed or re-uploaded. The newest publish of that type replaces it, and
+    publishes of one file and type are serialised. A file extracted through two types (say,
+    tables for intelligence systems and narrative structure for a structured content system)
+    gets two independent graphs. Both describe the same document node, `doc/{sha256}`, so the
+    union default graph shows one document with both descriptions.
   - **Versioned from day one.** `published_graphs` keeps the current version and
     `published_graph_versions` every publish. The graph carries `ct:graphVersion`, and each
-    version's Turtle is kept in S3 (`graphs/{sha256}/v{n}.ttl`), so graph history can come
+    version's Turtle is kept in S3 (`graphs/{sha256}/{typeId}/v{n}.ttl`), so graph history can come
     later without re-rendering. For now, a correction simply replaces the graph.
   - **Provenance:** PROV-O and Dublin Core terms for the job, recipe version, models, reviewer
     and source sha256 go in the same graph.
@@ -114,7 +126,7 @@ accepts each change. Mapping should work the same way.
   - **Changing it:** after graphs have been published, a change must be confirmed and
     applies to new publishes only. Re-minting the published graphs is an explicit operator
     rebuild.
-  - **Layout under the base:** `doc/{sha256}`, `job/`, `graph/source/{sha256}`, `graph/ontology/`, entity
+  - **Layout under the base:** `doc/{sha256}`, `job/`, `graph/source/{sha256}/{typeId}`, `graph/ontology/`, entity
     paths from the recipe's IRI templates, and `def/{type}/` for the default vocabulary.
 - **Deleting withdraws what was delivered.**
   - **Deleting a job:** removes its published S3 outputs (CSV, JSON, Turtle), and its graph when
@@ -171,8 +183,11 @@ accepts each change. Mapping should work the same way.
   model, retrieval is lexical only.
 - **Deletion becomes destructive for delivered data.** Consumers lose outputs and graphs when a
   job is deleted or a type retired. The delete and retire dialogs say so.
-- **Graphs replace one another across types.** Processing the same file under two document
-  types leaves one graph: the newest publish's.
+- **Types can disagree.** When two types of the same file state the same property with
+  different values, the union shows both. Each value's graph and its provenance tell them
+  apart, and the Mapping tab warns about overlapping properties.
+- **Readable IRIs are a one-way door for exposure.** Making existing IRIs non-revealing later
+  means re-minting them, a breaking change. Moving to registered IDs does not.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).
