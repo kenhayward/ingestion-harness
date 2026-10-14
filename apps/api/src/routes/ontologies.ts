@@ -19,6 +19,7 @@ import {
   ontologyFileNameFromUrl,
   ontologyFormat,
   ontologyNormalizedKey,
+  ontologySourceExtension,
   ontologySourceKey,
   ontologyUrlProblem,
 } from '@ih/shared';
@@ -299,7 +300,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: `version ${version} of ${id} is still being imported` });
       }
       const { store, buckets } = app.deps;
-      const ext = outcome.sha256 ? ontologyFormat(outcome.fileName)?.ext : undefined;
+      const ext = outcome.sha256
+        ? ontologySourceExtension(outcome.fileName, outcome.mediaType)
+        : undefined;
       const keys = [
         ...(ext && outcome.sha256 ? [ontologySourceKey(id, outcome.sha256, ext)] : []),
         ontologyNormalizedKey(id, version),
@@ -337,7 +340,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       if (!params.success) return reply.code(404).send({ error: 'version not found' });
       const { id, version } = params.data;
       const v = (await app.deps.ontologies.get(id))?.versions.find((x) => x.version === version);
-      const ext = v?.sha256 ? ontologyFormat(v.fileName)?.ext : undefined;
+      const ext = v?.sha256 ? ontologySourceExtension(v.fileName, v.mediaType) : undefined;
       const body =
         v?.sha256 && ext
           ? await app.deps.store.get(app.deps.buckets.runs, ontologySourceKey(id, v.sha256, ext))

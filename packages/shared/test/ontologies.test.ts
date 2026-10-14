@@ -4,6 +4,7 @@ import {
   NeighbourhoodQuerySchema,
   OntologyFromUrlBodySchema,
   hostAllowed,
+  ontologySourceExtension,
   ontologyFileNameFromUrl,
   ontologyUrlProblem,
   ONTOLOGY_ID_RE,
@@ -65,7 +66,10 @@ describe('ontology keys and groups', () => {
 
 const fixture = JSON.parse(
   readFileSync(new URL('./fixtures/ontology-url.json', import.meta.url), 'utf8'),
-) as { hosts: { host: string; allow: string[]; allowed: boolean }[] };
+) as {
+  hosts: { host: string; allow: string[]; allowed: boolean }[];
+  extensions: { fileName: string; mediaType: string; ext: string }[];
+};
 
 describe('ontology URL rules (shared with the worker)', () => {
   it.each(fixture.hosts.map((c) => [c.host, c.allow, c.allowed] as const))(
@@ -103,4 +107,13 @@ describe('ontology URL rules (shared with the worker)', () => {
     });
     expect(NeighbourhoodQuerySchema.safeParse({ iri: 'x', depth: '3' }).success).toBe(false);
   });
+});
+
+describe('stored source extensions (shared with the worker)', () => {
+  it.each(fixture.extensions.map((c) => [c.fileName, c.mediaType, c.ext] as const))(
+    '%s (%s) → .%s',
+    (fileName, mediaType, ext) => {
+      expect(ontologySourceExtension(fileName, mediaType)).toBe(ext);
+    },
+  );
 });

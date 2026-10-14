@@ -717,7 +717,8 @@ def import_id(iri: str) -> str:
     return slug if len(slug) >= 2 else "imported"
 
 
-def _extension(file_name: str, media_type: str) -> str:
+def source_extension(file_name: str, media_type: str) -> str:
+    """The extension a file is stored under (ontologySourceExtension in TS)."""
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     return ext if ext in EXTENSIONS else MEDIA_EXTENSIONS.get(media_type, "ttl")
 
@@ -818,7 +819,7 @@ class _ImportResolver:
             return _unresolved(iri, str(exc)), []
         parsed.import_entries = child_entries
         sha = hashlib.sha256(fetched.data).hexdigest()
-        ext = _extension(fetched.file_name, fetched.media_type)
+        ext = source_extension(fetched.file_name, fetched.media_type)
 
         def store_files(oid: str, version: int) -> None:
             self.deps.store.put(
@@ -866,7 +867,7 @@ def _source(
     sha = hashlib.sha256(fetched.data).hexdigest()
     deps.store.put(
         deps.buckets.runs,
-        ontology_source_key(oid, sha, _extension(fetched.file_name, fetched.media_type)),
+        ontology_source_key(oid, sha, source_extension(fetched.file_name, fetched.media_type)),
         fetched.data,
         fetched.media_type or "text/plain",
     )

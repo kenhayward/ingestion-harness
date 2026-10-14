@@ -53,7 +53,7 @@ export interface TermQuery {
 }
 
 export type DeleteVersionResult =
-  | { result: 'deleted'; sha256: string | null; fileName: string }
+  | { result: 'deleted'; sha256: string | null; fileName: string; mediaType: string }
   | { result: 'missing' }
   | { result: 'busy' };
 
@@ -303,7 +303,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
     o.versions = o.versions.filter((x) => x !== v);
     this.termsByVersion.delete(`${id}:${version}`);
     if (o.versions.length === 0) this.ontologies.delete(id);
-    return { result: 'deleted', sha256: v.sha256, fileName: v.fileName };
+    return { result: 'deleted', sha256: v.sha256, fileName: v.fileName, mediaType: v.mediaType };
   }
 
   async terms(id: string, version: number, query: TermQuery): Promise<TermPage | null> {
@@ -337,16 +337,19 @@ export class MemoryOntologyRepo implements OntologyRepo {
   ): Promise<OntologyTerm[] | null> {
     if (!this.version(id, version)) return null;
     const wanted = new Set(iris);
-    return (this.termsByVersion.get(`${id}:${version}`) ?? [])
-      .filter(
-        (t) =>
-          wanted.has(t.iri) ||
-          [...t.parents, ...t.domain, ...t.range].some((x) => wanted.has(x)) ||
-          (t.scheme !== null && wanted.has(t.scheme)),
-      )
-      .sort(byLabel)
-      .slice(0, limit)
-      .map(publicTerm);
+    return (
+      (this.termsByVersion.get(`${id}:${version}`) ?? [])
+        .filter(
+          (t) =>
+            wanted.has(t.iri) ||
+            [...t.parents, ...t.domain, ...t.range].some((x) => wanted.has(x)) ||
+            (t.scheme !== null && wanted.has(t.scheme)),
+        )
+        // The rows asked for first: a hub's own row must survive the limit.
+        .sort((a, b) => Number(wanted.has(b.iri)) - Number(wanted.has(a.iri)) || byLabel(a, b))
+        .slice(0, limit)
+        .map(publicTerm)
+    );
   }
 
   /** Test seeder: the worker indexed the version. */
@@ -674,10 +677,11 @@ export class PgOntologyRepo implements OntologyRepo {
         status: string;
         sha256: string;
         file_name: string;
+        media_type: string;
         job_id: string | null;
       }>(
         `SELECT CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
-                v.sha256, v.file_name, v.job_id
+                v.sha256, v.file_name, v.media_type, v.job_id
            FROM ontology_versions v WHERE v.ontology_id = $1 AND v.version = $2
             FOR UPDATE OF v`,
         [id, version],
@@ -698,7 +702,12 @@ export class PgOntologyRepo implements OntologyRepo {
         [id],
       );
       await client.query('COMMIT');
-      return { result: 'deleted', sha256: row.sha256, fileName: row.file_name };
+      return {
+        result: 'deleted',
+        sha256: row.sha256,
+        fileName: row.file_name,
+        mediaType: row.media_type,
+      };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -772,7 +781,7 @@ export class PgOntologyRepo implements OntologyRepo {
         WHERE ontology_id = $1 AND version = $2
           AND (iri = ANY($3::text[]) OR parents && $3::text[] OR domains && $3::text[]
                OR ranges && $3::text[] OR scheme = ANY($3::text[]))
-        ORDER BY lower(label), iri LIMIT $4`,
+        ORDER BY iri = ANY($3::text[]) DESC, lower(label), iri LIMIT $4`,
       [id, version, iris, limit],
     );
     return rows.map(toTerm);

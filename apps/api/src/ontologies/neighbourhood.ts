@@ -85,6 +85,17 @@ export async function buildNeighbourhood(
         for (const f of fresh) next.add(f);
       }
     }
+    // What the frontier points at (parents, domains, ranges, schemes) is not among the rows
+    // naming the frontier: read those rows so such nodes get their own label and kind.
+    const unnamed = [...nodes.values()].filter((n) => n.kind === 'external' && !known.has(n.iri));
+    if (unnamed.length > 0) {
+      const wanted = new Set(unnamed.map((n) => n.iri));
+      for (const r of await load([...wanted])) {
+        if (!wanted.has(r.iri) || known.has(r.iri)) continue;
+        known.set(r.iri, r);
+        nodes.set(r.iri, { ...nodes.get(r.iri)!, label: r.label, kind: r.kind });
+      }
+    }
     frontier = next;
   }
   return { nodes: [...nodes.values()], edges: [...edges.values()], truncated };

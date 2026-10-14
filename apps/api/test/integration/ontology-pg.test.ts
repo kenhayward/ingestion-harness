@@ -102,6 +102,7 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       result: 'deleted',
       sha256: 'aaa',
       fileName: 'pv.ttl',
+      mediaType: 'text/turtle',
     });
     expect(await repo.get('pv-pg')).toBeNull();
   });
@@ -141,7 +142,8 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     expect(fetched).toBeLessThanOrEqual(2 * 200 + 10);
     const near = await repo.neighbours('pv-pg', 1, [S], 300);
     expect(near).toHaveLength(300);
-    expect(near![0]!.label).toBe('Concept 0001');
+    // The rows asked for come first, then the rest by label.
+    expect(near!.slice(0, 2).map((t) => t.label)).toEqual(['Stages', 'Concept 0001']);
     expect(await repo.neighbours('pv-pg', 9, [S], 10)).toBeNull();
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
   });

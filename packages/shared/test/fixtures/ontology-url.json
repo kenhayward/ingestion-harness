@@ -1,12 +1,86 @@
 {
   "hosts": [
-    { "host": "w3id.org", "allow": ["w3id.org"], "allowed": true },
-    { "host": "W3ID.org.", "allow": ["w3id.org"], "allowed": true },
-    { "host": "sub.w3id.org", "allow": ["w3id.org"], "allowed": false },
-    { "host": "sub.w3id.org", "allow": [".w3id.org"], "allowed": true },
-    { "host": "w3id.org", "allow": [".w3id.org"], "allowed": true },
-    { "host": "evilw3id.org", "allow": [".w3id.org"], "allowed": false },
-    { "host": "w3id.org", "allow": [], "allowed": false },
-    { "host": "w3id.org", "allow": [" ", "w3id.org "], "allowed": true }
+    {
+      "host": "w3id.org",
+      "allow": ["w3id.org"],
+      "allowed": true
+    },
+    {
+      "host": "W3ID.org.",
+      "allow": ["w3id.org"],
+      "allowed": true
+    },
+    {
+      "host": "sub.w3id.org",
+      "allow": ["w3id.org"],
+      "allowed": false
+    },
+    {
+      "host": "sub.w3id.org",
+      "allow": [".w3id.org"],
+      "allowed": true
+    },
+    {
+      "host": "w3id.org",
+      "allow": [".w3id.org"],
+      "allowed": true
+    },
+    {
+      "host": "evilw3id.org",
+      "allow": [".w3id.org"],
+      "allowed": false
+    },
+    {
+      "host": "w3id.org",
+      "allow": [],
+      "allowed": false
+    },
+    {
+      "host": "w3id.org",
+      "allow": [" ", "w3id.org "],
+      "allowed": true
+    }
+  ],
+  "extensions": [
+    {
+      "fileName": "core.ttl",
+      "mediaType": "",
+      "ext": "ttl"
+    },
+    {
+      "fileName": "IDMP.OWL",
+      "mediaType": "text/turtle",
+      "ext": "owl"
+    },
+    {
+      "fileName": "pv",
+      "mediaType": "application/rdf+xml",
+      "ext": "rdf"
+    },
+    {
+      "fileName": "pv",
+      "mediaType": "application/ld+json",
+      "ext": "jsonld"
+    },
+    {
+      "fileName": "pv",
+      "mediaType": "application/n-triples",
+      "ext": "nt"
+    },
+    {
+      "fileName": "pv",
+      "mediaType": "text/n3",
+      "ext": "n3"
+    },
+    {
+      "fileName": "pv",
+      "mediaType": "text/plain",
+      "ext": "ttl"
+    },
+    {
+      "fileName": "pv.php",
+      "mediaType": "",
+      "ext": "ttl"
+    }
   ]
 }

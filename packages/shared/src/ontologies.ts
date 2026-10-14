@@ -52,6 +52,22 @@ export function ontologyFormat(fileName: string): { ext: string; mediaType: stri
   return ext !== undefined && mediaType !== undefined ? { ext, mediaType } : null;
 }
 
+const MEDIA_EXTENSIONS: Record<string, string> = {
+  'text/turtle': 'ttl',
+  'application/rdf+xml': 'rdf',
+  'application/ld+json': 'jsonld',
+  'application/n-triples': 'nt',
+  'text/n3': 'n3',
+};
+
+/**
+ * The extension a version's file is stored under: its name's, else its content type's, else
+ * `ttl`. Mirrors `ontology.source_extension` in the worker (shared fixture ontology-url.json).
+ */
+export function ontologySourceExtension(fileName: string, mediaType: string): string {
+  return ontologyFormat(fileName)?.ext ?? MEDIA_EXTENSIONS[mediaType] ?? 'ttl';
+}
+
 export const ONTOLOGY_STATUSES = ['queued', 'parsing', 'ready', 'failed'] as const;
 
 /** upload: a file; url: fetched by the worker (rollout step 2); import: pulled in by owl:imports. */

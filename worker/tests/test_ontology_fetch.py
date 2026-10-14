@@ -187,3 +187,10 @@ def test_the_timeout_is_for_the_whole_fetch() -> None:
             resolve=public,
             clock=lambda: float(next(ticks)),
         )
+
+
+@pytest.mark.parametrize("case", json.loads(FIXTURE.read_text(encoding="utf-8"))["extensions"])
+def test_source_extension_matches_the_shared_fixture(case: dict[str, Any]) -> None:
+    from ingest_worker.ontology import source_extension
+
+    assert source_extension(case["fileName"], case["mediaType"]) == case["ext"]

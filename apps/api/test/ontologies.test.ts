@@ -308,3 +308,23 @@ describe('importing by URL', () => {
     expect(dl.statusCode).toBe(404);
   });
 });
+
+describe('fetched versions', () => {
+  it('downloads a version fetched from an extensionless URL', async () => {
+    const { app, ontologies, store } = await setup();
+    await app.inject({
+      method: 'POST',
+      url: '/api/ontologies/from-url',
+      payload: { id: 'x1', label: 'X', url: 'https://w3id.org/pv' },
+    });
+    // What the worker records: the bytes, stored under the extension of their content type.
+    ontologies.markReady('x1', 1, { sha256: 'abc', bytes: 3, mediaType: 'text/turtle' });
+    await store.put('runs', 'ontologies/x1/sources/abc.ttl', Buffer.from('ttl'), 'text/turtle');
+    const res = await app.inject({ url: '/api/ontologies/x1/versions/1/source' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('ttl');
+    const gone = await app.inject({ method: 'DELETE', url: '/api/ontologies/x1/versions/1' });
+    expect(gone.statusCode).toBe(204);
+    expect(store.objects.has('runs/ontologies/x1/sources/abc.ttl')).toBe(false);
+  });
+});

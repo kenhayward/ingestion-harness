@@ -110,4 +110,23 @@ describe('buildNeighbourhood', () => {
       truncated: false,
     });
   });
+
+  it("names a term's own parents, domains and scheme from their rows", async () => {
+    const rows = [
+      t('Thing', 'class', { label: 'Anything at all' }),
+      t('Batch', 'class', { parents: [C + 'Thing'] }),
+      t('hasBatch', 'object_property', { domain: [C + 'Protocol'], range: [C + 'Batch'] }),
+      t('Protocol', 'class', { label: 'Validation protocol' }),
+    ];
+    const batch = await buildNeighbourhood(C + 'Batch', 1, async (iris) => related(rows, iris));
+    expect(batch.nodes.find((n) => n.iri === C + 'Thing')).toMatchObject({
+      kind: 'class',
+      label: 'Anything at all',
+    });
+    const prop = await buildNeighbourhood(C + 'hasBatch', 1, async (iris) => related(rows, iris));
+    expect(prop.nodes.find((n) => n.iri === C + 'Protocol')).toMatchObject({
+      kind: 'class',
+      label: 'Validation protocol',
+    });
+  });
 });
