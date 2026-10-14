@@ -3,6 +3,7 @@ import { pickedChoice, type ModelChoice, type SpecSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { CHOICES_FAILED, CHOICES_LOADING } from './derive.js';
 import { isSourceFile, SOURCE_ACCEPT } from '../documents.js';
+import { readDrop, type Dropped, type DroppedFolder } from './folder-drop.js';
 import type { LaunchedFiles } from '../pwa/launch.js';
 import { Icon } from '../ui/Icon.js';
 import { ModelPicker, typeModelLabel } from '../ui/ModelPicker.js';
@@ -38,6 +39,14 @@ type Pick = {
 const pending = (p: Pick) => p.status === 'ready' || p.status === 'error';
 const filesLabel = (n: number) =>
   n === 0 ? 'Upload' : `Upload ${n} ${n === 1 ? 'file' : 'files'}`;
+const files = (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`;
+
+/** "Invoices: 12 files to process · 3 other files left out". */
+export function folderNote({ name, files: found, skipped }: DroppedFolder): string {
+  const take = found.length ? `${files(found.length)} to process` : 'no PDF or Word files';
+  const left = skipped ? ` · ${skipped} other ${skipped === 1 ? 'file' : 'files'} left out` : '';
+  return `${name}: ${take}${left}`;
+}
 
 /**
  * Upload strip (UI handoff §1): drop or browse several PDFs or Word documents, each becomes its
@@ -71,6 +80,11 @@ export function UploadStrip({
   const [spec, setSpec] = useState('');
   const [model, setModel] = useState('');
   const [picks, setPicks] = useState<Pick[]>([]);
+  /** The folders of the current selection, with what each one gave. */
+  const [folders, setFolders] = useState<DroppedFolder[]>([]);
+  /** The rows as last rendered, for `add`, which the launched-files subscription keeps. */
+  const current = useRef<Pick[]>([]);
+  current.current = picks;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
@@ -137,8 +151,10 @@ export function UploadStrip({
   }, [api]);
 
   /** New files start a fresh selection once the last batch is done (failures stay to retry). */
-  function add(files: readonly File[]) {
-    if (!files.length) return;
+  function add(files: readonly File[], fromFolders: readonly DroppedFolder[] = []) {
+    if (!files.length && !fromFolders.length) return;
+    const fresh = !uploading.current && !current.current.some(pending);
+    setFolders((prev) => [...(fresh ? [] : prev), ...fromFolders]);
     const added = files.map<Pick>((file) => ({
       key: String(nextKey.current++),
       file,
@@ -182,7 +198,14 @@ export function UploadStrip({
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setOver(false);
-    add([...e.dataTransfer.files]);
+    const plain = [...e.dataTransfer.files];
+    // Folders are read after the event (readDrop takes what it needs now); only their PDF and
+    // Word files are listed, each folder with a count of what it gave.
+    const take = ({ files: loose, folders: read }: Dropped) =>
+      add([...loose, ...read.flatMap((f) => f.files)], read);
+    const dropped = readDrop(e.dataTransfer);
+    if (dropped instanceof Promise) dropped.then(take, () => add(plain));
+    else take(dropped);
   };
   const count = picks.filter(pending).length;
 
@@ -206,7 +229,7 @@ export function UploadStrip({
             <strong>Drop PDF or Word files here</strong> or{' '}
             <span className="link-text">browse</span>
           </span>
-          <small>Several at once — each becomes its own job</small>
+          <small>Several at once, or a whole folder — each file becomes its own job</small>
         </span>
       </label>
       <input
@@ -251,6 +274,16 @@ export function UploadStrip({
       <button type="submit" className="primary" disabled={!count || !spec || busy}>
         {filesLabel(count)}
       </button>
+      {folders.length > 0 && (
+        <ul className="upload-folders" aria-label="Dropped folders" role="status">
+          {folders.map((f, i) => (
+            <li key={`${i}:${f.name}`}>
+              <Icon name="file" size={14} />
+              {folderNote(f)}
+            </li>
+          ))}
+        </ul>
+      )}
       {picks.length > 0 && (
         <ul className="upload-list" aria-label="Uploads">
           {picks.map((p) => (
