@@ -282,6 +282,25 @@ project-less: `jobs_document_or_project` allows it), `PgOntologyStore`, `Ontolog
 routes below and the Ontologies pages. Deleting a version is allowed whenever it is not being
 imported; the usage check arrives with recipe mappings.
 
+Implemented in rollout step 2 (migration 0033):
+- **URL imports:** `POST /api/ontologies/from-url` (admin, JSON `{ id, url, label?, … }`)
+  creates a version with no bytes (`source_kind = 'url'`); the worker fetches it. The import
+  dialog reads the allowed hosts from `GET /api/ontology-settings`.
+- **Fetching** is `ontology_fetch.fetch_rdf`: https only, a host on `ONTOLOGY_FETCH_ALLOW`
+  (exact, or `.example.org` for a domain and its subdomains), every resolved address public,
+  each redirect (at most 5) checked again, `ONTOLOGY_MAX_BYTES` and a 60 s timeout. The vetted
+  address is not pinned for the request, so DNS rebinding remains possible for an allowlisted
+  host: the allowlist is what bounds it.
+- **Imports:** each `owl:imports` is resolved once per job, at most 3 levels down, never back
+  up the import path: a ready library version (by ontology or version IRI), else a fetch that
+  creates a library ontology (`source_kind = 'import'`, tag `imported-by:<root>`, id from the
+  IRI). An import that cannot be resolved is listed with its reason and never fails the job.
+- **Indexing:** a version's terms are indexed with its import closure's; imported terms carry
+  `defined_in` (`"<id>@<version>"`), and `stats.imported` counts them. A version created for an
+  import is indexed with its own closure too.
+- **Graph view:** `GET …/neighbourhood?iri=&depth=1|2` returns at most 150 nodes; the web draws
+  it with Cytoscape.js (loaded on first use) and lists the same links as text.
+
 ### Import
 
 `POST /api/ontologies` (admin, multipart `file`, or JSON `{ url }`, with `id`, `label`, `tags`,
