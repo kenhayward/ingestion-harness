@@ -11,14 +11,17 @@ import { ontologyTerm, ontologyVersion } from './fake-api.js';
 describe('ontology helpers', () => {
   it.each([
     [
-      { triples: 9, classes: 1, properties: 2, concepts: 0, schemes: 0, shapes: 0 },
+      { triples: 9, classes: 1, properties: 2, concepts: 0, schemes: 0, shapes: 0, imported: 0 },
       '1 class · 2 properties',
     ],
     [
-      { triples: 9, classes: 0, properties: 0, concepts: 5, schemes: 1, shapes: 3 },
+      { triples: 9, classes: 0, properties: 0, concepts: 5, schemes: 1, shapes: 3, imported: 0 },
       '5 concepts · 1 scheme · 3 shapes',
     ],
-    [{ triples: 0, classes: 0, properties: 0, concepts: 0, schemes: 0, shapes: 0 }, 'No terms'],
+    [
+      { triples: 0, classes: 0, properties: 0, concepts: 0, schemes: 0, shapes: 0, imported: 0 },
+      'No terms',
+    ],
   ])('statsLine %j', (stats, text) => {
     expect(statsLine(stats)).toBe(text);
   });

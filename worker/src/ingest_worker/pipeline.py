@@ -39,6 +39,7 @@ from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run
 
 if TYPE_CHECKING:
     from .ontology import OntologyStore
+    from .ontology_fetch import Fetched
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -121,6 +122,8 @@ class PipelineDeps:
     ontologies: OntologyStore | None = None
     #: Imports over this many triples are refused (ONTOLOGY_MAX_TRIPLES).
     ontology_max_triples: int = 2_000_000
+    #: Fetches an allowlisted ontology URL (None: URL imports are off).
+    ontology_fetch: Callable[[str], Fetched] | None = None
 
 
 @dataclass(frozen=True)

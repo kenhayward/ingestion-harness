@@ -52,6 +52,8 @@ export interface AppDeps {
   llm: LlmConfigRepo;
   /** The ontology library (ADR 0011): imported versions and their indexed terms. */
   ontologies: OntologyRepo;
+  /** Who may be fetched by URL (ONTOLOGY_FETCH_ALLOW; empty: URL imports are off). */
+  ontologyFetch: { hosts: string[]; maxBytes: number };
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */

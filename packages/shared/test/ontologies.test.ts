@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  NeighbourhoodQuerySchema,
+  OntologyFromUrlBodySchema,
+  hostAllowed,
+  ontologySourceExtension,
+  ontologyFileNameFromUrl,
+  ontologyUrlProblem,
   ONTOLOGY_ID_RE,
   OntologyPatchSchema,
   TERM_GROUPS,
@@ -55,4 +62,58 @@ describe('ontology keys and groups', () => {
     expect(new Set(kinds).size).toBe(kinds.length);
     expect(kinds).toHaveLength(7);
   });
+});
+
+const fixture = JSON.parse(
+  readFileSync(new URL('./fixtures/ontology-url.json', import.meta.url), 'utf8'),
+) as {
+  hosts: { host: string; allow: string[]; allowed: boolean }[];
+  extensions: { fileName: string; mediaType: string; ext: string }[];
+};
+
+describe('ontology URL rules (shared with the worker)', () => {
+  it.each(fixture.hosts.map((c) => [c.host, c.allow, c.allowed] as const))(
+    '%s against %j → %s',
+    (host, allow, allowed) => {
+      expect(hostAllowed(host, allow)).toBe(allowed);
+    },
+  );
+
+  it.each([
+    ['https://w3id.org/idmp/o', ['w3id.org'], null],
+    ['https://w3id.org/idmp/o', [], 'URL imports are off: set ONTOLOGY_FETCH_ALLOW'],
+    ['not a url', ['w3id.org'], 'not a URL'],
+    ['http://w3id.org/x', ['w3id.org'], 'only https URLs can be imported'],
+    ['https://evil.org/x', ['w3id.org'], 'evil.org is not on ONTOLOGY_FETCH_ALLOW'],
+  ])('%s', (url, hosts, problem) => {
+    expect(ontologyUrlProblem(url, hosts)).toBe(problem);
+  });
+
+  it('names a fetched file after its path', () => {
+    expect(ontologyFileNameFromUrl('https://w3id.org/idmp/core.ttl?x=1')).toBe('core.ttl');
+    expect(ontologyFileNameFromUrl('https://w3id.org/')).toBe('w3id.org');
+  });
+
+  it('parses the URL import body and the neighbourhood query', () => {
+    expect(OntologyFromUrlBodySchema.safeParse({ id: 'pv', url: 'https://x.org/a' }).success).toBe(
+      true,
+    );
+    expect(
+      OntologyFromUrlBodySchema.safeParse({ id: 'pv', url: 'https://x.org/a', x: 1 }).success,
+    ).toBe(false);
+    expect(NeighbourhoodQuerySchema.parse({ iri: 'https://x.org/A' })).toEqual({
+      iri: 'https://x.org/A',
+      depth: 1,
+    });
+    expect(NeighbourhoodQuerySchema.safeParse({ iri: 'x', depth: '3' }).success).toBe(false);
+  });
+});
+
+describe('stored source extensions (shared with the worker)', () => {
+  it.each(fixture.extensions.map((c) => [c.fileName, c.mediaType, c.ext] as const))(
+    '%s (%s) → .%s',
+    (fileName, mediaType, ext) => {
+      expect(ontologySourceExtension(fileName, mediaType)).toBe(ext);
+    },
+  );
 });

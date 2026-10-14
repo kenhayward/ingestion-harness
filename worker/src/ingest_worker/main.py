@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import signal
 import threading
@@ -7,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 
+import httpx
 import psycopg
 
 from .bundle import run_export
@@ -17,6 +19,7 @@ from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
 from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
+from .ontology_fetch import FetchPolicy, fetch_rdf
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -216,6 +219,15 @@ def main() -> None:
         ),
         ontologies=PgOntologyStore(psycopg.connect(settings.database_url, autocommit=True)),
         ontology_max_triples=settings.ontology_max_triples,
+        ontology_fetch=(
+            functools.partial(
+                fetch_rdf,
+                policy=FetchPolicy(settings.ontology_fetch_allow, settings.ontology_max_bytes),
+                client=httpx.Client(),
+            )
+            if settings.ontology_fetch_allow
+            else None
+        ),
     )
     log.info(
         "worker %s started: %d specs, providers=%s, ocr=%s, converter=%s",

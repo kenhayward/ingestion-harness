@@ -48,6 +48,10 @@ const EnvSchema = z.object({
   S3_PUBLIC_URL: optional(z.string().url()),
   SPECS_DIR: z.string().default(defaultSpecsDir),
   MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
+  /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */
+  ONTOLOGY_FETCH_ALLOW: z.preprocess(blank, z.string().default('')),
+  /** Fetched ontology files over this many bytes are refused (the worker enforces it). */
+  ONTOLOGY_MAX_BYTES: z.coerce.number().int().positive().default(104857600),
   /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
   TRUST_PROXY: optional(z.string()),
   /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */

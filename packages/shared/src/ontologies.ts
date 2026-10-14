@@ -52,7 +52,37 @@ export function ontologyFormat(fileName: string): { ext: string; mediaType: stri
   return ext !== undefined && mediaType !== undefined ? { ext, mediaType } : null;
 }
 
+const MEDIA_EXTENSIONS: Record<string, string> = {
+  'text/turtle': 'ttl',
+  'application/rdf+xml': 'rdf',
+  'application/ld+json': 'jsonld',
+  'application/n-triples': 'nt',
+  'text/n3': 'n3',
+};
+
+/**
+ * The extension a version's file is stored under: its name's, else its content type's, else
+ * `ttl`. Mirrors `ontology.source_extension` in the worker (shared fixture ontology-url.json).
+ */
+export function ontologySourceExtension(fileName: string, mediaType: string): string {
+  return ontologyFormat(fileName)?.ext ?? MEDIA_EXTENSIONS[mediaType] ?? 'ttl';
+}
+
 export const ONTOLOGY_STATUSES = ['queued', 'parsing', 'ready', 'failed'] as const;
+
+/** upload: a file; url: fetched by the worker (rollout step 2); import: pulled in by owl:imports. */
+export const ONTOLOGY_SOURCE_KINDS = ['upload', 'url', 'import'] as const;
+
+export const OntologyImportSchema = z.object({
+  iri: z.string(),
+  /** library: an existing ready version; fetched: imported now into the library. */
+  resolution: z.enum(['unresolved', 'library', 'fetched']),
+  ontologyId: z.string().nullable(),
+  version: z.number().int().nullable(),
+  /** Why an import is unresolved. */
+  reason: z.string().nullable(),
+});
+export type OntologyImport = z.infer<typeof OntologyImportSchema>;
 export type OntologyStatus = (typeof ONTOLOGY_STATUSES)[number];
 
 export const OntologyStatsSchema = z.object({
@@ -62,6 +92,8 @@ export const OntologyStatsSchema = z.object({
   concepts: z.number().int(),
   schemes: z.number().int(),
   shapes: z.number().int(),
+  /** Terms indexed from the version's imports (not counted above). */
+  imported: z.number().int(),
 });
 export type OntologyStats = z.infer<typeof OntologyStatsSchema>;
 
@@ -71,15 +103,18 @@ export const OntologyVersionViewSchema = z.object({
   status: z.enum(ONTOLOGY_STATUSES),
   fileName: z.string(),
   mediaType: z.string(),
-  sha256: z.string(),
-  bytes: z.number().int(),
+  /** Null for a URL version until the worker has fetched it. */
+  sha256: z.string().nullable(),
+  bytes: z.number().int().nullable(),
+  sourceKind: z.enum(ONTOLOGY_SOURCE_KINDS),
+  sourceUrl: z.string().nullable(),
   ontologyIri: z.string().nullable(),
   versionIri: z.string().nullable(),
   license: z.string().nullable(),
   kinds: z.array(z.enum(['owl', 'skos', 'shacl'])),
   stats: OntologyStatsSchema.nullable(),
-  /** `owl:imports` of the file; resolving them against the library is rollout step 2. */
-  imports: z.array(z.object({ iri: z.string(), resolution: z.literal('unresolved') })),
+  /** The file's `owl:imports` and how each was resolved. */
+  imports: z.array(OntologyImportSchema),
   error: z.string().nullable(),
   importedBy: z.string().nullable(),
   importedAt: z.string(),
@@ -132,6 +167,8 @@ export const OntologyTermSchema = z.object({
   scheme: z.string().nullable(),
   deprecated: z.boolean(),
   childCount: z.number().int(),
+  /** "<ontologyId>@<version>" for a term indexed from an import; null for the version's own. */
+  definedIn: z.string().nullable(),
 });
 export type OntologyTerm = z.infer<typeof OntologyTermSchema>;
 
@@ -178,3 +215,90 @@ export const TermQuerySchema = z.object({
 
 /** Job event when a version is indexed; mirrors `ontology.ONTOLOGY_INDEXED` in the worker. */
 export const ONTOLOGY_INDEXED_EVENT = 'ontology indexed';
+
+/** A host on the allowlist: exact, or `.example.org` for the domain and its subdomains. */
+export function hostAllowed(host: string, hosts: readonly string[]): boolean {
+  const h = host.toLowerCase().replace(/\.$/, '');
+  return hosts.some((raw) => {
+    const e = raw.trim().toLowerCase();
+    if (!e) return false;
+    return e.startsWith('.') ? h === e.slice(1) || h.endsWith(e) : h === e;
+  });
+}
+
+/** Why a URL cannot be imported, or null. Mirrors `ontology_fetch` in the worker. */
+export function ontologyUrlProblem(url: string, hosts: readonly string[]): string | null {
+  if (!hosts.some((h) => h.trim())) return 'URL imports are off: set ONTOLOGY_FETCH_ALLOW';
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'not a URL';
+  }
+  if (parsed.protocol !== 'https:') return 'only https URLs can be imported';
+  return hostAllowed(parsed.hostname, hosts)
+    ? null
+    : `${parsed.hostname} is not on ONTOLOGY_FETCH_ALLOW`;
+}
+
+/** The file name a fetched ontology is stored under: the URL's last path segment, else its host. */
+export function ontologyFileNameFromUrl(url: string): string {
+  const u = new URL(url);
+  const last = u.pathname.split('/').filter(Boolean).pop();
+  return last ? decodeURIComponent(last) : u.hostname;
+}
+
+/** What the import dialog needs to know about URL imports (GET /api/ontology-settings). */
+export const OntologySettingsSchema = z.object({
+  fetchHosts: z.array(z.string()),
+  maxBytes: z.number().int(),
+});
+export type OntologySettings = z.infer<typeof OntologySettingsSchema>;
+
+export const OntologyFromUrlBodySchema = z
+  .object({
+    id: z.string().regex(ONTOLOGY_ID_RE),
+    label: z.string().trim().min(1).max(200).optional(),
+    description: z.string().max(2000).optional(),
+    tags: z.array(z.string().regex(TAG_RE)).max(20).optional(),
+    localOnly: z.boolean().optional(),
+    url: z.string().min(1).max(2000),
+  })
+  .strict();
+export type OntologyFromUrlBody = z.infer<typeof OntologyFromUrlBodySchema>;
+
+export const GRAPH_EDGE_KINDS = [
+  'subClassOf',
+  'subPropertyOf',
+  'broader',
+  'inScheme',
+  'domain',
+  'range',
+  'targets',
+] as const;
+export const GraphNodeSchema = z.object({
+  iri: z.string(),
+  label: z.string(),
+  /** external: an IRI the version names but does not define. */
+  kind: z.union([OntologyTermKindSchema, z.literal('external')]),
+  focus: z.boolean(),
+});
+export const GraphEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+  kind: z.enum(GRAPH_EDGE_KINDS),
+});
+export const NeighbourhoodSchema = z.object({
+  nodes: z.array(GraphNodeSchema),
+  edges: z.array(GraphEdgeSchema),
+  truncated: z.boolean(),
+});
+export type GraphNode = z.infer<typeof GraphNodeSchema>;
+export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
+export type Neighbourhood = z.infer<typeof NeighbourhoodSchema>;
+export const NeighbourhoodQuerySchema = z.object({
+  iri: z.string().min(1).max(2000),
+  depth: z.coerce.number().int().min(1).max(2).default(1),
+});
+/** Nodes in one neighbourhood at most; past it `truncated` is true. */
+export const NEIGHBOURHOOD_LIMIT = 150;

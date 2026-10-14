@@ -74,6 +74,12 @@ const app = await buildApp({
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  ontologyFetch: {
+    hosts: config.ONTOLOGY_FETCH_ALLOW.split(',')
+      .map((h) => h.trim())
+      .filter(Boolean),
+    maxBytes: config.ONTOLOGY_MAX_BYTES,
+  },
   // Throws on a malformed key: better a failed start than keys that can't be read back.
   llmSecrets: secretsKeys(process.env),
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),

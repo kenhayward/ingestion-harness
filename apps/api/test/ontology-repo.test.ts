@@ -11,9 +11,7 @@ const input = (over: Partial<NewOntologyVersion> = {}): NewOntologyVersion => ({
   },
   fileName: 'pv.ttl',
   mediaType: 'text/turtle',
-  sourceKey: 'ontologies/pv/sources/aaa.ttl',
-  sha256: 'aaa',
-  bytes: 10,
+  source: { kind: 'upload', sourceKey: 'ontologies/pv/sources/aaa.ttl', sha256: 'aaa', bytes: 10 },
   by: 'Ken',
   ...over,
 });
@@ -24,7 +22,15 @@ async function seeded() {
   const repo = new MemoryOntologyRepo();
   await repo.createVersion(input());
   repo.markReady('pv', 1, {
-    stats: { triples: 9, classes: 3, properties: 1, concepts: 0, schemes: 0, shapes: 0 },
+    stats: {
+      triples: 9,
+      classes: 3,
+      properties: 1,
+      concepts: 0,
+      schemes: 0,
+      shapes: 0,
+      imported: 0,
+    },
   });
   repo.seedTerms('pv', 1, [
     { iri: `${C}Document`, kind: 'class', label: 'Document', root: true, childCount: 1 },
@@ -99,7 +105,12 @@ describe('MemoryOntologyRepo', () => {
       reason: 'duplicate',
       version: 1,
     });
-    const second = await repo.createVersion(input({ meta: null, sha256: 'bbb', sourceKey: 'k2' }));
+    const second = await repo.createVersion(
+      input({
+        meta: null,
+        source: { kind: 'upload', sourceKey: 'k2', sha256: 'bbb', bytes: 10 },
+      }),
+    );
     expect(second).toMatchObject({ ok: true, version: { version: 2 } });
     expect((await repo.get('pv'))!.versions.map((v) => v.version)).toEqual([2, 1]);
   });
@@ -134,6 +145,7 @@ describe('MemoryOntologyRepo', () => {
       result: 'deleted',
       sha256: 'aaa',
       fileName: 'pv.ttl',
+      mediaType: 'text/turtle',
     });
     expect(await repo.get('pv')).toBeNull();
   });
@@ -206,5 +218,30 @@ describe('imports that stop without finishing', () => {
     repo.finishJob(created.jobId, 'running', null);
     expect((await repo.get('pv'))!.versions[0]!.status).toBe('queued');
     expect(await repo.deleteVersion('pv', 1)).toEqual({ result: 'busy' });
+  });
+});
+
+describe('URL versions', () => {
+  it('creates a URL version without bytes and a job that fetches it', async () => {
+    const repo = new MemoryOntologyRepo();
+    const created = await repo.createVersion({
+      ontologyId: 'pv',
+      meta: { label: 'PV', description: '', tags: [], localOnly: false },
+      fileName: 'pv',
+      mediaType: '',
+      source: { kind: 'url', url: 'https://w3id.org/pv' },
+      by: 'Ken',
+    });
+    expect(created).toMatchObject({
+      ok: true,
+      version: { sourceKind: 'url', sourceUrl: 'https://w3id.org/pv', sha256: null, bytes: null },
+    });
+    expect(repo.jobs[0]!.params).toEqual({
+      ontologyId: 'pv',
+      version: 1,
+      sourceUrl: 'https://w3id.org/pv',
+      fileName: 'pv',
+      mediaType: '',
+    });
   });
 });

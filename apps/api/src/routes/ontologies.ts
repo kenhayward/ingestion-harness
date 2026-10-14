@@ -5,6 +5,10 @@ import {
   ONTOLOGY_ACCEPT,
   ONTOLOGY_ID_RE,
   OntologyDetailSchema,
+  NeighbourhoodQuerySchema,
+  NeighbourhoodSchema,
+  OntologyFromUrlBodySchema,
+  OntologySettingsSchema,
   OntologyPatchSchema,
   OntologySummarySchema,
   OntologyVersionViewSchema,
@@ -12,13 +16,17 @@ import {
   TermDetailSchema,
   TermPageSchema,
   TermQuerySchema,
+  ontologyFileNameFromUrl,
   ontologyFormat,
   ontologyNormalizedKey,
+  ontologySourceExtension,
   ontologySourceKey,
+  ontologyUrlProblem,
 } from '@ih/shared';
 import { binary, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { multipartField } from '../uploads.js';
 import { contentDisposition } from './jobs.js';
+import { buildNeighbourhood } from '../ontologies/neighbourhood.js';
 
 /** The ontology library (ADR 0011): anyone signed in reads, admins import and manage. */
 
@@ -174,9 +182,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
             },
         fileName: file.filename,
         mediaType: format.mediaType,
-        sourceKey,
-        sha256,
-        bytes: body.length,
+        source: { kind: 'upload', sourceKey, sha256, bytes: body.length },
         by: by(req),
       });
       if (!result.ok) {
@@ -294,9 +300,11 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: `version ${version} of ${id} is still being imported` });
       }
       const { store, buckets } = app.deps;
-      const ext = ontologyFormat(outcome.fileName)?.ext;
+      const ext = outcome.sha256
+        ? ontologySourceExtension(outcome.fileName, outcome.mediaType)
+        : undefined;
       const keys = [
-        ...(ext ? [ontologySourceKey(id, outcome.sha256, ext)] : []),
+        ...(ext && outcome.sha256 ? [ontologySourceKey(id, outcome.sha256, ext)] : []),
         ontologyNormalizedKey(id, version),
       ];
       for (const key of keys) {
@@ -332,9 +340,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       if (!params.success) return reply.code(404).send({ error: 'version not found' });
       const { id, version } = params.data;
       const v = (await app.deps.ontologies.get(id))?.versions.find((x) => x.version === version);
-      const ext = v ? ontologyFormat(v.fileName)?.ext : undefined;
+      const ext = v?.sha256 ? ontologySourceExtension(v.fileName, v.mediaType) : undefined;
       const body =
-        v && ext
+        v?.sha256 && ext
           ? await app.deps.store.get(app.deps.buckets.runs, ontologySourceKey(id, v.sha256, ext))
           : null;
       if (!v || !body) return reply.code(404).send({ error: 'version not found' });
@@ -423,6 +431,132 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       const { id, version } = params.data;
       const term = await app.deps.ontologies.term(id, version, query.data.iri);
       return term ?? reply.code(404).send({ error: 'term not found' });
+    },
+  );
+
+  app.post(
+    '/ontologies/from-url',
+    {
+      preHandler: adminOnly,
+      schema: {
+        ...base(
+          'importOntologyFromUrl',
+          'Import an ontology from a URL',
+          md`
+            **Admin token required.** Queues the import of an ontology the worker fetches from
+            \`url\` as the next version of \`id\` (a new ontology needs \`label\`). Only
+            \`https\` URLs on hosts in \`ONTOLOGY_FETCH_ALLOW\` are accepted; the worker
+            checks each redirect again, refuses private addresses and caps the size. The
+            version has no bytes until it is fetched, and a file identical to an existing
+            version fails it.
+          `,
+        ),
+        'x-admin': true,
+        body: OntologyFromUrlBodySchema,
+        response: {
+          202: res('The queued version.', OntologyVersionViewSchema),
+          400: error('An invalid body, a URL that cannot be imported, or a missing name.'),
+          403: ADMINS_ONLY,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = OntologyFromUrlBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id, url, label } = body.data;
+      const problem = ontologyUrlProblem(url, app.deps.ontologyFetch.hosts);
+      if (problem) return reply.code(400).send({ error: problem });
+      const { ontologies } = app.deps;
+      const existing = await ontologies.get(id);
+      if (!existing && !label) return reply.code(400).send({ error: NAME_REQUIRED });
+      const result = await ontologies.createVersion({
+        ontologyId: id,
+        meta: existing
+          ? null
+          : {
+              label: label ?? id,
+              description: body.data.description ?? '',
+              tags: body.data.tags ?? [],
+              localOnly: body.data.localOnly ?? false,
+            },
+        fileName: ontologyFileNameFromUrl(url),
+        mediaType: '',
+        source: { kind: 'url', url },
+        by: by(req),
+      });
+      if (!result.ok) return reply.code(400).send({ error: NAME_REQUIRED });
+      req.log.info(
+        { ontology: id, version: result.version.version, url, by: by(req) },
+        'ontology import from URL queued',
+      );
+      return reply.code(202).send(result.version);
+    },
+  );
+
+  app.get(
+    '/ontology-settings',
+    {
+      schema: {
+        ...base(
+          'getOntologySettings',
+          'How ontologies can be imported',
+          md`
+            The hosts ontologies may be imported from by URL (\`ONTOLOGY_FETCH_ALLOW\`; empty
+            means URL imports are off) and the size limit of a fetched file, for the import
+            dialog.
+          `,
+        ),
+        response: { 200: res('The settings.', OntologySettingsSchema) },
+      },
+    },
+    async () => ({
+      fetchHosts: app.deps.ontologyFetch.hosts,
+      maxBytes: app.deps.ontologyFetch.maxBytes,
+    }),
+  );
+
+  /** Rows per hop the neighbourhood reads; the builder keeps NEIGHBOURHOOD_LIMIT nodes of them. */
+  const HOP_ROWS = 500;
+
+  app.get(
+    '/ontologies/:id/versions/:version/neighbourhood',
+    {
+      schema: {
+        ...base(
+          'getOntologyNeighbourhood',
+          'A term and what it is related to',
+          md`
+            The graph view of a term: the term, its parents and children, the properties whose
+            domain or range it is (and a property's own domain and range), concept schemes and
+            broader concepts, and the shapes targeting it, \`depth\` hops out (1 or 2). At most
+            150 nodes (\`truncated\` says when more were left out); an IRI the version names but
+            does not define is an \`external\` node.
+          `,
+        ),
+        params: VersionParams,
+        querystring: NeighbourhoodQuerySchema,
+        response: {
+          200: res('The neighbourhood.', NeighbourhoodSchema),
+          400: error('`iri` is missing, or `depth` is not 1 or 2.'),
+          404: NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = VersionParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'version not found' });
+      const query = NeighbourhoodQuerySchema.safeParse(req.query ?? {});
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      const { id, version } = params.data;
+      const { ontologies } = app.deps;
+      if (!(await ontologies.neighbours(id, version, [], 1))) {
+        return reply.code(404).send({ error: 'version not found' });
+      }
+      return buildNeighbourhood(
+        query.data.iri,
+        query.data.depth,
+        async (iris) => (await ontologies.neighbours(id, version, iris, HOP_ROWS)) ?? [],
+      );
     },
   );
 }

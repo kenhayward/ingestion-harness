@@ -14,7 +14,7 @@ from ingest_worker.llm.base import (
 )
 from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
-from ingest_worker.ontology import ParsedOntology
+from ingest_worker.ontology import DuplicateSource, ParsedOntology
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
 
@@ -317,6 +317,59 @@ class MemoryOntologyStore:
     status: dict[tuple[str, int], str] = field(default_factory=dict)
     errors: dict[tuple[str, int], str] = field(default_factory=dict)
     saved: dict[tuple[str, int], ParsedOntology] = field(default_factory=dict)
+    #: Ready library versions by ontology or version IRI.
+    library: dict[str, tuple[str, int]] = field(default_factory=dict)
+    imports_of: dict[tuple[str, int], list[dict[str, Any]]] = field(default_factory=dict)
+    sources: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
+    created: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Set to make set_source report that another version has the same bytes.
+    duplicate_of: int | None = None
+
+    def set_source(
+        self,
+        ontology_id: str,
+        version: int,
+        *,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+    ) -> None:
+        if self.duplicate_of is not None:
+            raise DuplicateSource(self.duplicate_of)
+        self.sources[(ontology_id, version)] = {
+            "file_name": file_name,
+            "media_type": media_type,
+            "sha256": sha256,
+            "size": size,
+        }
+
+    def find_ready(self, iri: str) -> tuple[str, int] | None:
+        return self.library.get(iri)
+
+    def version_imports(self, ontology_id: str, version: int) -> list[dict[str, Any]]:
+        return self.imports_of.get((ontology_id, version), [])
+
+    def create_imported(
+        self,
+        *,
+        iri: str,
+        title: str | None,
+        file_name: str,
+        media_type: str,
+        sha256: str,
+        size: int,
+        source_url: str,
+        parsed: ParsedOntology,
+        root_id: str,
+        before_commit: Callable[[str, int], None],
+    ) -> tuple[str, int]:
+        oid = f"import-{len(self.created) + 1}"
+        before_commit(oid, 1)
+        self.created[oid] = {"iri": iri, "title": title, "root_id": root_id, "parsed": parsed}
+        self.library[iri] = (oid, 1)
+        self.imports_of[(oid, 1)] = parsed.import_entries
+        return oid, 1
 
     def start(self, ontology_id: str, version: int) -> None:
         self.status[(ontology_id, version)] = "parsing"

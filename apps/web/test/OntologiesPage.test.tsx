@@ -116,4 +116,49 @@ describe('OntologiesPage', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('already version 1 of pv');
     expect(api.importOntology).toHaveBeenCalledWith(file, { id: 'pv' });
   });
+
+  it('imports from a URL on an allowed host', async () => {
+    const api = page([], 'admin', {
+      importOntologyFromUrl: vi.fn(async () => ontologyVersion({ sourceKind: 'url' })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
+    expect(await within(dialog).findByText('Allowed hosts: w3id.org')).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText('URL'), 'https://w3id.org/idmp/core.ttl');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'IDMP');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(api.importOntologyFromUrl).toHaveBeenCalledWith({
+        id: 'idmp',
+        label: 'IDMP',
+        tags: [],
+        localOnly: false,
+        url: 'https://w3id.org/idmp/core.ttl',
+      }),
+    );
+  });
+
+  it('says why a URL cannot be imported before sending it', async () => {
+    page([], 'admin', {
+      getOntologySettings: vi.fn(async () => ({ fetchHosts: ['w3id.org'], maxBytes: 1 })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
+    await userEvent.type(within(dialog).getByLabelText('URL'), 'https://evil.org/x.ttl');
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'X');
+    expect(within(dialog).getByText('evil.org is not on ONTOLOGY_FETCH_ALLOW')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled();
+  });
+
+  it('explains when URL imports are off', async () => {
+    page([], 'admin', {
+      getOntologySettings: vi.fn(async () => ({ fetchHosts: [], maxBytes: 1 })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
+    expect(await within(dialog).findByText(/URL imports are off/)).toBeInTheDocument();
+  });
 });

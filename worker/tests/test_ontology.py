@@ -7,9 +7,11 @@ import pytest
 from ingest_worker.ontology import (
     ParsedOntology,
     Term,
+    index_graph,
     local_name,
     parse_ontology,
     rdf_format,
+    read_graph,
 )
 from ingest_worker.pipeline import DocumentError
 from ingest_worker.storage import ontology_normalized_key
@@ -172,6 +174,7 @@ def test_shacl_shapes_record_their_target_classes() -> None:
         "concepts": 0,
         "schemes": 0,
         "shapes": 1,
+        "imported": 0,
     }
 
 
@@ -292,3 +295,50 @@ def test_a_union_superclass_is_not_a_parent() -> None:
     a = term(parsed, "https://example.org/pv#A")
     assert a.parents == [] and a.root
     assert term(parsed, "https://example.org/pv#B").child_count == 0
+
+
+BASE_TTL = (
+    PREFIXES
+    + """
+<https://example.org/base> a owl:Ontology ; rdfs:label "Base ontology" .
+<https://example.org/base#Thing> a owl:Class ; rdfs:label "Thing" .
+<https://example.org/base#Item> a owl:Class ; rdfs:subClassOf <https://example.org/base#Thing> .
+"""
+)
+PV_ON_BASE = (
+    PREFIXES
+    + """
+<https://example.org/pv> a owl:Ontology .
+ex:Batch a owl:Class ; rdfs:subClassOf <https://example.org/base#Thing> .
+"""
+)
+
+
+def test_imported_terms_are_indexed_with_their_origin() -> None:
+    base = read_graph(BASE_TTL.encode(), "text/turtle", "base.ttl", max_triples=1000)
+    own = read_graph(PV_ON_BASE.encode(), "text/turtle", "pv.ttl", max_triples=1000)
+    parsed = index_graph(own, imports=[(base, "base@1")], max_triples=1000)
+    thing = term(parsed, "https://example.org/base#Thing")
+    assert (thing.defined_in, thing.label, thing.root) == ("base@1", "Thing", True)
+    # Batch's parent is now indexed (from the import), so Batch is no longer a root.
+    batch = term(parsed, "https://example.org/pv#Batch")
+    assert batch.defined_in is None and not batch.root
+    assert thing.child_count == 2  # Item and Batch
+    stats = parsed.stats()
+    assert stats["classes"] == 1 and stats["imported"] == 2
+    # Only the version's own triples are its normalized form and header.
+    assert b'"Thing"' not in parsed.normalized
+    assert parsed.ontology_iri == "https://example.org/pv" and parsed.kinds == ["owl"]
+
+
+def test_the_triple_cap_covers_imports() -> None:
+    base = read_graph(BASE_TTL.encode(), "text/turtle", "base.ttl", max_triples=1000)
+    own = read_graph(PV_ON_BASE.encode(), "text/turtle", "pv.ttl", max_triples=1000)
+    with pytest.raises(DocumentError, match="too large"):
+        index_graph(own, imports=[(base, "base@1")], max_triples=len(own) + 1)
+
+
+def test_reads_the_ontology_title() -> None:
+    parsed = parse_ontology(BASE_TTL.encode(), "text/turtle", "base.ttl")
+    assert parsed.title == "Base ontology"
+    assert owl().title is None

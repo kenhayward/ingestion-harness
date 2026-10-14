@@ -18,9 +18,7 @@ const input = (over: Partial<NewOntologyVersion> = {}): NewOntologyVersion => ({
   meta: { label: 'PV', description: '', tags: ['industry:pharma'], localOnly: false },
   fileName: 'pv.ttl',
   mediaType: 'text/turtle',
-  sourceKey: 'k',
-  sha256: 'aaa',
-  bytes: 10,
+  source: { kind: 'upload', sourceKey: 'k', sha256: 'aaa', bytes: 10 },
   by: 'Ken',
   ...over,
 });
@@ -104,13 +102,16 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       result: 'deleted',
       sha256: 'aaa',
       fileName: 'pv.ttl',
+      mediaType: 'text/turtle',
     });
     expect(await repo.get('pv-pg')).toBeNull();
   });
 
   it('fetches a bounded number of rows to describe a hub term', async () => {
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
-    const created = await repo.createVersion(input({ sha256: 'hub' }));
+    const created = await repo.createVersion(
+      input({ source: { kind: 'upload', sourceKey: 'k', sha256: 'hub', bytes: 10 } }),
+    );
     if (!created.ok) throw new Error('not created');
     const S = `${C}Stages`;
     await pool.query(
@@ -139,11 +140,18 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     expect(detail!.children).toHaveLength(200);
     expect(detail!.concepts[0]!.label).toBe('Concept 0001');
     expect(fetched).toBeLessThanOrEqual(2 * 200 + 10);
+    const near = await repo.neighbours('pv-pg', 1, [S], 300);
+    expect(near).toHaveLength(300);
+    // The rows asked for come first, then the rest by label.
+    expect(near!.slice(0, 2).map((t) => t.label)).toEqual(['Stages', 'Concept 0001']);
+    expect(await repo.neighbours('pv-pg', 9, [S], 10)).toBeNull();
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
   });
 
   it('reads a version whose job stopped as failed, and lets it be deleted', async () => {
-    const created = await repo.createVersion(input({ sha256: 'stuck' }));
+    const created = await repo.createVersion(
+      input({ source: { kind: 'upload', sourceKey: 'k', sha256: 'stuck', bytes: 10 } }),
+    );
     if (!created.ok) throw new Error('not created');
     await pool.query(`UPDATE jobs SET status = 'running' WHERE id = $1`, [created.jobId]);
     expect((await repo.get('pv-pg'))!.versions[0]!.status).toBe('queued');
@@ -161,5 +169,61 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       (await repo.list({ retired: false })).find((o) => o.id === 'pv-pg')!.latest,
     ).toMatchObject({ status: 'failed' });
     expect(await repo.deleteVersion('pv-pg', 1)).toMatchObject({ result: 'deleted' });
+  });
+
+  it('reads rows from before step 2 with defaults, and URL versions without bytes', async () => {
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-legacy'`);
+    await pool.query(`INSERT INTO ontologies (id, label) VALUES ('pv-legacy', 'Legacy')`);
+    await pool.query(
+      `INSERT INTO ontology_versions
+         (ontology_id, version, status, file_name, media_type, sha256, bytes, stats, imports)
+       VALUES ('pv-legacy', 1, 'ready', 'pv.ttl', 'text/turtle', 'abc', 10,
+               '{"triples":1,"classes":1,"properties":0,"concepts":0,"schemes":0,"shapes":0}',
+               '[{"iri":"https://x.org/base","resolution":"unresolved"}]')`,
+    );
+    await pool.query(
+      `INSERT INTO ontology_terms (ontology_id, version, iri, kind, label, root)
+       VALUES ('pv-legacy', 1, 'https://x.org/A', 'class', 'A', true)`,
+    );
+    const legacy = (await repo.get('pv-legacy'))!.versions[0]!;
+    expect(legacy).toMatchObject({
+      sourceKind: 'upload',
+      sourceUrl: null,
+      stats: { imported: 0 },
+      imports: [
+        {
+          iri: 'https://x.org/base',
+          resolution: 'unresolved',
+          ontologyId: null,
+          version: null,
+          reason: null,
+        },
+      ],
+    });
+    const terms = await repo.terms('pv-legacy', 1, { offset: 0, limit: 10 });
+    expect(terms!.items[0]).toMatchObject({ label: 'A', definedIn: null });
+    const url = await repo.createVersion({
+      ontologyId: 'pv-legacy',
+      meta: null,
+      fileName: 'core.ttl',
+      mediaType: '',
+      source: { kind: 'url', url: 'https://w3id.org/core.ttl' },
+      by: 'Ken',
+    });
+    expect(url).toMatchObject({
+      ok: true,
+      version: { version: 2, sha256: null, bytes: null, sourceKind: 'url' },
+    });
+    const job = await pool.query(`SELECT params FROM jobs WHERE id = $1`, [
+      url.ok ? url.jobId : null,
+    ]);
+    expect(job.rows[0].params).toEqual({
+      ontologyId: 'pv-legacy',
+      version: 2,
+      sourceUrl: 'https://w3id.org/core.ttl',
+      fileName: 'core.ttl',
+      mediaType: '',
+    });
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-legacy'`);
   });
 });

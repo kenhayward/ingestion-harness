@@ -205,6 +205,21 @@ describe('browsing terms', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
+  it('returns a term neighbourhood', async () => {
+    const { app } = await ready();
+    const url = (q: string) => `/api/ontologies/pv/versions/1/neighbourhood${q}`;
+    const res = await app.inject({ url: url(`?iri=${encodeURIComponent(`${C}Protocol`)}`) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().edges).toContainEqual({
+      source: `${C}Protocol`,
+      target: `${C}Document`,
+      kind: 'subClassOf',
+    });
+    expect((await app.inject({ url: url('') })).statusCode).toBe(400);
+    const unknown = await app.inject({ url: '/api/ontologies/pv/versions/9/neighbourhood?iri=x' });
+    expect(unknown.statusCode).toBe(404);
+  });
+
   it('describes a term', async () => {
     const { app } = await ready();
     const res = await app.inject({ url: term(`${C}Protocol`) });
@@ -212,5 +227,104 @@ describe('browsing terms', () => {
     const missing = await app.inject({ url: '/api/ontologies/pv/versions/1/term' });
     expect(missing.statusCode).toBe(400);
     expect((await app.inject({ url: term(`${C}Nope`) })).statusCode).toBe(404);
+  });
+});
+
+describe('importing by URL', () => {
+  const post = (app: Awaited<ReturnType<typeof setup>>['app'], payload: object) =>
+    app.inject({ method: 'POST', url: '/api/ontologies/from-url', payload });
+
+  it('queues a fetch for an allowed https URL', async () => {
+    const { app, ontologies, store } = await setup();
+    const res = await post(app, {
+      id: 'idmp-o',
+      label: 'IDMP-O',
+      url: 'https://w3id.org/idmp/core.ttl',
+      tags: ['industry:pharma'],
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toMatchObject({
+      sourceKind: 'url',
+      sourceUrl: 'https://w3id.org/idmp/core.ttl',
+      fileName: 'core.ttl',
+      sha256: null,
+    });
+    expect(ontologies.jobs[0]!.params).toMatchObject({
+      sourceUrl: 'https://w3id.org/idmp/core.ttl',
+    });
+    expect(await ontologies.get('idmp-o')).toMatchObject({ tags: ['industry:pharma'] });
+    expect(store.objects.size).toBe(0);
+  });
+
+  it.each([
+    [{ id: 'x1', label: 'X', url: 'http://w3id.org/a' }, 'only https URLs can be imported'],
+    [
+      { id: 'x1', label: 'X', url: 'https://evil.org/a' },
+      'evil.org is not on ONTOLOGY_FETCH_ALLOW',
+    ],
+    [{ id: 'x1', url: 'https://w3id.org/a' }, 'name is required for a new ontology'],
+  ])('refuses %j', async (payload, error) => {
+    const { app } = await setup();
+    const res = await post(app, payload);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe(error);
+  });
+
+  it('refuses a malformed body', async () => {
+    const { app } = await setup();
+    expect((await post(app, { id: 'x1', url: 'https://w3id.org/a', extra: 1 })).statusCode).toBe(
+      400,
+    );
+  });
+
+  it('is off without allowed hosts, and tells everyone the policy', async () => {
+    const { app } = await testApp({
+      ontologies: new MemoryOntologyRepo(),
+      ontologyFetch: { hosts: [], maxBytes: 5 },
+    });
+    const res = await post(app, { id: 'x1', label: 'X', url: 'https://w3id.org/a' });
+    expect(res.json().error).toBe('URL imports are off: set ONTOLOGY_FETCH_ALLOW');
+    expect((await app.inject({ url: '/api/ontology-settings' })).json()).toEqual({
+      fetchHosts: [],
+      maxBytes: 5,
+    });
+  });
+
+  it('is admin-only, and a URL version has no source to download yet', async () => {
+    const { app, userCookie, adminCookie } = await accessApp();
+    const send = (cookie: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/ontologies/from-url',
+        headers: { cookie },
+        payload: { id: 'x1', label: 'X', url: 'https://w3id.org/a' },
+      });
+    expect((await send(userCookie)).statusCode).toBe(403);
+    expect((await send(adminCookie)).statusCode).toBe(202);
+    const dl = await app.inject({
+      url: '/api/ontologies/x1/versions/1/source',
+      headers: { cookie: adminCookie },
+    });
+    expect(dl.statusCode).toBe(404);
+  });
+});
+
+describe('fetched versions', () => {
+  it('downloads a version fetched from an extensionless URL', async () => {
+    const { app, ontologies, store } = await setup();
+    await app.inject({
+      method: 'POST',
+      url: '/api/ontologies/from-url',
+      payload: { id: 'x1', label: 'X', url: 'https://w3id.org/pv' },
+    });
+    // What the worker records: the bytes, stored under the extension of their content type.
+    ontologies.markReady('x1', 1, { sha256: 'abc', bytes: 3, mediaType: 'text/turtle' });
+    await store.put('runs', 'ontologies/x1/sources/abc.ttl', Buffer.from('ttl'), 'text/turtle');
+    const res = await app.inject({ url: '/api/ontologies/x1/versions/1/source' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('ttl');
+    const gone = await app.inject({ method: 'DELETE', url: '/api/ontologies/x1/versions/1' });
+    expect(gone.statusCode).toBe(204);
+    expect(store.objects.has('runs/ontologies/x1/sources/abc.ttl')).toBe(false);
   });
 });

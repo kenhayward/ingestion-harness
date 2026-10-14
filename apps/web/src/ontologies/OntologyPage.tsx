@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { OntologyDetail } from '@ih/shared';
+import type { OntologyDetail, OntologyImport } from '@ih/shared';
 import { ontologySourceUrl, type Api } from '../api/client.js';
 import { navigate } from '../router.js';
 import { Dialog } from '../ui/Dialog.js';
@@ -7,6 +7,7 @@ import { Icon } from '../ui/Icon.js';
 import { KIND_LABEL, isImporting, versionStatusText } from './derive.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { VersionLine } from './OntologiesPage.js';
+import type { GraphRenderer } from './graphRenderer.js';
 import { TermBrowser } from './TermBrowser.js';
 
 /** One ontology: its versions, metadata and, once a version is ready, its terms. */
@@ -16,12 +17,15 @@ export function OntologyPage({
   ontologyId,
   pollMs = 2000,
   searchDelayMs = 250,
+  graphRenderer,
 }: {
   api: Api;
   role: 'admin' | 'user';
   ontologyId: string;
   pollMs?: number;
   searchDelayMs?: number;
+  /** Draws term graphs (tests pass a fake: jsdom has no canvas). */
+  graphRenderer?: GraphRenderer;
 }) {
   const [detail, setDetail] = useState<OntologyDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +110,7 @@ export function OntologyPage({
                   ))}
                 </select>
               )}
-              {current && (
+              {current?.sha256 && (
                 <a className="button" href={ontologySourceUrl(detail.id, current.version)}>
                   <Icon name="download" />
                   Download {current.fileName}
@@ -148,22 +152,7 @@ export function OntologyPage({
               <VersionLine version={current} count={detail.versions.length} />
               {importing && <p role="status">{versionStatusText(current)}</p>}
               {current.status === 'failed' && <p role="alert">{versionStatusText(current)}</p>}
-              {current.imports.length > 0 && (
-                <details className="ontology-imports">
-                  <summary>
-                    {current.imports.length === 1
-                      ? '1 imported ontology is not in the library'
-                      : `${current.imports.length} imported ontologies are not in the library`}
-                  </summary>
-                  <ul>
-                    {current.imports.map((i) => (
-                      <li key={i.iri} className="mono">
-                        {i.iri}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
+              {current.imports.length > 0 && <ImportsPanel imports={current.imports} />}
               <dl className="meta ontology-meta">
                 {current.ontologyIri && (
                   <>
@@ -183,6 +172,16 @@ export function OntologyPage({
                     <dd className="mono">{current.license}</dd>
                   </>
                 )}
+                <dt>Source</dt>
+                <dd>
+                  {current.sourceUrl ? (
+                    <a className="mono" href={current.sourceUrl} rel="noreferrer" target="_blank">
+                      {current.sourceUrl}
+                    </a>
+                  ) : (
+                    'Uploaded file'
+                  )}
+                </dd>
                 <dt>Imported</dt>
                 <dd>
                   {new Date(current.importedAt).toLocaleString()}
@@ -197,6 +196,7 @@ export function OntologyPage({
                   version={current.version}
                   stats={current.stats}
                   searchDelayMs={searchDelayMs}
+                  {...(graphRenderer ? { renderer: graphRenderer } : {})}
                 />
               )}
             </>
@@ -234,5 +234,35 @@ export function OntologyPage({
         </>
       )}
     </div>
+  );
+}
+
+/** The version's owl:imports and how each was resolved (library, fetched, or why not). */
+function ImportsPanel({ imports }: { imports: readonly OntologyImport[] }) {
+  const resolved = imports.filter((i) => i.resolution !== 'unresolved').length;
+  return (
+    <details className="ontology-imports">
+      <summary>
+        Imports: {resolved} resolved, {imports.length - resolved} not
+      </summary>
+      <ul>
+        {imports.map((i) => (
+          <li key={i.iri}>
+            <span className="mono">{i.iri}</span>
+            {' — '}
+            {i.resolution === 'unresolved' ? (
+              <span className="muted">{i.reason ?? 'not resolved'}</span>
+            ) : (
+              <>
+                <a href={`#/ontologies/${encodeURIComponent(i.ontologyId ?? '')}`}>
+                  {i.ontologyId} v{i.version}
+                </a>
+                {i.resolution === 'fetched' ? ' fetched into the library' : ' in the library'}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

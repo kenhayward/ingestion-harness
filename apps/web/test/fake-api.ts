@@ -268,6 +268,16 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('deleteOntologyVersion not stubbed');
     }),
     listOntologyTerms: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 100 })),
+    importOntologyFromUrl: vi.fn(async () => {
+      throw new Error('importOntologyFromUrl not stubbed');
+    }),
+    getOntologySettings: vi.fn(async () => ({
+      fetchHosts: ['w3id.org'],
+      maxBytes: 104857600,
+    })),
+    getNeighbourhood: vi.fn(async () => {
+      throw new Error('getNeighbourhood not stubbed');
+    }),
     getOntologyTerm: vi.fn(async () => {
       throw new Error('getOntologyTerm not stubbed');
     }),
@@ -758,11 +768,21 @@ export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyV
     mediaType: 'text/turtle',
     sha256: 'abc',
     bytes: 120,
+    sourceKind: 'upload',
+    sourceUrl: null,
     ontologyIri: 'https://example.org/pv',
     versionIri: null,
     license: null,
     kinds: ['owl'],
-    stats: { triples: 40, classes: 3, properties: 2, concepts: 0, schemes: 0, shapes: 0 },
+    stats: {
+      triples: 40,
+      classes: 3,
+      properties: 2,
+      concepts: 0,
+      schemes: 0,
+      shapes: 0,
+      imported: 0,
+    },
     imports: [],
     error: null,
     importedBy: 'Ken',
@@ -804,6 +824,7 @@ export function ontologyTerm(o: Partial<OntologyTerm> = {}): OntologyTerm {
     scheme: null,
     deprecated: false,
     childCount: 0,
+    definedIn: null,
     ...o,
   };
 }

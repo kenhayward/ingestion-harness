@@ -123,6 +123,8 @@ services:
       <<: [*db-env, *s3-env]
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
+      ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
       # Proxies whose X-Forwarded-* the API trusts (empty = private networks; ADR 0006).
       TRUST_PROXY: ${TRUST_PROXY:-}
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
@@ -175,6 +177,8 @@ services:
       # Word (.docx) conversion; empty disables it (Word documents then need review).
       CONVERTER_URL: ${CONVERTER_URL-http://converter:3000}
       ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
+      ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
+      ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
     networks: [default, converter]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host

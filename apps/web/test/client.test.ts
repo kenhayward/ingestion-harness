@@ -724,6 +724,27 @@ describe('http api: retired document types', () => {
 });
 
 describe('http api: ontologies', () => {
+  it('posts a URL import as JSON and reads the settings and neighbourhoods', async () => {
+    const fetchMock = vi.fn(
+      async (_u: string, _i?: RequestInit) => new Response('{}', { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.importOntologyFromUrl({ id: 'pv', label: 'PV', url: 'https://w3id.org/pv' });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/ontologies/from-url');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual({
+      id: 'pv',
+      label: 'PV',
+      url: 'https://w3id.org/pv',
+    });
+    await api.getOntologySettings();
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/ontology-settings');
+    await api.getNeighbourhood('pv', 2, 'https://x.org/#A', 2);
+    expect(fetchMock.mock.calls[2]![0]).toBe(
+      `/api/ontologies/pv/versions/2/neighbourhood?iri=${encodeURIComponent('https://x.org/#A')}&depth=2`,
+    );
+  });
+
   it('sends ontology fields before the file', async () => {
     const fetchMock = vi.fn(
       async (_url: string, _init?: RequestInit) =>

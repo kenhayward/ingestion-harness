@@ -63,6 +63,11 @@ def drafting_key(project_id: str, job_id: str) -> str:
     return f"drafting/{project_id}/{job_id}.json"
 
 
+def ontology_source_key(ontology_id: str, sha256: str, ext: str) -> str:
+    """An imported ontology file, named by its bytes (runs bucket; ontologySourceKey)."""
+    return f"ontologies/{ontology_id}/sources/{sha256}.{ext}"
+
+
 def ontology_normalized_key(ontology_id: str, version: int) -> str:
     """A version's canonical N-Triples (runs bucket, ontology task)."""
     return f"ontologies/{ontology_id}/v{version}/normalized.nt"
