@@ -341,6 +341,27 @@ Implemented in rollout step 3 (migration 0034):
   output as a literal, entity or concept, local terms, the term picker, and the preview in the
   Workbench), Delivered formats on General, and the Linked data page (`#/linked-data`, admins).
 
+Implemented in rollout step 4 (migration 0035):
+- **Brief:** `ontologies` (vocabulary or shapes picks, pinned versions) and `ontologyGuidance`;
+  the Brief tab's Ontologies section (ready versions only, *update available*, a note when a
+  local-only ontology keeps mapping on local models). Bundles name the brief's versions with
+  their sha256; import refuses a bundle whose versions the library lacks.
+- **Embeddings:** pgvector in our Alpine Postgres image (`deploy/docker/postgres.Dockerfile`,
+  no collation change for existing volumes); `ontology_term_embeddings` with an HNSW index per
+  model; terms embedded at the end of an import (never failing it) and by `embed` jobs queued
+  when the `embedding_model` setting changes; unchanged text is not embedded again. No default
+  embedding model: unset, retrieval is lexical.
+- **Retrieval:** `retrieval.shortlist`: `word_similarity` on labels and synonyms plus full text
+  on definitions, cosine on embeddings, fused by RRF (`k = 60`); a recall fixture guards it.
+- **Stage:** `mapping` (optional, outside `STAGE_ORDER`, keepable) runs after the outputs stage
+  with the brief's ready vocabulary versions; the API sends the values each dev sample's newest
+  finished run produced (20 per output, with the field's quote). The worker shortlists per
+  output, the model answers a flat schema, and conversion refuses IRIs outside the shortlist
+  and local terms, and IRI templates naming values out of scope. Local-only ontologies or
+  projects never reach an external model (drafting refused, embedding lexical).
+- **Web:** the Workbench Mapping tab (confidence, values seen, alternatives, keep, the current
+  mapping, a sample graph preview) and an 11th box on the overview map.
+
 ### Import
 
 `POST /api/ontologies` (admin, multipart `file`, or JSON `{ url }`, with `id`, `label`, `tags`,

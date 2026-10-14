@@ -167,6 +167,7 @@ services:
       OCR_BASE_URL: ${OCR_BASE_URL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       # Seeded into the database on start (ADR 0010); an admin's edit there wins.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-}
       FAST_MODEL: ${FAST_MODEL:-}
