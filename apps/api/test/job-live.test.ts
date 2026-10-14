@@ -63,6 +63,37 @@ describe('GET /api/jobs/:id progress', () => {
   });
 });
 
+describe('stage times', () => {
+  it('are when this attempt finished reading and found the sections, kept once it finishes', async () => {
+    const r = await seedJob();
+    const times = async () => (await r.app.inject(`/api/jobs/${r.id}`)).json().stageTimes;
+    expect(await times()).toEqual({ readAt: null, segmentedAt: null }); // queued
+    r.repo.addEvent(r.id, 'info', SEGMENTED_EVENT, {}); // an earlier attempt's
+    r.start();
+    expect(await times()).toEqual({ readAt: null, segmentedAt: null });
+    r.repo.addEvent(r.id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'text', page: 2, of: 2 });
+    r.repo.addEvent(r.id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 2, of: 2 });
+    r.repo.addEvent(r.id, 'info', SEGMENTED_EVENT, { pages: 2, sections: [] });
+    const [, ocr, segmented] = r.repo.events.get(r.id)!.slice(-3);
+    const expected = { readAt: ocr!.at, segmentedAt: segmented!.at };
+    expect(await times()).toEqual(expected);
+    r.set({ status: 'succeeded' });
+    expect(await times()).toEqual(expected);
+  });
+
+  it('are sent on the live stream too', async () => {
+    const r = await seedJob();
+    r.start();
+    r.repo.addEvent(r.id, 'info', SEGMENTED_EVENT, {});
+    r.set({ status: 'succeeded' });
+    const [sent] = messages((await r.app.inject(`/api/jobs/${r.id}/events`)).body);
+    expect(sent!.stageTimes).toEqual({
+      readAt: null,
+      segmentedAt: r.repo.events.get(r.id)!.at(-1)!.at,
+    });
+  });
+});
+
 describe('GET /api/jobs/:id/events', () => {
   it('is 404 for an unknown job', async () => {
     const r = await seedJob();

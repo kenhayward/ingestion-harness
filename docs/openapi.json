@@ -3226,7 +3226,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it).",
+        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections.",
         "parameters": [
           {
             "schema": {
@@ -3557,6 +3557,28 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "stageTimes": {
+                      "type": "object",
+                      "properties": {
+                        "readAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "segmentedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "readAt",
+                        "segmentedAt"
+                      ],
+                      "additionalProperties": true
                     }
                   },
                   "required": [
@@ -5006,7 +5028,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)\nstream. Each `job` event's data is JSON `{ job, progress }`: the job summary and,\nwhile an extraction runs, where it is (`prepare`: the text layer or OCR page\n`page` of `of`; `segmented`; `step`: extract step `index` of `of`, its\nattempt and chunk). It is sent at once and again whenever either changes. The stream\nends after the job leaves `queued` and `running` (it is sent first), and with a\n`gone` event when the job is deleted. A comment line keeps it open every 15 s.",
+        "description": "A [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)\nstream. Each `job` event's data is JSON `{ job, progress, stageTimes }`: the job\nsummary, when this attempt finished reading the document and found its sections and,\nwhile an extraction runs, where it is (`prepare`: the text layer or OCR page\n`page` of `of`; `segmented`; `step`: extract step `index` of `of`, its\nattempt and chunk). It is sent at once and again whenever either changes. The stream\nends after the job leaves `queued` and `running` (it is sent first), and with a\n`gone` event when the job is deleted. A comment line keeps it open every 15 s.",
         "parameters": [
           {
             "schema": {
@@ -5625,6 +5647,28 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "stageTimes": {
+                          "type": "object",
+                          "properties": {
+                            "readAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "segmentedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "readAt",
+                            "segmentedAt"
+                          ],
+                          "additionalProperties": true
                         }
                       },
                       "required": [

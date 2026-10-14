@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { JobProgress, JobSummary } from '@ih/shared';
+import type { JobProgress, JobSummary, StageTimes } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
 import { UploadStrip } from '../jobs/UploadStrip.js';
@@ -28,9 +28,16 @@ function useLiveJob(
   job: JobSummary | null,
   ms: number,
   onFinished: () => void,
-): { job: JobSummary | null; progress: JobProgress | null; tick: number; following: boolean } {
+): {
+  job: JobSummary | null;
+  progress: JobProgress | null;
+  stageTimes: StageTimes | null;
+  tick: number;
+  following: boolean;
+} {
   const [fresh, setFresh] = useState<JobSummary | null>(null);
   const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [stageTimes, setStageTimes] = useState<StageTimes | null>(null);
   const [tick, setTick] = useState(0);
   /** The job whose stream failed: it is polled instead. */
   const [pollingFor, setPollingFor] = useState<string | null>(null);
@@ -43,17 +50,21 @@ function useLiveJob(
   const id = following ? current.id : null;
   const polling = id !== null && pollingFor === id;
 
-  const seen = useCallback((summary: JobSummary, now: JobProgress | null) => {
-    setFresh(summary);
-    setProgress(now);
-    setTick((t) => t + 1);
-    if (!isActive(summary)) finished.current();
-  }, []);
+  const seen = useCallback(
+    (summary: JobSummary, now: JobProgress | null, times: StageTimes | null) => {
+      setFresh(summary);
+      setProgress(now);
+      setStageTimes(times);
+      setTick((t) => t + 1);
+      if (!isActive(summary)) finished.current();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (id === null || polling) return;
     return api.watchJob(id, {
-      update: (live) => seen(live.job, live.progress),
+      update: (live) => seen(live.job, live.progress, live.stageTimes),
       gone: () => finished.current(),
       error: () => setPollingFor(id),
     });
@@ -67,7 +78,7 @@ function useLiveJob(
       try {
         const detail = await api.getJob(id);
         if (stopped) return;
-        seen(detail, detail.progress ?? null);
+        seen(detail, detail.progress ?? null, detail.stageTimes ?? null);
         if (!isActive(detail)) return; // the effect ends with `following`
       } catch {
         if (stopped) return; // a missed read: the list poll still runs, try again next tick
@@ -81,8 +92,15 @@ function useLiveJob(
     };
   }, [api, id, ms, polling, seen]);
 
-  const live = current !== null && fresh?.id === current.id && current.status === 'running';
-  return { job: current, progress: live ? progress : null, tick, following };
+  const ours = current !== null && fresh?.id === current.id;
+  const live = ours && current.status === 'running';
+  return {
+    job: current,
+    progress: live ? progress : null,
+    stageTimes: ours ? stageTimes : null,
+    tick,
+    following,
+  };
 }
 
 /**
@@ -180,6 +198,7 @@ export function HomePage({
           wide
           liveTick={live.tick}
           progress={live.progress}
+          {...(live.stageTimes ? { stageTimes: live.stageTimes } : {})}
         />
       ) : (
         <p className="muted">No jobs yet: upload a document to start.</p>
