@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
+import { OntologyPage } from './ontologies/OntologyPage.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
@@ -130,7 +131,9 @@ function SignedInApp({
   } else if (route.name === 'ontologies') {
     page = <OntologiesPage api={api} role={me.role} />;
   } else if (route.name === 'ontology') {
-    page = <p>{route.ontologyId}</p>;
+    page = (
+      <OntologyPage key={route.ontologyId} api={api} role={me.role} ontologyId={route.ontologyId} />
+    );
   } else if (route.name === 'models') {
     page = <ModelsPage api={api} me={me} />;
   } else if (route.name === 'templates') {
