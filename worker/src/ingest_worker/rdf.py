@@ -221,7 +221,10 @@ class _Renderer:
             sem.document.iri if sem else "doc/{source}",
             {"source": self.sha, "type": self.t.id, "version": self.t.version},
         )
-        assert doc_iri is not None
+        if doc_iri is None:
+            raise ValueError(
+                f"the document IRI template {sem.document.iri if sem else ''!r} names no value"
+            )
         self.doc_node = URIRef(doc_iri)
         doc_class = self.expand(sem.document.class_) if sem else self.default_term("Document")
         self.g.add((self.doc_node, RDF.type, doc_class))

@@ -19,10 +19,11 @@ import io
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from rdflib import Graph
+import psycopg
 
 from .extract import ExtractionResult
 from .llm.base import LLMProvider
@@ -60,6 +61,17 @@ STEP_PROGRESS = "step progress"
 
 #: Job event when a mapped recipe drafts no graph because no base IRI is set.
 GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
+#: Job event when a graph that is not delivered could not be rendered (CSV/JSON still are).
+GRAPH_FAILED = "graph failed"
+
+
+@dataclass(frozen=True)
+class RenderedGraph:
+    """A document's graph, already serialised: a graph that cannot be written never gets here."""
+
+    turtle: bytes
+    triples: int
+
 
 Progress = Callable[[int, dict[str, Any] | None], None]
 
@@ -197,10 +209,6 @@ def publish_template_job(
         "edits": edits,
     }
     document["published_at"] = datetime.now(UTC).isoformat()
-    if not document.get("source_sha256"):  # drafted before graphs existed
-        document["source_sha256"] = hashlib.sha256(
-            deps.store.get(job.bucket, job.object_key)
-        ).hexdigest()
     # Keep the reviewed document next to the job's run data: the final target may be an S3 the
     # API cannot read, and references/regression need the approved values.
     deps.store.put(
@@ -212,6 +220,11 @@ def publish_template_job(
     if not deliver:
         queue.event(job.id, "info", "reviewed", {"edits": len(edits)})
         return []
+    if template.semantics is not None and not document.get("source_sha256"):
+        # Drafted before graphs existed: only a graph needs the source's hash.
+        document["source_sha256"] = hashlib.sha256(
+            deps.store.get(job.bucket, job.object_key)
+        ).hexdigest()
     graph = build_graph(job, deps, queue, template, document)
     formats = template.delivery_formats()
     rendered = render_document(template, document, graph)
@@ -518,13 +531,20 @@ def build_graph(
     queue: JobQueue,
     template: Template,
     document: dict[str, Any],
-) -> Graph | None:
+) -> RenderedGraph | None:
     """The document's graph for a recipe with an ontology mapping; None without a mapping, or
-    (with a `graph skipped` event) without a base IRI."""
+    (with a `graph skipped` event) without a base IRI.
+
+    The graph never costs the other outputs: when RDF is not delivered, a graph that cannot be
+    rendered is a `graph failed` event and no graph. When it is delivered, that failure, and a
+    recipe delivering only RDF while no base is set, go to review."""
     if template.semantics is None:
         return None
+    formats = template.delivery_formats()
     base = deps.linked_data.effective_base() if deps.linked_data else None
     if base is None:
+        if formats == ["rdf"]:
+            raise DocumentError(f"RDF is the only delivered format and the {GRAPH_SKIPPED}")
         queue.event(job.id, "warn", GRAPH_SKIPPED)
         return None
     pins = [(o.id, o.version) for o in template.semantics.ontologies]
@@ -534,13 +554,20 @@ def build_graph(
         return store.concept_by_label(pins, scheme, label) if store else None
 
     try:
-        return render_graph(template, document, GraphContext(base, concepts))
-    except ValueError as exc:
-        raise DocumentError(f"cannot render the graph: {exc}") from exc
+        graph = render_graph(template, document, GraphContext(base, concepts))
+        turtle = to_turtle(graph)
+    except psycopg.Error:
+        raise  # the ontology library is unreachable: retried like any outage
+    except Exception as exc:  # rdflib refuses IRIs it cannot write with a plain Exception
+        if "rdf" in formats:
+            raise DocumentError(f"cannot render the graph: {exc}") from exc
+        queue.event(job.id, "warn", GRAPH_FAILED, {"error": str(exc)})
+        return None
+    return RenderedGraph(turtle, len(graph))
 
 
 def render_document(
-    template: Template, document: dict[str, Any], graph: Graph | None = None
+    template: Template, document: dict[str, Any], graph: RenderedGraph | None = None
 ) -> list[RenderedOutput]:
     """Render a (draft or reviewed) document into the template's outputs (plus its graph)."""
     doc_id = document["document_id"]
@@ -585,7 +612,5 @@ def render_document(
     body = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
     out.append(RenderedOutput("document", "json", key("document", "json"), body, None))
     if graph is not None and template.semantics is not None:
-        out.append(
-            RenderedOutput("graph", "rdf", key("graph", "ttl"), to_turtle(graph), len(graph))
-        )
+        out.append(RenderedOutput("graph", "rdf", key("graph", "ttl"), graph.turtle, graph.triples))
     return out

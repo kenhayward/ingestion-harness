@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import psycopg
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .pipeline import DocumentError, JobCancelled, PipelineDeps, check_cancelled
@@ -80,13 +81,16 @@ def run_graph_preview(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> d
         document["source_sha256"] = sample.sha256
         try:
             graph = render_graph(template, document, GraphContext(base, concepts))
-        except ValueError as exc:
-            raise DocumentError(f"cannot render the graph: {exc}") from exc
+            turtle = to_turtle(graph).decode("utf-8")
+        except psycopg.Error:
+            raise
+        except Exception as exc:  # rdflib refuses IRIs it cannot write with a plain Exception
+            raise DocumentError(f"cannot render the graph of {sample.file_name}: {exc}") from exc
         samples.append(
             {
                 "sampleId": sample.sample_id,
                 "fileName": sample.file_name,
-                "turtle": to_turtle(graph).decode("utf-8"),
+                "turtle": turtle,
                 "triples": len(graph),
             }
         )
