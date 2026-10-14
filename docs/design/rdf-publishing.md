@@ -670,14 +670,14 @@ delivery:
   shape, as for completions.
 - **Default.** A local embedding model, so the default is local-only. The Models page shows the
   setting under Pipeline models.
-- **Storage (pgvector).** Postgres needs the `vector` extension, so the database image changes
-  from `postgres:17-alpine` to the pinned `pgvector/pgvector` image for Postgres 17 (dev-infra,
-  compose and the throwaway test databases).
-  - **Table:** `ontology_term_embeddings` (`term_id`, `model_ref`, `dims`, `embedding vector`,
+- **Storage (pgvector).** Postgres needs the `vector` extension: the database image is
+  `postgres:17-alpine` with pgvector 0.8.0 compiled in (`deploy/docker/postgres.Dockerfile`), so
+  existing volumes keep their collations (dev-infra, compose and the throwaway test databases).
+  - **Table:** `ontology_term_embeddings` (the term's key, `model_ref`, `dims`, `embedding vector`,
     `text_sha256`).
-  - **Index:** an HNSW index is created per model as an expression index,
-    `((embedding::vector(N))) WHERE model_ref = '…'`, when the worker first stores that model's
-    vectors.
+  - **Search:** exact (no HNSW index): the brief's versions are filtered first, then ordered by
+    cosine distance. An approximate index filtered afterwards lets other ontologies' closer
+    terms crowd them out, and HNSW cannot index over 2000 dimensions.
 - **When terms are embedded.**
   - **At import:** step 6 of the import job, *Embed*, which runs after indexing. The text
     is the label, synonyms, definition and parent labels, in batches of 64.

@@ -501,7 +501,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
       await repo.setSettings(body.data, by(req));
       if (embeddingModel && embeddingModel !== before) {
         // Each ready ontology version embeds its terms under the new model (ADR 0011).
-        const queued = await app.deps.ontologies.createEmbedJobs();
+        const queued = await app.deps.ontologies.createEmbedJobs(embeddingModel);
         req.log.info({ model: embeddingModel, versions: queued }, 'embed jobs queued');
       }
       req.log.info({ changed: Object.keys(body.data), by: by(req) }, 'llm settings changed');

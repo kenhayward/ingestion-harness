@@ -1008,10 +1008,22 @@ describe('bundles and the brief ontologies (ADR 0011)', () => {
     expect(await workbench.listProjects()).toEqual([]);
   });
 
-  it('imports a bundle whose ontologies the library has (by their bytes)', async () => {
+  it('imports a bundle whose ontologies the library has, pointing the brief at the local version with those bytes', async () => {
     const { app } = await testApp();
     await addOntology(app);
     const manifest = { ontologies: [{ id: 'acme', version: 7, sha256: ttlSha }] };
-    expect((await importBundle(app, bundle({ manifest }))).statusCode).toBe(201);
+    const files = {
+      'brief.json': strToU8(
+        JSON.stringify({
+          purpose: 'Memos',
+          ontologies: [{ ontologyId: 'acme', version: 7, role: 'vocabulary' }],
+        }),
+      ),
+    };
+    expect((await importBundle(app, bundle({ manifest, files }))).statusCode).toBe(201);
+    const saved = (await app.inject('/api/workbench/projects/memo')).json();
+    expect(saved.brief.body.ontologies).toEqual([
+      { ontologyId: 'acme', version: 1, role: 'vocabulary' },
+    ]);
   });
 });

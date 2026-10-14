@@ -214,4 +214,19 @@ describe('the mapping stage (ADR 0011)', () => {
     expect(item.state).toBe('pending');
     expect(item.metrics.map((m) => m.value)).toEqual(['1 / 1', '1']);
   });
+
+  it('queues embeddings for brief versions the embedding model has not embedded, once', async () => {
+    const { brief, skip, start, ontologies, llm } = await project();
+    llm.seedSettings({ embedding_model: 'local/nomic' });
+    ontologies.markReady('acme', 1);
+    await brief({ purpose: 'Letters', ontologies: [acme] });
+    await skip('survey');
+    await skip('outputs');
+    expect((await start()).statusCode).toBe(202);
+    expect(ontologies.embedJobs).toEqual([
+      { ontologyId: 'acme', version: 1, model: 'local/nomic' },
+    ]);
+    await start();
+    expect(ontologies.embedJobs).toHaveLength(1); // already queued
+  });
 });

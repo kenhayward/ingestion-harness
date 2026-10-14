@@ -271,7 +271,9 @@ describe('changing the embedding model (ADR 0011)', () => {
     }
     ontologies.markReady('acme', 1); // pharma v1 is still queued: its import embeds it
     await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
-    expect(ontologies.embedJobs).toEqual([{ ontologyId: 'acme', version: 1 }]);
+    expect(ontologies.embedJobs).toEqual([
+      { ontologyId: 'acme', version: 1, model: 'local/olmocr' },
+    ]);
     await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
     await call('PUT', '/settings', { embeddingModel: null });
     expect(ontologies.embedJobs).toHaveLength(1);

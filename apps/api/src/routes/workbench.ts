@@ -2598,6 +2598,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         const inputs = await mappingInputs(app, projectId, brief?.body ?? EMPTY_BRIEF);
         if ('error' in inputs) return reply.code(409).send({ error: inputs.error });
         mapping = inputs.params;
+        // Versions the embedding model has not embedded (set from .env, an outage at import):
+        // this run is lexical for them, the next one semantic.
+        const { embeddingModel } = await app.deps.llm.getSettings();
+        if (embeddingModel) {
+          await app.deps.ontologies.createEmbedJobs(
+            embeddingModel,
+            mapping.versions.map((v) => ({ id: v.id, version: v.version })),
+          );
+        }
       }
       // A revision can work from feedback alone, a mapping from the outputs; the others read the samples.
       if (!samples.length && !revision && !mapping) {

@@ -144,17 +144,24 @@ async function briefOntologies(app: FastifyInstance, brief: BriefBody) {
   return out;
 }
 
-/** The bundle's ontologies the library holds no version of with the same bytes, as `id vN`. */
-async function missingOntologies(
+/**
+ * The local version holding each of the bundle's ontologies' bytes (`id@bundleVersion` ->
+ * local version; the bundle's own number first), and those the library lacks, as `id vN`.
+ */
+async function locateOntologies(
   app: FastifyInstance,
   wanted: { id: string; version: number; sha256: string }[],
 ) {
   const missing: string[] = [];
+  const versions = new Map<string, number>();
   for (const o of wanted) {
     const detail = await app.deps.ontologies.get(o.id);
-    if (!detail?.versions.some((v) => v.sha256 === o.sha256)) missing.push(`${o.id} v${o.version}`);
+    const same = (detail?.versions ?? []).filter((v) => v.sha256 === o.sha256);
+    const local = same.find((v) => v.version === o.version) ?? same[0];
+    if (local) versions.set(`${o.id}@${o.version}`, local.version);
+    else missing.push(`${o.id} v${o.version}`);
   }
-  return missing;
+  return { missing, versions };
 }
 
 export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
@@ -267,11 +274,22 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     if (retired) return answer(409, { error: retired });
     const samples = await sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return answer(400, { error: samples });
-    const missing = await missingOntologies(app, manifest.value.ontologies ?? []);
-    if (missing.length) {
+    const located = await locateOntologies(app, manifest.value.ontologies ?? []);
+    if (located.missing.length) {
       return answer(400, {
-        error: `bundle needs ontologies not in the library: ${missing.join(', ')}`,
+        error: `bundle needs ontologies not in the library: ${located.missing.join(', ')}`,
       });
+    }
+    // Version numbers differ between deployments: the brief points at the local version that
+    // holds the same bytes.
+    if (brief) {
+      brief = {
+        ...brief,
+        ontologies: brief.ontologies.map((o) => ({
+          ...o,
+          version: located.versions.get(`${o.ontologyId}@${o.version}`) ?? o.version,
+        })),
+      };
     }
 
     // Only now write: the draft, the project, the brief, then the samples.

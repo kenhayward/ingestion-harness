@@ -69,11 +69,14 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       [`${C}Document`, `${C}Protocol`, [`${C}Document`], `${C}hasProtocol`, [`${C}Protocol`]],
     );
     await pool.query(`UPDATE ontology_versions SET status = 'ready' WHERE ontology_id = 'pv-pg'`);
-    expect(await repo.createEmbedJobs()).toBeGreaterThanOrEqual(1);
+    expect(await repo.createEmbedJobs('emb/pg')).toBeGreaterThanOrEqual(1);
+    expect(await repo.createEmbedJobs('emb/pg')).toBe(0); // already queued
     const embed = await pool.query(
       `SELECT params FROM jobs WHERE task = 'embed' AND params->>'ontologyId' = 'pv-pg'`,
     );
-    expect(embed.rows.map((r) => r.params)).toEqual([{ ontologyId: 'pv-pg', version: 1 }]);
+    expect(embed.rows.map((r) => r.params)).toEqual([
+      { ontologyId: 'pv-pg', version: 1, model: 'emb/pg' },
+    ]);
     await pool.query(`DELETE FROM jobs WHERE task = 'embed'`);
     await expect(
       pool.query(`UPDATE ontology_versions SET error = 'x' WHERE ontology_id = 'pv-pg'`),
