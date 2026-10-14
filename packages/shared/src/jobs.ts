@@ -92,13 +92,30 @@ export const JobSummarySchema = z.object({
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
 
-/** Job event a Workbench run's worker writes per model call (worker: template_pipeline.STEP_PROGRESS). */
+/** Job event the worker writes per model call of an extraction (worker: template_pipeline.STEP_PROGRESS). */
 export const STEP_PROGRESS_EVENT = 'step progress';
 
 /**
- * Where a running Workbench extraction is (handoff TR3): extract step `index` of `of` (check
- * steps are not counted), its id, the attempt of the current call and, for a chunked step, the
- * chunk. Shared fixture: packages/shared/test/fixtures/step-progress.json.
+ * Job event the worker writes while it reads a document: the text layer, then each OCR page
+ * (worker: pipeline.PREPARE_PROGRESS, also written by Workbench `prepare` jobs).
+ */
+export const PREPARE_PROGRESS_EVENT = 'prepare progress';
+
+/** Job event the worker writes once a document is split into sections (worker: pipeline.SEGMENTED). */
+export const SEGMENTED_EVENT = 'segmented';
+
+/** Where a document read is: the text layer read, or `page` of `of` OCR pages done. */
+export const PrepareProgressSchema = z.object({
+  stage: z.enum(['text', 'ocr']),
+  page: z.number().int().nonnegative(),
+  of: z.number().int().nonnegative(),
+});
+export type PrepareProgress = z.infer<typeof PrepareProgressSchema>;
+
+/**
+ * Where a running extraction is (handoff TR3): extract step `index` of `of` (check steps are not
+ * counted), its id, the attempt of the current call and, for a chunked step, the chunk. Shared
+ * fixture: packages/shared/test/fixtures/step-progress.json.
  */
 export const StepProgressSchema = z.object({
   step: z.string(),
@@ -139,10 +156,30 @@ export const JobOutputSchema = z.object({
 });
 export type JobOutput = z.infer<typeof JobOutputSchema>;
 
+/**
+ * Where a running extraction is now, from its latest progress event of this attempt: reading the
+ * document (`prepare`), split into sections (`segmented`), or calling the model (`step`).
+ */
+export const JobProgressSchema = z.discriminatedUnion('kind', [
+  PrepareProgressSchema.extend({ kind: z.literal('prepare') }),
+  z.object({ kind: z.literal('segmented') }),
+  StepProgressSchema.extend({ kind: z.literal('step') }),
+]);
+export type JobProgress = z.infer<typeof JobProgressSchema>;
+
 export const JobDetailSchema = JobSummarySchema.extend({
   outputs: z.array(JobOutputSchema),
+  /** `GET /api/jobs/:id` only: a running extraction's progress (null otherwise or before any). */
+  progress: JobProgressSchema.nullable().optional(),
 });
 export type JobDetail = z.infer<typeof JobDetailSchema>;
+
+/** One message of a job's live stream (`GET /api/jobs/:id/events`): the job and its progress. */
+export const JobLiveSchema = z.object({
+  job: JobSummarySchema,
+  progress: JobProgressSchema.nullable(),
+});
+export type JobLive = z.infer<typeof JobLiveSchema>;
 
 /** A reviewer edit: either a field (atom) or a table cell (1-based row). */
 export const EditRequestSchema = z.union([

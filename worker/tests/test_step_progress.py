@@ -1,4 +1,4 @@
-"""Step progress events (Workbench tabs TR3): one per model call of a Workbench run."""
+"""Step progress events (Workbench tabs TR3, Home): one per model call of an extraction."""
 
 from __future__ import annotations
 
@@ -47,9 +47,10 @@ def test_a_retried_attempt_is_reported(tmp_path: Path) -> None:
     ]
 
 
-def test_production_jobs_write_no_progress(tmp_path: Path) -> None:
+def test_production_jobs_report_progress_too(tmp_path: Path) -> None:
+    # Home follows a production job live, so it reports like a Workbench run.
     queue = run(tmp_path, JOB, RESPONSES)
-    assert progress(queue) == []
+    assert progress(queue) == EXPECTED
 
 
 def test_a_step_served_from_the_cache_reports_nothing(tmp_path: Path) -> None:

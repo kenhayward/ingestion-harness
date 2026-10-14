@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { JobSummary } from '@ih/shared';
+import type { JobLive, JobSummary } from '@ih/shared';
 import { HomePage } from '../src/home/HomePage.js';
 import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
@@ -156,5 +156,83 @@ describe('HomePage live progress', () => {
     const api = fakeApi({ getJob: vi.fn(() => new Promise<never>(() => {})) });
     live([job({ createdBy: 'ken', status: 'queued' })], api);
     expect(await screen.findByText('Live · following this job')).toBeInTheDocument();
+  });
+});
+
+describe('HomePage pushed progress', () => {
+  type On = { update(live: JobLive): void; gone(): void; error(): void };
+  function pushed(jobs: JobSummary[]) {
+    let on!: On;
+    const stop = vi.fn();
+    const watchJob = vi.fn((_id: string, handlers: On) => {
+      on = handlers;
+      return stop;
+    });
+    const api = fakeApi({ watchJob });
+    const refresh = vi.fn(async () => {});
+    render(
+      <HomePage
+        api={api}
+        me="ken"
+        jobs={jobs}
+        error={null}
+        refresh={refresh}
+        pollMs={3000}
+        livePollMs={10}
+        pickPending={false}
+        onPicked={() => {}}
+      />,
+    );
+    return { api, refresh, watchJob, stop, on: () => on };
+  }
+  const running = job({ id: 'j1', createdBy: 'ken', status: 'running', filename: 'a.pdf' });
+
+  it('shows each pushed update, with where the run is, without polling', async () => {
+    const r = pushed([running]);
+    await waitFor(() => expect(r.watchJob).toHaveBeenCalledWith('j1', expect.anything()));
+    const panel = await screen.findByRole('complementary', { name: 'Job details' });
+    act(() =>
+      r.on().update({ job: running, progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 12 } }),
+    );
+    expect(await within(panel).findByText('OCR 3 of 12 pages')).toBeInTheDocument();
+    act(() =>
+      r.on().update({
+        job: { ...running, updatedAt: '2030-01-01T00:00:00Z' },
+        progress: { kind: 'step', step: 'head', index: 1, of: 2, attempt: 1, chunk: null },
+      }),
+    );
+    expect(await within(panel).findByText('Step 1 of 2')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Only the panel's own loads (one per job change): no 10 ms poll.
+    expect(vi.mocked(r.api.getJob).mock.calls.length).toBeLessThanOrEqual(2);
+    act(() =>
+      r.on().update({
+        job: { ...running, status: 'succeeded', updatedAt: '2030-01-01T00:00:01Z' },
+        progress: null,
+      }),
+    );
+    await waitFor(() => expect(within(panel).getAllByText('Succeeded').length).toBeGreaterThan(0));
+    expect(r.refresh).toHaveBeenCalled();
+  });
+
+  it('falls back to polling when the stream is unavailable', async () => {
+    const r = pushed([running]);
+    await waitFor(() => expect(r.watchJob).toHaveBeenCalled());
+    act(() => r.on().error());
+    await waitFor(() => expect(vi.mocked(r.api.getJob).mock.calls.length).toBeGreaterThan(2));
+    expect(screen.getByText('Live · following this job')).toBeInTheDocument();
+  });
+
+  it('stops listening when the job is deleted, and reloads the list', async () => {
+    const r = pushed([running]);
+    await waitFor(() => expect(r.watchJob).toHaveBeenCalled());
+    act(() => r.on().gone());
+    await waitFor(() => expect(r.refresh).toHaveBeenCalled());
+  });
+
+  it('does not follow a finished job', async () => {
+    const r = pushed([job({ createdBy: 'ken', status: 'succeeded' })]);
+    await screen.findByRole('complementary', { name: 'Job details' });
+    expect(r.watchJob).not.toHaveBeenCalled();
   });
 });

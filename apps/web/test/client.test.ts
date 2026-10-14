@@ -621,6 +621,84 @@ describe('http api: template drafts (TP1)', () => {
   });
 });
 
+describe('http api: following a job live', () => {
+  /** A stand-in for the browser's EventSource: tests fire its events. */
+  class FakeEventSource {
+    static last: FakeEventSource | null = null;
+    static readonly CLOSED = 2;
+    readyState = 0;
+    onerror: (() => void) | null = null;
+    private readonly handlers = new Map<string, ((e: MessageEvent) => void)[]>();
+    constructor(readonly url: string) {
+      FakeEventSource.last = this;
+    }
+    addEventListener(type: string, handler: (e: MessageEvent) => void) {
+      this.handlers.set(type, [...(this.handlers.get(type) ?? []), handler]);
+    }
+    emit(type: string, data: unknown) {
+      for (const h of this.handlers.get(type) ?? [])
+        h(new MessageEvent(type, { data: JSON.stringify(data) }));
+    }
+    close() {
+      this.readyState = FakeEventSource.CLOSED;
+    }
+  }
+  const live = (status: string) => ({ job: { id: 'j1', status }, progress: null });
+
+  function watch() {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const on = { update: vi.fn(), gone: vi.fn(), error: vi.fn() };
+    const stop = createHttpApi('/api').watchJob('j1', on);
+    return { on, stop, source: FakeEventSource.last! };
+  }
+
+  it("opens the job's event stream and passes each update on", () => {
+    const { on, source } = watch();
+    expect(source.url).toBe('/api/jobs/j1/events');
+    source.emit('job', live('running'));
+    expect(on.update).toHaveBeenCalledWith(live('running'));
+    expect(source.readyState).not.toBe(FakeEventSource.CLOSED);
+  });
+
+  it('closes once the job has finished, so the browser does not reconnect', () => {
+    const { on, source } = watch();
+    source.emit('job', live('succeeded'));
+    expect(on.update).toHaveBeenCalledTimes(1);
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+  });
+
+  it('reports a deleted job and closes', () => {
+    const { on, source } = watch();
+    source.emit('gone', {});
+    expect(on.gone).toHaveBeenCalled();
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+  });
+
+  it('reports an error only when the browser gives up, not while it reconnects', () => {
+    const { on, source } = watch();
+    source.onerror!();
+    expect(on.error).not.toHaveBeenCalled();
+    source.readyState = FakeEventSource.CLOSED;
+    source.onerror!();
+    expect(on.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an error (after returning) when the browser has no EventSource', async () => {
+    vi.stubGlobal('EventSource', undefined);
+    const on = { update: vi.fn(), gone: vi.fn(), error: vi.fn() };
+    createHttpApi('/api').watchJob('j1', on);
+    expect(on.error).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(on.error).toHaveBeenCalled();
+  });
+
+  it('stops on request', () => {
+    const { stop, source } = watch();
+    stop();
+    expect(source.readyState).toBe(FakeEventSource.CLOSED);
+  });
+});
+
 describe('http api: retired document types', () => {
   it('lists specs with or without retired ones, and retires', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>

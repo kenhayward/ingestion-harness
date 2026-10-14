@@ -55,14 +55,11 @@ STEP_PROGRESS = "step progress"
 Progress = Callable[[int, dict[str, Any] | None], None]
 
 
-def step_reporter(
-    job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of: int
-) -> Progress | None:
-    """Workbench jobs only: a `step progress` event before each model call of a step (its place
-    among the extract steps, the attempt, the chunk). Advisory: a failed write (job deleted
-    mid-run, database blip) never fails the step. Production jobs write none."""
-    if job.project_id is None:
-        return None
+def step_reporter(job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of: int) -> Progress:
+    """A `step progress` event before each model call of a step (its place among the extract
+    steps, the attempt, the chunk), for Workbench runs and production jobs alike (Home follows
+    them live). Advisory: a failed write (job deleted mid-run, database blip) never fails the
+    step."""
 
     def report(attempt: int, chunk: dict[str, Any] | None) -> None:
         data = {

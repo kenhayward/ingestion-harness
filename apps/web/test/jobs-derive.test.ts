@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { JobStatus, JobSummary, ModelChoice, StepRun } from '@ih/shared';
+import type { JobProgress, JobStatus, JobSummary, ModelChoice, StepRun } from '@ih/shared';
 import {
   CHOICES_FAILED,
   CHOICES_LOADING,
@@ -190,6 +190,63 @@ describe('progressSteps', () => {
       'Review & publish',
     ]);
     expect(steps.map((s) => s.text)).toEqual(['Done', 'Done', 'Done', 'Done', 'Waiting for you']);
+  });
+});
+
+describe('progressSteps with live progress', () => {
+  const running = job({ status: 'running' });
+  const step = { kind: 'step', step: 'head', index: 2, of: 4, attempt: 1, chunk: null } as const;
+  const current = (progress: JobProgress | null, runs: StepRun[] = []) =>
+    progressSteps(running, runs, progress)
+      .filter((s) => s.state !== 'todo')
+      .map((s) => `${s.label}: ${s.state} ${s.text}`);
+
+  it.each<[string, JobProgress | null, string[]]>([
+    ['nothing reported yet', null, ['Text & OCR: current Running']],
+    [
+      'reading the text layer',
+      { kind: 'prepare', stage: 'text', page: 3, of: 3 },
+      ['Text & OCR: current Reading 3 pages'],
+    ],
+    [
+      'reading a single page',
+      { kind: 'prepare', stage: 'text', page: 1, of: 1 },
+      ['Text & OCR: current Reading 1 page'],
+    ],
+    [
+      'OCR under way',
+      { kind: 'prepare', stage: 'ocr', page: 3, of: 12 },
+      ['Text & OCR: current OCR 3 of 12 pages'],
+    ],
+    [
+      'split into sections',
+      { kind: 'segmented' },
+      ['Text & OCR: done Done', 'Sections: done Done', 'Extraction: current Starting'],
+    ],
+    [
+      'calling the model',
+      step,
+      ['Text & OCR: done Done', 'Sections: done Done', 'Extraction: current Step 2 of 4'],
+    ],
+    [
+      'a retried call',
+      { ...step, attempt: 2 },
+      ['Text & OCR: done Done', 'Sections: done Done', 'Extraction: current Step 2 of 4 · try 2'],
+    ],
+    [
+      'a chunked step',
+      { ...step, chunk: { n: 3, of: 5 } },
+      [
+        'Text & OCR: done Done',
+        'Sections: done Done',
+        'Extraction: current Step 2 of 4 · part 3 of 5',
+      ],
+    ],
+  ])('%s', (_name, progress, expected) => expect(current(progress)).toEqual(expected));
+
+  it('is ignored once the job has left running', () => {
+    const done = progressSteps(job({ status: 'succeeded' }), [run()], step);
+    expect(done.map((s) => s.text)).toEqual(['Done', 'Done', 'Done', 'Done', 'Done']);
   });
 });
 

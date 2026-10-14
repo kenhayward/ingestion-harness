@@ -26,6 +26,17 @@ finished jobs ─ operator Delete ─► removed         (job, history, internal
 
 Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md).
 
+Live progress: while a job runs, the worker writes advisory progress events (`prepare progress`:
+the text layer, then each OCR page; `segmented`; `step progress`: one per model call, attempt
+and chunk), for production and Workbench jobs alike. Triggers on `jobs`, `job_events` and
+`step_runs` (migration 0031) `NOTIFY ih_job_changed` with the job id; the API holds one
+`LISTEN` connection (`PgJobWatch`, reconnecting) and serves `GET /api/jobs/:id/events` as
+Server-Sent Events: `{ job, progress }` at once and on every change, a comment every 15 s (when
+it also re-reads the job, so a lost notification only delays an update), ending once the job
+leaves `queued`/`running`. Home follows its latest job this way and polls `GET /api/jobs/:id`
+(which carries the same `progress`) every second only if the stream is unavailable. nginx
+passes the stream unbuffered (its own `location`; the API also sends `X-Accel-Buffering: no`).
+
 Review (documents read by a transformation recipe): the recipe's review policy (`always` / `on_warnings` / `never`) decides
 whether a processed document waits in `awaiting_review`. Drafts stay in the outputs bucket.
 Reviewers add edits (`POST /api/jobs/:id/edits`, recorded in `review_edits` with old/new value,

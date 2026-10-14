@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { JobSummary } from '@ih/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { JobProgress, JobSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
 import { UploadStrip } from '../jobs/UploadStrip.js';
@@ -18,18 +18,22 @@ export function latestJob(jobs: readonly JobSummary[], me: string): JobSummary |
 const isActive = (j: JobSummary) => j.status === 'queued' || j.status === 'running';
 
 /**
- * Follow one job closely while it is queued or running: re-read it every `ms` (the list poll is
- * slower and a short job often finished between two of its reads). Returns the fresher copy and
- * a tick that moves on every read; `onFinished` runs once when the job leaves running.
+ * Follow one job closely while it is queued or running: its live stream pushes every change
+ * (`api.watchJob`); where the stream is not available it is re-read every `ms` instead. Returns
+ * the fresher copy, where the run is, and a tick that moves on every update (the panel re-reads
+ * the step runs); `onFinished` runs once the job leaves running or is deleted.
  */
 function useLiveJob(
   api: Api,
   job: JobSummary | null,
   ms: number,
   onFinished: () => void,
-): { job: JobSummary | null; tick: number; following: boolean } {
+): { job: JobSummary | null; progress: JobProgress | null; tick: number; following: boolean } {
   const [fresh, setFresh] = useState<JobSummary | null>(null);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
   const [tick, setTick] = useState(0);
+  /** The job whose stream failed: it is polled instead. */
+  const [pollingFor, setPollingFor] = useState<string | null>(null);
   const finished = useRef(onFinished);
   finished.current = onFinished;
   // The fresher of the list's copy and ours (a reload of the list may be the newer one).
@@ -37,21 +41,34 @@ function useLiveJob(
     job && fresh && fresh.id === job.id && fresh.updatedAt >= job.updatedAt ? fresh : job;
   const following = ms > 0 && current !== null && isActive(current);
   const id = following ? current.id : null;
+  const polling = id !== null && pollingFor === id;
+
+  const seen = useCallback((summary: JobSummary, now: JobProgress | null) => {
+    setFresh(summary);
+    setProgress(now);
+    setTick((t) => t + 1);
+    if (!isActive(summary)) finished.current();
+  }, []);
 
   useEffect(() => {
-    if (id === null) return;
+    if (id === null || polling) return;
+    return api.watchJob(id, {
+      update: (live) => seen(live.job, live.progress),
+      gone: () => finished.current(),
+      error: () => setPollingFor(id),
+    });
+  }, [api, id, polling, seen]);
+
+  useEffect(() => {
+    if (!polling) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = async () => {
       try {
-        const summary: JobSummary = await api.getJob(id);
+        const detail = await api.getJob(id);
         if (stopped) return;
-        setFresh(summary);
-        setTick((t) => t + 1);
-        if (!isActive(summary)) {
-          finished.current();
-          return; // the effect ends with `following`
-        }
+        seen(detail, detail.progress ?? null);
+        if (!isActive(detail)) return; // the effect ends with `following`
       } catch {
         if (stopped) return; // a missed read: the list poll still runs, try again next tick
       }
@@ -62,9 +79,10 @@ function useLiveJob(
       stopped = true;
       clearTimeout(timer);
     };
-  }, [api, id, ms]);
+  }, [api, id, ms, polling, seen]);
 
-  return { job: current, tick, following };
+  const live = current !== null && fresh?.id === current.id && current.status === 'running';
+  return { job: current, progress: live ? progress : null, tick, following };
 }
 
 /**
@@ -161,6 +179,7 @@ export function HomePage({
           now={Date.now()}
           wide
           liveTick={live.tick}
+          progress={live.progress}
         />
       ) : (
         <p className="muted">No jobs yet: upload a document to start.</p>

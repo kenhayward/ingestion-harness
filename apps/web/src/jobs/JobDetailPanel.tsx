@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import type { JobOutput, JobSummary, ModelChoice, StepRun } from '@ih/shared';
+import type { JobOutput, JobProgress, JobSummary, ModelChoice, StepRun } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
@@ -48,6 +48,7 @@ export function JobDetailPanel({
   now,
   wide = false,
   liveTick,
+  progress: runProgress = null,
 }: {
   api: Api;
   job: JobSummary;
@@ -61,6 +62,8 @@ export function JobDetailPanel({
   wide?: boolean;
   /** Home's live follow: bumped on each quick poll so step runs are re-read while it runs. */
   liveTick?: number;
+  /** Home's live follow: where the running job is (null: not known). */
+  progress?: JobProgress | null;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
@@ -70,15 +73,29 @@ export function JobDetailPanel({
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    const fail = (err: Error) => {
-      if (!cancelled) setError(err.message);
+    api.getJob(job.id).then(
+      (d) => {
+        if (!cancelled) setOutputs(d.outputs);
+      },
+      (err: Error) => {
+        if (!cancelled) setError(err.message);
+      },
+    );
+    return () => {
+      cancelled = true;
     };
-    api.getJob(job.id).then((d) => {
-      if (!cancelled) setOutputs(d.outputs);
-    }, fail);
-    api.getStepRuns(job.id).then((r) => {
-      if (!cancelled) setRuns(r);
-    }, fail);
+  }, [api, job.id, job.status, job.updatedAt]);
+  // Step runs are also re-read on each live update (Home): a recorded step moves the progress.
+  useEffect(() => {
+    let cancelled = false;
+    api.getStepRuns(job.id).then(
+      (r) => {
+        if (!cancelled) setRuns(r);
+      },
+      (err: Error) => {
+        if (!cancelled) setError(err.message);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -102,7 +119,7 @@ export function JobDetailPanel({
   );
   const progress = (
     <ol className="progress" aria-label="Progress">
-      {progressSteps(job, runs).map((step) => (
+      {progressSteps(job, runs, runProgress).map((step) => (
         <li key={step.label} className={`step-${step.state}`}>
           <span className="step-icon" aria-hidden="true" />
           <span className="step-label">{step.label}</span>

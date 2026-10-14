@@ -8,6 +8,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ from ingest_worker.llm.base import CompletionResult, LLMError, VisionRequest
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ocr import OcrSettings
-from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.pipeline import PREPARE_PROGRESS, Buckets, PipelineDeps
 from ingest_worker.prompts import render_prompt
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import (
@@ -224,6 +225,44 @@ def test_image_only_pages_are_ocrd_then_extracted(setup) -> None:  # type: ignor
     audit = store.get("runs", "job-1/ocr/page-2.md").decode()  # raw model output, unparsed
     assert audit.startswith(OLMOCR_OK) and "Total 15.60 GBP" in audit
     assert any(msg == "ocr" for _, _, msg in queue.events)
+
+
+def test_reading_a_document_reports_the_text_layer_then_each_ocr_page(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [OLMOCR_OK + PAGES[0], OLMOCR_OK + PAGES[1]]
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: ["", "   "]
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    progress = [data for _, _, msg, data in queue.event_details if msg == PREPARE_PROGRESS]
+    assert progress == [
+        {"stage": "text", "page": 2, "of": 2},
+        {"stage": "ocr", "page": 0, "of": 2},  # before the first page finishes
+        {"stage": "ocr", "page": 1, "of": 2},
+        {"stage": "ocr", "page": 2, "of": 2},
+    ]
+
+
+class _BrokenProgress(FakeQueue):
+    def event(
+        self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+    ) -> None:
+        if message == PREPARE_PROGRESS:
+            raise RuntimeError("database blip")
+        super().event(job_id, level, message, data)
+
+
+def test_a_failed_reading_progress_write_never_fails_the_job(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    provider.responses = [HEADER, LINES]
+    queue = _BrokenProgress(jobs=[job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.failed and not queue.reviewed
 
 
 def test_only_low_text_pages_are_ocrd_in_auto_mode(setup) -> None:  # type: ignore[no-untyped-def]
