@@ -1070,6 +1070,23 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
    retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
    `ct-reader` user through the proxy, docs for consumers.
+   *As built:*
+   - **Outputs of a retired type** keep their `job_outputs` rows, marked `withdrawn_at`
+     (migration 0037), so unretiring knows what to re-deliver. Readers skip them.
+   - **Retirement keeps the graph version rows**, so a republish continues the numbering. Graph
+     versions are now always `max(published_graph_versions) + 1`.
+   - **Withdrawals and republishes are not `JobSummary`s** (they are document-less). Their
+     waiting and failed counts show on the Linked data panel instead of the Jobs page.
+   - **Retiring withdraws on every `PUT`,** and is idempotent: a retirement whose withdrawal
+     failed heals on the next one.
+   - **Consumers** reach Fuseki through the host's reverse proxy at
+     `FUSEKI_BIND:FUSEKI_PUBLIC_PORT`, with only `/ct/sparql` and `/ct/get` forwarded.
+     `RDF_PUBLIC_URL` puts the endpoint on the panel, and `docs/consumers/sparql.md` is the
+     consumer guide.
+   - **No chains exist yet.** Withdrawal is keyed by job and type, and follow-on chains will
+     build their atomic unit on it.
+   - **Not built:** `ct:correctedFrom` on corrected values (see *Fact provenance*). The consumer
+     guide documents only what is published.
 
 Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). Step 6 can be
 pulled forward if consumers need SPARQL early with hand-written mappings.

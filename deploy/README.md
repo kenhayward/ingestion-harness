@@ -144,7 +144,28 @@ file. Without them nothing changes: graphs still go to S3, and the Linked data p
 Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
 
 - **Dataset:** `ct`, TDB2 on the `fuseki-data` volume, every named graph in the default graph.
-  Only the worker reaches it (internal network `rdf`, no published ports).
+  The worker writes over the internal network `rdf`.
+- **Consumers** query as the shared read-only user `ct-reader` through NGINX Proxy Manager
+  ([consumer guide](../docs/consumers/sparql.md)). Fuseki is published on
+  `FUSEKI_BIND:FUSEKI_PUBLIC_PORT` (`127.0.0.1:3030` by default) for the proxy only:
+  - add a proxy host (e.g. `sparql.acme.example`, Let's Encrypt, Force SSL) forwarding to
+    `http://<docker-host>:3030`;
+  - forward **only** the read services. In the host's Advanced box:
+
+    ```nginx
+    location = /ct/sparql { proxy_pass http://<docker-host>:3030; }
+    location = /ct/get    { proxy_pass http://<docker-host>:3030; }
+    location / { return 404; }
+    ```
+
+    so `/ct/data` (writes) and `/$/` (admin) are never reachable from outside;
+  - set `RDF_PUBLIC_URL=https://sparql.acme.example/` so the Linked data page shows consumers'
+    endpoint. Give consumers the `RDF_READER_PASSWORD` out of band; changing it needs
+    `deploy/scripts/compose.sh up -d fuseki`.
+- **Withdrawals:** deleting a delivered job, or retiring its document type, queues a `withdraw`
+  job that removes the published S3 objects and the graphs; unretiring queues a `republish`.
+  The Linked data page counts those waiting and failed (failures retry up to 100 times; see the
+  worker logs).
 - **Backups:** nightly, from the deploy host's cron. Each one is an N-Quads dump in the volume
   (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host with the other backups.
 
