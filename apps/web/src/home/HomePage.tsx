@@ -128,7 +128,7 @@ export function HomePage({
   /** The last poll failed with this message (the card shows the previous result). */
   error: string | null;
   refresh: () => Promise<void>;
-  /** Poll interval, for the live indicator; <= 0 = not polling. */
+  /** The jobs list's poll interval; <= 0 = not polling (tests), and the latest job is not followed. */
   pollMs: number;
   /** While the latest job is queued or running it is re-read this often; <= 0 = never. */
   livePollMs?: number;
@@ -169,16 +169,6 @@ export function HomePage({
             Upload a PDF or Word document, watch it run, review what was extracted.
           </p>
         </div>
-        {pollMs > 0 && (
-          <span className={error ? 'live live-warn' : 'live'}>
-            <span className="live-dot" aria-hidden="true" />
-            {error
-              ? 'Reconnecting…'
-              : live.following
-                ? 'Live · following this job'
-                : `Live · refreshes every ${pollMs / 1000} s`}
-          </span>
-        )}
       </div>
       <section aria-labelledby="home-upload-heading">
         <h2 id="home-upload-heading" className="section-heading">

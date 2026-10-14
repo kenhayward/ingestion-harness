@@ -476,6 +476,28 @@ html {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+/* Beside the page, the nav is the window's height under the top bar and stays put while the page
+   scrolls (API docs stays bottom left); a nav taller than the window scrolls on its own. Narrower
+   than that it wraps above the page and scrolls away with it, as before. The full nav (220px)
+   sits beside a 640px page from about 861px; the collapsed one (68px) from 709px. */
+@media (min-width: 900px) {
+  .side-nav {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
+}
+@media (min-width: 720px) {
+  .side-nav.compact {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
+}
 /* Pinned to the bottom of the nav. */
 .side-nav a.nav-foot {
   margin-top: auto;

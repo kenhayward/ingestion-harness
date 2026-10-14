@@ -11,7 +11,7 @@ describe('UploadStrip with a dropped folder', () => {
   const text = (name: string) => new File(['x'], name, { type: 'text/plain' });
   const ready = () => screen.findByRole('option', { name: /Process Validation Protocol/ });
   const drop = (dt: DataTransfer) =>
-    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), { dataTransfer: dt });
+    fireEvent.drop(screen.getByText('Drop Files or a Folder here'), { dataTransfer: dt });
 
   it("lists only the folder's PDF and Word files and says how many will be processed", async () => {
     const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
@@ -75,9 +75,12 @@ describe('UploadStrip with a dropped folder', () => {
     expect(screen.queryByText('A: 1 file to process')).toBeNull();
   });
 
-  it('mentions folders in the drop hint', () => {
+  it('invites files or a folder, one job per Word or PDF file', () => {
     render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
-    expect(screen.getByText(/or a whole folder/)).toBeInTheDocument();
+    const zone = screen.getByText('Drop Files or a Folder here').closest('label')!;
+    expect(zone).toHaveTextContent(
+      'Drop Files or a Folder here or browseEach Word or PDF file becomes its own job',
+    );
   });
 });
 
@@ -277,7 +280,7 @@ describe('UploadStrip with several files', () => {
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
     await ready();
     const notes = new File(['x'], 'notes.txt', { type: 'text/plain' });
-    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), {
+    fireEvent.drop(screen.getByText('Drop Files or a Folder here'), {
       dataTransfer: { files: [pdf('a.pdf'), notes], types: ['Files'] },
     });
     const list = screen.getByRole('list', { name: 'Uploads' });
@@ -293,7 +296,7 @@ describe('UploadStrip with several files', () => {
     render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
     await ready();
     const word = new File(['PK'], 'REPORT.DOCX');
-    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), {
+    fireEvent.drop(screen.getByText('Drop Files or a Folder here'), {
       dataTransfer: { files: [word], types: ['Files'] },
     });
     await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));

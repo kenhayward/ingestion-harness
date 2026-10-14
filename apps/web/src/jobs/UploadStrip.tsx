@@ -226,10 +226,10 @@ export function UploadStrip({
         </span>
         <span className="drop-text">
           <span>
-            <strong>Drop PDF or Word files here</strong> or{' '}
+            <strong>Drop Files or a Folder here</strong> or{' '}
             <span className="link-text">browse</span>
           </span>
-          <small>Several at once, or a whole folder — each file becomes its own job</small>
+          <small>Each Word or PDF file becomes its own job</small>
         </span>
       </label>
       <input
