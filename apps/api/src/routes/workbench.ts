@@ -128,6 +128,7 @@ import {
   choiceProblem,
   draftOutputsSnapshot,
   modelChoices,
+  blockingIssues,
   templateIssues,
   validateTemplate,
 } from '../templates/definitions.js';
@@ -1370,7 +1371,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
       const files = await Promise.allSettled([
         ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
-        ...['drafting', 'segmentation', 'exports'].map((prefix) =>
+        ...['drafting', 'segmentation', 'exports', 'graphs'].map((prefix) =>
           store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
         ),
       ]);
@@ -1477,10 +1478,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!project) return reply.code(404).send({ error: 'project not found' });
       const { draft, definition, ...gate } = await gateFor(app, project);
       if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
-      const issues = await templateIssues(
-        app.deps,
-        (await templates.get(projectId, draft))!.definition,
-        { draft: true },
+      const issues = blockingIssues(
+        await templateIssues(app.deps, (await templates.get(projectId, draft))!.definition, {
+          draft: true,
+        }),
       );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
       // The gate was decided for the draft as it was read then; an edit since then voids it. The

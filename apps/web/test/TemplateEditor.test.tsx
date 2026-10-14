@@ -307,7 +307,7 @@ describe('TemplateEditor', () => {
       );
     });
 
-    it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, YAML, without Quality', async () => {
+    it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, Mapping, YAML, without Quality', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
       await screen.findByRole('heading', { level: 2, name: 'Transformation recipe · draft v1' });
       const tabs = within(screen.getByRole('tablist', { name: 'Template sections' })).getAllByRole(
@@ -318,6 +318,7 @@ describe('TemplateEditor', () => {
         'Sections',
         'Outputs',
         'Pipeline',
+        'Mapping',
         'YAML',
       ]);
       expect(screen.getByRole('tab', { name: /^Pipeline/ })).toHaveAttribute(
@@ -961,7 +962,7 @@ describe('TemplateEditor tabs and step cards', () => {
       within(tabs)
         .getAllByRole('tab')
         .map((t) => t.textContent?.replace(/[\d·\s]+$/, '')),
-    ).toEqual(['General', 'Sections', 'Pipeline', 'Outputs', 'YAML', 'Quality']);
+    ).toEqual(['General', 'Sections', 'Pipeline', 'Outputs', 'Mapping', 'YAML', 'Quality']);
   });
 
   it('splits Outputs into Fields and Tables sub-tabs', async () => {
@@ -1443,5 +1444,42 @@ describe('TemplateEditor of a retired type (D17: read-only)', () => {
     await screen.findByText('from published v1 · letter');
     expect(screen.getByLabelText('Name')).toBeEnabled();
     expect(screen.queryByRole('note')).toBeNull();
+  });
+});
+
+describe('delivered formats (ADR 0011)', () => {
+  it('offers RDF only once the recipe has a mapping', async () => {
+    setup(view(validDefinition()));
+    await userEvent.click(await tab(/General/));
+    const rdf = screen.getByRole('checkbox', { name: /RDF/ });
+    expect(rdf).toBeDisabled();
+    expect(
+      screen.getByText('Add an ontology mapping on the Mapping tab to deliver RDF.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'CSV' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'JSON' })).toBeChecked();
+  });
+
+  it('saves the formats ticked', async () => {
+    const semantics = {
+      ontologies: [],
+      prefixes: { ex: 'https://ex.example/' },
+      document: { class: 'ex:Letter' },
+      local: [{ iri: 'ex:Letter', kind: 'class', label: 'Letter' }],
+    };
+    const { api } = setup(view({ ...validDefinition(), semantics }));
+    await userEvent.click(await tab(/General/));
+    await userEvent.click(screen.getByRole('checkbox', { name: /RDF/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'CSV' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    const saved = vi.mocked(api.saveTemplate).mock.calls.at(-1)![2];
+    expect(saved.delivery).toEqual({ formats: ['json', 'rdf'] });
+  });
+
+  it('has a Mapping sub-tab', async () => {
+    setup(view(validDefinition()));
+    await userEvent.click(await tab(/Mapping/));
+    expect(screen.getByRole('button', { name: 'Map to ontologies' })).toBeTruthy();
   });
 });

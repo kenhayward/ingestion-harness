@@ -9,7 +9,11 @@ if TYPE_CHECKING:
 
 
 def output_key(
-    spec_id: str, version: int, output_id: str, document_id: str, fmt: Literal["csv", "json"]
+    spec_id: str,
+    version: int,
+    output_id: str,
+    document_id: str,
+    fmt: Literal["csv", "json", "ttl"],
 ) -> str:
     return f"{spec_id}/v{version}/{output_id}/{document_id}.{fmt}"
 
@@ -51,6 +55,11 @@ def prepared_text_key(pdf_sha256: str) -> str:
 def prepared_triage_key(pdf_sha256: str) -> str:
     """Page count, OCR'd pages and size of a prepared PDF (runs bucket)."""
     return f"prepared/{pdf_sha256}/triage.json"
+
+
+def graph_preview_key(project_id: str, job_id: str) -> str:
+    """A graph preview's Turtle per sample (runs bucket, graph task; ADR 0011)."""
+    return f"graphs/{project_id}/{job_id}.json"
 
 
 def segmentation_key(project_id: str, job_id: str) -> str:

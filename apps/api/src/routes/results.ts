@@ -8,6 +8,7 @@ import {
   type PublishedDocument,
   type ResultDefinition,
   type ResultDetail,
+  outputExtension,
 } from '@ih/shared';
 import { zipSync } from 'fflate';
 import { z } from 'zod';
@@ -189,7 +190,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         }
         // A partial archive would look complete: fail instead.
         if (!body) return reply.code(404).send({ error: 'output object missing from target' });
-        entries[`${o.outputId}.${o.format}`] = new Uint8Array(body);
+        entries[`${o.outputId}.${outputExtension(o.format)}`] = new Uint8Array(body);
       }
       const name = `${job.filename.replace(/\.(pdf|docx)$/i, '')}.zip`;
       return reply

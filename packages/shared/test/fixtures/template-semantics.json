@@ -1,0 +1,160 @@
+{
+  "base": {
+    "id": "letter",
+    "version": 1,
+    "name": "Letter",
+    "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+    "outputs": {
+      "fields": [
+        { "id": "sender", "type": "text" },
+        { "id": "kind", "type": "enum", "enum": ["memo", "letter"] }
+      ],
+      "tables": [
+        {
+          "id": "lines",
+          "columns": [
+            { "id": "sku", "type": "text" },
+            { "id": "qty", "type": "integer" }
+          ]
+        }
+      ]
+    },
+    "pipeline": [
+      { "type": "extract", "id": "head", "fields": ["sender", "kind"], "sections": ["all"] },
+      { "type": "extract", "id": "rows", "table": "lines", "sections": ["all"] }
+    ]
+  },
+  "cases": [
+    {
+      "name": "minimal mapping",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "ontologies": [{ "id": "pv", "version": 1 }],
+          "prefixes": { "acme": "https://acme.example/def/" },
+          "document": { "class": "acme:Letter" }
+        }
+      }
+    },
+    {
+      "name": "full mapping with rdf delivery",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "ontologies": [{ "id": "pv", "version": 1 }],
+          "shapes": [{ "id": "pv-shapes", "version": 2 }],
+          "prefixes": { "acme": "https://acme.example/def/" },
+          "document": { "class": "acme:Letter", "iri": "doc/{source}" },
+          "fields": {
+            "sender": {
+              "property": "acme:sentBy",
+              "object": { "class": "acme:Party", "iri": "party/{value|slug}", "label": true }
+            },
+            "kind": {
+              "property": "acme:kind",
+              "concepts": { "scheme": "acme:Kinds", "values": { "memo": "acme:Memo" } }
+            }
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "iri": "line/{sku|upper}",
+              "columns": {
+                "sku": { "property": "acme:sku" },
+                "qty": { "property": "acme:quantity" }
+              }
+            }
+          },
+          "local": [{ "iri": "def/letter/sentBy", "kind": "object_property", "label": "Sent by" }]
+        },
+        "delivery": { "formats": ["json", "rdf"] }
+      }
+    },
+    {
+      "name": "delivery without rdf needs no mapping",
+      "valid": true,
+      "patch": { "delivery": { "formats": ["csv"] } }
+    },
+    {
+      "name": "unknown field",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "document": { "class": "acme:Letter" },
+          "fields": { "nope": { "property": "acme:x" } }
+        }
+      }
+    },
+    {
+      "name": "unknown table",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "document": { "class": "acme:Letter" },
+          "tables": { "nope": { "link": "acme:x", "class": "acme:Y" } }
+        }
+      }
+    },
+    {
+      "name": "unknown column",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "document": { "class": "acme:Letter" },
+          "tables": {
+            "lines": {
+              "link": "acme:x",
+              "class": "acme:Y",
+              "columns": { "nope": { "property": "acme:z" } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "rdf without a mapping",
+      "valid": false,
+      "patch": { "delivery": { "formats": ["rdf"] } }
+    },
+    {
+      "name": "a concept for a value the enum does not have",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "document": { "class": "acme:Letter" },
+          "fields": {
+            "kind": { "property": "acme:kind", "concepts": { "values": { "fax": "acme:Fax" } } }
+          }
+        }
+      }
+    },
+    {
+      "name": "object and concepts together",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "document": { "class": "acme:Letter" },
+          "fields": {
+            "sender": {
+              "property": "acme:sentBy",
+              "object": { "class": "acme:Party", "iri": "party/{value}" },
+              "concepts": { "match": "label" }
+            }
+          }
+        }
+      }
+    },
+    { "name": "no formats", "valid": false, "patch": { "delivery": { "formats": [] } } },
+    {
+      "name": "a format twice",
+      "valid": false,
+      "patch": { "delivery": { "formats": ["csv", "csv"] } }
+    },
+    {
+      "name": "an unknown key in the mapping",
+      "valid": false,
+      "patch": { "semantics": { "document": { "class": "acme:Letter" }, "graphs": [] } }
+    }
+  ]
+}

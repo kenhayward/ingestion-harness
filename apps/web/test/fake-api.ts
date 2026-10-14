@@ -255,6 +255,28 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
     listOntologies: vi.fn(async () => []),
+    getLinkedData: vi.fn(async () => ({
+      settings: {
+        customerName: '',
+        customerSlug: null,
+        baseIri: null,
+        updatedBy: null,
+        updatedAt: null,
+      },
+      effectiveBase: null,
+      rdfPublished: 0,
+      history: [],
+    })),
+    saveLinkedData: vi.fn(async () => {
+      throw new Error('saveLinkedData not faked');
+    }),
+    getEffectiveBase: vi.fn(async () => null),
+    startGraphPreview: vi.fn(async () => {
+      throw new Error('startGraphPreview not faked');
+    }),
+    getGraphPreview: vi.fn(async () => {
+      throw new Error('getGraphPreview not faked');
+    }),
     getOntology: vi.fn(async () => {
       throw new Error('getOntology not stubbed');
     }),

@@ -346,9 +346,18 @@ describe('GET /api/results/:jobId/archive', () => {
       out('document', 'published', null),
       out('issues', 'published', 2),
       out('issues', 'draft', 2),
+      {
+        outputId: 'graph',
+        stage: 'published',
+        format: 'rdf',
+        bucket: 'published',
+        key: 'pub/tdemo/v1/graph/doc.ttl',
+        rowCount: 1,
+      },
     ]);
     await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
     await put(ctx.targetStore, 'published', 'pub/tdemo/v1/issues/doc.csv', 'a,b\n1,2\n');
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/graph/doc.ttl', '<a> <b> <c> .\n');
 
     const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
     expect(res.statusCode).toBe(200);
@@ -362,6 +371,7 @@ describe('GET /api/results/:jobId/archive', () => {
     expect(await unzip(res.rawPayload)).toEqual({
       'document.json': '{"fields":{}}',
       'issues.csv': 'a,b\n1,2\n',
+      'graph.ttl': '<a> <b> <c> .\n',
     });
   });
 

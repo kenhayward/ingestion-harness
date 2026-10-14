@@ -13,12 +13,19 @@ import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
 import type { TemplateRecord } from './repo.js';
+import { semanticsIssues } from './semantics.js';
 
 export const TemplateIssueSchema = z.object({
   path: z.string().describe('Where in the definition, e.g. `outputs.fields.0.type`.'),
   message: z.string(),
+  /** Absent: an error, which blocks publishing. A warning is shown and never blocks. */
+  severity: z.literal('warning').optional(),
 });
 export type TemplateIssue = z.infer<typeof TemplateIssueSchema>;
+
+/** The issues that block publishing (warnings do not). */
+export const blockingIssues = (issues: TemplateIssue[]) =>
+  issues.filter((i) => i.severity !== 'warning');
 
 /**
  * Validate a template definition for database storage: the shared schema, plus no custom prompt
@@ -90,7 +97,7 @@ export function choiceProblem(
  * versions keep running theirs.
  */
 export async function templateIssues(
-  deps: Pick<AppDeps, 'repo' | 'llm'>,
+  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies'>,
   definition: unknown,
   { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
@@ -116,6 +123,7 @@ export async function templateIssues(
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
+    ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
 }
 

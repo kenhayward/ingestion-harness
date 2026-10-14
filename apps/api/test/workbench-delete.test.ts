@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   draftingKey,
   exportKey,
+  graphPreviewKey,
   outputKey,
   preparedTextKey,
   preparedTriageKey,
@@ -77,6 +78,7 @@ describe('DELETE /api/workbench/projects/:id', () => {
     ).json() as ProposalView;
     expect(repo.draftJobs.has(proposal.id)).toBe(true);
     await store.put('runs', draftingKey('letter', proposal.id), json({}), 'application/json');
+    await store.put('runs', graphPreviewKey('letter', 'g1'), json({}), 'application/json');
 
     // A verified reference and an evaluation iteration whose test run wrote a draft output.
     const source = await repo.createWorkbenchJob(
@@ -178,6 +180,7 @@ describe('DELETE /api/workbench/projects/:id', () => {
     for (const key of inbox) expect(left).not.toContain(key);
     expect(left.filter((k) => k.startsWith('runs/drafting/letter/'))).toEqual([]);
     expect(left.filter((k) => k.startsWith('runs/exports/letter/'))).toEqual([]);
+    expect(left.filter((k) => k.startsWith('runs/graphs/letter/'))).toEqual([]);
     expect(left.filter((k) => k.startsWith(`runs/${run.id}/`))).toEqual([]);
     expect(left).not.toContain(`outputs/${draftKey}`);
     // The prepared text is a content cache keyed by sha256: kept.

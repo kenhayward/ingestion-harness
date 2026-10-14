@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { stepModel, TemplateSchema } from '../src/template.js';
+import { deliveryFormats, stepModel, TemplateSchema } from '../src/template.js';
 
 const valid = {
   id: 'demo',
@@ -102,6 +103,15 @@ describe('TemplateSchema', () => {
       'reserved',
     ],
     [
+      'graph is reserved for the RDF output',
+      (v) => ({
+        ...v,
+        outputs: { ...v.outputs, tables: [{ ...v.outputs.tables[0]!, id: 'graph' }] },
+        pipeline: [...v.pipeline.slice(0, 2), { ...v.pipeline[2], table: 'graph' }],
+      }),
+      'reserved',
+    ],
+    [
       'bad check path',
       (v) =>
         withPipeline([...v.pipeline.slice(0, 3), { ...v.pipeline[3], values: 'results.nope' }]),
@@ -142,5 +152,22 @@ describe('stepModel (steps inherit the document type model)', () => {
 
   it('refuses an empty document type model', () => {
     expect(TemplateSchema.safeParse({ ...valid, model: '' }).success).toBe(false);
+  });
+});
+
+describe('recipe semantics and delivery (shared with the worker)', () => {
+  const semanticsFixture = JSON.parse(
+    readFileSync(new URL('./fixtures/template-semantics.json', import.meta.url), 'utf8'),
+  ) as { base: object; cases: { name: string; valid: boolean; patch: object }[] };
+
+  it.each(semanticsFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse({ ...semanticsFixture.base, ...c.patch });
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+  });
+
+  it('delivers CSV and JSON unless the recipe says otherwise', () => {
+    const base = semanticsFixture.base as Parameters<typeof deliveryFormats>[0];
+    expect(deliveryFormats(base)).toEqual(['csv', 'json']);
+    expect(deliveryFormats({ ...base, delivery: { formats: ['json'] } })).toEqual(['json']);
   });
 });

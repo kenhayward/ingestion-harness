@@ -34,6 +34,21 @@ export interface SegmentJob {
   updatedAt: string;
 }
 
+/** jobs.params of a graph preview (worker: graph_preview.GraphPreviewParams). */
+export interface GraphJobParams {
+  samples: {
+    sampleId: string;
+    /** The sample's newest succeeded or awaiting-review test run. */
+    jobId: string;
+    fileName: string;
+    sha256: string;
+    /** That run's draft `document.json` in the outputs bucket. */
+    documentKey: string;
+  }[];
+  /** The open draft, whose `semantics` the preview renders. */
+  definition: Record<string, unknown>;
+}
+
 /** A document-less project job (segment previews, drafting runs, bundle exports). */
 export type ProjectJob = SegmentJob;
 
@@ -178,6 +193,15 @@ export interface IngestionRepo {
     params: SegmentJobParams,
   ): Promise<{ job: SegmentJob; removed: string[] }>;
   getSegmentJob(projectId: string, id: string): Promise<SegmentJob | null>;
+  /**
+   * Queue a graph preview (task 'graph', no document, priority SEGMENT_PRIORITY). Like segment
+   * previews, earlier graph jobs of the project are deleted first and returned in `removed`.
+   */
+  createGraphJob(
+    projectId: string,
+    params: GraphJobParams,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  getGraphJob(projectId: string, id: string): Promise<ProjectJob | null>;
   /**
    * Queue a drafting run (document-less, task 'draft'). Unlike segment previews, earlier draft
    * jobs are kept: each one backs a proposal.

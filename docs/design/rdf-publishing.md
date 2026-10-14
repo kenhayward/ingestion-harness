@@ -301,6 +301,46 @@ Implemented in rollout step 2 (migration 0033):
 - **Graph view:** `GET …/neighbourhood?iri=&depth=1|2` returns at most 150 nodes; the web draws
   it with Cytoscape.js (loaded on first use) and lists the same links as text.
 
+Implemented in rollout step 3 (migration 0034):
+- **Recipe contract:** `semantics` (`SemanticsSchema` / `template.Semantics`) and `delivery`
+  (`formats`, default CSV and JSON) on both sides, held in step by
+  `packages/shared/test/fixtures/template-semantics.json`. The output id `graph` is reserved.
+- **Validation** (`apps/api/src/templates/semantics.ts`, inside `templateIssues`): pinned
+  versions exist and are ready, every CURIE expands, every term is in a pinned version (imports
+  included, one `termKinds` query) or declared `local`, with a kind that fits its position.
+  Terms of the built-in vocabularies (rdf, rdfs, owl, xsd, skos, dcterms, prov) need no pin.
+  Unmapped outputs are warnings (`severity: 'warning'`), which never block publishing. IRI
+  templates may name only the values in scope (document: `source`, `type`, `version`; a field's
+  entity: `value`; a row: its columns; a column's entity: `value` and the columns) with the
+  filters `slug` and `upper`; base IRIs, namespaces, terms and template text cannot carry
+  characters an IRI cannot (`IRI_UNSAFE`); matching concepts by label needs a scheme.
+- **Linked data settings:** `GET|PUT /api/linked-data/settings` (admin) and
+  `GET /api/linked-data/base`; `.env` `LINKED_DATA_CUSTOMER=slug=Name` and
+  `LINKED_DATA_BASE_IRI` seed them once. Changing the effective base after RDF was published
+  needs `confirm` and is recorded in `linked_data_base_history`.
+- **Rendering** (`worker/src/ingest_worker/rdf.py`): one graph per (source sha256, type).
+  Entity IRIs come from `mint_entity_iri` (filters `slug`, `upper`; an empty key value gives no
+  triple). Rows without an IRI template, or with an empty key, are named
+  `doc/{sha256}/{type}/{table}/{n}` (stable across publishes, unlike blank nodes). Each fact has
+  a `ct:Evidence` (page, quote, section, step) and a value that failed normalisation, or that no
+  concept or IRI matched, is published as written with `ct:normalisationIssue`. Models are
+  recorded as `ct:model` literals until model IRIs exist.
+- **Outputs:** a mapped recipe drafts `graph` (`.ttl`, `text/turtle`, format `rdf`) once a base
+  is set; without one the job logs `graph skipped: set the customer on the Linked data page` and
+  delivers the rest. Publishing (approval and the no-review path) delivers only
+  `delivery.formats`. The graph never costs the other outputs: when RDF is not delivered, a
+  graph that cannot be rendered or serialised is a `graph failed` event and no graph; when it is
+  delivered, that failure goes to review, and so does a recipe delivering only RDF while no base
+  is set.
+- **Graph previews:** `POST /api/workbench/projects/:id/graph-previews` queues a `graph` job
+  (project-scoped, `priority = -5`, one per project) over each dev sample's newest finished
+  test run; the worker writes `graphs/{project}/{job}.json`. Like segment previews, these jobs
+  are skipped when a project is switched to local-only, and deleting the project removes
+  `graphs/<id>/`.
+- **Web:** the recipe editor's Mapping sub-tab (pins, prefixes, document class and IRI, each
+  output as a literal, entity or concept, local terms, the term picker, and the preview in the
+  Workbench), Delivered formats on General, and the Linked data page (`#/linked-data`, admins).
+
 ### Import
 
 `POST /api/ontologies` (admin, multipart `file`, or JSON `{ url }`, with `id`, `label`, `tags`,

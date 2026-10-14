@@ -4,21 +4,26 @@ issues, page markers and the review flag."""
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
+from rdflib import RDFS, Graph, Literal, URIRef
 
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
-from ingest_worker.pipeline import Buckets, PipelineDeps, mark_pages
+from ingest_worker.pipeline import Buckets, PipelineDeps, Target, mark_pages
 from ingest_worker.queue import ClaimedJob
+from ingest_worker.rdf import CT
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeProvider, FakeQueue
+from .fakes import FakeProvider, FakeQueue, MemoryLinkedDataSettings
 
 TEMPLATE = {
     "id": "demo",
@@ -246,3 +251,208 @@ def test_template_csvs_have_a_bom_and_a_utf8_content_type(run) -> None:  # type:
     for key, (body, content_type) in csvs:
         assert body.startswith(b"\xef\xbb\xbf"), key
         assert content_type == "text/csv; charset=utf-8", key
+
+
+# --- RDF: graph output and delivered formats (ADR 0011) ---------------------------------------
+
+SEMANTICS = {
+    "prefixes": {"ex": "https://ex.example/def/"},
+    "document": {"class": "ex:Protocol"},
+    "fields": {"product": {"property": "ex:product"}},
+}
+GRAPH_KEY = "demo/v1/graph/doc-1.ttl"
+BASE_IRI = "https://data.acme.example/"
+
+
+def mapped_deps(
+    tmp_path: Path, template: dict[str, Any], base: str | None
+) -> tuple[PipelineDeps, MemoryObjectStore]:
+    directory = tmp_path / "demo" / "v1"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "template.yaml").write_text(yaml.safe_dump(template), encoding="utf-8")
+    store, target = MemoryObjectStore(), MemoryObjectStore()
+    store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
+    deps = PipelineDeps(
+        store=store,
+        specs=load_specs(tmp_path),
+        models=ModelRegistry(
+            {"local": FakeProvider("local", responses=list(RESPONSES))},
+            {"local": ProviderConfig(name="local", kind="openai-chat")},
+            {"default": "local/qwen"},
+        ),
+        extract_text=lambda _pdf: PAGES,
+        buckets=Buckets("inbox", "outputs", "runs"),
+        target=Target(store=target, bucket="published", prefix="pvp/"),
+        linked_data=MemoryLinkedDataSettings(base),
+    )
+    return deps, target
+
+
+def run_mapped(
+    tmp_path: Path, template: dict[str, Any], base: str | None
+) -> tuple[MemoryObjectStore, MemoryObjectStore, FakeQueue]:
+    deps, target = mapped_deps(tmp_path, template, base)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert isinstance(deps.store, MemoryObjectStore)
+    return deps.store, target, queue
+
+
+def has(store: MemoryObjectStore, bucket: str, key: str) -> bool:
+    return (bucket, key) in store.objects
+
+
+def mapped(**extra: Any) -> dict[str, Any]:
+    return {**TEMPLATE, "review": {"required": "never"}, "semantics": SEMANTICS, **extra}
+
+
+def test_a_mapped_recipe_drafts_a_turtle_graph(tmp_path: Path) -> None:
+    store, _, queue = run_mapped(tmp_path, mapped(), "https://data.acme.example/")
+    assert store.objects[("outputs", GRAPH_KEY)][1] == "text/turtle"
+    sha = hashlib.sha256(b"%PDF").hexdigest()
+    graph = Graph().parse(data=store.get("outputs", GRAPH_KEY), format="turtle")
+    doc = URIRef(f"https://data.acme.example/doc/{sha}")
+    assert (doc, URIRef("https://ex.example/def/product"), Literal("Richfer capsules")) in graph
+    [(_, drafts)] = queue.drafts
+    assert "rdf" in {o.format for o in drafts}
+
+
+def test_without_a_base_the_graph_is_skipped(tmp_path: Path) -> None:
+    store, _, queue = run_mapped(tmp_path, mapped(), None)
+    assert not has(store, "outputs", GRAPH_KEY)
+    assert any(e[2].startswith("graph skipped") for e in queue.events)
+    assert queue.completed
+
+
+def test_delivery_formats_choose_what_is_published(tmp_path: Path) -> None:
+    _, target, queue = run_mapped(
+        tmp_path, mapped(delivery={"formats": ["json", "rdf"]}), "https://data.acme.example/"
+    )
+    [(_, published, _)] = queue.published
+    assert {o.format for o in published} == {"json", "rdf"}
+    assert has(target, "published", "pvp/" + GRAPH_KEY)
+    assert not has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+
+
+def test_the_graph_is_drafted_but_not_delivered_by_default(tmp_path: Path) -> None:
+    store, target, _ = run_mapped(tmp_path, mapped(), "https://data.acme.example/")
+    assert has(store, "outputs", GRAPH_KEY)
+    assert not has(target, "published", "pvp/" + GRAPH_KEY)
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+
+
+def test_a_recipe_without_semantics_is_unchanged(tmp_path: Path) -> None:
+    template = {**TEMPLATE, "review": {"required": "never"}}
+    store, _, queue = run_mapped(tmp_path, template, "https://data.acme.example/")
+    assert not has(store, "outputs", GRAPH_KEY)
+    assert not any(e[2].startswith("graph") for e in queue.events)
+    [(_, published, _)] = queue.published
+    assert {o.format for o in published} == {"csv", "json"}
+
+
+# --- review fixes: graph failures never cost CSV/JSON; RDF-only needs a base -------------------
+
+BAD_BASE = "https://data.acme.example/my ids/"  # a space: rdflib cannot serialise its IRIs
+
+
+def test_a_graph_that_cannot_be_rendered_leaves_csv_and_json_delivered(tmp_path: Path) -> None:
+    store, target, queue = run_mapped(tmp_path, mapped(), BAD_BASE)
+    assert queue.completed and not queue.reviewed and not queue.failed
+    assert not has(store, "outputs", GRAPH_KEY)
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+    assert any(e[2].startswith("graph failed") for e in queue.events)
+
+
+def test_a_delivered_graph_that_cannot_be_rendered_goes_to_review(tmp_path: Path) -> None:
+    _, target, queue = run_mapped(tmp_path, mapped(delivery={"formats": ["json", "rdf"]}), BAD_BASE)
+    [(_, reason)] = queue.reviewed
+    assert reason.startswith("cannot render the graph")
+    assert not target.objects
+
+
+def test_a_document_iri_template_that_names_nothing_is_a_graph_failure(tmp_path: Path) -> None:
+    semantics = {**SEMANTICS, "document": {"class": "ex:Protocol", "iri": "p/{protocol}"}}
+    store, _, queue = run_mapped(tmp_path, mapped(semantics=semantics), BASE_IRI)
+    assert queue.completed and not has(store, "outputs", GRAPH_KEY)
+    assert any(e[2].startswith("graph failed") for e in queue.events)
+
+
+def test_rdf_only_delivery_without_a_base_goes_to_review(tmp_path: Path) -> None:
+    _, target, queue = run_mapped(tmp_path, mapped(delivery={"formats": ["rdf"]}), None)
+    [(_, reason)] = queue.reviewed
+    assert "set the customer on the Linked data page" in reason
+    assert not target.objects and not queue.completed
+
+
+ENTITY = {
+    **SEMANTICS,
+    "fields": {
+        "product": {
+            "property": "ex:product",
+            "object": {"class": "ex:Product", "iri": "product/{value|slug}"},
+        }
+    },
+}
+
+
+def test_approval_publishes_the_graph_of_the_reviewed_document(tmp_path: Path) -> None:
+    template = {
+        **TEMPLATE,
+        "review": {"required": "always"},
+        "semantics": ENTITY,
+        "delivery": {"formats": ["json", "rdf"]},
+    }
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.awaiting
+    queue.jobs = [replace(JOB, task="publish")]
+    queue.edits["job-1"] = [
+        {
+            "field": "product",
+            "table": None,
+            "row": None,
+            "column": None,
+            "value": "Ferric capsules",
+            "editor": "kh",
+            "reason": "misread",
+            "at": "2026-10-14T10:00:00Z",
+        }
+    ]
+    queue.decisions["job-1"] = {
+        "reviewer": "kh",
+        "note": None,
+        "reviewed_at": "2026-10-14T10:05:00Z",
+    }
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    [(_, published, _)] = queue.published
+    assert {o.format for o in published} == {"json", "rdf"}
+    assert not has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+    graph = Graph().parse(data=target.get("published", "pvp/" + GRAPH_KEY), format="turtle")
+    corrected = URIRef(f"{BASE_IRI}product/ferric-capsules")
+    sha = hashlib.sha256(b"%PDF").hexdigest()
+    doc = URIRef(f"{BASE_IRI}doc/{sha}")
+    assert (doc, URIRef("https://ex.example/def/product"), corrected) in graph
+    assert (corrected, RDFS.label, Literal("Ferric capsules")) in graph
+    assert not list(graph.subjects(RDFS.label, Literal("Richfer capsules")))
+    assert (URIRef(f"{BASE_IRI}job/job-1"), URIRef(f"{CT}reviewedBy"), Literal("kh")) in graph
+
+
+def test_approving_an_old_draft_without_a_mapping_never_reads_the_inbox(tmp_path: Path) -> None:
+    template = {**TEMPLATE, "review": {"required": "always"}}
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    store = deps.store
+    assert isinstance(store, MemoryObjectStore)
+    key = ("outputs", "demo/v1/document/doc-1.json")
+    draft = json.loads(store.objects[key][0])
+    del draft["source_sha256"]  # drafted before graphs existed
+    store.put("outputs", key[1], json.dumps(draft).encode(), "application/json")
+    store.delete("inbox", JOB.object_key)
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.failed
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")

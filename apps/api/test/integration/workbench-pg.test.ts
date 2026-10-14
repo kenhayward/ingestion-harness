@@ -454,6 +454,8 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     const run = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
     const draft = await repo.createDraftJob(projectId, { stage: 'survey', ...external });
     const segment = await repo.createSegmentJob(projectId, segmentParams);
+    const graphParams = { samples: [], definition: { id: projectId } };
+    const graph = await repo.createGraphJob(projectId, graphParams);
     await workbench.setDataPolicy(other, 'external', null);
     const elsewhere = await repo.createDraftJob(other, { stage: 'survey', ...external });
 
@@ -465,6 +467,8 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf(draft.id)).toEqual({ stage: 'survey', dataPolicy: 'local' });
     // Segment previews keep their strictly validated params; other projects are untouched.
     expect(await paramsOf(segment.job.id)).toEqual(segmentParams);
+    // Graph previews call no model: their strict params stay as created.
+    expect(await paramsOf(graph.job.id)).toEqual(graphParams);
     expect(await paramsOf(elsewhere.id)).toEqual({ stage: 'survey', ...external });
 
     await workbench.setDataPolicy(projectId, 'external', 'admin');

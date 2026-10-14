@@ -65,6 +65,31 @@ describe('jobs API', () => {
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(res.body).toBe('a,b\n1,2\n');
   });
+
+  it('downloads a graph as Turtle', async () => {
+    const { app, repo, store, job } = await seedJob();
+    repo.outputs.set(job.id, [
+      {
+        outputId: 'graph',
+        stage: 'draft',
+        format: 'rdf',
+        bucket: 'outputs',
+        key: 'demo/v2/graph/x.ttl',
+        rowCount: 4,
+      },
+    ]);
+    await store.put(
+      'outputs',
+      'demo/v2/graph/x.ttl',
+      Buffer.from('<a> <b> <c> .\n'),
+      'text/turtle',
+    );
+
+    const res = await app.inject(`/api/jobs/${job.id}/outputs/graph`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/turtle; charset=utf-8');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="x.ttl"');
+  });
 });
 
 describe('job output downloads by stage', () => {

@@ -1,4 +1,7 @@
 import type {
+  GraphPreviewView,
+  LinkedDataBody,
+  LinkedDataView,
   Neighbourhood,
   OntologyDetail,
   OntologyFromUrlBody,
@@ -137,7 +140,8 @@ export interface TemplateRecordView {
     updatedAt: string;
     publishedAt: string | null;
   };
-  issues: { path: string; message: string }[];
+  /** `severity: 'warning'` never blocks publishing (an unmapped output, ADR 0011). */
+  issues: { path: string; message: string; severity?: 'warning' }[];
 }
 
 export interface RegressionReport {
@@ -325,6 +329,15 @@ export interface Api {
   importOntologyFromUrl(body: OntologyFromUrlBody): Promise<OntologyVersionView>;
   /** Allowed hosts for URL imports and the size limit. */
   getOntologySettings(): Promise<OntologySettings>;
+  /** Admin: the customer and base IRI RDF is minted under (ADR 0011). */
+  getLinkedData(): Promise<LinkedDataView>;
+  /** Admin: save them; `confirm` repeats the new base once RDF was published. */
+  saveLinkedData(body: LinkedDataBody): Promise<LinkedDataView>;
+  /** The base IRI RDF is minted under (null until an admin sets the customer). */
+  getEffectiveBase(): Promise<string | null>;
+  /** Render the open draft's mapping over the newest finished run of each dev sample. */
+  startGraphPreview(projectId: string, sampleIds?: string[]): Promise<GraphPreviewView>;
+  getGraphPreview(projectId: string, jobId: string): Promise<GraphPreviewView>;
   /** A term and what it is related to, for the graph view. */
   getNeighbourhood(id: string, version: number, iri: string, depth?: 1 | 2): Promise<Neighbourhood>;
   createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
@@ -713,6 +726,21 @@ export function createHttpApi(base = '/api'): Api {
     },
     importOntologyFromUrl: (body) => post<OntologyVersionView>(`${base}/ontologies/from-url`, body),
     getOntologySettings: () => apiFetch(`${base}/ontology-settings`).then(json<OntologySettings>),
+    getLinkedData: () => apiFetch(`${base}/linked-data/settings`).then(json<LinkedDataView>),
+    saveLinkedData: (body) => post<LinkedDataView>(`${base}/linked-data/settings`, body, 'PUT'),
+    getEffectiveBase: () =>
+      apiFetch(`${base}/linked-data/base`)
+        .then(json<{ effectiveBase: string | null }>)
+        .then((r) => r.effectiveBase),
+    startGraphPreview: (projectId, sampleIds) =>
+      post<GraphPreviewView>(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews`,
+        sampleIds ? { sampleIds } : {},
+      ),
+    getGraphPreview: (projectId, jobId) =>
+      apiFetch(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews/${encodeURIComponent(jobId)}`,
+      ).then(json<GraphPreviewView>),
     getNeighbourhood: (id, version, iri, depth = 1) =>
       apiFetch(
         `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/neighbourhood?iri=${encodeURIComponent(iri)}&depth=${depth}`,

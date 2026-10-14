@@ -88,6 +88,13 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     expect(ranked!.items[0]!.label).toBe('Document');
     const literal = await repo.terms('pv-pg', 1, { q: '%', offset: 0, limit: 10 });
     expect(literal!.total).toBe(0);
+    expect(
+      await repo.termKinds(
+        [{ id: 'pv-pg', version: 1 }],
+        [`${C}Protocol`, `${C}hasProtocol`, `${C}Nope`],
+      ),
+    ).toEqual({ [`${C}Protocol`]: ['class'], [`${C}hasProtocol`]: ['object_property'] });
+    expect(await repo.termKinds([{ id: 'pv-pg', version: 2 }], [`${C}Protocol`])).toEqual({});
     const protocol = await repo.term('pv-pg', 1, `${C}Protocol`);
     expect(protocol).toMatchObject({
       parentTerms: [{ label: 'Document' }],

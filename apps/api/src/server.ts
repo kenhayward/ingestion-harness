@@ -5,6 +5,7 @@ import { loadConfig, s3KeysConfig, targetConfig } from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
+import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -50,6 +51,19 @@ const s3Keys =
 let logWatchError: (err: unknown) => void = () => {};
 const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err));
 
+const linkedData = new PgLinkedDataRepo(
+  new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
+);
+// .env seeds the customer and base once; the Linked data page wins afterwards.
+if (config.LINKED_DATA_CUSTOMER) {
+  const [slug, ...name] = config.LINKED_DATA_CUSTOMER.split('=');
+  await linkedData.seed({
+    customerSlug: slug!.trim(),
+    customerName: name.join('=').trim() || slug!.trim(),
+    baseIri: config.LINKED_DATA_BASE_IRI ?? null,
+  });
+}
+
 const app = await buildApp({
   repo,
   jobWatch,
@@ -74,6 +88,7 @@ const app = await buildApp({
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  linkedData,
   ontologyFetch: {
     hosts: config.ONTOLOGY_FETCH_ALLOW.split(',')
       .map((h) => h.trim())

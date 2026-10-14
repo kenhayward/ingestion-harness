@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { RetirementSchema } from '@ih/shared';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
-import { TemplateIssueSchema, templateIssues, validateTemplate } from '../templates/definitions.js';
+import {
+  TemplateIssueSchema,
+  blockingIssues,
+  templateIssues,
+  validateTemplate,
+} from '../templates/definitions.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { byHand, draftChange, startedChange } from '../templates/changes.js';
 import { createNextDraft, pinned, skeleton } from '../templates/drafts.js';
@@ -379,7 +384,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       if (existing.status !== 'draft') {
         return reply.code(409).send({ error: `${id} v${version} is already published` });
       }
-      const issues = await templateIssues(app.deps, existing.definition, { draft: true });
+      const issues = blockingIssues(
+        await templateIssues(app.deps, existing.definition, { draft: true }),
+      );
       if (issues.length) return reply.code(400).send({ error: 'recipe is not valid', issues });
       return await withIssues((await repo().publish(id, version))!);
     },
@@ -535,7 +542,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: `publish ${ident.data.id} from the Workbench (holdout gate)` });
       }
       // Imported as a draft, it is checked as one; published, it keeps any legacy model refs.
-      const issues = await templateIssues(app.deps, definition, { draft: !body.data.publish });
+      const issues = blockingIssues(
+        await templateIssues(app.deps, definition, { draft: !body.data.publish }),
+      );
       if (body.data.publish && issues.length) {
         return reply.code(400).send({ error: 'recipe is not valid', issues });
       }

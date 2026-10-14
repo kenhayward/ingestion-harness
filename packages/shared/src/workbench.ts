@@ -220,6 +220,36 @@ export const SegmentationViewSchema = z.object({
 });
 export type SegmentationView = z.infer<typeof SegmentationViewSchema>;
 
+/** Graph previews (ADR 0011): the open draft's mapping over finished dev test runs. */
+export const GraphPreviewBodySchema = z
+  .object({
+    /** Ready dev samples with a finished test run (default: every one). */
+    sampleIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+  })
+  .strict();
+
+/** Written by the worker's graph task (runs bucket, graphPreviewKey). */
+export const GraphPreviewResultSchema = z.object({
+  samples: z.array(
+    z.object({
+      sampleId: z.string(),
+      fileName: z.string(),
+      turtle: z.string(),
+      triples: z.number().int(),
+    }),
+  ),
+});
+export type GraphPreviewResult = z.infer<typeof GraphPreviewResultSchema>;
+
+export const GraphPreviewViewSchema = z.object({
+  jobId: z.string().uuid(),
+  status: JobStatusSchema,
+  error: z.string().nullable(),
+  /** Present once the job succeeded. */
+  result: GraphPreviewResultSchema.nullable(),
+});
+export type GraphPreviewView = z.infer<typeof GraphPreviewViewSchema>;
+
 export const DRAFT_STAGES = [
   'survey',
   'outputs',

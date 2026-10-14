@@ -38,6 +38,7 @@ from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 if TYPE_CHECKING:
+    from .linked_data import LinkedDataSettings
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
 
@@ -98,6 +99,13 @@ class ProcessResult:
     outputs: list[RenderedOutput]
     #: Non-empty when the document must be reviewed before publishing.
     review_reasons: list[str] = field(default_factory=list)
+    #: The output formats delivered on publishing (None: every output).
+    formats: list[str] | None = None
+
+    def delivered(self) -> list[RenderedOutput]:
+        if self.formats is None:
+            return self.outputs
+        return [o for o in self.outputs if o.format in self.formats]
 
 
 @dataclass
@@ -124,6 +132,8 @@ class PipelineDeps:
     ontology_max_triples: int = 2_000_000
     #: Fetches an allowlisted ontology URL (None: URL imports are off).
     ontology_fetch: Callable[[str], Fetched] | None = None
+    #: The base IRI RDF is minted under (None: mapped recipes draft no graph).
+    linked_data: LinkedDataSettings | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +156,8 @@ class Prepared:
     pdf: bytes
     total_pages: int
     sections: dict[str, str]
+    #: sha256 of the uploaded file (Source.sha256): names the document's graph.
+    sha256: str = ""
 
 
 #: Matches the lines added by mark_pages.
@@ -277,7 +289,7 @@ def prepare_document(
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
     queue.event(job.id, "info", SEGMENTED, {"pages": len(pages), "sections": list(sections)})
-    return Prepared(pdf, total_pages, sections)
+    return Prepared(pdf, total_pages, sections, source.sha256)
 
 
 def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[RenderedOutput]:

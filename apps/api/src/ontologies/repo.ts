@@ -68,6 +68,14 @@ export interface OntologyRepo {
   terms(id: string, version: number, query: TermQuery): Promise<TermPage | null>;
   term(id: string, version: number, iri: string): Promise<TermDetail | null>;
   /**
+   * The kinds each IRI has in any of `versions` (their imports included: they are indexed with
+   * the version), for checking a recipe's mapping in one query; IRIs found nowhere are absent.
+   */
+  termKinds(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, OntologyTermKind[]>>;
+  /**
    * Rows whose IRI is in `iris`, or whose parents, domains, ranges or scheme name one of
    * them, by label, at most `limit` (the graph view's hops); null for an unknown version.
    */
@@ -327,6 +335,20 @@ export class MemoryOntologyRepo implements OntologyRepo {
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {
     if (!this.version(id, version)) return null;
     return termDetail((this.termsByVersion.get(`${id}:${version}`) ?? []).map(publicTerm), iri);
+  }
+
+  async termKinds(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, OntologyTermKind[]>> {
+    const wanted = new Set(iris);
+    const out: Record<string, OntologyTermKind[]> = {};
+    for (const v of versions) {
+      for (const t of this.termsByVersion.get(`${v.id}:${v.version}`) ?? []) {
+        if (wanted.has(t.iri) && !(out[t.iri] ??= []).includes(t.kind)) out[t.iri]!.push(t.kind);
+      }
+    }
+    return out;
   }
 
   async neighbours(
@@ -767,6 +789,22 @@ export class PgOntologyRepo implements OntologyRepo {
       offset: query.offset,
       limit: query.limit,
     };
+  }
+
+  async termKinds(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, OntologyTermKind[]>> {
+    if (!versions.length || !iris.length) return {};
+    const { rows } = await this.pool.query<{ iri: string; kinds: OntologyTermKind[] }>(
+      `SELECT t.iri, array_agg(DISTINCT t.kind ORDER BY t.kind) AS kinds
+         FROM ontology_terms t
+         JOIN unnest($1::text[], $2::int[]) AS p(id, v) ON t.ontology_id = p.id AND t.version = p.v
+        WHERE t.iri = ANY($3::text[])
+        GROUP BY t.iri`,
+      [versions.map((v) => v.id), versions.map((v) => v.version), iris],
+    );
+    return Object.fromEntries(rows.map((r) => [r.iri, r.kinds]));
   }
 
   async neighbours(

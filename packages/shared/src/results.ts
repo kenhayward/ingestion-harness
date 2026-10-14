@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { JobOutputSchema, JobSummarySchema } from './jobs.js';
+import { JobOutputSchema, JobSummarySchema, OUTPUT_FORMATS } from './jobs.js';
 import { TableDefSchema, ValueDefSchema } from './template.js';
 
 /** A published file of a result (GET /api/results rows link their downloads with it). */
 export const ResultOutputSchema = z.object({
   outputId: z.string(),
-  format: z.enum(['csv', 'json']),
+  format: z.enum(OUTPUT_FORMATS),
   /** The object key's base name, e.g. `line_items.csv`. */
   name: z.string(),
   rowCount: z.number().int().nullable(),

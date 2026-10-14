@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { baseIriProblem, CUSTOMER_SLUG_RE } from '@ih/shared';
 
 const defaultSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url));
 
@@ -24,39 +25,62 @@ const FrameAncestors = z.preprocess(
     .nullable(),
 );
 
-const EnvSchema = z.object({
-  HOST: z.string().default('0.0.0.0'),
-  PORT: z.coerce.number().int().default(3000),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  DATABASE_URL: z.string().url(),
-  S3_ENDPOINT: z.string().url(),
-  S3_REGION: z.string().default('us-east-1'),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  S3_BUCKET_INBOX: z.string().default('ingest-inbox'),
-  S3_BUCKET_OUTPUTS: z.string().default('ingest-outputs'),
-  S3_BUCKET_RUNS: z.string().default('ingest-runs'),
-  // Final target for published outputs (read back by the Results page). Mirrors the worker:
-  // any unset value falls back to the S3_* connection above.
-  TARGET_S3_ENDPOINT: optional(z.string().url()),
-  TARGET_S3_REGION: optional(z.string()),
-  TARGET_S3_ACCESS_KEY: optional(z.string()),
-  TARGET_S3_SECRET_KEY: optional(z.string()),
-  TARGET_S3_BUCKET: z.preprocess(blank, z.string().default('ingest-published')),
-  TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
-  /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
-  S3_PUBLIC_URL: optional(z.string().url()),
-  SPECS_DIR: z.string().default(defaultSpecsDir),
-  MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
-  /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */
-  ONTOLOGY_FETCH_ALLOW: z.preprocess(blank, z.string().default('')),
-  /** Fetched ontology files over this many bytes are refused (the worker enforces it). */
-  ONTOLOGY_MAX_BYTES: z.coerce.number().int().positive().default(104857600),
-  /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
-  TRUST_PROXY: optional(z.string()),
-  /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */
-  FRAME_ANCESTORS: FrameAncestors,
-});
+const EnvSchema = z
+  .object({
+    HOST: z.string().default('0.0.0.0'),
+    PORT: z.coerce.number().int().default(3000),
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+    DATABASE_URL: z.string().url(),
+    S3_ENDPOINT: z.string().url(),
+    S3_REGION: z.string().default('us-east-1'),
+    S3_ACCESS_KEY: z.string().min(1),
+    S3_SECRET_KEY: z.string().min(1),
+    S3_BUCKET_INBOX: z.string().default('ingest-inbox'),
+    S3_BUCKET_OUTPUTS: z.string().default('ingest-outputs'),
+    S3_BUCKET_RUNS: z.string().default('ingest-runs'),
+    // Final target for published outputs (read back by the Results page). Mirrors the worker:
+    // any unset value falls back to the S3_* connection above.
+    TARGET_S3_ENDPOINT: optional(z.string().url()),
+    TARGET_S3_REGION: optional(z.string()),
+    TARGET_S3_ACCESS_KEY: optional(z.string()),
+    TARGET_S3_SECRET_KEY: optional(z.string()),
+    TARGET_S3_BUCKET: z.preprocess(blank, z.string().default('ingest-published')),
+    TARGET_S3_PREFIX: z.preprocess(blank, z.string().default('')),
+    /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
+    S3_PUBLIC_URL: optional(z.string().url()),
+    SPECS_DIR: z.string().default(defaultSpecsDir),
+    MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
+    /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */
+    ONTOLOGY_FETCH_ALLOW: z.preprocess(blank, z.string().default('')),
+    /** Fetched ontology files over this many bytes are refused (the worker enforces it). */
+    ONTOLOGY_MAX_BYTES: z.coerce.number().int().positive().default(104857600),
+    /** The deployment's customer, `slug=Name` (ADR 0011); seeds the Linked data settings once. */
+    LINKED_DATA_CUSTOMER: optional(
+      z.string().refine((v) => CUSTOMER_SLUG_RE.test(v.split('=')[0]!.trim()), {
+        message: 'the customer id (before =) must be lower case letters, digits and -',
+      }),
+    ),
+    /** The customer's own base IRI; seeds the Linked data settings once. */
+    LINKED_DATA_BASE_IRI: optional(
+      z.string().superRefine((v, ctx) => {
+        const problem = baseIriProblem(v);
+        if (problem) ctx.addIssue({ code: 'custom', message: problem });
+      }),
+    ),
+    /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
+    TRUST_PROXY: optional(z.string()),
+    /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */
+    FRAME_ANCESTORS: FrameAncestors,
+  })
+  .superRefine((env, ctx) => {
+    if (env.LINKED_DATA_BASE_IRI && !env.LINKED_DATA_CUSTOMER) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LINKED_DATA_BASE_IRI'],
+        message: 'LINKED_DATA_BASE_IRI needs LINKED_DATA_CUSTOMER',
+      });
+    }
+  });
 
 export type Config = z.infer<typeof EnvSchema>;
 
