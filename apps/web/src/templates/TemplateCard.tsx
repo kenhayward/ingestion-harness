@@ -14,10 +14,13 @@ export function TemplateCard({
   api,
   item,
   onNavigate,
+  onRetire,
 }: {
   api: Api;
   item: TemplateListItem;
   onNavigate: (hash: string) => void;
+  /** Admins only: opens the retire confirm. */
+  onRetire?: () => void;
 }) {
   const titleId = useId();
   const fileId = useId();
@@ -118,6 +121,11 @@ export function TemplateCard({
               <Icon name="download" />
             </a>
           </>
+        )}
+        {onRetire && (
+          <button type="button" onClick={onRetire}>
+            Retire…
+          </button>
         )}
       </div>
       {status && (

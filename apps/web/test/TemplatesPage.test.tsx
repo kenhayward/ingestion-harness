@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { SpecSummary } from '@ih/shared';
 import type { TemplateListItem } from '../src/api/client.js';
 import { TemplatesPage } from '../src/templates/TemplatesPage.js';
 import { fakeApi, templateView } from './fake-api.js';
@@ -202,5 +203,145 @@ describe('TemplatesPage dialogs', () => {
     await userEvent.type(within(dialog).getByLabelText('Name'), 'Letter');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('already exists');
+  });
+});
+
+const retirement = { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' };
+const withRetired: TemplateListItem[] = [list[0]!, { ...list[1]!, retired: retirement }];
+/** demo: file-only legacy; pvp: legacy files plus a database recipe (a recipe card only). */
+const legacySpecs: SpecSummary[] = [
+  { id: 'demo', version: 1, title: 'Demo', kind: 'spec' },
+  { id: 'demo', version: 2, title: 'Demo v2', kind: 'spec' },
+  { id: 'pvp', version: 2, title: 'Process Validation Protocol', kind: 'spec' },
+  { id: 'pvp', version: 3, title: 'Process Validation Protocol', kind: 'template' },
+];
+
+describe('TemplatesPage retired types (D15)', () => {
+  it('leaves retired document types off the page, with no Show retired toggle', async () => {
+    setup({ listTemplates: vi.fn(async () => withRetired) });
+    await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    expect(screen.queryByRole('article', { name: 'Certificate of analysis' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /retired/i })).toBeNull();
+    expect(screen.queryByText(/Retired/)).toBeNull();
+  });
+
+  it('says there are none when every document type is retired', async () => {
+    setup({ listTemplates: vi.fn(async () => [{ ...list[1]!, retired: retirement }]) });
+    expect(await screen.findByText('No document types yet.')).toBeInTheDocument();
+  });
+});
+
+describe('TemplatesPage legacy spec types (D16)', () => {
+  it('lists file-only legacy specs as read-only cards', async () => {
+    setup({ listSpecs: vi.fn(async () => legacySpecs) });
+    const demo = await screen.findByRole('article', { name: 'Demo v2' });
+    expect(within(demo).getByText('demo')).toBeInTheDocument();
+    expect(within(demo).getByText('Legacy spec (file)')).toBeInTheDocument();
+    expect(within(demo).getByText('Versions v1, v2')).toBeInTheDocument();
+    expect(within(demo).getByText(/read-only here/)).toBeInTheDocument();
+    // No editor, Workbench, Test run or export; and users get no Retire….
+    expect(within(demo).queryByRole('link')).toBeNull();
+    expect(within(demo).queryByRole('button')).toBeNull();
+    expect(within(demo).queryByLabelText(/Test run/)).toBeNull();
+    // A type with a database recipe is its recipe card only.
+    expect(screen.getAllByRole('article', { name: 'Process Validation Protocol' })).toHaveLength(1);
+  });
+
+  it('filters legacy cards with the top-bar search', async () => {
+    const api = fakeApi({
+      listTemplates: vi.fn(async () => list),
+      listSpecs: vi.fn(async () => legacySpecs),
+    });
+    render(<TemplatesPage api={api} onNavigate={vi.fn()} query="demo" />);
+    expect(await screen.findByRole('article', { name: 'Demo v2' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Certificate of analysis' })).toBeNull();
+  });
+
+  it('asks GET /api/specs without retired ones', async () => {
+    const { api } = setup({ listSpecs: vi.fn(async () => legacySpecs) });
+    await screen.findByRole('article', { name: 'Demo v2' });
+    expect(api.listSpecs).toHaveBeenCalledWith();
+  });
+});
+
+describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
+  const admin = (overrides = {}) => {
+    const api = fakeApi({
+      listTemplates: vi.fn(async () => list),
+      listSpecs: vi.fn(async () => legacySpecs),
+      ...overrides,
+    });
+    render(<TemplatesPage api={api} onNavigate={vi.fn()} role="admin" />);
+    return api;
+  };
+
+  it('retires a recipe after the confirm; its card leaves the page', async () => {
+    const api = admin({
+      listTemplates: vi.fn().mockResolvedValueOnce(list).mockResolvedValue(withRetired),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retire Certificate of analysis' });
+    expect(dialog).toHaveTextContent('Nothing is deleted');
+    expect(dialog).toHaveTextContent('DELETE /api/specs/coa/retirement');
+    expect(api.retireType).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));
+    expect(api.retireType).toHaveBeenCalledWith('coa');
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Certificate of analysis' })).toBeNull(),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Certificate of analysis is retired. An admin can unretire it through the API: DELETE /api/specs/coa/retirement.',
+    );
+    expect(screen.queryByRole('button', { name: /unretire/i })).toBeNull();
+  });
+
+  it('retires a legacy spec type', async () => {
+    const api = admin({
+      listSpecs: vi
+        .fn()
+        .mockResolvedValueOnce(legacySpecs)
+        .mockResolvedValue(legacySpecs.filter((s) => s.id !== 'demo')),
+    });
+    const demo = await screen.findByRole('article', { name: 'Demo v2' });
+    await userEvent.click(within(demo).getByRole('button', { name: 'Retire…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retire Demo v2' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));
+    expect(api.retireType).toHaveBeenCalledWith('demo');
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Demo v2' })).toBeNull());
+  });
+
+  it('keeps the type when the confirm is cancelled', async () => {
+    const api = admin();
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: 'Retire Certificate of analysis' })).getByRole(
+        'button',
+        { name: 'Cancel' },
+      ),
+    );
+    expect(api.retireType).not.toHaveBeenCalled();
+    expect(screen.getByRole('article', { name: 'Certificate of analysis' })).toBeInTheDocument();
+  });
+
+  it('keeps a refusal in the dialog', async () => {
+    admin({
+      retireType: vi.fn(async () => {
+        throw new Error('admins only');
+      }),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Retire Certificate of analysis' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('admins only');
+  });
+
+  it('shows no Retire… to users, on recipe or legacy cards', async () => {
+    setup({ listSpecs: vi.fn(async () => legacySpecs) });
+    await screen.findByRole('article', { name: 'Demo v2' });
+    expect(screen.queryByRole('button', { name: 'Retire…' })).toBeNull();
   });
 });
