@@ -51,6 +51,10 @@ const EnvSchema = z.object({
   /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */
   ONTOLOGY_FETCH_ALLOW: z.preprocess(blank, z.string().default('')),
   /** Fetched ontology files over this many bytes are refused (the worker enforces it). */
+  /** The deployment's customer, `slug=Name` (ADR 0011); seeds the Linked data settings once. */
+  LINKED_DATA_CUSTOMER: optional(z.string()),
+  /** The customer's own base IRI; seeds the Linked data settings once. */
+  LINKED_DATA_BASE_IRI: optional(z.string()),
   ONTOLOGY_MAX_BYTES: z.coerce.number().int().positive().default(104857600),
   /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
   TRUST_PROXY: optional(z.string()),

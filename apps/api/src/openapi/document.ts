@@ -97,6 +97,11 @@ export const TAGS = {
     document types map their outputs to. Admins import a file as a new immutable version;
     the worker parses it and indexes its terms, which anyone signed in can browse. See
     [ADR 0011](${REPO}/docs/adr/0011-rdf-publishing-and-ontologies.md).`,
+  'Linked data': md`
+    The deployment's customer and the base IRI its RDF is minted under (ADR 0011). One
+    customer per deployment; without their own base, IRIs live under
+    \`https://id.stocks-hayward.com/<customer>/\`.
+  `,
   Health: md`
     Liveness and readiness checks for load balancers and orchestrators. They need no session.
   `,
@@ -125,7 +130,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   },
   {
     name: 'Administration',
-    tags: ['Auth & sessions', 'Access tokens', 'Data-lake S3 keys', 'Health'],
+    tags: ['Auth & sessions', 'Access tokens', 'Data-lake S3 keys', 'Linked data', 'Health'],
   },
 ];
 

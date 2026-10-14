@@ -2124,6 +2124,293 @@
                               },
                               "additionalProperties": false,
                               "default": {}
+                            },
+                            "semantics": {
+                              "type": "object",
+                              "properties": {
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                },
+                                "shapes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                },
+                                "prefixes": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  },
+                                  "propertyNames": {
+                                    "pattern": "^[A-Za-z][\\w-]*$"
+                                  },
+                                  "default": {}
+                                },
+                                "document": {
+                                  "type": "object",
+                                  "properties": {
+                                    "class": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "iri": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "default": "doc/{source}"
+                                    }
+                                  },
+                                  "required": [
+                                    "class"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "fields": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "properties": {
+                                      "property": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "object": {
+                                        "type": "object",
+                                        "properties": {
+                                          "class": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "iri": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "label": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "class",
+                                          "iri"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "concepts": {
+                                        "type": "object",
+                                        "properties": {
+                                          "scheme": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "values": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "match": {
+                                            "type": "string",
+                                            "enum": [
+                                              "label"
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "required": [
+                                      "property"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": {}
+                                },
+                                "tables": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "properties": {
+                                      "link": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "class": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "iri": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "columns": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "object",
+                                          "properties": {
+                                            "property": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "object": {
+                                              "type": "object",
+                                              "properties": {
+                                                "class": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "iri": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "label": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "class",
+                                                "iri"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "concepts": {
+                                              "type": "object",
+                                              "properties": {
+                                                "scheme": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "values": {
+                                                  "type": "object",
+                                                  "additionalProperties": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  }
+                                                },
+                                                "match": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "label"
+                                                  ]
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "property"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "default": {}
+                                      }
+                                    },
+                                    "required": [
+                                      "link",
+                                      "class"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": {}
+                                },
+                                "local": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "iri": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "class",
+                                          "object_property",
+                                          "datatype_property",
+                                          "annotation_property",
+                                          "concept"
+                                        ]
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "definition": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "iri",
+                                      "kind",
+                                      "label"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                }
+                              },
+                              "required": [
+                                "document"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "delivery": {
+                              "type": "object",
+                              "properties": {
+                                "formats": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "csv",
+                                      "json",
+                                      "rdf"
+                                    ]
+                                  },
+                                  "minItems": 1
+                                }
+                              },
+                              "required": [
+                                "formats"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -6351,6 +6638,293 @@
                           },
                           "additionalProperties": false,
                           "default": {}
+                        },
+                        "semantics": {
+                          "type": "object",
+                          "properties": {
+                            "ontologies": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "version": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "version"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": []
+                            },
+                            "shapes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "version": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "version"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": []
+                            },
+                            "prefixes": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "format": "uri"
+                              },
+                              "propertyNames": {
+                                "pattern": "^[A-Za-z][\\w-]*$"
+                              },
+                              "default": {}
+                            },
+                            "document": {
+                              "type": "object",
+                              "properties": {
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "default": "doc/{source}"
+                                }
+                              },
+                              "required": [
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "fields": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "property": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "object": {
+                                    "type": "object",
+                                    "properties": {
+                                      "class": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "iri": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "label": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "class",
+                                      "iri"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "concepts": {
+                                    "type": "object",
+                                    "properties": {
+                                      "scheme": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "values": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "match": {
+                                        "type": "string",
+                                        "enum": [
+                                          "label"
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "property"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": {}
+                            },
+                            "tables": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "link": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "class": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "iri": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "columns": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "object",
+                                      "properties": {
+                                        "property": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "object": {
+                                          "type": "object",
+                                          "properties": {
+                                            "class": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "iri": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "label": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "class",
+                                            "iri"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        "concepts": {
+                                          "type": "object",
+                                          "properties": {
+                                            "scheme": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "values": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "match": {
+                                              "type": "string",
+                                              "enum": [
+                                                "label"
+                                              ]
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "property"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "default": {}
+                                  }
+                                },
+                                "required": [
+                                  "link",
+                                  "class"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": {}
+                            },
+                            "local": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "iri": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "class",
+                                      "object_property",
+                                      "datatype_property",
+                                      "annotation_property",
+                                      "concept"
+                                    ]
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "definition": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "iri",
+                                  "kind",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "default": []
+                            }
+                          },
+                          "required": [
+                            "document"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "delivery": {
+                          "type": "object",
+                          "properties": {
+                            "formats": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "csv",
+                                  "json",
+                                  "rdf"
+                                ]
+                              },
+                              "minItems": 1
+                            }
+                          },
+                          "required": [
+                            "formats"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -37519,6 +38093,538 @@
           }
         }
       }
+    },
+    "/api/linked-data/settings": {
+      "get": {
+        "operationId": "getLinkedDataSettings",
+        "summary": "Linked data settings",
+        "tags": [
+          "Linked data"
+        ],
+        "description": "**Admin token required.** The deployment's customer, the base IRI its RDF is minted\nunder (the customer's own, else `https://id.stocks-hayward.com/<customer>/`), how\nmany RDF outputs were published, and the history of base changes.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "customerName": {
+                          "type": "string"
+                        },
+                        "customerSlug": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "baseIri": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "customerName",
+                        "customerSlug",
+                        "baseIri",
+                        "updatedBy",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "effectiveBase": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rdfPublished": {
+                      "type": "integer"
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fromBase": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "toBase": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changedAt": {
+                            "type": "string"
+                          },
+                          "rdfPublished": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "fromBase",
+                          "toBase",
+                          "changedBy",
+                          "changedAt",
+                          "rdfPublished"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "effectiveBase",
+                    "rdfPublished",
+                    "history"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveLinkedDataSettings",
+        "summary": "Save the linked data settings",
+        "tags": [
+          "Linked data"
+        ],
+        "description": "**Admin token required.** Sets the customer and, optionally, their own base IRI\n(https, ending in `/`, a host name). IRIs are identities: once RDF was published,\nchanging the effective base needs `confirm` equal to the new base, applies to new\npublishes only, and is recorded in the history.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "customerName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "customerSlug": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+                  },
+                  "baseIri": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "confirm": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "customerName",
+                  "customerSlug",
+                  "baseIri"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "customerName": {
+                          "type": "string"
+                        },
+                        "customerSlug": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "baseIri": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "customerName",
+                        "customerSlug",
+                        "baseIri",
+                        "updatedBy",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "effectiveBase": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rdfPublished": {
+                      "type": "integer"
+                    },
+                    "history": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fromBase": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "toBase": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "changedAt": {
+                            "type": "string"
+                          },
+                          "rdfPublished": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "fromBase",
+                          "toBase",
+                          "changedBy",
+                          "changedAt",
+                          "rdfPublished"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "effectiveBase",
+                    "rdfPublished",
+                    "history"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid body or base IRI.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "An invalid body or base IRI."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or sent from another site's page: refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or sent from another site's page: refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RDF was published under the old base: repeat the new base in `confirm`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "RDF was published under the old base: repeat the new base in `confirm`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/linked-data/base": {
+      "get": {
+        "operationId": "getLinkedDataBase",
+        "summary": "The base IRI RDF is minted under",
+        "tags": [
+          "Linked data"
+        ],
+        "description": "The effective base IRI, for showing example IRIs while mapping a recipe. Null until\nan admin sets the customer on the Linked data page (RDF is skipped until then).",
+        "responses": {
+          "200": {
+            "description": "The effective base.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "effectiveBase": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "effectiveBase"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The effective base."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -37613,6 +38719,10 @@
       "description": "The ontology library: customer and industry ontologies (OWL/RDFS, SKOS, SHACL) that\ndocument types map their outputs to. Admins import a file as a new immutable version;\nthe worker parses it and indexes its terms, which anyone signed in can browse. See\n[ADR 0011](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0011-rdf-publishing-and-ontologies.md)."
     },
     {
+      "name": "Linked data",
+      "description": "The deployment's customer and the base IRI its RDF is minted under (ADR 0011). One\ncustomer per deployment; without their own base, IRIs live under\n`https://id.stocks-hayward.com/<customer>/`."
+    },
+    {
       "name": "Health",
       "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
     }
@@ -37656,6 +38766,7 @@
         "Auth & sessions",
         "Access tokens",
         "Data-lake S3 keys",
+        "Linked data",
         "Health"
       ]
     }

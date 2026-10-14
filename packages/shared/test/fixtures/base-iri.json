@@ -1,0 +1,37 @@
+{
+  "effective": [
+    { "customerSlug": "acme", "baseIri": null, "base": "https://id.stocks-hayward.com/acme/" },
+    {
+      "customerSlug": "acme",
+      "baseIri": "https://data.acme.example/ct/",
+      "base": "https://data.acme.example/ct/"
+    },
+    { "customerSlug": null, "baseIri": null, "base": null },
+    {
+      "customerSlug": null,
+      "baseIri": "https://data.acme.example/",
+      "base": "https://data.acme.example/"
+    }
+  ],
+  "problems": [
+    { "iri": "https://data.acme.example/ct/", "problem": null },
+    { "iri": "http://data.acme.example/", "problem": "the base IRI must use https" },
+    { "iri": "https://data.acme.example/ct", "problem": "the base IRI must end with /" },
+    {
+      "iri": "https://data.acme.example/?x=1",
+      "problem": "the base IRI cannot have a query or a fragment"
+    },
+    {
+      "iri": "https://u:p@data.acme.example/",
+      "problem": "the base IRI cannot carry a user name or password"
+    },
+    {
+      "iri": "https://10.0.0.1/",
+      "problem": "the base IRI must use a host name, not an address"
+    },
+    { "iri": "https://[::1]/", "problem": "the base IRI must use a host name, not an address" },
+    { "iri": "https://localhost/", "problem": "the base IRI cannot use a local host name" },
+    { "iri": "https://box.internal/", "problem": "the base IRI cannot use a local host name" },
+    { "iri": "not a url", "problem": "the base IRI is not a URL" }
+  ]
+}
