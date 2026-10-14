@@ -1,5 +1,5 @@
 # Build context: repo root.
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -11,7 +11,7 @@ COPY packages/shared packages/shared
 COPY apps/api apps/api
 RUN npm run build -w @ih/shared && npm run build -w @ih/api && npm prune --omit=dev
 
-FROM node:24-alpine
+FROM node:26-alpine
 ENV NODE_ENV=production \
     SPECS_DIR=/app/specs \
     MIGRATIONS_DIR=/app/db/migrations
