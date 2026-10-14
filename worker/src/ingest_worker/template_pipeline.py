@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
+from rdflib import Graph
 
 from .extract import ExtractionResult
 from .llm.base import LLMProvider
@@ -45,11 +46,12 @@ from .pipeline import (
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
-from .rdf import GraphContext, render_graph, to_turtle
+from .rdf import GraphContext, ShaclReport, render_graph, to_turtle, validate
 from .review import apply_edits, run_checks
+from .shacl import load_graphs, outputs_by_property
 from .specs import Extraction, LoadedTemplate
 from .step_cache import StepCache
-from .storage import output_key, page_preview_key, reviewed_document_key
+from .storage import output_key, page_preview_key, reviewed_document_key, shacl_report_key
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
@@ -63,6 +65,8 @@ STEP_PROGRESS = "step progress"
 GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
 #: Job event when a graph that is not delivered could not be rendered (CSV/JSON still are).
 GRAPH_FAILED = "graph failed"
+#: Job event when the document's graph violates the recipe's shapes.
+GRAPH_VIOLATES = "graph violates shapes"
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,7 @@ class RenderedGraph:
 
     turtle: bytes
     triples: int
+    graph: Graph
 
 
 Progress = Callable[[int, dict[str, Any] | None], None]
@@ -174,7 +179,12 @@ def process_template_job(
         "review_required": bool(reasons),
         "review_reasons": reasons,
     }
-    outputs = render_document(template, document, build_graph(job, deps, queue, template, document))
+    graph = build_graph(job, deps, queue, template, document)
+    report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        add_report(report, issues, reasons)
+        document.update(review_required=bool(reasons), review_reasons=reasons)
+    outputs = render_document(template, document, graph)
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
@@ -421,7 +431,12 @@ def rerun_template_job(
             },
         ],
     )
-    outputs = render_document(template, document, build_graph(job, deps, queue, template, document))
+    graph = build_graph(job, deps, queue, template, document)
+    report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        add_report(report, issues, reasons)
+        document.update(issues=issues, review_reasons=reasons)
+    outputs = render_document(template, document, graph)
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
@@ -563,7 +578,51 @@ def build_graph(
             raise DocumentError(f"cannot render the graph: {exc}") from exc
         queue.event(job.id, "warn", GRAPH_FAILED, {"error": str(exc)})
         return None
-    return RenderedGraph(turtle, len(graph))
+    return RenderedGraph(turtle, len(graph), graph)
+
+
+def shacl_check(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    graph: RenderedGraph | None,
+) -> ShaclReport | None:
+    """Validate the document's graph against the recipe's shapes and keep the report (runs
+    bucket); None without shapes or without a graph. Missing shapes are a DocumentError."""
+    semantics = template.semantics
+    if graph is None or semantics is None or not semantics.shapes:
+        return None
+    shapes = load_graphs(deps, [(p.id, p.version) for p in semantics.shapes])
+    ontologies = load_graphs(deps, [(p.id, p.version) for p in semantics.ontologies])
+    report = validate(graph.graph, shapes, ontologies, outputs_by_property(template))
+    deps.store.put(
+        deps.buckets.runs,
+        shacl_report_key(job.id),
+        json.dumps(report.to_json()).encode(),
+        "application/json",
+    )
+    violations = report.violations()
+    if violations:
+        queue.event(job.id, "warn", GRAPH_VIOLATES, {"violations": len(violations)})
+    return report
+
+
+def add_report(report: ShaclReport, issues: list[dict[str, Any]], reasons: list[str]) -> None:
+    """Violations become review reasons; warnings and infos, issues (step `shacl`)."""
+    reasons.extend(v.reason() for v in report.violations() if v.reason() not in reasons)
+    issues.extend(
+        {
+            "step": "shacl",
+            "target": r.output,
+            "row": None,
+            "column": None,
+            "raw": r.value or None,
+            "message": f"{r.severity}: {r.message}",
+        }
+        for r in report.results
+        if r.severity != "Violation"
+    )
 
 
 def render_document(
