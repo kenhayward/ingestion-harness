@@ -1,0 +1,68 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <https://ex.example/pharma#> .
+
+# A small, hand-labelled pharmaceutical vocabulary for retrieval recall tests (ADR 0011).
+
+ex:Document a owl:Class ; rdfs:label "Document" ; skos:definition "A written record." .
+ex:BatchRecord a owl:Class ; rdfs:label "Batch record" ; rdfs:subClassOf ex:Document ;
+    skos:definition "The record of how one batch of a medicinal product was manufactured." .
+ex:CertificateOfAnalysis a owl:Class ; rdfs:label "Certificate of analysis" ; skos:altLabel "CoA" ;
+    rdfs:subClassOf ex:Document ; skos:definition "A document reporting test results for a batch." .
+ex:MedicinalProduct a owl:Class ; rdfs:label "Medicinal product" ; skos:altLabel "Drug product" ;
+    skos:definition "A substance or combination of substances presented for treating disease." .
+ex:Batch a owl:Class ; rdfs:label "Batch" ; skos:altLabel "Lot" ;
+    skos:definition "A quantity of product made in one manufacturing run." .
+ex:Organisation a owl:Class ; rdfs:label "Organisation" ; skos:altLabel "Company" .
+ex:Manufacturer a owl:Class ; rdfs:label "Manufacturer" ; rdfs:subClassOf ex:Organisation ;
+    skos:definition "An organisation that makes a medicinal product." .
+ex:Supplier a owl:Class ; rdfs:label "Supplier" ; rdfs:subClassOf ex:Organisation ;
+    skos:definition "An organisation that delivers materials." .
+ex:Site a owl:Class ; rdfs:label "Manufacturing site" ; skos:altLabel "Plant" .
+ex:TestResult a owl:Class ; rdfs:label "Test result" ;
+    skos:definition "The outcome of one analytical test." .
+ex:Specification a owl:Class ; rdfs:label "Specification" ; skos:altLabel "Acceptance criteria" .
+ex:Ingredient a owl:Class ; rdfs:label "Ingredient" ; skos:altLabel "Excipient" .
+ex:ActiveSubstance a owl:Class ; rdfs:label "Active substance" ; skos:altLabel "API" ;
+    rdfs:subClassOf ex:Ingredient .
+ex:Person a owl:Class ; rdfs:label "Person" .
+ex:Signature a owl:Class ; rdfs:label "Signature" ; skos:definition "A person's approval of a record." .
+
+ex:batchNumber a owl:DatatypeProperty ; rdfs:label "batch number" ; skos:altLabel "lot number" ;
+    rdfs:domain ex:Batch ; rdfs:range xsd:string ;
+    skos:definition "The identifier a manufacturer gives a batch." .
+ex:expiryDate a owl:DatatypeProperty ; rdfs:label "expiry date" ; skos:altLabel "use by date" ;
+    rdfs:domain ex:Batch ; rdfs:range xsd:date ; skos:definition "The date after which a batch must not be used." .
+ex:manufactureDate a owl:DatatypeProperty ; rdfs:label "date of manufacture" ;
+    rdfs:domain ex:Batch ; rdfs:range xsd:date ; skos:definition "When the batch was made." .
+ex:batchSize a owl:DatatypeProperty ; rdfs:label "batch size" ; rdfs:domain ex:Batch ;
+    rdfs:range xsd:decimal ; skos:definition "The quantity produced in the batch." .
+ex:productName a owl:DatatypeProperty ; rdfs:label "product name" ; rdfs:domain ex:MedicinalProduct ;
+    rdfs:range xsd:string .
+ex:strength a owl:DatatypeProperty ; rdfs:label "strength" ; skos:altLabel "dosage" ;
+    rdfs:domain ex:MedicinalProduct ; skos:definition "The amount of active substance per unit." .
+ex:dosageForm a owl:DatatypeProperty ; rdfs:label "dosage form" ; skos:altLabel "pharmaceutical form" ;
+    skos:definition "The physical form of a product, such as a tablet or capsule." .
+ex:manufacturedBy a owl:ObjectProperty ; rdfs:label "manufactured by" ; rdfs:domain ex:Batch ;
+    rdfs:range ex:Manufacturer .
+ex:manufacturedAt a owl:ObjectProperty ; rdfs:label "manufactured at" ; rdfs:range ex:Site .
+ex:suppliedBy a owl:ObjectProperty ; rdfs:label "supplied by" ; rdfs:range ex:Supplier .
+ex:ofProduct a owl:ObjectProperty ; rdfs:label "of product" ; rdfs:domain ex:Batch ;
+    rdfs:range ex:MedicinalProduct .
+ex:hasResult a owl:ObjectProperty ; rdfs:label "has result" ; rdfs:range ex:TestResult .
+ex:testName a owl:DatatypeProperty ; rdfs:label "test name" ; skos:altLabel "assay" ;
+    rdfs:domain ex:TestResult .
+ex:resultValue a owl:DatatypeProperty ; rdfs:label "result value" ; rdfs:domain ex:TestResult ;
+    skos:definition "The measured value of a test." .
+ex:conforms a owl:DatatypeProperty ; rdfs:label "conforms" ; skos:altLabel "complies" ;
+    rdfs:range xsd:boolean ; skos:definition "Whether a result meets its specification." .
+ex:approvedBy a owl:ObjectProperty ; rdfs:label "approved by" ; skos:altLabel "signed by" ;
+    rdfs:range ex:Person ; skos:definition "The person who released the record." .
+ex:approvalDate a owl:DatatypeProperty ; rdfs:label "approval date" ; skos:altLabel "release date" ;
+    rdfs:range xsd:date .
+ex:storageCondition a owl:DatatypeProperty ; rdfs:label "storage condition" ;
+    skos:definition "How a product must be stored, such as below 25 degrees." .
+ex:quantity a owl:DatatypeProperty ; rdfs:label "quantity" ; skos:altLabel "amount" ; rdfs:range xsd:decimal .
+ex:unit a owl:DatatypeProperty ; rdfs:label "unit of measure" ; skos:altLabel "UoM" .

@@ -1,0 +1,15 @@
+{
+  "_comment": "Hand-labelled outputs and the terms a mapper should find for them (ADR 0011). Query text is what the mapping stage embeds: name, description, type, a few observed values.",
+  "cases": [
+    { "query": "lot no. The batch identifier, text, e.g. G17230211", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#batchNumber"] },
+    { "query": "use by. When the batch expires, date, 2025-03-31", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#expiryDate"] },
+    { "query": "made on. Date the batch was manufactured", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#manufactureDate"] },
+    { "query": "manufacturer. The company that made the product, e.g. Acme Pharma Ltd", "kinds": ["object_property"], "expected": ["https://ex.example/pharma#manufacturedBy"] },
+    { "query": "product. Medicinal product name, e.g. Richfer capsules", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#productName"] },
+    { "query": "form. tablet, capsule", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#dosageForm"] },
+    { "query": "complies. Whether the result passes, boolean, Complies", "kinds": ["datatype_property"], "expected": ["https://ex.example/pharma#conforms"] },
+    { "query": "released by. Person who signed the record", "kinds": ["object_property"], "expected": ["https://ex.example/pharma#approvedBy"] },
+    { "query": "coa. Certificate of analysis document", "kinds": ["class"], "expected": ["https://ex.example/pharma#CertificateOfAnalysis"] },
+    { "query": "lot. One manufacturing run of a product", "kinds": ["class"], "expected": ["https://ex.example/pharma#Batch"] }
+  ]
+}

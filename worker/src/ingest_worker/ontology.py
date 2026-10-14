@@ -509,6 +509,28 @@ class OntologyStore(Protocol):
         """Upsert (kind, iri, text_sha256, vector) rows."""
         ...
 
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        """Terms of `kinds` matching `query` by label and synonyms (trigram) or definition (full
+        text), best first."""
+        ...
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        """Terms of `kinds` nearest `vector` (cosine) under `model_ref`, nearest first."""
+        ...
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        """Any of `versions` has vectors for the model."""
+        ...
+
     def create_imported(
         self,
         *,
@@ -802,6 +824,87 @@ class PgOntologyStore:
             )
         self._ensure_index(model_ref, dims)
 
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        if not versions or not query.strip():
+            return []
+        rows = self._conn.execute(
+            f"""WITH q AS (SELECT lower(%(q)s) AS text, plainto_tsquery('simple', %(q)s) AS ts),
+                scored AS (
+                  SELECT {_READ_COLUMNS},
+                         greatest(word_similarity(lower(t.label), q.text),
+                                  coalesce((SELECT max(word_similarity(lower(a), q.text))
+                                              FROM unnest(t.alt_labels) a), 0)) AS lex,
+                         ts_rank(d.doc, q.ts) AS fts,
+                         d.doc @@ q.ts AS matched
+                    FROM ontology_terms t
+                    JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                      ON t.ontology_id = p.id AND t.version = p.v
+                   CROSS JOIN q
+                   CROSS JOIN LATERAL (SELECT to_tsvector('simple', t.label || ' '
+                         || array_to_string(t.alt_labels, ' ') || ' ' || t.definition) AS doc) d
+                   WHERE t.kind = ANY(%(kinds)s::text[]))
+                SELECT * FROM scored
+                 WHERE lex >= 0.3 OR matched
+                 ORDER BY lex + fts DESC, label, iri
+                 LIMIT %(limit)s""",
+            {
+                "q": query,
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "limit": limit,
+            },
+        ).fetchall()
+        return _unique([_read_term(r) for r in rows])
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        from psycopg import sql
+
+        if not versions or not vector:
+            return []
+        dims = len(vector)
+        query = sql.SQL(
+            """SELECT {cols} FROM ontology_term_embeddings e
+                 JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+                 JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                   ON e.ontology_id = p.id AND e.version = p.v
+                WHERE e.model_ref = {ref} AND e.dims = {dims} AND e.kind = ANY(%(kinds)s::text[])
+                ORDER BY e.embedding::vector({dims}) <=> %(vec)s::vector({dims})
+                LIMIT %(limit)s"""
+        ).format(cols=sql.SQL(_READ_COLUMNS), ref=sql.Literal(model_ref), dims=sql.Literal(dims))
+        rows = self._conn.execute(
+            query,
+            {
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "vec": vector_literal(vector),
+                "limit": limit,
+            },
+        ).fetchall()
+        return _unique([_read_term(r) for r in rows])
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        if not versions:
+            return False
+        row = self._conn.execute(
+            """SELECT EXISTS (SELECT 1 FROM ontology_term_embeddings e
+                 JOIN unnest(%s::text[], %s::int[]) AS p(id, v)
+                   ON e.ontology_id = p.id AND e.version = p.v
+                WHERE e.model_ref = %s)""",
+            ([v[0] for v in versions], [v[1] for v in versions], model_ref),
+        ).fetchone()
+        return bool(row and row[0])
+
     def _ensure_index(self, model_ref: str, dims: int) -> None:
         """An HNSW index per model and dimension, on the cast the semantic query uses."""
         from psycopg import sql
@@ -845,6 +948,31 @@ def _resolved(iri: str, how: str, ontology_id: str, version: int) -> dict[str, A
         "version": version,
         "reason": None,
     }
+
+
+_READ_COLUMNS = (
+    "t.iri, t.kind, t.label, t.alt_labels, t.definition, t.parents, t.domains, t.ranges,"
+    " t.scheme, t.deprecated, t.root, t.child_count, t.defined_in"
+)
+
+
+def _read_term(row: Any) -> Term:
+    iri, kind, label, alt, definition, parents, domains, ranges, scheme, dep, root, n, d = row[:13]
+    return Term(
+        str(iri), kind, str(label), list(alt), str(definition), list(parents), list(domains),
+        list(ranges), scheme, bool(dep), bool(root), int(n), defined_in=d,
+    )  # fmt: skip
+
+
+def _unique(terms: list[Term]) -> list[Term]:
+    """One row per IRI (a term indexed under several kinds or versions), first kept."""
+    seen: set[str] = set()
+    out: list[Term] = []
+    for t in terms:
+        if t.iri not in seen:
+            seen.add(t.iri)
+            out.append(t)
+    return out
 
 
 def vector_literal(vector: list[float]) -> str:

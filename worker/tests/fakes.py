@@ -18,7 +18,7 @@ from ingest_worker.llm.base import (
 )
 from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
-from ingest_worker.ontology import DuplicateSource, ParsedOntology
+from ingest_worker.ontology import DuplicateSource, ParsedOntology, Term
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
 
@@ -384,6 +384,60 @@ class MemoryOntologyStore:
         stored = self.embeddings.setdefault((ontology_id, version, model_ref), {})
         for kind, iri, sha, vector in rows:
             stored[(kind, iri)] = (sha, vector)
+
+    def _terms(self, versions: list[tuple[str, int]], kinds: list[str]) -> list[Term]:
+        out: list[Term] = []
+        for version in versions:
+            parsed = self.saved.get(version)
+            out += [t for t in (parsed.terms if parsed else []) if t.kind in kinds]
+        return out
+
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        """Word overlap: label and synonym words count double, definition words once."""
+        words = set(re.findall(r"[a-z0-9]+", query.lower()))
+
+        def score(t: Term) -> float:
+            names = set(re.findall(r"[a-z0-9]+", " ".join([t.label, *t.alt_labels]).lower()))
+            defined = set(re.findall(r"[a-z0-9]+", t.definition.lower()))
+            exact = 1.0 if t.label.lower() in query.lower() else 0.0  # the label, said whole
+            return (
+                exact
+                + 2 * len(words & names) / max(1, len(names))
+                + 0.5 * len(words & defined) / max(1, len(defined))
+            )
+
+        ranked = sorted(
+            ((score(t), t) for t in self._terms(versions, kinds)),
+            key=lambda st: (-st[0], st[1].label),
+        )
+        return [t for s, t in ranked if s > 0][:limit]
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        def cosine(a: list[float], b: list[float]) -> float:
+            dot = sum(x * y for x, y in zip(a, b, strict=True))
+            norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+            return dot / norm if norm else 0.0
+
+        scored = []
+        for version in versions:
+            stored = self.embeddings.get((*version, model_ref), {})
+            for t in self._terms([version], kinds):
+                if (t.kind, t.iri) in stored:
+                    scored.append((cosine(vector, stored[(t.kind, t.iri)][1]), t))
+        scored.sort(key=lambda st: (-st[0], st[1].label))
+        return [t for _, t in scored[:limit]]
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        return any(self.embeddings.get((*v, model_ref)) for v in versions)
 
     def concept_by_label(
         self, versions: list[tuple[str, int]], scheme: str, label: str
