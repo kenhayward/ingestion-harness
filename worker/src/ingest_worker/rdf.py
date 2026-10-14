@@ -394,7 +394,8 @@ def validate(
     graph: Graph, shapes: Graph, ontologies: Graph, outputs_by_property: dict[str, str]
 ) -> ShaclReport:
     """pySHACL over one document's graph, no inference; the ontologies are merged in so that
-    `sh:class` sees the concepts' types and `rdfs:subClassOf`."""
+    `sh:class` sees the concepts' types and `rdfs:subClassOf`. Only results whose focus node the
+    document's graph describes are kept."""
     from pyshacl import validate as run_shacl
 
     # pySHACL's `ont_graph` does not carry instance typing (a concept's rdf:type), so the
@@ -414,6 +415,11 @@ def validate(
     holder = {str(prop): node for node, prop in shapes.subject_objects(SH.property)}
     results: list[ShaclResult] = []
     for r in results_graph.subjects(RDF.type, SH.ValidationResult):
+        focus = results_graph.value(r, SH.focusNode)
+        if focus is None or (focus, None, None) not in graph:
+            # A node only the ontologies describe: no review edit can fix it, so it never
+            # holds back the document.
+            continue
         source = results_graph.value(r, SH.sourceShape)
         shape = holder.get(str(source), source)
         path = results_graph.value(r, SH.resultPath)
@@ -424,7 +430,7 @@ def validate(
             ShaclResult(
                 severity=_local(results_graph.value(r, SH.resultSeverity)) or "Violation",
                 shape=str(shape) if shape is not None else "",
-                focus=str(results_graph.value(r, SH.focusNode) or ""),
+                focus=str(focus),
                 path=path_text,
                 output=outputs_by_property.get(path_text) or path_text or "document",
                 message=str(message) if message is not None else "does not conform",

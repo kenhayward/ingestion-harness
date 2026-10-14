@@ -566,3 +566,41 @@ def test_without_rdf_delivered_a_violation_never_stops_the_publish(tmp_path: Pat
     assert queue.completed
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
     assert any(e[2] == "graph violates shapes" for e in queue.events)
+
+
+WARNING_NT = (
+    Graph()
+    .parse(
+        data="""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <https://ex.example/def/> .
+    ex:ProtocolShape a sh:NodeShape ; sh:targetClass ex:Protocol ;
+      sh:property [ sh:path ex:product ; sh:maxLength 5 ; sh:severity sh:Warning ] .""",
+        format="turtle",
+    )
+    .serialize(format="nt", encoding="utf-8")
+)
+
+
+def test_a_step_rerun_replaces_the_shacl_issues_instead_of_counting_them(tmp_path: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), BASE_IRI)
+    deps.store.put("runs", ontology_normalized_key("ex-shapes", 1), WARNING_NT, "text/plain")
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    for _ in range(2):
+        deps.models._providers["local"].responses = [RESPONSES[0]]  # type: ignore[attr-defined]
+        queue.jobs = [replace(JOB, task="rerun", rerun={"step": "header"})]
+        run_once(queue, deps, "w1")
+    document = json.loads(deps.store.get("outputs", "demo/v1/document/doc-1.json"))
+    assert [i["step"] for i in document["issues"]].count("shacl") == 1
+    assert not any("normalisation issue" in r for r in document["review_reasons"])
+
+
+def test_a_publish_without_rdf_needs_no_shapes_file(tmp_path: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
+    del deps.store.objects[("runs", ontology_normalized_key("ex-shapes", 1))]  # type: ignore[attr-defined]
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.reviewed
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")

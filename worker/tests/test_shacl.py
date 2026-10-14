@@ -11,7 +11,7 @@ from rdflib import Graph
 from ingest_worker.llm.registry import ModelRegistry
 from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
 from ingest_worker.rdf import GraphContext, render_graph, validate
-from ingest_worker.shacl import load_graphs, outputs_by_property
+from ingest_worker.shacl import load_graphs, outputs_by_property, validate_with_timeout
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
 from ingest_worker.template import Template
@@ -188,3 +188,23 @@ def test_load_graphs_reads_the_pinned_versions_normalized_triples(fixture_specs_
     assert len(loaded) == len(shapes())
     with pytest.raises(DocumentError, match="acme-shapes v2 is not available"):
         load_graphs(deps, [("acme-shapes", 2)])
+
+
+def test_results_on_ontology_nodes_are_left_out() -> None:
+    # The ontology's acme:Memo has no label: not the document's to fix, so never its violation.
+    labelled = shapes().parse(
+        data=f"""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix acme: <{A}> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        acme:NoteShape a sh:NodeShape ; sh:targetClass acme:Note ;
+          sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .""",
+        format="turtle",
+    )
+    report = validate(graph(), labelled, ontology(), by_property())
+    assert report.results == [] and report.conforms
+
+
+def test_validation_in_a_capped_child_process() -> None:
+    report = validate_with_timeout(graph(sender=None), shapes(), ontology(), by_property(), 60)
+    assert [v.output for v in report.violations()] == ["sender"]
+    with pytest.raises(DocumentError, match="took longer than 0s"):
+        validate_with_timeout(graph(), shapes(), ontology(), by_property(), 0)

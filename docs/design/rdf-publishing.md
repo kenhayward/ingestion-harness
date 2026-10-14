@@ -1039,6 +1039,9 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
    renders a graph without delivering it publishes its CSV/JSON with the violations already
    reviewed. The Mapping editor pins shapes like vocabularies; graph previews carry each
    sample's report.
+   Results whose focus node only the ontologies describe are dropped (no edit could fix
+   them). Previews validate in a child process capped at `GRAPH_TIMEOUT_S`; rendering is
+   not capped.
 6. **Fuseki:** compose service, config, `GraphStorePublisher`, graph identity per source with
    `published_graphs` versions and versioned Turtle copies, `published_entities` and
    `mint_entity_iri`, TBox loads, job graph status,

@@ -250,7 +250,14 @@ def publish_template_job(
     graph = build_graph(job, deps, queue, template, document)
     formats = template.delivery_formats()
     # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
-    report = shacl_check(job, deps, queue, template, graph)
+    if "rdf" in formats:
+        report = shacl_check(job, deps, queue, template, graph)
+    else:
+        # The graph is not delivered: its report is advisory, and missing shapes never block.
+        try:
+            report = shacl_check(job, deps, queue, template, graph)
+        except DocumentError:
+            report = None
     if report is not None and report.violations() and "rdf" in formats:
         raise ShapesViolated([v.reason() for v in report.violations()])
     rendered = render_document(template, document, graph)
@@ -423,7 +430,8 @@ def rerun_template_job(
         trigger="rerun",
         extra_instructions=params.get("instructions"),
     )
-    issues = [i for i in document.get("issues", []) if i.get("step") != step.id]
+    # The SHACL issues are the previous graph's: validated again below.
+    issues = [i for i in document.get("issues", []) if i.get("step") not in (step.id, "shacl")]
     _normalise_step(template, step, result.data, fields, tables, issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
