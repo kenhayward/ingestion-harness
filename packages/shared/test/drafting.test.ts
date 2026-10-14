@@ -601,3 +601,52 @@ describe('mappingStage (ADR 0011)', () => {
     expect(mappingKeepUpTo(null, null)).toBeNull();
   });
 });
+
+describe('a worker-shaped mapping proposal (ADR 0011)', () => {
+  it('parses as a mapping change body, and only for the mapping stage', () => {
+    const body = {
+      notes: 'Retrieval was lexical only for pharma v1: its terms are not embedded for emb/x yet.',
+      changes: [
+        {
+          op: 'setDocumentMapping',
+          document: { class: 'pharma:BatchRecord', iri: 'doc/{source}' },
+          ontologies: [{ id: 'pharma', version: 1 }],
+          prefixes: { pharma: 'https://ex.example/pharma#' },
+          reason: 'r',
+          confidence: 'high',
+        },
+        {
+          op: 'putFieldMapping',
+          field: 'lot',
+          mapping: { property: 'pharma:batchNumber' },
+          reason: 'r',
+          confidence: 'medium',
+          evidence: ['G17230211'],
+          alternatives: [
+            { iri: 'https://ex.example/pharma#productName', label: 'product name', score: 0.016 },
+          ],
+        },
+        {
+          op: 'putTableMapping',
+          table: 'tests',
+          mapping: {
+            link: 'pharma:hasResult',
+            class: 'pharma:TestResult',
+            columns: { assay: { property: 'pharma:testName' } },
+          },
+          reason: 'r',
+          confidence: 'low',
+        },
+        {
+          op: 'putLocalTerm',
+          term: { iri: 'https://l.example/x', kind: 'class', label: 'X' },
+          reason: 'r',
+          confidence: 'low',
+        },
+        { op: 'removeMapping', id: 'tests.ok', reason: 'r', confidence: 'high' },
+      ],
+    };
+    expect(parseChangeBody('mapping', body)?.changes).toHaveLength(5);
+    expect(parseChangeBody('outputs', body)).toBeNull();
+  });
+});
