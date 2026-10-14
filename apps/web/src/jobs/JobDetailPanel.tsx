@@ -47,6 +47,7 @@ export function JobDetailPanel({
   typeModels,
   now,
   wide = false,
+  liveTick,
 }: {
   api: Api;
   job: JobSummary;
@@ -58,6 +59,8 @@ export function JobDetailPanel({
   now: number;
   /** Home: one wide card (summary, progress and facts side by side) instead of a side panel. */
   wide?: boolean;
+  /** Home's live follow: bumped on each quick poll so step runs are re-read while it runs. */
+  liveTick?: number;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
@@ -79,7 +82,7 @@ export function JobDetailPanel({
     return () => {
       cancelled = true;
     };
-  }, [api, job.id, job.status, job.updatedAt]);
+  }, [api, job.id, job.status, job.updatedAt, liveTick]);
 
   const note = callout(job);
   // Only delivered outputs are offered: drafts (awaiting review, test runs) are not deliverables.
