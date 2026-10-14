@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RetirementSchema } from './retirement.js';
 
 /**
  * Document spec format. The Python worker mirrors this in
@@ -229,5 +230,18 @@ export const SpecSummarySchema = z.object({
    * choice (and always for legacy spec.yaml types).
    */
   model: z.string().optional(),
+  /** Set only for a retired document type, listed with `GET /api/specs?retired=include`. */
+  retired: RetirementSchema.optional().describe(
+    'Set only for a retired document type (listed with `?retired=include`).',
+  ),
+  /**
+   * `spec`: a legacy spec.yaml file; `template`: a recipe. The API always sends it
+   * (`DefinitionSummarySchema` makes it required); the Document types page lists `spec` rows
+   * without a database recipe as legacy cards.
+   */
+  kind: z
+    .enum(['spec', 'template'])
+    .optional()
+    .describe('`spec`: a legacy spec.yaml; `template`: a template.'),
 });
 export type SpecSummary = z.infer<typeof SpecSummarySchema>;

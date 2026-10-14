@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectHeader } from '../src/workbench/ProjectHeader.js';
+import { RETIRED_REASON } from '../src/ui/retired.js';
 import { gateView, projectView } from './fake-api.js';
 
 describe('ProjectHeader', () => {
@@ -96,5 +97,24 @@ describe('ProjectHeader', () => {
     );
     expect(screen.getByText('External models allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /models/ })).toBeNull();
+  });
+
+  it('shows Retired and disables Publish for a retired type', () => {
+    render(
+      <ProjectHeader
+        view={projectView({
+          draft: 4,
+          retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' },
+        })}
+        gate={gateView()}
+        role="user"
+        onTogglePolicy={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Retired')).toBeInTheDocument();
+    const publish = screen.getByRole('button', { name: 'Publish v4' });
+    expect(publish).toBeDisabled();
+    expect(publish).toHaveAttribute('title', RETIRED_REASON);
+    expect(screen.queryByRole('link', { name: 'Publish v4' })).toBeNull();
   });
 });

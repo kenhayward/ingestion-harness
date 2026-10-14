@@ -160,9 +160,20 @@ export async function resolveDefinition(
   return file ? { ok: true, definition: file, draft: false } : null;
 }
 
-/** Document types offered for upload: published database templates + file definitions. */
-export async function listDefinitions(deps: AppDeps): Promise<DefinitionSummary[]> {
-  const records = (await deps.templates.list()).filter((r) => r.status === 'published');
+/**
+ * Document types offered for upload: published database recipes + file definitions. Retired
+ * types are left out, or with `includeRetired` listed with their `retired` (old jobs and results
+ * still name them).
+ */
+export async function listDefinitions(
+  deps: AppDeps,
+  { includeRetired = false }: { includeRetired?: boolean } = {},
+): Promise<DefinitionSummary[]> {
+  const [all, retirements] = await Promise.all([
+    deps.templates.list(),
+    deps.templates.listRetirements(),
+  ]);
+  const records = all.filter((r) => r.status === 'published');
   const fromDb: DefinitionSummary[] = records.map((r) => ({
     id: r.id,
     version: r.version,
@@ -173,5 +184,11 @@ export async function listDefinitions(deps: AppDeps): Promise<DefinitionSummary[
   }));
   const seen = new Set(fromDb.map((d) => `${d.id}@${d.version}`));
   const files = deps.specs.list().filter((d) => !seen.has(`${d.id}@${d.version}`));
-  return [...fromDb, ...files].sort((a, b) => a.id.localeCompare(b.id) || a.version - b.version);
+  return [...fromDb, ...files]
+    .flatMap((d) => {
+      const retired = retirements.get(d.id);
+      if (!retired) return [d];
+      return includeRetired ? [{ ...d, retired }] : [];
+    })
+    .sort((a, b) => a.id.localeCompare(b.id) || a.version - b.version);
 }

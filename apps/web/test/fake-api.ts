@@ -289,6 +289,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listSpecs: vi.fn(async () => [
       { id: 'process-validation-protocol', version: 1, title: 'Process Validation Protocol' },
     ]),
+    retireType: vi.fn(async (id: string) => ({
+      id,
+      retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' },
+    })),
     listPickerChoices: vi.fn(async () => MODEL_CHOICES),
     listJobs: vi.fn(async () => []),
     getJob: vi.fn(async (id: string) => ({ ...job({ id }), outputs: [] })),
@@ -535,6 +539,7 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
     draft: 1,
     published: null,
     brief: null,
+    retired: null,
     ...overrides,
   };
 }
@@ -566,6 +571,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     holdoutSamples: 2,
     lastActivityAt: '2026-10-13T08:00:00.000Z',
     flags: { attention: true, running: false, ready: false },
+    retired: null,
     ...overrides,
   };
 }

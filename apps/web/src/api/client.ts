@@ -39,6 +39,7 @@ import type {
   ResultSummary,
   RevisePreview,
   ReviewEdit,
+  Retirement,
   SampleRole,
   SampleView,
   SegmentDocument,
@@ -95,6 +96,8 @@ export interface TemplateListItem {
   description: string | null;
   published: number | null;
   draft: number | null;
+  /** Set when the document type is retired (hidden from new work); null when it is not. */
+  retired: Retirement | null;
   versions: { version: number; status: 'draft' | 'published'; updatedAt: string }[];
   /** Card summary of the version shown (draft first). */
   summary: TemplateSummary;
@@ -282,7 +285,10 @@ export interface Api {
   updateModelChoice(id: string, patch: ChoicePatchBody): Promise<LlmChoiceView>;
   deleteModelChoice(id: string): Promise<void>;
   setLlmSettings(body: SettingsBody): Promise<LlmChoicesView>;
-  listSpecs(): Promise<SpecSummary[]>;
+  /** Document types for upload; `retired: 'include'` lists retired ones too (old jobs' names). */
+  listSpecs(options?: { retired?: 'include' }): Promise<SpecSummary[]>;
+  /** Admins: retire a document type (all its versions). Unretiring is API-only (D14). */
+  retireType(id: string): Promise<{ id: string; retired: Retirement }>;
   /** The model choices every picker offers, the default first (ADR 0010, phase 4c). */
   listPickerChoices(): Promise<ModelChoice[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
@@ -635,7 +641,16 @@ export function createHttpApi(base = '/api'): Api {
       unauthorizedListeners.add(listener);
       return () => unauthorizedListeners.delete(listener);
     },
-    listSpecs: () => apiFetch(`${base}/specs`).then(json<SpecSummary[]>),
+    listSpecs: (options) =>
+      apiFetch(`${base}/specs${options?.retired ? `?retired=${options.retired}` : ''}`).then(
+        json<SpecSummary[]>,
+      ),
+    retireType: (id) =>
+      post<{ id: string; retired: Retirement }>(
+        `${base}/specs/${encodeURIComponent(id)}/retirement`,
+        {},
+        'PUT',
+      ),
     listPickerChoices: () =>
       apiFetch(`${base}/models/choices`)
         .then(json<{ choices: ModelChoice[] }>)
@@ -672,6 +687,7 @@ export function createHttpApi(base = '/api'): Api {
       if (query.filter) params.set('filter', query.filter);
       if (query.phase) params.set('phase', query.phase);
       if (query.policy) params.set('policy', query.policy);
+      if (query.retired) params.set('retired', query.retired);
       if (query.sort) params.set('sort', query.sort);
       if (query.ids?.length) params.set('ids', query.ids.join(','));
       if (query.page) params.set('page', String(query.page));

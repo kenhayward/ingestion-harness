@@ -8,6 +8,7 @@ import {
   type JobDetail,
 } from '@ih/shared';
 import { error, md, noContent, res } from '../openapi/zod.js';
+import { refuseRetired, RETIRED_DOC } from '../templates/retirement.js';
 import { expectedFromDocument } from '../regression/compare.js';
 import { jobDocument, regressionReport, versionReferences } from '../regression/report.js';
 import { ChangeSchema, diffDefinitions } from '../regression/diff.js';
@@ -231,6 +232,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string; version: string } }>(
     '/templates/:id/versions/:version/regression',
     {
+      preHandler: refuseRetired(app),
       schema: {
         tags: ['References & regression'],
         operationId: 'runRegression',
@@ -245,6 +247,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
           201: res('The queued jobs.', z.object({ jobs: z.array(JobSummarySchema) })),
           400: error('`no references yet: save a reviewed job as a reference first`.'),
           404: error('`recipe version not found`.'),
+          409: error(RETIRED_DOC + '.'),
         },
       },
     },

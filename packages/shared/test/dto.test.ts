@@ -113,6 +113,7 @@ const projectView = {
   project,
   draft: 2,
   published: 1,
+  retired: null,
   brief: {
     projectId: 'letter',
     version: 1,

@@ -56,6 +56,24 @@ describe('UploadStrip document types', () => {
       'Memo · v2',
     ]);
   });
+
+  it('never offers a retired document type', async () => {
+    const api = fakeApi({
+      listSpecs: vi.fn(async () => [
+        { id: 'letter', version: 1, title: 'Letter' },
+        {
+          id: 'memo',
+          version: 2,
+          title: 'Memo',
+          retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: null },
+        },
+      ]),
+    });
+    render(<UploadStrip api={api} onUploaded={() => {}} />);
+    await screen.findByRole('option', { name: 'Letter · v1' });
+    expect(screen.queryByRole('option', { name: 'Memo · v2' })).not.toBeInTheDocument();
+    expect(api.listSpecs).toHaveBeenCalledWith();
+  });
 });
 
 describe("UploadStrip names the document type's model", () => {

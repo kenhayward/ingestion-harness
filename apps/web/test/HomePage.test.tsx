@@ -50,6 +50,11 @@ describe('HomePage model names while the choices load', () => {
 });
 
 describe('HomePage', () => {
+  it('lists document types with retired ones included, for the job names (M8)', async () => {
+    const api = home([job({})]);
+    await waitFor(() => expect(api.listSpecs).toHaveBeenCalledWith({ retired: 'include' }));
+  });
+
   it('has the upload strip and the latest job you queued, laid out wide', async () => {
     home([
       job({ filename: 'theirs.pdf', createdBy: 'ops', createdAt: '2026-10-13T10:05:00Z' }),

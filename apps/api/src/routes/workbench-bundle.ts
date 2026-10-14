@@ -29,6 +29,7 @@ import {
 import type { JobEventRecord, ProjectJob } from '../repositories/types.js';
 import { startedChange } from '../templates/changes.js';
 import { pinned } from '../templates/drafts.js';
+import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { TemplateConflictError } from '../templates/repo.js';
 import {
   BUNDLE_TEXT_ALLOWANCE,
@@ -237,6 +238,8 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     ) {
       return answer(409, taken);
     }
+    const retired = await retiredProblem(app.deps, projectId);
+    if (retired) return answer(409, { error: retired });
     const samples = await sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return answer(400, { error: samples });
 
@@ -339,7 +342,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
               'bundle (manifest, recipe, brief, a sample, or the id).',
           ),
           406: error('The request is not `multipart/form-data`.'),
-          409: error('The id is taken: import under another id.'),
+          409: error('The id is taken: import under another id; or ' + RETIRED_DOC + '.'),
           500: error(
             '`import failed after creating project {id}; delete the project and import again`.',
           ),

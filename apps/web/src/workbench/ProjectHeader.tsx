@@ -1,5 +1,6 @@
 import type { GateView, ProjectView } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
+import { RETIRED_REASON, retiredNote } from '../ui/retired.js';
 
 /**
  * Project page header (handoff §2): name, versions, data policy and Publish, which opens the
@@ -30,6 +31,11 @@ export function ProjectHeader({
         <span className="pill tone-info">
           {draft !== null ? `Developing v${draft}` : 'No open draft'}
         </span>
+        {view.retired && (
+          <span className="pill tone-neutral" title={retiredNote(view.retired, project.id)}>
+            Retired
+          </span>
+        )}
         <span className="muted">
           {published !== null && `v${published} published · `}
           <code>{project.id}</code>
@@ -45,11 +51,17 @@ export function ProjectHeader({
             {external ? 'Restrict to local models' : 'Allow external models…'}
           </button>
         )}
-        {draft !== null && gate && (
-          <a className="button" href={`#/workbench/${project.id}/template`} title={gate.reason}>
-            Publish v{draft}
-          </a>
-        )}
+        {draft !== null &&
+          gate &&
+          (view.retired ? (
+            <button type="button" disabled title={RETIRED_REASON}>
+              Publish v{draft}
+            </button>
+          ) : (
+            <a className="button" href={`#/workbench/${project.id}/template`} title={gate.reason}>
+              Publish v{draft}
+            </a>
+          ))}
       </div>
     </header>
   );

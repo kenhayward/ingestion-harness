@@ -7,6 +7,7 @@ import {
   resolveDefinition,
   runnableModels,
 } from '../templates/definitions.js';
+import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 
 /**
@@ -41,6 +42,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           - \`model\` overrides the document type's model for every step: a model choice's id
             from \`GET /api/models/choices\` (\`default\` is the default choice), or an
             offered \`endpoint/model\` ref from \`GET /api/models\`.
+          - A retired document type is refused (409) until an admin unretires it.
 
           The file's bytes decide what it is, never its name: a PDF (starting \`%PDF-\`) or a
           \`.docx\` (a Word document; not \`.docm\`, \`.dotx\` or \`.doc\`) without tracked
@@ -75,6 +77,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           ),
           406: error('The request is not `multipart/form-data`.'),
           413: error('The file is larger than the upload limit.'),
+          409: error(RETIRED_DOC + '.'),
           415: error(`\`${NOT_A_SOURCE}\`.`),
           422: error(
             `\`${TRACKED_CHANGES}\`, or \`the Word document is too large to check (over 64 MiB ` +
@@ -106,6 +109,9 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: 'draft recipes can only be test-run (set test=true)' });
       }
       const spec = resolved.definition;
+      // Before anything is stored or queued: a retired type takes no new work.
+      const retired = await retiredProblem(app.deps, spec.id);
+      if (retired) return reply.code(409).send({ error: retired });
 
       const model = multipartField(file, 'model') || null;
       if (model) {

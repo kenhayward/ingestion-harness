@@ -24,6 +24,7 @@ export function EmbeddedHeader({
   item,
   exportUrl,
   publishBlocker,
+  retired = null,
   onQueued,
   onPublish,
   onNewDraft,
@@ -41,6 +42,8 @@ export function EmbeddedHeader({
   exportUrl: string;
   /** Why Publish cannot run (unsaved edits, validation issues); null when it can. */
   publishBlocker: string | null;
+  /** Why nothing new may run (a retired document type); null otherwise. */
+  retired?: string | null;
   onQueued: () => void;
   onPublish: () => void;
   onNewDraft: () => void;
@@ -64,6 +67,7 @@ export function EmbeddedHeader({
               dirty={dirty}
               dataPolicy={dataPolicy}
               issues={issues}
+              retired={retired}
               onQueued={onQueued}
             />
           )}
@@ -88,7 +92,13 @@ export function EmbeddedHeader({
               </button>
             </>
           ) : (
-            <button type="button" className="primary" onClick={onNewDraft}>
+            <button
+              type="button"
+              className="primary"
+              disabled={retired !== null}
+              title={retired ?? undefined}
+              onClick={onNewDraft}
+            >
               New draft from v{version}
             </button>
           )}

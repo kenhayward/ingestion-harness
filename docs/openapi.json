@@ -1094,7 +1094,21 @@
         "tags": [
           "Specs"
         ],
-        "description": "Every version a document can be uploaded with: published database recipes, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run.",
+        "description": "Every version a document can be uploaded with: published database recipes, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run. Retired document types are left out\nunless `retired=include`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "retired",
+            "required": false,
+            "description": "`include`: list retired document types too, each with `retired`."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The document type versions.",
@@ -1120,6 +1134,28 @@
                       "model": {
                         "type": "string"
                       },
+                      "retired": {
+                        "type": "object",
+                        "properties": {
+                          "retiredAt": {
+                            "type": "string",
+                            "description": "When an admin retired the document type."
+                          },
+                          "retiredBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The label of the token that retired it; null without access control."
+                          }
+                        },
+                        "required": [
+                          "retiredAt",
+                          "retiredBy"
+                        ],
+                        "additionalProperties": true,
+                        "description": "Set only for a retired document type (listed with `?retired=include`)."
+                      },
                       "kind": {
                         "type": "string",
                         "enum": [
@@ -1138,6 +1174,38 @@
                     "additionalProperties": true
                   },
                   "description": "The document type versions."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid query.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid query."
                 }
               }
             }
@@ -2068,6 +2136,269 @@
         }
       }
     },
+    "/api/specs/{id}/retirement": {
+      "put": {
+        "operationId": "retireDocumentType",
+        "summary": "Retire a document type",
+        "tags": [
+          "Specs"
+        ],
+        "description": "Retires every version of a document type (a recipe or a legacy spec). Nothing is\ndeleted: its jobs, results, references and versions stay readable, and jobs already\nqueued or running finish. It is left out of `GET /api/specs` (unless\n`?retired=include`) and of the Workbench list (unless `retired=include`), and new\nwork for it is refused with a 409 `{name} is retired: unretire it to use it again`:\nuploads, retries, test and regression runs, new drafts, publishing, imports and the\nWorkbench actions that queue jobs. Retiring a retired type keeps its first retirement.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The retirement (the first one when it was already retired).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "retired": {
+                      "type": "object",
+                      "properties": {
+                        "retiredAt": {
+                          "type": "string",
+                          "description": "When an admin retired the document type."
+                        },
+                        "retiredBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The label of the token that retired it; null without access control."
+                        }
+                      },
+                      "required": [
+                        "retiredAt",
+                        "retiredBy"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "retired"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The retirement (the first one when it was already retired)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document type not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unretireDocumentType",
+        "summary": "Unretire a document type",
+        "tags": [
+          "Specs"
+        ],
+        "description": "Makes a retired document type available again for uploads and new work. This route is\nthe only way to unretire a type: the web app has no Unretire button (retiring is also on\nthe Document types page). A type that is not retired is left as it is (still a 204).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Unretired."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`: the session was opened with a user token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`admins only`: the session was opened with a user token."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`document type not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/documents": {
       "post": {
         "operationId": "uploadDocument",
@@ -2075,7 +2406,7 @@
         "tags": [
           "Documents"
         ],
-        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft recipe version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
+        "description": "Stores the file in the inbox bucket, records the document and queues a `process`\njob for it. The worker picks the job up; poll `GET /api/jobs/{id}` for its status.\nA Word document (`.docx`) is converted to PDF by the worker first, and then\nprocessed like a PDF (pages come from the converted PDF).\n\nSend the text fields **before** the file part: the upload is read as it streams in, so\nfields after the file are not seen.\n\n- `specId` names the document type; `specVersion` picks a version (default: the\n  latest published one, or the newest spec file).\n- A draft recipe version can only be uploaded as a test run (`test=true`). Test\n  runs can be reviewed but are never delivered to the target.\n- `model` overrides the document type's model for every step: a model choice's id\n  from `GET /api/models/choices` (`default` is the default choice), or an\n  offered `endpoint/model` ref from `GET /api/models`.\n- A retired document type is refused (409) until an admin unretires it.\n\nThe file's bytes decide what it is, never its name: a PDF (starting `%PDF-`) or a\n`.docx` (a Word document; not `.docm`, `.dotx` or `.doc`) without tracked\nchanges. It must fit the upload limit (`MAX_UPLOAD_MB`). The job's\n`contentType` says which it is.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2383,6 +2714,38 @@
                   ],
                   "additionalProperties": true,
                   "description": "The request is not `multipart/form-data`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -3595,7 +3958,7 @@
             }
           },
           "409": {
-            "description": "`job not found or not in a retryable state`.",
+            "description": "`job not found or not in a retryable state`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3621,7 +3984,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`job not found or not in a retryable state`."
+                  "description": "`job not found or not in a retryable state`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -7072,7 +7435,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).",
+        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
         "responses": {
           "200": {
             "description": "The document types.",
@@ -7116,6 +7479,35 @@
                           }
                         ],
                         "description": "The open draft version."
+                      },
+                      "retired": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "retiredAt": {
+                                "type": "string",
+                                "description": "When an admin retired the document type."
+                              },
+                              "retiredBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The label of the token that retired it; null without access control."
+                              }
+                            },
+                            "required": [
+                              "retiredAt",
+                              "retiredBy"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
                       },
                       "versions": {
                         "type": "array",
@@ -7225,6 +7617,7 @@
                       "description",
                       "published",
                       "draft",
+                      "retired",
                       "versions",
                       "summary"
                     ],
@@ -7432,7 +7825,7 @@
             }
           },
           "409": {
-            "description": "`document type {id} already exists`.",
+            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7458,7 +7851,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`document type {id} already exists`."
+                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -8190,7 +8583,7 @@
             }
           },
           "409": {
-            "description": "`{id} v{version} is already published`, or `publish {id} from the Workbench (holdout gate)` for a Workbench document type.",
+            "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8216,7 +8609,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`{id} v{version} is already published`, or `publish {id} from the Workbench (holdout gate)` for a Workbench document type."
+                  "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -8433,7 +8826,7 @@
             }
           },
           "409": {
-            "description": "`a draft already exists; edit or delete it first`.",
+            "description": "`a draft already exists; edit or delete it first`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8459,7 +8852,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a draft already exists; edit or delete it first`."
+                  "description": "`a draft already exists; edit or delete it first`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -8740,7 +9133,7 @@
             }
           },
           "409": {
-            "description": "The version already exists, or `publish {id} from the Workbench (holdout gate)`.",
+            "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8766,7 +9159,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The version already exists, or `publish {id} from the Workbench (holdout gate)`."
+                  "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -9638,6 +10031,38 @@
                   ],
                   "additionalProperties": true,
                   "description": "`recipe version not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -11308,7 +11733,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase`, `policy` and `ids` (comma-separated, at most 20) narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase`, `policy` and `ids`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters. Unused by the\nweb; kept for API consumers.",
+        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase`, `policy` and `ids` (comma-separated, at most 20) narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase`, `policy` and `ids`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request. Retired document types are left out unless `retired=include`, or\n`ids` names them; each row's `retired` is read live.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters. Unused by the\nweb; kept for API consumers.",
         "parameters": [
           {
             "schema": {
@@ -11360,6 +11785,17 @@
             },
             "in": "query",
             "name": "policy",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "retired",
             "required": false
           },
           {
@@ -11647,6 +12083,34 @@
                                   "ready"
                                 ],
                                 "additionalProperties": true
+                              },
+                              "retired": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "retiredAt": {
+                                        "type": "string",
+                                        "description": "When an admin retired the document type."
+                                      },
+                                      "retiredBy": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "description": "The label of the token that retired it; null without access control."
+                                      }
+                                    },
+                                    "required": [
+                                      "retiredAt",
+                                      "retiredBy"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -11670,7 +12134,8 @@
                               "devSamples",
                               "holdoutSamples",
                               "lastActivityAt",
-                              "flags"
+                              "flags",
+                              "retired"
                             ],
                             "additionalProperties": true
                           }
@@ -12065,13 +12530,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The new project."
@@ -12134,7 +12628,7 @@
             }
           },
           "409": {
-            "description": "`a workbench project for {id} already exists`.",
+            "description": "`a workbench project for {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12160,7 +12654,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a workbench project for {id} already exists`."
+                  "description": "`a workbench project for {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -12352,13 +12846,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -12626,13 +13149,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -13266,13 +13818,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "retired": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "retiredAt": {
+                                  "type": "string",
+                                  "description": "When an admin retired the document type."
+                                },
+                                "retiredBy": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "description": "The label of the token that retired it; null without access control."
+                                }
+                              },
+                              "required": [
+                                "retiredAt",
+                                "retiredBy"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "project",
                         "draft",
                         "published",
-                        "brief"
+                        "brief",
+                        "retired"
                       ],
                       "additionalProperties": true
                     }
@@ -13361,7 +13942,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`.",
+            "description": "`no open draft to publish`, `the draft changed while publishing; check the gate again`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13414,7 +13995,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`."
+                  "description": "`no open draft to publish`, `the draft changed while publishing; check the gate again`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -14215,7 +14796,7 @@
             }
           },
           "409": {
-            "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`.",
+            "description": "`a project holds at most 12 samples`, `this file is already a sample of the project`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14241,7 +14822,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`."
+                  "description": "`a project holds at most 12 samples`, `this file is already a sample of the project`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -16045,7 +16626,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`.",
+            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, `<file> is not prepared yet`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16071,7 +16652,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`."
+                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, `<file> is not prepared yet`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -17207,13 +17788,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -19475,7 +20085,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -19501,7 +20111,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -20674,7 +21284,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20700,7 +21310,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -21028,7 +21638,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, `a reference run of this sample is already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21054,7 +21664,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, `a reference run of this sample is already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -24087,7 +24697,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24113,7 +24723,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -24653,7 +25263,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24679,7 +25289,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -26042,13 +26652,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -26346,13 +26985,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The new project."
@@ -26447,7 +27115,7 @@
             }
           },
           "409": {
-            "description": "The id is taken: import under another id.",
+            "description": "The id is taken: import under another id; or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26473,7 +27141,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The id is taken: import under another id."
+                  "description": "The id is taken: import under another id; or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -27249,13 +27917,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "retired": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "retiredAt": {
+                                  "type": "string",
+                                  "description": "When an admin retired the document type."
+                                },
+                                "retiredBy": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "description": "The label of the token that retired it; null without access control."
+                                }
+                              },
+                              "required": [
+                                "retiredAt",
+                                "retiredBy"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "project",
                         "draft",
                         "published",
-                        "brief"
+                        "brief",
+                        "retired"
                       ],
                       "additionalProperties": true
                     },
@@ -31429,7 +32126,7 @@
     },
     {
       "name": "Specs",
-      "description": "Document definitions loaded from the repository's `specs/` folder (legacy `spec.yaml` and\n`template.yaml`). Versions are immutable once published."
+      "description": "Document types as uploads see them: database recipes and the definitions loaded from the\nrepository's `specs/` folder (legacy `spec.yaml` and `template.yaml`). Versions are\nimmutable once published. An admin can retire a document type (hidden from new work, still\nreadable; also on the Document types page) and unretire it (here only)."
     },
     {
       "name": "Recipes",
