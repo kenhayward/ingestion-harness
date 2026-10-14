@@ -604,3 +604,161 @@ def test_a_publish_without_rdf_needs_no_shapes_file(tmp_path: Path) -> None:
     run_once(queue, deps, "w1")
     assert queue.completed and not queue.reviewed
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+
+
+# --- Fuseki (ADR 0011 step 6) ----------------------------------------------------------------
+
+SOURCE_SHA = hashlib.sha256(b"%PDF").hexdigest()
+GRAPH_IRI = f"{BASE_IRI}graph/source/{SOURCE_SHA}/demo"
+
+
+def to_publish(
+    tmp_path: Path,
+    formats: list[str] | None = None,
+    store: bool = True,
+    semantics: dict[str, Any] | None = None,
+) -> tuple[PipelineDeps, MemoryObjectStore, FakeQueue]:
+    """A reviewed job of a mapped recipe, about to be published (registry, optional store)."""
+    from ingest_worker.graph_registry import MemoryGraphRegistry
+
+    from .fakes import FakeGraphStore
+
+    template = {
+        **TEMPLATE,
+        "review": {"required": "always"},
+        "semantics": semantics or ENTITY,
+        "delivery": {"formats": formats or ["json", "rdf"]},
+    }
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    deps = replace(
+        deps,
+        graph_registry=MemoryGraphRegistry(),
+        graph_store=FakeGraphStore() if store else None,
+    )
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.awaiting
+    queue.jobs = [replace(JOB, task="publish")]
+    queue.decisions["job-1"] = {
+        "reviewer": "kh",
+        "note": None,
+        "reviewed_at": "2026-10-14T10:05:00Z",
+    }
+    return deps, target, queue
+
+
+def graph_event(queue: FakeQueue) -> dict[str, Any]:
+    [data] = [d for _, _, m, d in queue.event_details if m == "graph published"]
+    return data
+
+
+def test_a_publish_puts_the_versioned_graph_into_the_store(tmp_path: Path) -> None:
+    deps, target, queue = to_publish(tmp_path)
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    store = deps.graph_store
+    [(method, graph, body, ctype)] = store.requests  # type: ignore[union-attr]
+    assert (method, graph, ctype) == ("PUT", GRAPH_IRI, "text/turtle")
+    assert body is not None
+    put = Graph().parse(data=body, format="turtle")
+    assert (URIRef(GRAPH_IRI), URIRef(f"{CT}graphVersion"), Literal(1)) in put
+    copy = target.get("published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert copy == body
+    current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
+    assert current is not None and current.version == 1 and current.job_id == "job-1"
+    assert current.base_iri == BASE_IRI and current.triples == len(put) - 2
+    assert graph_event(queue) == {
+        "graph": GRAPH_IRI,
+        "version": 1,
+        "triples": current.triples,
+        "endpoint": True,
+    }
+    product = f"{BASE_IRI}product/richfer-capsules"
+    assert deps.graph_registry.entity(product) == (  # type: ignore[union-attr]
+        "https://ex.example/def/Product",
+        ["Richfer capsules"],
+    )
+
+
+def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_path: Path) -> None:
+    deps, target, queue = to_publish(tmp_path)
+    run_once(queue, deps, "w1")
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    store = deps.graph_store
+    assert [r[1] for r in store.requests] == [GRAPH_IRI, GRAPH_IRI]  # type: ignore[union-attr]
+    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v2.ttl")
+    versions = [d["version"] for _, _, m, d in queue.event_details if m == "graph published"]
+    assert versions == [1, 2]
+
+
+def test_without_a_store_the_version_is_still_recorded(tmp_path: Path) -> None:
+    deps, target, queue = to_publish(tmp_path, store=False)
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert graph_event(queue)["endpoint"] is False
+
+
+def test_a_recipe_not_delivering_rdf_publishes_no_graph(tmp_path: Path) -> None:
+    deps, target, queue = to_publish(tmp_path, formats=["csv", "json"])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert deps.graph_store.requests == []  # type: ignore[union-attr]
+    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+    assert not any(k.startswith("pvp/graphs/") for _, k in target.objects)  # type: ignore[attr-defined]
+
+
+def test_an_approved_test_run_never_touches_the_store(tmp_path: Path) -> None:
+    deps, _, queue = to_publish(tmp_path)
+    queue.jobs = [replace(JOB, task="publish", test=True)]
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert deps.graph_store.requests == []  # type: ignore[union-attr]
+    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+
+
+def test_a_store_outage_is_retried_and_records_nothing(tmp_path: Path) -> None:
+    from ingest_worker.graph_store import GraphStoreUnavailable
+
+    deps, _, queue = to_publish(tmp_path)
+    deps.graph_store.fail = GraphStoreUnavailable("graph store answered 503")  # type: ignore[union-attr]
+    run_once(queue, deps, "w1")
+    assert queue.failed and "503" in queue.failed[0][1]
+    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+    deps.graph_store.fail = None  # type: ignore[union-attr]
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    assert graph_event(queue)["version"] == 1  # the retry is the first version
+
+
+def test_a_refused_graph_goes_to_review(tmp_path: Path) -> None:
+    from ingest_worker.graph_store import GraphStoreRejected
+
+    deps, _, queue = to_publish(tmp_path)
+    deps.graph_store.fail = GraphStoreRejected("graph store refused the PUT (400): bad")  # type: ignore[union-attr]
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert "refused the PUT (400)" in reason
+    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+
+
+def test_the_pinned_ontologies_are_loaded_once_per_base(tmp_path: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    pinned = {**ENTITY, "ontologies": [{"id": "ex", "version": 2}]}
+    deps, _, queue = to_publish(tmp_path, semantics=pinned)
+    nt = b'<https://ex.example/def/Product> <http://www.w3.org/2000/01/rdf-schema#label> "Product" .\n'
+    deps.store.put("runs", ontology_normalized_key("ex", 2), nt, "application/n-triples")
+    run_once(queue, deps, "w1")
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    tbox = f"{BASE_IRI}graph/ontology/ex/2"
+    requests = deps.graph_store.requests  # type: ignore[union-attr]
+    assert [(r[0], r[1], r[3]) for r in requests] == [
+        ("PUT", tbox, "application/n-triples"),
+        ("PUT", GRAPH_IRI, "text/turtle"),
+        ("PUT", GRAPH_IRI, "text/turtle"),
+    ]
+    assert requests[0][2] == nt
+    assert deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]

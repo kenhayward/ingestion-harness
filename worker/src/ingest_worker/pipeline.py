@@ -38,6 +38,8 @@ from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 if TYPE_CHECKING:
+    from .graph_registry import GraphRegistry
+    from .graph_store import GraphStore
     from .linked_data import LinkedDataSettings
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
@@ -136,6 +138,10 @@ class PipelineDeps:
     linked_data: LinkedDataSettings | None = None
     #: The `embedding_model` setting (an `endpoint/model-id`); None: lexical retrieval only.
     embedding_model: str | None = None
+    #: The published graphs' versions and entities (None: delivered graphs are not recorded).
+    graph_registry: GraphRegistry | None = None
+    #: The triple store (RDF_ENDPOINT; None: delivered graphs go to S3 only).
+    graph_store: GraphStore | None = None
 
 
 @dataclass(frozen=True)

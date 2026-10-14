@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 import signal
 import threading
 import time
@@ -17,6 +18,8 @@ from .convert import GotenbergConverter
 from .drafting import run_draft
 from .embeddings import run_embed
 from .graph_preview import run_graph_preview
+from .graph_registry import PgGraphRegistry
+from .graph_store import graph_store_from_env
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
@@ -248,6 +251,9 @@ def main() -> None:
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),
         embedding_model=live.embedding_model,
+        # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
+        graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
+        graph_store=graph_store_from_env(os.environ),
         ontology_max_triples=settings.ontology_max_triples,
         ontology_fetch=(
             functools.partial(

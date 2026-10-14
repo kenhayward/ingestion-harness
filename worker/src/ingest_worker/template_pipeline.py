@@ -27,6 +27,8 @@ import psycopg
 from rdflib import Graph
 
 from .extract import ExtractionResult
+from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
+from .graph_store import GraphStore
 from .llm.base import LLMProvider
 from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
@@ -46,12 +48,19 @@ from .pipeline import (
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
-from .rdf import GraphContext, ShaclReport, render_graph, to_turtle, validate
+from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
 from .review import apply_edits, run_checks
 from .shacl import load_graphs, outputs_by_property
 from .specs import Extraction, LoadedTemplate
 from .step_cache import StepCache
-from .storage import output_key, page_preview_key, reviewed_document_key, shacl_report_key
+from .storage import (
+    graph_version_key,
+    ontology_normalized_key,
+    output_key,
+    page_preview_key,
+    reviewed_document_key,
+    shacl_report_key,
+)
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
@@ -65,6 +74,9 @@ STEP_PROGRESS = "step progress"
 GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
 #: Job event when a graph that is not delivered could not be rendered (CSV/JSON still are).
 GRAPH_FAILED = "graph failed"
+#: Job event when a delivered graph was published (`{graph, version, triples, endpoint}`;
+#: TS: GRAPH_PUBLISHED_EVENT).
+GRAPH_PUBLISHED = "graph published"
 #: Job event when the document's graph violates the recipe's shapes.
 GRAPH_VIOLATES = "graph violates shapes"
 
@@ -88,6 +100,9 @@ class RenderedGraph:
     turtle: bytes
     triples: int
     graph: Graph
+    #: The base IRI it was minted under (read once per job).
+    base: str = ""
+    entities: tuple[EntityRecord, ...] = ()
 
 
 Progress = Callable[[int, dict[str, Any] | None], None]
@@ -262,8 +277,87 @@ def publish_template_job(
         raise ShapesViolated([v.reason() for v in report.violations()])
     rendered = render_document(template, document, graph)
     published = publish_outputs(deps, [o for o in rendered if o.format in formats])
+    if graph is not None and "rdf" in formats:
+        publish_graph(job, deps, queue, template, document, graph)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+def publish_graph(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+    rendered: RenderedGraph,
+) -> int | None:
+    """Publish a delivered graph as the next version of its (file, document type) graph: the
+    versioned copy in the target, the pinned ontologies' TBox graphs not loaded yet under this
+    base, and the store's PUT, then the version and its entities (one transaction, holding the
+    graph's lock). None when nothing is delivered (no target or no registry)."""
+    registry, target, store = deps.graph_registry, deps.target, deps.graph_store
+    if registry is None or target is None:
+        return None
+    sha = str(document["source_sha256"])
+    record = GraphPublish(
+        sha256=sha,
+        template_id=template.id,
+        graph_iri=str(rendered.graph.identifier),
+        job_id=job.id,
+        document_id=job.document_id,
+        template_version=template.version,
+        base_iri=rendered.base,
+        triples=rendered.triples,
+        entities=list(rendered.entities),
+    )
+    published_at = datetime.now(UTC).isoformat()
+
+    def write(version: int) -> None:
+        body = to_turtle(with_version(rendered.graph, version, published_at))
+        key = target.prefix + graph_version_key(sha, template.id, version)
+        target.store.put(target.bucket, key, body, "text/turtle")
+        if store is not None:
+            load_tbox(deps, store, registry, template, rendered.base)
+            store.put(record.graph_iri, body, "text/turtle")
+
+    version = registry.publish(record, write)
+    queue.event(
+        job.id,
+        "info",
+        GRAPH_PUBLISHED,
+        {
+            "graph": record.graph_iri,
+            "version": version,
+            "triples": record.triples,
+            "endpoint": store is not None,
+        },
+    )
+    return version
+
+
+def load_tbox(
+    deps: PipelineDeps,
+    store: GraphStore,
+    registry: GraphRegistry,
+    template: Template,
+    base: str,
+) -> None:
+    """Load each pinned ontology and shapes version not yet in the store under this base, as
+    its own graph `{base}graph/ontology/{id}/{version}`."""
+    semantics = template.semantics
+    if semantics is None:
+        return
+    for pin in {(p.id, p.version) for p in [*semantics.ontologies, *semantics.shapes]}:
+        if registry.ontology_loaded(pin[0], pin[1], base):
+            continue
+        data = deps.store.get_optional(deps.buckets.runs, ontology_normalized_key(*pin))
+        if data is None:
+            raise DocumentError(
+                f"{pin[0]} v{pin[1]} is not available: import it again in the library"
+            )
+        graph_iri = f"{base}graph/ontology/{pin[0]}/{pin[1]}"
+        store.put(graph_iri, data, "application/n-triples")
+        registry.record_ontology(pin[0], pin[1], base, graph_iri)
 
 
 def context_values(
@@ -593,7 +687,8 @@ def build_graph(
         return store.concept_by_label(pins, scheme, label) if store else None
 
     try:
-        graph = render_graph(template, document, GraphContext(base, concepts))
+        rendering = render(template, document, GraphContext(base, concepts))
+        graph = rendering.graph
         turtle = to_turtle(graph)
     except psycopg.Error:
         raise  # the ontology library is unreachable: retried like any outage
@@ -602,7 +697,7 @@ def build_graph(
             raise DocumentError(f"cannot render the graph: {exc}") from exc
         queue.event(job.id, "warn", GRAPH_FAILED, {"error": str(exc)})
         return None
-    return RenderedGraph(turtle, len(graph), graph)
+    return RenderedGraph(turtle, len(graph), graph, base, tuple(rendering.entities))
 
 
 def shacl_check(
