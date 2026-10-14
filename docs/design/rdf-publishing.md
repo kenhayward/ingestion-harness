@@ -309,7 +309,11 @@ Implemented in rollout step 3 (migration 0034):
   versions exist and are ready, every CURIE expands, every term is in a pinned version (imports
   included, one `termKinds` query) or declared `local`, with a kind that fits its position.
   Terms of the built-in vocabularies (rdf, rdfs, owl, xsd, skos, dcterms, prov) need no pin.
-  Unmapped outputs are warnings (`severity: 'warning'`), which never block publishing.
+  Unmapped outputs are warnings (`severity: 'warning'`), which never block publishing. IRI
+  templates may name only the values in scope (document: `source`, `type`, `version`; a field's
+  entity: `value`; a row: its columns; a column's entity: `value` and the columns) with the
+  filters `slug` and `upper`; base IRIs, namespaces, terms and template text cannot carry
+  characters an IRI cannot (`IRI_UNSAFE`); matching concepts by label needs a scheme.
 - **Linked data settings:** `GET|PUT /api/linked-data/settings` (admin) and
   `GET /api/linked-data/base`; `.env` `LINKED_DATA_CUSTOMER=slug=Name` and
   `LINKED_DATA_BASE_IRI` seed them once. Changing the effective base after RDF was published
@@ -324,7 +328,10 @@ Implemented in rollout step 3 (migration 0034):
 - **Outputs:** a mapped recipe drafts `graph` (`.ttl`, `text/turtle`, format `rdf`) once a base
   is set; without one the job logs `graph skipped: set the customer on the Linked data page` and
   delivers the rest. Publishing (approval and the no-review path) delivers only
-  `delivery.formats`.
+  `delivery.formats`. The graph never costs the other outputs: when RDF is not delivered, a
+  graph that cannot be rendered or serialised is a `graph failed` event and no graph; when it is
+  delivered, that failure goes to review, and so does a recipe delivering only RDF while no base
+  is set.
 - **Graph previews:** `POST /api/workbench/projects/:id/graph-previews` queues a `graph` job
   (project-scoped, `priority = -5`, one per project) over each dev sample's newest finished
   test run; the worker writes `graphs/{project}/{job}.json`. Like segment previews, these jobs

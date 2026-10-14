@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Comparison, GateHint, IterationSummary } from '@ih/shared';
 import {
+  evaluateBlocker,
+  referenceCounts,
+  runningEvaluation,
   accuracyLabel,
   accuracyList,
   accuracyTone,
@@ -243,5 +246,96 @@ describe('hintText', () => {
     ],
   ])('%j', (hint, text) => {
     expect(hintText(hint)).toBe(text);
+  });
+});
+
+describe('evaluateBlocker (why Evaluate on a set is disabled)', () => {
+  const run = (o: Partial<IterationSummary>): IterationSummary => ({
+    id: crypto.randomUUID(),
+    projectId: 'letter',
+    templateVersion: 3,
+    briefVersion: null,
+    set: 'dev',
+    model: null,
+    groupId: null,
+    uncached: false,
+    createdAt: '2026-10-14T10:00:00Z',
+    status: 'complete',
+    score: 0.8,
+    completed: 4,
+    total: 4,
+    ...o,
+  });
+  const base = {
+    retired: null,
+    draft: 3,
+    set: 'dev' as const,
+    refs: { verified: 4, outdated: 0 },
+    history: [run({})],
+    comparing: false,
+    busy: false,
+  };
+
+  it.each<[string, Partial<Parameters<typeof evaluateBlocker>[0]>, string | null]>([
+    ['nothing in the way, even after an earlier dev run', {}, null],
+    ['a retired type', { retired: 'Letter is retired' }, 'Letter is retired'],
+    ['no draft', { draft: null }, 'Start a draft version first'],
+    [
+      'no references at all',
+      { refs: { verified: 0, outdated: 0 } },
+      'No verified dev references yet — save some on the References tab',
+    ],
+    [
+      'references outdated by an output change',
+      { refs: { verified: 0, outdated: 3 } },
+      '3 dev references are outdated by output changes in v3: re-verify them on the References tab',
+    ],
+    [
+      'one outdated reference',
+      { refs: { verified: 0, outdated: 1 } },
+      '1 dev reference is outdated by output changes in v3: re-verify it on the References tab',
+    ],
+    ['some still verified', { refs: { verified: 1, outdated: 3 } }, null],
+    ['counts not known yet', { refs: undefined }, null],
+    [
+      'a run of this draft still going',
+      { history: [run({ status: 'running' })] },
+      'An evaluation of v3 on dev is still running',
+    ],
+    [
+      "an older version's run stuck: not in the way",
+      { history: [run({ status: 'running', templateVersion: 2 })] },
+      null,
+    ],
+    [
+      'a running holdout run does not block dev',
+      { history: [run({ status: 'running', set: 'holdout' })] },
+      null,
+    ],
+    [
+      'a model comparison member is not this set’s run',
+      { history: [run({ status: 'running', groupId: crypto.randomUUID() })] },
+      null,
+    ],
+    ['a comparison running here', { comparing: true }, 'A model comparison is still running'],
+    ['starting', { busy: true }, 'Starting…'],
+  ])('%s', (_, over, reason) => {
+    expect(evaluateBlocker({ ...base, ...over })).toBe(reason);
+  });
+
+  it('finds the running evaluation of this draft and set', () => {
+    const going = run({ status: 'running', completed: 1 });
+    expect(runningEvaluation([run({}), going], 3, 'dev')).toBe(going);
+    expect(runningEvaluation([going], 2, 'dev')).toBeNull();
+  });
+
+  it('counts verified and outdated references', () => {
+    const ref = (outdated: string[]) => ({ reference: { outdated } }) as never;
+    expect(
+      referenceCounts([ref([]), ref(['field:a']), ref([]), { reference: null } as never]),
+    ).toEqual({
+      verified: 2,
+      outdated: 1,
+    });
   });
 });

@@ -82,8 +82,12 @@ export interface OverviewInputs {
   stages: readonly Pick<StageView, 'stage' | 'state' | 'completedAt'>[];
   /** The newest revise proposal's status; null when revise never ran. */
   revise: ProposalStatus | null;
-  /** An evaluation of the open draft (dev or holdout) is queued or running. */
-  evaluation: { running: boolean };
+  /**
+   * `running`: an evaluation of the open draft (dev or holdout) is queued or running.
+   * `revisedSince`: a revision was applied to the open draft after its newest evaluation (or it
+   * has none), so the next step is to see whether the revision helped (absent: false).
+   */
+  evaluation: { running: boolean; revisedSince?: boolean };
   gate: GateView;
 }
 
@@ -197,6 +201,10 @@ export function nextAction(
   const running = first('running');
   if (running) {
     return { kind: 'running', stage: running, label: `${OVERVIEW_LABEL[running]} running` };
+  }
+  // A revision nobody has evaluated yet: evaluate it on dev before deciding anything else.
+  if (inputs.evaluation.revisedSince) {
+    return { kind: 'continue', stage: 'evaluate', label: `Evaluate v${inputs.draft} on dev` };
   }
   const { gate } = inputs;
   // A holdout run decided the gate and it fails: below the threshold, or coverage/comparison incomplete.
@@ -610,11 +618,13 @@ export function overviewNext(
     };
   }
   const reason =
-    action.kind !== 'publish'
-      ? ''
-      : inputs.gate.passes
-        ? sentence(inputs.gate.reason)
-        : 'References and evaluation are optional.';
+    action.kind === 'continue' && action.stage === 'evaluate'
+      ? 'A revision was applied since the last evaluation: see whether it helped.'
+      : action.kind !== 'publish'
+        ? ''
+        : inputs.gate.passes
+          ? sentence(inputs.gate.reason)
+          : 'References and evaluation are optional.';
   return { stage: action.stage, title: `Next: ${lowerFirst(action.label)}`, reason };
 }
 
