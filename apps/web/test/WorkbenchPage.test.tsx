@@ -410,3 +410,32 @@ describe('WorkbenchPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('list down');
   });
 });
+
+describe('WorkbenchPage retired projects (D18)', () => {
+  const retired = { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' };
+
+  it('never asks the main list for retired projects, and has no toggle for them', async () => {
+    const api = fakeApi();
+    page(api);
+    await screen.findByRole('table');
+    expect(listCalls(api).every((q) => q.retired === undefined)).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: /retired/i })).toBeNull();
+  });
+
+  it('still shows a pinned retired project as a card, tagged Retired', async () => {
+    const api = fakeApi({
+      listPins: vi.fn(async () => ['invoice']),
+      listProjectPage: vi.fn(async (q: Query) =>
+        q.ids ? projectListPage({ items: [{ ...invoice, retired }], total: 1 }) : projectListPage(),
+      ),
+    });
+    page(api);
+    const cards = await screen.findByRole('region', { name: 'Pinned and recent' });
+    const tag = await within(cards).findByText('Retired');
+    expect(tag).toHaveAttribute(
+      'title',
+      'Retired by ken on 14 Oct 2026. An admin can unretire it through the API: DELETE /api/specs/invoice/retirement.',
+    );
+    expect(within(cards).queryByRole('button', { name: /unretire/i })).toBeNull();
+  });
+});

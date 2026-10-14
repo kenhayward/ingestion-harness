@@ -2,6 +2,7 @@ import { percent, type ProjectListItem } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { NextAction } from '../ui/NextAction.js';
 import { ProgressStrip } from '../ui/ProgressStrip.js';
+import { retiredNote } from '../ui/retired.js';
 import { formatCount, nextHref, phaseLine } from './listDerive.js';
 
 const projectHref = (id: string) => `#/workbench/${id}`;
@@ -97,6 +98,11 @@ export function ProjectCard({
           {item.name}
         </a>
         {item.dataPolicy === 'external' && <span className="ext-tag">EXT</span>}
+        {item.retired && (
+          <span className="retired-tag" title={retiredNote(item.retired, item.id)}>
+            Retired
+          </span>
+        )}
         <span className="muted project-card-time">{relativeTime(item.lastActivityAt, now)}</span>
       </header>
       <ProgressStrip stages={item.stages} />
@@ -151,6 +157,11 @@ export function ProjectTable({
                       {item.name}
                     </a>
                     {item.dataPolicy === 'external' && <span className="ext-tag">EXT</span>}
+                    {item.retired && (
+                      <span className="retired-tag" title={retiredNote(item.retired, item.id)}>
+                        Retired
+                      </span>
+                    )}
                   </span>
                   <span className="project-id mono">{item.id}</span>
                 </td>

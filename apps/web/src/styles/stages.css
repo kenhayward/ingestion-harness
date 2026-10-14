@@ -581,13 +581,18 @@
 .projects .muted {
   color: var(--ih-muted);
 }
-.ext-tag {
+.ext-tag,
+.retired-tag {
   padding: 0 6px;
   border-radius: 999px;
   font-size: var(--ih-text-xs);
   font-weight: 600;
   background: var(--ih-warn-bg);
   color: var(--ih-warn-fg);
+}
+.retired-tag {
+  background: var(--ih-skip-bg);
+  color: var(--ih-skip-fg);
 }
 .pin-button {
   display: inline-flex;
