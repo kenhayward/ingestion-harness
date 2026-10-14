@@ -276,3 +276,19 @@ def test_local_name(iri: str, name: str) -> None:
 
 def test_normalized_key() -> None:
     assert ontology_normalized_key("idmp-o", 3) == "ontologies/idmp-o/v3/normalized.nt"
+
+
+def test_a_union_superclass_is_not_a_parent() -> None:
+    # A ⊑ (B ⊔ C) does not make A a subclass of B or of C; unions only widen domains and ranges.
+    ttl = (
+        PREFIXES
+        + """
+    ex:B a owl:Class .
+    ex:C a owl:Class .
+    ex:A a owl:Class ; rdfs:subClassOf [ owl:unionOf ( ex:B ex:C ) ] .
+    """
+    )
+    parsed = parse_ontology(ttl.encode(), "text/turtle", "union.ttl")
+    a = term(parsed, "https://example.org/pv#A")
+    assert a.parents == [] and a.root
+    assert term(parsed, "https://example.org/pv#B").child_count == 0

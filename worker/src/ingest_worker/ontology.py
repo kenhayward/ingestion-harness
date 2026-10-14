@@ -210,13 +210,14 @@ def _pick(values: list[RdfLiteral]) -> RdfLiteral | None:
     return None
 
 
-def _iris(graph: Graph, values: Iterable[Any]) -> list[str]:
-    """IRIs among the values, expanding `owl:unionOf` lists; other blank nodes are dropped."""
+def _iris(graph: Graph, values: Iterable[Any], *, unions: bool = False) -> list[str]:
+    """IRIs among the values; blank nodes are dropped, except that `unions` expands an
+    `owl:unionOf` list (right for a domain or range, wrong for a superclass)."""
     out: set[str] = set()
     for value in values:
         if isinstance(value, URIRef):
             out.add(str(value))
-        elif isinstance(value, BNode):
+        elif unions and isinstance(value, BNode):
             for members in graph.objects(value, OWL.unionOf):
                 out.update(str(m) for m in Collection(graph, members) if isinstance(m, URIRef))
     return sorted(out)
@@ -259,8 +260,8 @@ def _term(graph: Graph, iri: URIRef, kind: TermKind) -> Term:
         parents = _iris(graph, graph.objects(iri, RDFS.subClassOf))
     elif kind in PROPERTY_KINDS:
         parents = _iris(graph, graph.objects(iri, RDFS.subPropertyOf))
-        domain = _iris(graph, graph.objects(iri, RDFS.domain))
-        range_ = _iris(graph, graph.objects(iri, RDFS.range))
+        domain = _iris(graph, graph.objects(iri, RDFS.domain), unions=True)
+        range_ = _iris(graph, graph.objects(iri, RDFS.range), unions=True)
     elif kind == "concept":
         schemes = _iris(graph, graph.objects(iri, SKOS.inScheme)) or _iris(
             graph, graph.objects(iri, SKOS.topConceptOf)
