@@ -12628,7 +12628,7 @@
             }
           },
           "409": {
-            "description": "`a workbench project for {id} already exists`.",
+            "description": "`a workbench project for {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12654,7 +12654,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a workbench project for {id} already exists`."
+                  "description": "`a workbench project for {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -13942,7 +13942,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`.",
+            "description": "`no open draft to publish`, `the draft changed while publishing; check the gate again`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13995,7 +13995,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to publish`, or `the draft changed while publishing; check the gate again`."
+                  "description": "`no open draft to publish`, `the draft changed while publishing; check the gate again`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -14796,7 +14796,7 @@
             }
           },
           "409": {
-            "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`.",
+            "description": "`a project holds at most 12 samples`, `this file is already a sample of the project`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14822,7 +14822,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a project holds at most 12 samples`, or `this file is already a sample of the project`."
+                  "description": "`a project holds at most 12 samples`, `this file is already a sample of the project`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -16626,7 +16626,7 @@
             }
           },
           "409": {
-            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`.",
+            "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, `<file> is not prepared yet`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16652,7 +16652,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, or `<file> is not prepared yet`."
+                  "description": "`no open draft to test; start the next version first`, `no prepared dev samples to run`, `<file> is not prepared yet`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -20085,7 +20085,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20111,7 +20111,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -21284,7 +21284,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21310,7 +21310,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, or `reference runs are already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, `no prepared holdout samples to run`, `every holdout sample already has a reference`, `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -21638,7 +21638,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, `a reference run of this sample is already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21664,7 +21664,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab` or `a reference run of this sample is already running`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, `a reference run of this sample is already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -24697,7 +24697,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -24723,7 +24723,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -25263,7 +25263,7 @@
             }
           },
           "409": {
-            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`.",
+            "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25289,7 +25289,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`."
+                  "description": "`no open draft; start the next version on the Recipe tab`, or `no verified references for the {set} samples; verify …`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -27115,7 +27115,7 @@
             }
           },
           "409": {
-            "description": "The id is taken: import under another id.",
+            "description": "The id is taken: import under another id; or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -27141,7 +27141,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The id is taken: import under another id."
+                  "description": "The id is taken: import under another id; or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
