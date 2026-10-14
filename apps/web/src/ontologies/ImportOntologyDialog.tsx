@@ -1,10 +1,22 @@
-import { useId, useState, type FormEvent } from 'react';
-import { ONTOLOGY_ACCEPT, ONTOLOGY_ID_RE, type OntologySummary } from '@ih/shared';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import {
+  ONTOLOGY_ACCEPT,
+  ONTOLOGY_ID_RE,
+  ontologyUrlProblem,
+  type OntologySettings,
+  type OntologySummary,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
+import { Segmented } from '../ui/Segmented.js';
 import { slugify, splitTags } from './derive.js';
 
-/** Import a file as a new ontology, or as the next version of an existing one (same id). */
+type Source = 'file' | 'url';
+
+/**
+ * Import a file, or an allowlisted URL the worker fetches, as a new ontology or as the next
+ * version of an existing one (same id).
+ */
 export function ImportOntologyDialog({
   api,
   existing,
@@ -17,7 +29,10 @@ export function ImportOntologyDialog({
   onImported: () => void;
 }) {
   const formId = useId();
+  const [source, setSource] = useState<Source>('file');
   const [file, setFile] = useState<File | null>(null);
+  const [url, setUrl] = useState('');
+  const [settings, setSettings] = useState<OntologySettings | null>(null);
   const [label, setLabel] = useState('');
   const [id, setId] = useState('');
   const [idEdited, setIdEdited] = useState(false);
@@ -26,23 +41,32 @@ export function ImportOntologyDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (source !== 'url' || settings) return;
+    api.getOntologySettings().then(setSettings, (err: Error) => setError(err.message));
+  }, [api, source, settings]);
+
   const trimmed = id.trim();
   const match = existing.find((o) => o.id === trimmed);
+  const hosts = settings?.fetchHosts ?? [];
+  const off = settings !== null && !hosts.some((h) => h.trim());
+  const urlProblem = url.trim() ? ontologyUrlProblem(url.trim(), hosts) : null;
+  const hasSource =
+    source === 'file' ? file !== null : settings !== null && url.trim() !== '' && !urlProblem;
   const ready =
-    file !== null && ONTOLOGY_ID_RE.test(trimmed) && (match !== undefined || label.trim() !== '');
+    hasSource && ONTOLOGY_ID_RE.test(trimmed) && (match !== undefined || label.trim() !== '');
 
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
-    if (!file || !ready) return;
+    if (!ready) return;
     setBusy(true);
     setError(null);
+    const fields = match
+      ? { id: trimmed }
+      : { id: trimmed, label: label.trim(), tags: splitTags(tags), localOnly };
     try {
-      await api.importOntology(
-        file,
-        match
-          ? { id: trimmed }
-          : { id: trimmed, label: label.trim(), tags: splitTags(tags), localOnly },
-      );
+      if (source === 'file' && file) await api.importOntology(file, fields);
+      else await api.importOntologyFromUrl({ ...fields, url: url.trim() });
       onImported();
     } catch (err) {
       setError((err as Error).message);
@@ -62,15 +86,52 @@ export function ImportOntologyDialog({
       }
     >
       <form id={formId} className="dialog-form" onSubmit={(ev) => void submit(ev)}>
-        <label>
-          Ontology file
-          <input
-            type="file"
-            accept={ONTOLOGY_ACCEPT}
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <p className="muted">Turtle, RDF/XML, JSON-LD, N-Triples or N3 ({ONTOLOGY_ACCEPT}).</p>
+        <Segmented
+          label="Source"
+          options={[
+            { value: 'file', label: 'From a file' },
+            { value: 'url', label: 'From a URL' },
+          ]}
+          value={source}
+          onChange={setSource}
+        />
+        {source === 'file' ? (
+          <>
+            <label>
+              Ontology file
+              <input
+                type="file"
+                accept={ONTOLOGY_ACCEPT}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <p className="muted">Turtle, RDF/XML, JSON-LD, N-Triples or N3 ({ONTOLOGY_ACCEPT}).</p>
+          </>
+        ) : (
+          <>
+            <label>
+              URL
+              <input
+                type="url"
+                className="mono"
+                value={url}
+                placeholder="https://"
+                disabled={off}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+            </label>
+            {settings === null && !error && <p className="muted">Loading the allowed hosts…</p>}
+            {off && (
+              <p className="muted">
+                URL imports are off: an operator lists the hosts in ONTOLOGY_FETCH_ALLOW.
+              </p>
+            )}
+            {settings !== null && !off && (
+              <p className="muted">Allowed hosts: {hosts.join(', ')}</p>
+            )}
+            {urlProblem && !off && <p className="field-error">{urlProblem}</p>}
+          </>
+        )}
         <label>
           Name
           <input

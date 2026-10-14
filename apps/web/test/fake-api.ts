@@ -268,6 +268,16 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('deleteOntologyVersion not stubbed');
     }),
     listOntologyTerms: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 100 })),
+    importOntologyFromUrl: vi.fn(async () => {
+      throw new Error('importOntologyFromUrl not stubbed');
+    }),
+    getOntologySettings: vi.fn(async () => ({
+      fetchHosts: ['w3id.org'],
+      maxBytes: 104857600,
+    })),
+    getNeighbourhood: vi.fn(async () => {
+      throw new Error('getNeighbourhood not stubbed');
+    }),
     getOntologyTerm: vi.fn(async () => {
       throw new Error('getOntologyTerm not stubbed');
     }),

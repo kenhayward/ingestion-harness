@@ -46,6 +46,7 @@ export function TermDetailPanel({
             <h2>{term.label}</h2>
             <span className="tag tone-info">{TERM_KIND_LABEL[term.kind]}</span>
             {term.deprecated && <span className="tag tone-neutral">Deprecated</span>}
+            {term.definedIn && <span className="tag tone-neutral">From {term.definedIn}</span>}
           </header>
           <p className="mono term-iri">{term.iri}</p>
           {term.definition && <p>{term.definition}</p>}

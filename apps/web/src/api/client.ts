@@ -1,5 +1,8 @@
 import type {
+  Neighbourhood,
   OntologyDetail,
+  OntologyFromUrlBody,
+  OntologySettings,
   OntologyPatch,
   OntologySummary,
   OntologyVersionView,
@@ -318,6 +321,12 @@ export interface Api {
   listOntologyTerms(id: string, version: number, query: OntologyTermQuery): Promise<TermPage>;
   /** One term with its neighbours. */
   getOntologyTerm(id: string, version: number, iri: string): Promise<TermDetail>;
+  /** Admin: import an ontology the worker fetches from an allowlisted URL. */
+  importOntologyFromUrl(body: OntologyFromUrlBody): Promise<OntologyVersionView>;
+  /** Allowed hosts for URL imports and the size limit. */
+  getOntologySettings(): Promise<OntologySettings>;
+  /** A term and what it is related to, for the graph view. */
+  getNeighbourhood(id: string, version: number, iri: string, depth?: 1 | 2): Promise<Neighbourhood>;
   createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
   /** `apiKey`: a new key (stored encrypted), or null to remove the stored one. */
   updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
@@ -702,6 +711,12 @@ export function createHttpApi(base = '/api'): Api {
         `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/terms${qs ? `?${qs}` : ''}`,
       ).then(json<TermPage>);
     },
+    importOntologyFromUrl: (body) => post<OntologyVersionView>(`${base}/ontologies/from-url`, body),
+    getOntologySettings: () => apiFetch(`${base}/ontology-settings`).then(json<OntologySettings>),
+    getNeighbourhood: (id, version, iri, depth = 1) =>
+      apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/neighbourhood?iri=${encodeURIComponent(iri)}&depth=${depth}`,
+      ).then(json<Neighbourhood>),
     getOntologyTerm: (id, version, iri) =>
       apiFetch(
         `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/term?iri=${encodeURIComponent(iri)}`,
