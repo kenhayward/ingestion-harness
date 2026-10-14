@@ -162,6 +162,8 @@ export const LlmSettingsViewSchema = z.object({
   draftingModel: z.string().nullable(),
   /** The OCR stage only. */
   ocrModel: z.string().nullable(),
+  /** Ontology term and output embeddings for the mapping stage (ADR 0011); null: lexical only. */
+  embeddingModel: z.string().nullable(),
 });
 export type LlmSettingsView = z.infer<typeof LlmSettingsViewSchema>;
 
@@ -197,6 +199,8 @@ export const SettingsBodySchema = z
     defaultChoice: z.string().min(1).optional(),
     draftingModel: ModelRef.optional(),
     ocrModel: ModelRef.optional(),
+    /** null clears it: the mapping stage then retrieves terms lexically. */
+    embeddingModel: ModelRef.nullable().optional(),
   })
   .strict()
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
@@ -231,7 +235,8 @@ export function choiceNames(
 /** What points at a model: each choice and the two pipeline models (endpoint guards). */
 export function modelUses(
   choices: readonly Pick<LlmChoiceView, 'label' | 'ref'>[],
-  settings: Pick<LlmSettingsView, 'draftingModel' | 'ocrModel'>,
+  settings: Pick<LlmSettingsView, 'draftingModel' | 'ocrModel'> &
+    Partial<Pick<LlmSettingsView, 'embeddingModel'>>,
 ): { what: string; ref: string }[] {
   return [
     ...choices.map((c) => ({ what: `model choice ${c.label}`, ref: c.ref })),
@@ -239,6 +244,9 @@ export function modelUses(
       ? [{ what: 'the drafting model', ref: settings.draftingModel }]
       : []),
     ...(settings.ocrModel ? [{ what: 'the OCR model', ref: settings.ocrModel }] : []),
+    ...(settings.embeddingModel
+      ? [{ what: 'the embedding model', ref: settings.embeddingModel }]
+      : []),
   ];
 }
 

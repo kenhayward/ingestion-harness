@@ -63,8 +63,27 @@ describe('model choices API', () => {
         defaultChoice: 'main',
         draftingModel: 'local/qwen',
         ocrModel: 'local/olmocr',
+        embeddingModel: null,
       },
     });
+  });
+
+  it('sets the embedding model only on an endpoint that serves embeddings, and clears it', async () => {
+    const { call, llm, repo } = await setup();
+    llm.seedEnv({ name: 'claude', kind: 'anthropic', baseUrl: null, location: 'external' }, [
+      'sonnet',
+    ]);
+    repo.models = [...repo.models, offered('claude/sonnet')];
+    const refused = await call('PUT', '/settings', { embeddingModel: 'claude/sonnet' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe('the embedding model needs an OpenAI-compatible endpoint');
+    expect(
+      (await call('PUT', '/settings', { embeddingModel: 'local/advertised' })).statusCode,
+    ).toBe(409);
+    const set = await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
+    expect(set.json().settings.embeddingModel).toBe('local/olmocr');
+    const cleared = await call('PUT', '/settings', { embeddingModel: null });
+    expect(cleared.json().settings.embeddingModel).toBeNull();
   });
 
   it('adds a labelled choice, its id made from the label', async () => {
@@ -144,6 +163,7 @@ describe('model choices API', () => {
       defaultChoice: 'test',
       ocrModel: 'local/qwen',
       draftingModel: 'ryzen/openai/gpt-oss-20b',
+      embeddingModel: null,
     });
     expect((await call('PUT', '/settings', { defaultChoice: 'nope' })).json().error).toBe(
       'no model choice nope',

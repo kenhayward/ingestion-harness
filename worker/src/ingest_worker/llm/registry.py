@@ -5,12 +5,12 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .base import LLMProvider, ModelDescriptor, ProviderKind
+from .base import EMBEDDING_KINDS, EmbeddingProvider, LLMProvider, ModelDescriptor, ProviderKind
 from .secrets import SecretError, decrypt_secret, secrets_keys
 
 log = logging.getLogger(__name__)
@@ -260,6 +260,15 @@ class ModelRegistry:
             "baseUrl": cfg.base_url if cfg else None,
             "options": self.options(provider_name),
         }
+
+    def resolve_embedding(self, ref: str) -> tuple[EmbeddingProvider, str]:
+        """Like resolve(), for the embedding model: only kinds that serve embeddings."""
+        provider, model_id = self.resolve(ref)
+        if provider.kind not in EMBEDDING_KINDS or not hasattr(provider, "embed"):
+            raise ModelResolutionError(
+                f"model {ref} cannot embed: its endpoint is {provider.kind}, not OpenAI-compatible"
+            )
+        return cast(EmbeddingProvider, provider), model_id
 
     def resolve_ocr(self, ref: str) -> tuple[LLMProvider, str]:
         """Like resolve(), but uses the provider's OCR endpoint/key when configured. The

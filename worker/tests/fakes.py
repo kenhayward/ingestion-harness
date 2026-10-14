@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +20,15 @@ from ingest_worker.llm.registry import ProviderConfig
 from ingest_worker.ontology import DuplicateSource, ParsedOntology
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
+
+
+def fake_vector(text: str, dims: int = 16) -> list[float]:
+    """Hashed bag of words, L2-normalised: a stand-in embedding for retrieval tests."""
+    vector = [0.0] * dims
+    for word in re.findall(r"[a-z0-9]+", text.lower()):
+        vector[int(hashlib.sha256(word.encode()).hexdigest(), 16) % dims] += 1.0
+    norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+    return [v / norm for v in vector]
 
 
 class FakeProvider:
@@ -37,11 +49,20 @@ class FakeProvider:
         self.vision_responses: list[str | Exception] = []
         self.vision_calls: list[tuple[str, VisionRequest]] = []
         self.list_models_error: Exception | None = None
+        self.embed_calls: list[tuple[str, list[str]]] = []
 
     def list_models(self) -> list[ModelDescriptor]:
         if self.list_models_error:
             raise self.list_models_error
         return [ModelDescriptor(self.name, self.kind, m, m.upper()) for m in self.models]
+
+    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """Deterministic vectors: hashed word counts in 16 dimensions (same words, same vector),
+        so texts that share words come out close."""
+        if self.kind == "anthropic":
+            raise AttributeError("anthropic endpoints have no embeddings")
+        self.embed_calls.append((model, list(texts)))
+        return [fake_vector(t) for t in texts]
 
     def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
         self.calls.append((model, request))

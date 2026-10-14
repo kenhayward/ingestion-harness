@@ -34317,12 +34317,19 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "embeddingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
                         "defaultChoice",
                         "draftingModel",
-                        "ocrModel"
+                        "ocrModel",
+                        "embeddingModel"
                       ],
                       "additionalProperties": true
                     }
@@ -35100,6 +35107,18 @@
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
                     "maxLength": 250
+                  },
+                  "embeddingModel": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                        "maxLength": 250
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -35185,12 +35204,19 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "embeddingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
                         "defaultChoice",
                         "draftingModel",
-                        "ocrModel"
+                        "ocrModel",
+                        "embeddingModel"
                       ],
                       "additionalProperties": true
                     }
