@@ -383,7 +383,15 @@ function PrefixRows({
 const ACTIVE = new Set(['queued', 'running']);
 
 /** Render the saved draft's mapping over the dev samples' newest finished runs. */
-function GraphPreview({ api, projectId, dirty }: { api: Api; projectId: string; dirty: boolean }) {
+export function GraphPreview({
+  api,
+  projectId,
+  dirty,
+}: {
+  api: Api;
+  projectId: string;
+  dirty: boolean;
+}) {
   const [view, setView] = useState<GraphPreviewView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

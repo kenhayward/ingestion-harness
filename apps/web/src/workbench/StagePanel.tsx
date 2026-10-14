@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   applyChanges,
   changeBodyOf,
@@ -115,6 +115,8 @@ export function StagePanel({
   title,
   item = null,
   now = Date.now(),
+  changeNote,
+  changeBadge,
 }: {
   api: Api;
   projectId: string;
@@ -144,6 +146,10 @@ export function StagePanel({
   title?: string;
   item?: OverviewItem | null;
   now?: number;
+  /** A line under each change (the mapping stage: values seen, alternatives). */
+  changeNote?: (c: DraftChange) => string | null;
+  /** A tag beside each change (the mapping stage: the model's confidence). */
+  changeBadge?: (c: DraftChange, index: number) => ReactNode;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -344,7 +350,8 @@ export function StagePanel({
         busy={busy}
         applyBlockedReason={blockedReason}
         now={now}
-        note={anchorLine}
+        note={changeNote ?? anchorLine}
+        badge={changeBadge}
         next={nextStep}
       />
     ) : null;
