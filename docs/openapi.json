@@ -13500,6 +13500,7 @@
                                         "outputs",
                                         "sections",
                                         "steps",
+                                        "mapping",
                                         "references",
                                         "evaluate",
                                         "revise",
@@ -13527,8 +13528,8 @@
                                   ],
                                   "additionalProperties": true
                                 },
-                                "minItems": 10,
-                                "maxItems": 10
+                                "minItems": 11,
+                                "maxItems": 11
                               },
                               "phase": {
                                 "type": "string",
@@ -13542,7 +13543,7 @@
                               "done": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "maximum": 10
+                                "maximum": 11
                               },
                               "next": {
                                 "anyOf": [
@@ -13574,6 +13575,7 @@
                                               "outputs",
                                               "sections",
                                               "steps",
+                                              "mapping",
                                               "references",
                                               "evaluate",
                                               "revise",
@@ -14062,6 +14064,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -14400,6 +14437,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -14703,6 +14775,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -15416,6 +15523,41 @@
                                         "additionalProperties": false
                                       },
                                       "default": []
+                                    },
+                                    "ontologies": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "ontologyId": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "version": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "role": {
+                                            "type": "string",
+                                            "enum": [
+                                              "vocabulary",
+                                              "shapes"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "ontologyId",
+                                          "version",
+                                          "role"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 20,
+                                      "default": []
+                                    },
+                                    "ontologyGuidance": {
+                                      "type": "string",
+                                      "default": ""
                                     }
                                   },
                                   "additionalProperties": false
@@ -17283,6 +17425,41 @@
                       "additionalProperties": false
                     },
                     "default": []
+                  },
+                  "ontologies": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "ontologyId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "vocabulary",
+                            "shapes"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ontologyId",
+                        "version",
+                        "role"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20,
+                    "default": []
+                  },
+                  "ontologyGuidance": {
+                    "type": "string",
+                    "default": ""
                   }
                 },
                 "additionalProperties": false
@@ -17361,6 +17538,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -17440,6 +17652,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -17618,7 +17865,8 @@
                             "exampleOutput",
                             "variants",
                             "rules",
-                            "answers"
+                            "answers",
+                            "ontologies"
                           ]
                         }
                       },
@@ -17632,7 +17880,8 @@
                             "sections",
                             "steps",
                             "references",
-                            "revise"
+                            "revise",
+                            "mapping"
                           ]
                         }
                       }
@@ -17795,6 +18044,41 @@
                             "additionalProperties": false
                           },
                           "default": []
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "ontologyId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "version": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "vocabulary",
+                                  "shapes"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ontologyId",
+                              "version",
+                              "role"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20,
+                          "default": []
+                        },
+                        "ontologyGuidance": {
+                          "type": "string",
+                          "default": ""
                         }
                       },
                       "additionalProperties": false
@@ -17928,7 +18212,8 @@
                               "outputs",
                               "sections",
                               "steps",
-                              "revise"
+                              "revise",
+                              "mapping"
                             ]
                           },
                           {
@@ -19542,6 +19827,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -20695,7 +21015,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Asks the drafting model (the `draft` alias) for a stage's proposal, as a `draft`\njob; poll `GET …/proposals`. Stages run in order (`survey`, `outputs`,\n`sections`, `steps`): an earlier stage must be accepted or skipped first.\n\n- `survey` proposes questions about the document type; the other stages propose\n  typed changes to the open draft (fields and tables, sections and copies, steps).\n  The `sections` stage checks its anchors on every dev sample and gets one round of\n  feedback.\n- `revise` (outside the order, cannot be skipped) answers the open feedback and the\n  latest dev evaluation's failures; it needs open feedback.\n- `references` instead queues reference runs (`201` with the jobs): the draft\n  model on every ready dev sample without a reference, stopped for review so the\n  values can be verified and saved as references.\n\nOnly dev samples are ever sent to the model (the holdout rule). A `local` project\nonly uses local models.",
+        "description": "Asks the drafting model (the `draft` alias) for a stage's proposal, as a `draft`\njob; poll `GET …/proposals`. Stages run in order (`survey`, `outputs`,\n`sections`, `steps`): an earlier stage must be accepted or skipped first.\n\n- `survey` proposes questions about the document type; the other stages propose\n  typed changes to the open draft (fields and tables, sections and copies, steps).\n  The `sections` stage checks its anchors on every dev sample and gets one round of\n  feedback.\n- `revise` (outside the order, cannot be skipped) answers the open feedback and the\n  latest dev evaluation's failures; it needs open feedback.\n- `mapping` (ADR 0011; outside the order, optional) proposes the recipe's ontology\n  mapping from the brief's vocabulary ontologies, using the values the dev samples'\n  latest runs produced; it needs the outputs stage complete and ready ontology versions.\n- `references` instead queues reference runs (`201` with the jobs): the draft\n  model on every ready dev sample without a reference, stopped for review so the\n  values can be verified and saved as references.\n\nOnly dev samples are ever sent to the model (the holdout rule). A `local` project\nonly uses local models.",
         "parameters": [
           {
             "schema": {
@@ -20715,7 +21035,8 @@
                 "sections",
                 "steps",
                 "references",
-                "revise"
+                "revise",
+                "mapping"
               ]
             },
             "in": "path",
@@ -20940,7 +21261,8 @@
                         "sections",
                         "steps",
                         "references",
-                        "revise"
+                        "revise",
+                        "mapping"
                       ]
                     },
                     "status": {
@@ -21644,6 +21966,563 @@
                                           "reason"
                                         ],
                                         "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setDocumentMapping"
+                                            ]
+                                          },
+                                          "document": {
+                                            "type": "object",
+                                            "properties": {
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "class",
+                                              "iri"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "ontologies": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "version": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "version"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "prefixes": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "format": "uri"
+                                            },
+                                            "propertyNames": {
+                                              "pattern": "^[A-Za-z][\\w-]*$"
+                                            }
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "document",
+                                          "ontologies",
+                                          "prefixes",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putFieldMapping"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "property": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "object": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "iri": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "label": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class",
+                                                  "iri"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              "concepts": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "scheme": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "values": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "match": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "required": [
+                                              "property"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTableMapping"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "columns": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "property": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "object": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "iri": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "label": {
+                                                          "type": "boolean"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class",
+                                                        "iri"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    },
+                                                    "concepts": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "scheme": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "values": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          }
+                                                        },
+                                                        "match": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "label"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "property"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "default": {}
+                                              }
+                                            },
+                                            "required": [
+                                              "link",
+                                              "class"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeMapping"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putLocalTerm"
+                                            ]
+                                          },
+                                          "term": {
+                                            "type": "object",
+                                            "properties": {
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "class",
+                                                  "object_property",
+                                                  "datatype_property",
+                                                  "annotation_property",
+                                                  "concept"
+                                                ]
+                                              },
+                                              "label": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "definition": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "iri",
+                                              "kind",
+                                              "label"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "term",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     ]
                                   }
@@ -21946,7 +22825,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21972,7 +22851,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -22017,7 +22896,8 @@
                           "sections",
                           "steps",
                           "references",
-                          "revise"
+                          "revise",
+                          "mapping"
                         ]
                       },
                       "state": {
@@ -23625,7 +24505,8 @@
                           "sections",
                           "steps",
                           "references",
-                          "revise"
+                          "revise",
+                          "mapping"
                         ]
                       },
                       "state": {
@@ -23854,7 +24735,8 @@
                           "sections",
                           "steps",
                           "references",
-                          "revise"
+                          "revise",
+                          "mapping"
                         ]
                       },
                       "state": {
@@ -24078,7 +24960,8 @@
                           "sections",
                           "steps",
                           "references",
-                          "revise"
+                          "revise",
+                          "mapping"
                         ]
                       },
                       "status": {
@@ -24782,6 +25665,563 @@
                                             "reason"
                                           ],
                                           "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "setDocumentMapping"
+                                              ]
+                                            },
+                                            "document": {
+                                              "type": "object",
+                                              "properties": {
+                                                "class": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "iri": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "class",
+                                                "iri"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "ontologies": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "id": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "version": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  }
+                                                },
+                                                "required": [
+                                                  "id",
+                                                  "version"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "prefixes": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "format": "uri"
+                                              },
+                                              "propertyNames": {
+                                                "pattern": "^[A-Za-z][\\w-]*$"
+                                              }
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "confidence": {
+                                              "type": "string",
+                                              "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                              ]
+                                            },
+                                            "evidence": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "iri": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string"
+                                                  },
+                                                  "score": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "iri",
+                                                  "label",
+                                                  "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "document",
+                                            "ontologies",
+                                            "prefixes",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putFieldMapping"
+                                              ]
+                                            },
+                                            "field": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "mapping": {
+                                              "type": "object",
+                                              "properties": {
+                                                "property": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "object": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "class": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "iri": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "label": {
+                                                      "type": "boolean"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "class",
+                                                    "iri"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "concepts": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "scheme": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "values": {
+                                                      "type": "object",
+                                                      "additionalProperties": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "match": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "label"
+                                                      ]
+                                                    }
+                                                  },
+                                                  "additionalProperties": false
+                                                }
+                                              },
+                                              "required": [
+                                                "property"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "confidence": {
+                                              "type": "string",
+                                              "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                              ]
+                                            },
+                                            "evidence": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "iri": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string"
+                                                  },
+                                                  "score": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "iri",
+                                                  "label",
+                                                  "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "field",
+                                            "mapping",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putTableMapping"
+                                              ]
+                                            },
+                                            "table": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "mapping": {
+                                              "type": "object",
+                                              "properties": {
+                                                "link": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "class": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "iri": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "columns": {
+                                                  "type": "object",
+                                                  "additionalProperties": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "property": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "object": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "class": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "iri": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "label": {
+                                                            "type": "boolean"
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "class",
+                                                          "iri"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
+                                                      "concepts": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "scheme": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "values": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                              "type": "string",
+                                                              "minLength": 1
+                                                            }
+                                                          },
+                                                          "match": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "label"
+                                                            ]
+                                                          }
+                                                        },
+                                                        "additionalProperties": false
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "property"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
+                                                  "default": {}
+                                                }
+                                              },
+                                              "required": [
+                                                "link",
+                                                "class"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "confidence": {
+                                              "type": "string",
+                                              "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                              ]
+                                            },
+                                            "evidence": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "iri": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string"
+                                                  },
+                                                  "score": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "iri",
+                                                  "label",
+                                                  "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "table",
+                                            "mapping",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "removeMapping"
+                                              ]
+                                            },
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "confidence": {
+                                              "type": "string",
+                                              "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                              ]
+                                            },
+                                            "evidence": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "iri": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string"
+                                                  },
+                                                  "score": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "iri",
+                                                  "label",
+                                                  "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "id",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "enum": [
+                                                "putLocalTerm"
+                                              ]
+                                            },
+                                            "term": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "class",
+                                                    "object_property",
+                                                    "datatype_property",
+                                                    "annotation_property",
+                                                    "concept"
+                                                  ]
+                                                },
+                                                "label": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "definition": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "kind",
+                                                "label"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "reason": {
+                                              "type": "string"
+                                            },
+                                            "answers": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "confidence": {
+                                              "type": "string",
+                                              "enum": [
+                                                "high",
+                                                "medium",
+                                                "low"
+                                              ]
+                                            },
+                                            "evidence": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "iri": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": "string"
+                                                  },
+                                                  "score": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "iri",
+                                                  "label",
+                                                  "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "term",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       ]
                                     }
@@ -25112,7 +26552,8 @@
                         "sections",
                         "steps",
                         "references",
-                        "revise"
+                        "revise",
+                        "mapping"
                       ]
                     },
                     "status": {
@@ -25813,6 +27254,563 @@
                                         "required": [
                                           "op",
                                           "preamble",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setDocumentMapping"
+                                            ]
+                                          },
+                                          "document": {
+                                            "type": "object",
+                                            "properties": {
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "class",
+                                              "iri"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "ontologies": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "version": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "version"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "prefixes": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "format": "uri"
+                                            },
+                                            "propertyNames": {
+                                              "pattern": "^[A-Za-z][\\w-]*$"
+                                            }
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "document",
+                                          "ontologies",
+                                          "prefixes",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putFieldMapping"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "property": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "object": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "iri": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "label": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class",
+                                                  "iri"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              "concepts": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "scheme": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "values": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "match": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "required": [
+                                              "property"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTableMapping"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "columns": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "property": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "object": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "iri": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "label": {
+                                                          "type": "boolean"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class",
+                                                        "iri"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    },
+                                                    "concepts": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "scheme": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "values": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          }
+                                                        },
+                                                        "match": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "label"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "property"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                "default": {}
+                                              }
+                                            },
+                                            "required": [
+                                              "link",
+                                              "class"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeMapping"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putLocalTerm"
+                                            ]
+                                          },
+                                          "term": {
+                                            "type": "object",
+                                            "properties": {
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "class",
+                                                  "object_property",
+                                                  "datatype_property",
+                                                  "annotation_property",
+                                                  "concept"
+                                                ]
+                                              },
+                                              "label": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "definition": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "iri",
+                                              "kind",
+                                              "label"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "term",
                                           "reason"
                                         ],
                                         "additionalProperties": false
@@ -28649,6 +30647,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -29004,6 +31037,41 @@
                                     "additionalProperties": false
                                   },
                                   "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
                                 }
                               },
                               "additionalProperties": false
@@ -29978,6 +32046,41 @@
                                         "additionalProperties": false
                                       },
                                       "default": []
+                                    },
+                                    "ontologies": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "ontologyId": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "version": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "role": {
+                                            "type": "string",
+                                            "enum": [
+                                              "vocabulary",
+                                              "shapes"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "ontologyId",
+                                          "version",
+                                          "role"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 20,
+                                      "default": []
+                                    },
+                                    "ontologyGuidance": {
+                                      "type": "string",
+                                      "default": ""
                                     }
                                   },
                                   "additionalProperties": false
@@ -30051,6 +32154,7 @@
                               "outputs",
                               "sections",
                               "steps",
+                              "mapping",
                               "references",
                               "evaluate",
                               "revise",
@@ -30137,6 +32241,7 @@
                                 "outputs",
                                 "sections",
                                 "steps",
+                                "mapping",
                                 "references",
                                 "evaluate",
                                 "revise",
@@ -33896,12 +36001,19 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "embeddingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
                         "defaultChoice",
                         "draftingModel",
-                        "ocrModel"
+                        "ocrModel",
+                        "embeddingModel"
                       ],
                       "additionalProperties": true
                     }
@@ -34679,6 +36791,18 @@
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
                     "maxLength": 250
+                  },
+                  "embeddingModel": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]*\\/\\S+$",
+                        "maxLength": 250
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -34764,12 +36888,19 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "embeddingModel": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
                         "defaultChoice",
                         "draftingModel",
-                        "ocrModel"
+                        "ocrModel",
+                        "embeddingModel"
                       ],
                       "additionalProperties": true
                     }

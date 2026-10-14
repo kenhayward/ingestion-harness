@@ -1,7 +1,7 @@
 /**
  * Opt-in Postgres test for PgOntologyRepo (migration 0032). Skipped unless IH_TEST_DATABASE_URL
  * points at a THROWAWAY database: it applies db/migrations and writes ontology rows. Example:
- * docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
+ * docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  */
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -69,6 +69,15 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       [`${C}Document`, `${C}Protocol`, [`${C}Document`], `${C}hasProtocol`, [`${C}Protocol`]],
     );
     await pool.query(`UPDATE ontology_versions SET status = 'ready' WHERE ontology_id = 'pv-pg'`);
+    expect(await repo.createEmbedJobs('emb/pg')).toBeGreaterThanOrEqual(1);
+    expect(await repo.createEmbedJobs('emb/pg')).toBe(0); // already queued
+    const embed = await pool.query(
+      `SELECT params FROM jobs WHERE task = 'embed' AND params->>'ontologyId' = 'pv-pg'`,
+    );
+    expect(embed.rows.map((r) => r.params)).toEqual([
+      { ontologyId: 'pv-pg', version: 1, model: 'emb/pg' },
+    ]);
+    await pool.query(`DELETE FROM jobs WHERE task = 'embed'`);
     await expect(
       pool.query(`UPDATE ontology_versions SET error = 'x' WHERE ontology_id = 'pv-pg'`),
     ).rejects.toThrow(/cannot change/);

@@ -121,7 +121,7 @@ describe('StageLegend', () => {
 
 const entries: OverviewEntry[] = OVERVIEW_STAGES.map((stage, i) => ({
   stage,
-  state: i < 5 ? 'accepted' : i === 5 ? 'proposed' : i === 9 ? 'locked' : 'pending',
+  state: i < 5 ? 'accepted' : i === 5 ? 'proposed' : stage === 'publish' ? 'locked' : 'pending',
 }));
 
 describe('ProgressStrip', () => {
@@ -131,7 +131,8 @@ describe('ProgressStrip', () => {
       screen.getByRole('img', {
         name:
           'Progress: Samples Accepted, Brief Accepted, Survey Accepted, Outputs Accepted, ' +
-          'Sections Accepted, Steps Needs you, References Not started, Evaluate Not started, ' +
+          'Sections Accepted, Steps Needs you, Mapping Not started, References Not started, ' +
+          'Evaluate Not started, ' +
           'Revise Not started, Publish Locked',
       }),
     ).toBeInTheDocument();
@@ -140,10 +141,10 @@ describe('ProgressStrip', () => {
   it('draws one titled segment per stage in the state style', () => {
     const { container } = render(<ProgressStrip stages={entries} />);
     const segments = [...container.querySelectorAll('.seg')];
-    expect(segments).toHaveLength(10);
+    expect(segments).toHaveLength(11);
     expect(segments[5]).toHaveClass('seg-proposed');
     expect(segments[5]).toHaveAttribute('title', 'Steps: Needs you');
-    expect(segments[9]).toHaveClass('seg-locked');
+    expect(segments[10]).toHaveClass('seg-locked'); // publish, now the eleventh stage
   });
 });
 

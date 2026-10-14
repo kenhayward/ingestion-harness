@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import type { AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
-import { accessApp, testApp } from './helpers.js';
+import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
+import { accessApp, multipart, testApp } from './helpers.js';
 
 const offered = (ref: string, curated = true) => ({
   ref,
@@ -16,6 +18,10 @@ const offered = (ref: string, curated = true) => ({
 
 /** Two offered models, the choice `main` (the default) and the pipeline settings. */
 async function setup() {
+  return setupWith({});
+}
+
+async function setupWith(overrides: Partial<AppDeps>) {
   const llm = new MemoryLlmConfigRepo();
   llm.seedEnv(
     { name: 'local', kind: 'openai-chat', baseUrl: 'http://host:1234/v1', location: 'local' },
@@ -27,7 +33,7 @@ async function setup() {
     drafting_model: 'local/qwen',
     ocr_model: 'local/olmocr',
   });
-  const ctx = await testApp({ llm });
+  const ctx = await testApp({ llm, ...overrides });
   ctx.repo.models = [
     offered('local/qwen'),
     offered('local/olmocr'),
@@ -63,8 +69,27 @@ describe('model choices API', () => {
         defaultChoice: 'main',
         draftingModel: 'local/qwen',
         ocrModel: 'local/olmocr',
+        embeddingModel: null,
       },
     });
+  });
+
+  it('sets the embedding model only on an endpoint that serves embeddings, and clears it', async () => {
+    const { call, llm, repo } = await setup();
+    llm.seedEnv({ name: 'claude', kind: 'anthropic', baseUrl: null, location: 'external' }, [
+      'sonnet',
+    ]);
+    repo.models = [...repo.models, offered('claude/sonnet')];
+    const refused = await call('PUT', '/settings', { embeddingModel: 'claude/sonnet' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error).toBe('the embedding model needs an OpenAI-compatible endpoint');
+    expect(
+      (await call('PUT', '/settings', { embeddingModel: 'local/advertised' })).statusCode,
+    ).toBe(409);
+    const set = await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
+    expect(set.json().settings.embeddingModel).toBe('local/olmocr');
+    const cleared = await call('PUT', '/settings', { embeddingModel: null });
+    expect(cleared.json().settings.embeddingModel).toBeNull();
   });
 
   it('adds a labelled choice, its id made from the label', async () => {
@@ -144,6 +169,7 @@ describe('model choices API', () => {
       defaultChoice: 'test',
       ocrModel: 'local/qwen',
       draftingModel: 'ryzen/openai/gpt-oss-20b',
+      embeddingModel: null,
     });
     expect((await call('PUT', '/settings', { defaultChoice: 'nope' })).json().error).toBe(
       'no model choice nope',
@@ -225,5 +251,31 @@ describe('model choices API', () => {
       const res = await app.inject({ url, headers: { cookie: userCookie } });
       expect(res.statusCode).toBe(403);
     }
+  });
+});
+
+describe('changing the embedding model (ADR 0011)', () => {
+  it('queues one embed job per ready ontology version, and none when it stays the same', async () => {
+    const ontologies = new MemoryOntologyRepo();
+    const { call, app } = await setupWith({ ontologies });
+    for (const id of ['acme', 'pharma']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/ontologies',
+        ...multipart(
+          { id, label: id },
+          { filename: `${id}.ttl`, content: Buffer.from(`# ${id}\n`), contentType: 'text/turtle' },
+        ),
+      });
+      expect(res.statusCode).toBe(202);
+    }
+    ontologies.markReady('acme', 1); // pharma v1 is still queued: its import embeds it
+    await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
+    expect(ontologies.embedJobs).toEqual([
+      { ontologyId: 'acme', version: 1, model: 'local/olmocr' },
+    ]);
+    await call('PUT', '/settings', { embeddingModel: 'local/olmocr' });
+    await call('PUT', '/settings', { embeddingModel: null });
+    expect(ontologies.embedJobs).toHaveLength(1);
   });
 });

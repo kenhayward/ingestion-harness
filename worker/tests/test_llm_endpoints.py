@@ -64,7 +64,11 @@ def seeded(endpoints: list[ProviderConfig], aliases: dict[str, str] | None = Non
     """A Seed from the old alias shape: `default` becomes the default choice (`main`), `draft`
     and `ocr` the pipeline settings, any other name a choice of that id."""
     aliases = aliases or {}
-    choices = [Choice(k, k, v) for k, v in aliases.items() if k not in ("default", "draft", "ocr")]
+    choices = [
+        Choice(k, k, v)
+        for k, v in aliases.items()
+        if k not in ("default", "draft", "ocr", "embedding")
+    ]
     settings: dict[str, str] = {}
     if "default" in aliases:
         choices.append(Choice("main", "Main", aliases["default"]))
@@ -73,6 +77,8 @@ def seeded(endpoints: list[ProviderConfig], aliases: dict[str, str] | None = Non
         settings["drafting_model"] = aliases["draft"]
     if "ocr" in aliases:
         settings["ocr_model"] = aliases["ocr"]
+    if "embedding" in aliases:
+        settings["embedding_model"] = aliases["embedding"]
     return Seed(endpoints, choices, settings)
 
 
@@ -652,3 +658,43 @@ def test_a_disabled_model_is_not_offered(harness: StoreHarness) -> None:
     harness.disable_model("local", "b")
     (local,) = store.load().endpoints
     assert local.models == ["a"]
+
+
+# --- the embedding model (ADR 0011) -----------------------------------------------------------
+
+
+def test_embedding_model_is_seeded_from_env(llm_config_path: Path) -> None:
+    env = {"EMBEDDING_MODEL": " local/nomic-embed "}
+    seed = seed_from_config(load_llm_config(llm_config_path, env=env), env=env)
+    assert seed.settings["embedding_model"] == "local/nomic-embed"
+    seed = seed_from_config(load_llm_config(llm_config_path, env={}), env={})
+    assert "embedding_model" not in seed.settings
+
+
+def test_the_embedding_setting_resolves_only_to_a_provider_that_embeds() -> None:
+    seed = seeded(
+        [
+            endpoint("local", models=["nomic-embed"]),
+            endpoint("anthropic", kind="anthropic", models=["c"]),
+        ],
+        {"embedding": "local/nomic-embed"},
+    )
+    live = LiveModels(MemoryLlmConfigStore(seed), None, env={}, factories=fake_factories())
+    assert live.embedding_model == "local/nomic-embed"
+    provider, model = live.registry.resolve_embedding("local/nomic-embed")
+    assert (provider.name, model) == ("local", "nomic-embed")
+    with pytest.raises(ModelResolutionError, match="cannot embed"):
+        live.registry.resolve_embedding("anthropic/c")
+    # Never a model to name in a step.
+    with pytest.raises(ModelResolutionError):
+        live.registry.resolve("embedding")
+
+
+def test_no_embedding_setting_means_no_embedding_model() -> None:
+    live = LiveModels(
+        MemoryLlmConfigStore(seeded([endpoint("local", models=["m"])])),
+        None,
+        env={},
+        factories=fake_factories(),
+    )
+    assert live.embedding_model is None

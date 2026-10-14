@@ -69,10 +69,10 @@ describe('listItemFrom', () => {
         stages: done.map((s) => (s.stage === 'steps' ? { ...s, state: 'proposed' as const } : s)),
       }),
     });
-    expect(i.stages).toHaveLength(10);
+    expect(i.stages).toHaveLength(11);
     expect(i.stages[5]).toEqual({ stage: 'steps', state: 'proposed' });
     expect(i.phase).toBe('draft');
-    expect(i.done).toBe(6);
+    expect(i.done).toBe(7); // the mapping, not used, counts as done
     expect(i.next).toEqual({ kind: 'decide', stage: 'steps', label: 'Decide on Steps' });
     expect(i.flags).toEqual({ attention: true, running: false, ready: false });
   });

@@ -85,6 +85,13 @@ export interface OntologyRepo {
     iris: string[],
     limit: number,
   ): Promise<OntologyTerm[] | null>;
+  /**
+   * Queue an `embed` job under `model` for every ready version (or only `versions`) that has no
+   * vectors for it and no such job queued or running; the job names the model, so a worker
+   * that has not seen the new setting yet still embeds under it. Versions still importing embed
+   * at the end of their import.
+   */
+  createEmbedJobs(model: string, versions?: { id: string; version: number }[]): Promise<number>;
 }
 
 /** What a version whose import job ended without finishing it reads as. */
@@ -201,6 +208,26 @@ export class MemoryOntologyRepo implements OntologyRepo {
     error: string | null;
   }[] = [];
   private readonly versionJobs = new Map<string, string>();
+  /** The `embed` jobs queued, for assertions. */
+  readonly embedJobs: { ontologyId: string; version: number; model: string }[] = [];
+
+  async createEmbedJobs(
+    model: string,
+    versions?: { id: string; version: number }[],
+  ): Promise<number> {
+    const wanted = (id: string, version: number) =>
+      !versions || versions.some((v) => v.id === id && v.version === version);
+    const queued = (id: string, version: number) =>
+      this.embedJobs.some((j) => j.ontologyId === id && j.version === version && j.model === model);
+    const jobs = [...this.ontologies.values()].flatMap((o) =>
+      o.versions
+        .filter((v) => this.effective(v).status === 'ready')
+        .filter((v) => wanted(o.id, v.version) && !queued(o.id, v.version))
+        .map((v) => ({ ontologyId: o.id, version: v.version, model })),
+    );
+    this.embedJobs.push(...jobs);
+    return jobs.length;
+  }
 
   /**
    * A version still queued or parsing whose job is no longer active never will finish (the
@@ -823,6 +850,35 @@ export class PgOntologyRepo implements OntologyRepo {
       [id, version, iris, limit],
     );
     return rows.map(toTerm);
+  }
+
+  async createEmbedJobs(
+    model: string,
+    versions?: { id: string; version: number }[],
+  ): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      `INSERT INTO jobs (task, priority, max_attempts, params)
+       SELECT 'embed', -10, 3,
+              jsonb_build_object('ontologyId', v.ontology_id, 'version', v.version, 'model', $1::text)
+         FROM ontology_versions v
+        WHERE v.status = 'ready'
+          AND ($2::text[] IS NULL OR (v.ontology_id, v.version) IN
+                (SELECT * FROM unnest($2::text[], $3::int[])))
+          AND NOT EXISTS (SELECT 1 FROM ontology_term_embeddings e
+                           WHERE e.ontology_id = v.ontology_id AND e.version = v.version
+                             AND e.model_ref = $1)
+          AND NOT EXISTS (SELECT 1 FROM jobs j
+                           WHERE j.task = 'embed' AND j.status IN ('queued', 'running')
+                             AND j.params->>'ontologyId' = v.ontology_id
+                             AND (j.params->>'version')::int = v.version
+                             AND j.params->>'model' = $1)`,
+      [
+        model,
+        versions ? versions.map((v) => v.id) : null,
+        versions ? versions.map((v) => v.version) : null,
+      ],
+    );
+    return rowCount ?? 0;
   }
 
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {

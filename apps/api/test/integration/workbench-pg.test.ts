@@ -3,7 +3,7 @@
  *
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies
  * db/migrations and writes rows (under random project ids). Example:
- *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
+ *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-pg
  *   docker rm -f ih-test-pg
@@ -370,6 +370,31 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       briefVersion: null,
     });
     expect(q.feedbackIds).toBeNull();
+  });
+
+  it('stores the mapping stage, embed jobs and term embeddings (migration 0035)', async () => {
+    const projectId = await newProject();
+    const job = await repo.createDraftJob(projectId, {});
+    await workbench.createProposal({
+      id: job.id,
+      projectId,
+      stage: 'mapping' as never,
+      briefVersion: null,
+    });
+    await workbench.addSkip(projectId, 'mapping' as never);
+    await workbench.addConfirm(projectId, 'mapping' as never, new Date().toISOString());
+    expect((await workbench.listConfirms(projectId)).map((c) => c.stage)).toContain('mapping');
+    await pool.query(
+      `INSERT INTO jobs (task, priority, max_attempts, params) VALUES ('embed', -10, 3, '{}')`,
+    );
+    await pool.query(
+      `INSERT INTO llm_settings (name, value) VALUES ('embedding_model', 'local/embed')
+       ON CONFLICT (name) DO UPDATE SET value = excluded.value`,
+    );
+    const { rows } = await pool.query(`SELECT '[1,0]'::vector <=> '[0,1]'::vector AS d`);
+    expect(Number(rows[0].d)).toBeCloseTo(1);
+    await pool.query(`DELETE FROM llm_settings WHERE name = 'embedding_model'`);
+    await pool.query(`DELETE FROM jobs WHERE task = 'embed'`);
   });
 
   it('reports feedback resolved by a revision that lands just before its delete', async () => {

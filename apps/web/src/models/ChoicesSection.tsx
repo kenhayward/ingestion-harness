@@ -293,7 +293,9 @@ export function PipelineSection({
   onChanged: () => Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const save = async (body: { ocrModel: string } | { draftingModel: string }) => {
+  const save = async (
+    body: { ocrModel: string } | { draftingModel: string } | { embeddingModel: string | null },
+  ) => {
     setError(null);
     try {
       await api.setLlmSettings(body);
@@ -307,7 +309,8 @@ export function PipelineSection({
       <h2>Pipeline models</h2>
       <p className="muted">
         Used by the pipeline itself, never offered as a model choice: OCR transcribes image-only
-        pages; drafting writes the Workbench&apos;s proposals and dev reference runs.
+        pages; drafting writes the Workbench&apos;s proposals and dev reference runs; embeddings
+        rank ontology terms for the mapping stage (an OpenAI-compatible endpoint).
       </p>
       <div className="pipeline-fields">
         <label>
@@ -328,6 +331,16 @@ export function PipelineSection({
             offered={offered}
             placeholder="Not set"
             onChange={(draftingModel) => draftingModel && void save({ draftingModel })}
+          />
+        </label>
+        <label>
+          Embedding model
+          <ModelSelect
+            label="Embedding model"
+            value={view.settings.embeddingModel ?? ''}
+            offered={offered}
+            placeholder="None (lexical retrieval)"
+            onChange={(ref) => void save({ embeddingModel: ref || null })}
           />
         </label>
       </div>

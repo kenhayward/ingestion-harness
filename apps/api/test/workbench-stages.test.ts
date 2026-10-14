@@ -97,6 +97,7 @@ describe('stage order', () => {
       'sections:pending',
       'steps:pending',
       'references:pending',
+      'mapping:pending',
     ]);
     const references = await start('references');
     expect(references.statusCode).toBe(409);
@@ -118,6 +119,7 @@ describe('stage order', () => {
       'sections:pending',
       'steps:pending',
       'references:pending',
+      'mapping:pending',
     ]);
   });
 });
@@ -297,6 +299,7 @@ describe('keep a stale stage (SC1)', () => {
       'sections:accepted',
       'steps:pending',
       'references:pending',
+      'mapping:pending',
     ]);
     expect((await app.inject('/api/workbench/projects/letter/proposals')).json()).toHaveLength(
       before.length,
@@ -340,6 +343,7 @@ describe('keep a stale stage (SC1)', () => {
       'sections:accepted',
       'steps:pending',
       'references:pending',
+      'mapping:pending',
     ]);
     expect(await draft()).toEqual(definition);
   });

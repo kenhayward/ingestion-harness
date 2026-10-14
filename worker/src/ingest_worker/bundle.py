@@ -18,7 +18,7 @@ import zipfile
 from typing import Any, Literal
 
 import yaml
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .convert import is_docx
 from .drafting import (
@@ -58,6 +58,14 @@ README = """\
 """
 
 
+class BundleOntology(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    version: int = Field(gt=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ExportParams(DraftParams):
     """jobs.params of an export job (written by the API): a drafting context plus the name."""
 
@@ -67,6 +75,8 @@ class ExportParams(DraftParams):
     completed_stages: list[Literal["survey", "outputs", "sections", "steps"]] = Field(
         default_factory=list, alias="completedStages"
     )
+    #: The brief's ontology versions (ADR 0011), named in the manifest, never carried.
+    ontologies: list[BundleOntology] = Field(default_factory=list)
 
 
 def build_bundle(
@@ -162,6 +172,9 @@ def run_export(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str
         ],
         "stages": list(STAGES),
         "completedStages": params.completed_stages,
+        **(
+            {"ontologies": [o.model_dump() for o in params.ontologies]} if params.ontologies else {}
+        ),
     }
     data = build_bundle(
         manifest=manifest,

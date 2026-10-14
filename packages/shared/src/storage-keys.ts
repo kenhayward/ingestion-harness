@@ -61,6 +61,11 @@ export function segmentationKey(projectId: string, jobId: string): string {
   return `segmentation/${projectId}/${jobId}.json`;
 }
 
+/** A reviewed job's approved document (edits applied), runs bucket; `storage.reviewed_document_key`. */
+export function reviewedDocumentKey(jobId: string): string {
+  return `${jobId}/reviewed-document.json`;
+}
+
 /** A graph preview's Turtle per sample (runs bucket, worker graph task; ADR 0011). */
 export function graphPreviewKey(projectId: string, jobId: string): string {
   return `graphs/${projectId}/${jobId}.json`;

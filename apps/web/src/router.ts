@@ -8,6 +8,7 @@ export const PROJECT_TABS = [
   'outputs',
   'sections',
   'steps',
+  'mapping',
   'references',
   'evaluate',
   'revise',

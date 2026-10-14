@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
     CompletionResult,
@@ -14,9 +18,18 @@ from ingest_worker.llm.base import (
 )
 from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
-from ingest_worker.ontology import DuplicateSource, ParsedOntology
+from ingest_worker.ontology import DuplicateSource, ParsedOntology, Term
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
+
+
+def fake_vector(text: str, dims: int = 16) -> list[float]:
+    """Hashed bag of words, L2-normalised: a stand-in embedding for retrieval tests."""
+    vector = [0.0] * dims
+    for word in re.findall(r"[a-z0-9]+", text.lower()):
+        vector[int(hashlib.sha256(word.encode()).hexdigest(), 16) % dims] += 1.0
+    norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+    return [v / norm for v in vector]
 
 
 class FakeProvider:
@@ -37,11 +50,20 @@ class FakeProvider:
         self.vision_responses: list[str | Exception] = []
         self.vision_calls: list[tuple[str, VisionRequest]] = []
         self.list_models_error: Exception | None = None
+        self.embed_calls: list[tuple[str, list[str]]] = []
 
     def list_models(self) -> list[ModelDescriptor]:
         if self.list_models_error:
             raise self.list_models_error
         return [ModelDescriptor(self.name, self.kind, m, m.upper()) for m in self.models]
+
+    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """Deterministic vectors: hashed word counts in 16 dimensions (same words, same vector),
+        so texts that share words come out close."""
+        if self.kind == "anthropic":
+            raise AttributeError("anthropic endpoints have no embeddings")
+        self.embed_calls.append((model, list(texts)))
+        return [fake_vector(t) for t in texts]
 
     def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
         self.calls.append((model, request))
@@ -324,6 +346,107 @@ class MemoryOntologyStore:
     created: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Set to make set_source report that another version has the same bytes.
     duplicate_of: int | None = None
+    #: Ontologies that may only go to local models.
+    local_only_ids: set[str] = field(default_factory=set)
+    #: (id, version, model) -> (kind, iri) -> (text_sha256, vector)
+    embeddings: dict[tuple[str, int, str], dict[tuple[str, str], tuple[str, list[float]]]] = field(
+        default_factory=dict
+    )
+
+    def local_only(self, ontology_id: str) -> bool:
+        return ontology_id in self.local_only_ids
+
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        ids = {v[0] for v in versions}
+        for version in versions:
+            parsed = self.saved.get(version)
+            ids |= {
+                t.defined_in.split("@")[0] for t in (parsed.terms if parsed else []) if t.defined_in
+            }
+        return sorted(i for i in ids if i in self.local_only_ids)
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        parsed = self.saved.get((ontology_id, version))
+        terms = [t for t in (parsed.terms if parsed else []) if t.kind != "shape"]
+        labels = {t.iri: t.label for t in terms}
+        return [
+            EmbeddingTerm(
+                t.kind, t.iri, t.label, list(t.alt_labels), t.definition,
+                [labels.get(p, p) for p in t.parents],
+            )
+            for t in terms
+        ]  # fmt: skip
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        rows = self.embeddings.get((ontology_id, version, model_ref), {})
+        return {key: sha for key, (sha, _) in rows.items()}
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        stored = self.embeddings.setdefault((ontology_id, version, model_ref), {})
+        for kind, iri, sha, vector in rows:
+            stored[(kind, iri)] = (sha, vector)
+
+    def _terms(self, versions: list[tuple[str, int]], kinds: list[str]) -> list[Term]:
+        out: list[Term] = []
+        for version in versions:
+            parsed = self.saved.get(version)
+            out += [t for t in (parsed.terms if parsed else []) if t.kind in kinds]
+        return out
+
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        """Word overlap: label and synonym words count double, definition words once."""
+        words = set(re.findall(r"[a-z0-9]+", query.lower()))
+
+        def score(t: Term) -> float:
+            names = set(re.findall(r"[a-z0-9]+", " ".join([t.label, *t.alt_labels]).lower()))
+            defined = set(re.findall(r"[a-z0-9]+", t.definition.lower()))
+            exact = 1.0 if t.label.lower() in query.lower() else 0.0  # the label, said whole
+            return (
+                exact
+                + 2 * len(words & names) / max(1, len(names))
+                + 0.5 * len(words & defined) / max(1, len(defined))
+            )
+
+        ranked = sorted(
+            ((score(t), t) for t in self._terms(versions, kinds)),
+            key=lambda st: (-st[0], st[1].label),
+        )
+        return [t for s, t in ranked if s > 0][:limit]
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        def cosine(a: list[float], b: list[float]) -> float:
+            dot = sum(x * y for x, y in zip(a, b, strict=True))
+            norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+            return dot / norm if norm else 0.0
+
+        scored = []
+        for version in versions:
+            stored = self.embeddings.get((*version, model_ref), {})
+            for t in self._terms([version], kinds):
+                if (t.kind, t.iri) in stored:
+                    scored.append((cosine(vector, stored[(t.kind, t.iri)][1]), t))
+        scored.sort(key=lambda st: (-st[0], st[1].label))
+        return [t for _, t in scored[:limit]]
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        return any(self.embeddings.get((*v, model_ref)) for v in versions)
 
     def concept_by_label(
         self, versions: list[tuple[str, int]], scheme: str, label: str

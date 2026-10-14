@@ -13,7 +13,7 @@ import { parseCsv } from '../results/csv.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { formatBytes, plural } from './samples.js';
 
-export type TextSection = Exclude<BriefSection, 'answers'>;
+export type TextSection = Exclude<BriefSection, 'answers' | 'ontologies'>;
 
 export const BRIEF_LABEL: Record<BriefSection, string> = {
   purpose: 'Purpose',
@@ -23,6 +23,7 @@ export const BRIEF_LABEL: Record<BriefSection, string> = {
   variants: 'Variants',
   rules: 'Rules',
   answers: 'Survey answers',
+  ontologies: 'Ontologies',
 };
 
 export const BRIEF_HINT: Record<TextSection, string> = {
@@ -34,7 +35,9 @@ export const BRIEF_HINT: Record<TextSection, string> = {
   rules: 'For example: placeholders are null; use the executed copy; dates are DMY.',
 };
 
-export const TEXT_SECTIONS = BRIEF_SECTIONS.filter((s): s is TextSection => s !== 'answers');
+export const TEXT_SECTIONS = BRIEF_SECTIONS.filter(
+  (s): s is TextSection => s !== 'answers' && s !== 'ontologies',
+);
 
 /** "Saved as v3 · 2 days ago · 1 field changed since" (handoff §2). */
 export function briefStatus(version: number, createdAt: string, changed: number, now: number) {

@@ -80,6 +80,7 @@ const SETTING_COLUMN = {
   defaultChoice: 'default_choice',
   draftingModel: 'drafting_model',
   ocrModel: 'ocr_model',
+  embeddingModel: 'embedding_model',
 } as const;
 type SettingName = (typeof SETTING_COLUMN)[keyof typeof SETTING_COLUMN];
 
@@ -87,6 +88,7 @@ const settingsView = (rows: Partial<Record<SettingName, string>>): LlmSettingsVi
   defaultChoice: rows.default_choice ?? null,
   draftingModel: rows.drafting_model ?? null,
   ocrModel: rows.ocr_model ?? null,
+  embeddingModel: rows.embedding_model ?? null,
 });
 
 interface StoredEndpoint {
@@ -269,6 +271,7 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     for (const [key, column] of Object.entries(SETTING_COLUMN)) {
       const value = patch[key as keyof LlmSettingsView];
       if (value) this.settings[column] = value;
+      else if (value === null && column === 'embedding_model') delete this.settings[column];
     }
     return settingsView(this.settings);
   }
@@ -507,6 +510,10 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
   async setSettings(patch: Partial<LlmSettingsView>, by: string | null) {
     for (const [key, column] of Object.entries(SETTING_COLUMN)) {
       const value = patch[key as keyof LlmSettingsView];
+      if (value === null && column === 'embedding_model') {
+        await this.pool.query('DELETE FROM llm_settings WHERE name = $1', [column]);
+        continue;
+      }
       if (!value) continue;
       await this.pool.query(
         `INSERT INTO llm_settings (name, value, edited_at, updated_by) VALUES ($1, $2, now(), $3)

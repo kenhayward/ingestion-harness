@@ -111,10 +111,13 @@ import {
   STEP_PROGRESS_EVENT,
   TestRunSchema,
   type ChangeStage,
+  mappingKeepUpTo,
+  ontologySelectionChangedAt,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
+import { mappingInputs, mappingView, type MappingParams } from '../workbench/mapping.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
@@ -766,10 +769,15 @@ async function referencesView(app: FastifyInstance, projectId: string): Promise<
   });
 }
 
-/** All five stages: the four proposal stages, then references (derived separately). */
+/** Every stage: the four proposal stages, references, then the mapping (both derived separately). */
 export async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const earlier = await stagesOf(app, projectId);
-  return [...earlier, await referencesView(app, projectId)];
+  const outputsAt = earlier.find((s) => s.stage === 'outputs')?.completedAt ?? null;
+  return [
+    ...earlier,
+    await referencesView(app, projectId),
+    await mappingView(app, projectId, outputsAt),
+  ];
 }
 
 const EvaluateBody = z
@@ -2506,6 +2514,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             feedback.
           - \`revise\` (outside the order, cannot be skipped) answers the open feedback and the
             latest dev evaluation's failures; it needs open feedback.
+          - \`mapping\` (ADR 0011; outside the order, optional) proposes the recipe's ontology
+            mapping from the brief's vocabulary ontologies, using the values the dev samples'
+            latest runs produced; it needs the outputs stage complete and ready ontology versions.
           - \`references\` instead queues reference runs (\`201\` with the jobs): the draft
             model on every ready dev sample without a reference, stopped for review so the
             values can be verified and saved as references.
@@ -2516,7 +2527,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         params: z.object({
           id: z.string().describe('The project id.'),
           stage: z
-            .enum(['survey', 'outputs', 'sections', 'steps', 'references', 'revise'])
+            .enum(['survey', 'outputs', 'sections', 'steps', 'references', 'revise', 'mapping'])
             .describe('The stage.'),
         }),
         response: {
@@ -2531,7 +2542,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
               'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
-              'already running`, or ' +
+              'already running`, for mapping `choose ontologies in the brief first`, `complete the ' +
+              'outputs stage first` or `ontology {id} v{n} is not ready`, or ' +
               RETIRED_DOC +
               '.',
           ),
@@ -2569,11 +2581,37 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (revision && !revision.params.feedback.length) {
         return reply.code(409).send({ error: 'add feedback before asking for a revision' });
       }
-      // A revision can work from feedback alone; the other stages read the samples.
-      if (!samples.length && !revision) {
+      const brief = await workbench.latestBrief(projectId);
+      let mapping: MappingParams | null = null;
+      if (stage === 'mapping') {
+        const outputs = (await stagesOf(app, projectId)).find((s) => s.stage === 'outputs');
+        if (
+          !(await workbench.latestBrief(projectId))?.body.ontologies?.some(
+            (o) => o.role === 'vocabulary',
+          )
+        ) {
+          return reply.code(409).send({ error: 'choose ontologies in the brief first' });
+        }
+        if (!outputs?.completedAt) {
+          return reply.code(409).send({ error: 'complete the outputs stage first' });
+        }
+        const inputs = await mappingInputs(app, projectId, brief?.body ?? EMPTY_BRIEF);
+        if ('error' in inputs) return reply.code(409).send({ error: inputs.error });
+        mapping = inputs.params;
+        // Versions the embedding model has not embedded (set from .env, an outage at import):
+        // this run is lexical for them, the next one semantic.
+        const { embeddingModel } = await app.deps.llm.getSettings();
+        if (embeddingModel) {
+          await app.deps.ontologies.createEmbedJobs(
+            embeddingModel,
+            mapping.versions.map((v) => ({ id: v.id, version: v.version })),
+          );
+        }
+      }
+      // A revision can work from feedback alone, a mapping from the outputs; the others read the samples.
+      if (!samples.length && !revision && !mapping) {
         return reply.code(409).send({ error: 'no prepared dev samples' });
       }
-      const brief = await workbench.latestBrief(projectId);
       const job = await app.deps.repo.createDraftJob(projectId, {
         stage,
         dataPolicy: project.dataPolicy,
@@ -2583,6 +2621,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         samples,
         ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
         ...(revision?.params ?? {}),
+        ...(mapping ? { mapping } : {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
@@ -2949,6 +2988,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(404).send({ error: 'project not found' });
       }
       const states = await stagesOf(app, projectId);
+      if (stage === 'mapping') {
+        // Outside the order: kept against the outputs and the brief's ontology selection.
+        const outputsAt = states.find((s) => s.stage === 'outputs')?.completedAt ?? null;
+        const view = await mappingView(app, projectId, outputsAt);
+        if (view.state !== 'stale') {
+          return reply.code(409).send({ error: `stage ${stage} is not stale` });
+        }
+        const briefs = await workbench.listBriefs(projectId);
+        const upTo = mappingKeepUpTo(outputsAt, ontologySelectionChangedAt(briefs))!;
+        await workbench.addConfirm(projectId, stage, upTo);
+        req.log.info({ projectId, stage, upTo }, 'workbench stage kept');
+        return reply.code(201).send(await allStages(app, projectId));
+      }
       const index = STAGE_ORDER.indexOf(stage);
       if (states[index]?.state !== 'stale') {
         return reply.code(409).send({ error: `stage ${stage} is not stale` });

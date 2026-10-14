@@ -33,7 +33,7 @@ const overview = projectOverview({
 });
 
 describe('OverviewMap', () => {
-  it('lays out twelve boxes on the handoff grid', () => {
+  it('lays out the boxes on the handoff grid, five in the draft row', () => {
     expect(MAP_BOXES.map((b) => [b.tab, b.col, b.row])).toEqual([
       ['samples', 0, 0],
       ['brief', 1, 0],
@@ -43,6 +43,7 @@ describe('OverviewMap', () => {
       ['outputs', 1, 1],
       ['sections', 2, 1],
       ['steps', 3, 1],
+      ['mapping', 4, 1],
       ['references', 0, 2],
       ['evaluate', 1, 2],
       ['revise', 2, 2],
@@ -53,7 +54,7 @@ describe('OverviewMap', () => {
   it('makes every box a link that says its status and where it goes', () => {
     render(<OverviewMap projectId="letter" overview={overview} now={now} />);
     const map = screen.getByRole('region', { name: 'Process map' });
-    expect(within(map).getAllByRole('link')).toHaveLength(12);
+    expect(within(map).getAllByRole('link')).toHaveLength(13);
     const sections = within(map).getByRole('link', {
       name: 'Sections: Stale — Outputs changed after it was accepted. Open the Sections tab',
     });
@@ -140,6 +141,7 @@ describe('OverviewStack', () => {
       'Outputs',
       'Sections',
       'Steps',
+      'Mapping',
       'References',
       'Evaluate',
       'Revise',

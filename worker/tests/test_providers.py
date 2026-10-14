@@ -374,3 +374,30 @@ def test_anthropic_streams_with_a_large_output_budget() -> None:
     result = AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ)
     assert messages.kwargs["max_tokens"] == 64000 == REQ.max_tokens
     assert result.text == '{"a": 1}' and result.output_tokens == 20
+
+
+# --- embeddings (ADR 0011: ontology term retrieval) -------------------------------------------
+
+
+def embeddings_response(vectors: list[list[float]]) -> Any:
+    # The API may return items out of order: each carries its input index.
+    data = [SimpleNamespace(index=i, embedding=v) for i, v in enumerate(vectors)]
+    return SimpleNamespace(data=list(reversed(data)))
+
+
+@pytest.mark.parametrize("provider_class", [OpenAIChatProvider, OpenAIResponsesProvider])
+def test_openai_providers_embed_in_input_order(provider_class: Any) -> None:
+    embeddings = Recorder(embeddings_response([[1.0, 0.0], [0.0, 1.0]]))
+    client: Any = SimpleNamespace(embeddings=embeddings)
+    vectors = provider_class("local", client).embed("nomic-embed", ["a", "b"])
+    assert vectors == [[1.0, 0.0], [0.0, 1.0]]
+    assert embeddings.kwargs == {"model": "nomic-embed", "input": ["a", "b"]}
+
+
+def test_embedding_nothing_calls_nothing() -> None:
+    client: Any = SimpleNamespace(embeddings=None)
+    assert OpenAIChatProvider("local", client).embed("m", []) == []
+
+
+def test_anthropic_has_no_embeddings() -> None:
+    assert not hasattr(AnthropicProvider, "embed")

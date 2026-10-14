@@ -11,6 +11,7 @@ export const TAB_ICON: Record<ProjectTab, IconName> = {
   outputs: 'results',
   sections: 'sections',
   steps: 'steps',
+  mapping: 'graph',
   references: 'shieldCheck',
   evaluate: 'bars',
   revise: 'message',
@@ -21,7 +22,10 @@ export const TAB_ICON: Record<ProjectTab, IconName> = {
 const GROUPS: { heading: string | null; tabs: ProjectTab[] }[] = [
   { heading: null, tabs: ['overview'] },
   { heading: 'Prepare', tabs: ['samples', 'brief'] },
-  { heading: 'Draft with the model', tabs: ['survey', 'outputs', 'sections', 'steps'] },
+  {
+    heading: 'Draft with the model',
+    tabs: ['survey', 'outputs', 'sections', 'steps', 'mapping'],
+  },
   { heading: 'Verify', tabs: ['references', 'evaluate', 'revise'] },
   { heading: 'By hand', tabs: ['template', 'runs'] },
 ];

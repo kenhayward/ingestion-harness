@@ -481,15 +481,29 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = SettingsBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
-      const { defaultChoice, draftingModel, ocrModel } = body.data;
+      const { defaultChoice, draftingModel, ocrModel, embeddingModel } = body.data;
       if (defaultChoice && !(await repo.getChoice(defaultChoice))) {
         return reply.code(400).send({ error: `no model choice ${defaultChoice}` });
       }
-      for (const ref of [draftingModel, ocrModel]) {
+      for (const ref of [draftingModel, ocrModel, embeddingModel]) {
         const problem = ref ? await notOffered(ref) : null;
         if (problem) return reply.code(409).send({ error: problem });
       }
+      if (embeddingModel) {
+        const endpoint = await repo.getEndpoint(embeddingModel.split('/')[0]!);
+        if (endpoint?.kind === 'anthropic') {
+          return reply
+            .code(409)
+            .send({ error: 'the embedding model needs an OpenAI-compatible endpoint' });
+        }
+      }
+      const before = (await repo.getSettings()).embeddingModel;
       await repo.setSettings(body.data, by(req));
+      if (embeddingModel && embeddingModel !== before) {
+        // Each ready ontology version embeds its terms under the new model (ADR 0011).
+        const queued = await app.deps.ontologies.createEmbedJobs(embeddingModel);
+        req.log.info({ model: embeddingModel, versions: queued }, 'embed jobs queued');
+      }
       req.log.info({ changed: Object.keys(body.data), by: by(req) }, 'llm settings changed');
       return choicesView();
     },

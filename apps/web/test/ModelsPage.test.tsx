@@ -197,7 +197,12 @@ describe('ModelsPage: model choices and pipeline models', () => {
         updatedBy: 'Ken',
       },
     ],
-    settings: { defaultChoice: 'main', draftingModel: 'local/qwen', ocrModel: 'local/olmocr' },
+    settings: {
+      defaultChoice: 'main',
+      draftingModel: 'local/qwen',
+      ocrModel: 'local/olmocr',
+      embeddingModel: null,
+    },
     ...over,
   });
   const endpoints = [
@@ -303,6 +308,12 @@ describe('ModelsPage: model choices and pipeline models', () => {
       'local/llama-3',
     );
     expect(setLlmSettings).toHaveBeenLastCalledWith({ draftingModel: 'local/llama-3' });
+    const embedding = within(pipeline).getByRole('combobox', { name: 'Embedding model' });
+    expect(embedding).toHaveValue('');
+    await userEvent.selectOptions(embedding, 'local/qwen');
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: 'local/qwen' });
+    await userEvent.selectOptions(embedding, '');
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: null });
   });
 
   it('asks the workers to discover an endpoint now', async () => {

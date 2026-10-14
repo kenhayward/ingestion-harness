@@ -316,7 +316,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     discoverLlmEndpoint: vi.fn(async () => undefined),
     listModelChoices: vi.fn(async () => ({
       choices: [],
-      settings: { defaultChoice: null, draftingModel: null, ocrModel: null },
+      settings: { defaultChoice: null, draftingModel: null, ocrModel: null, embeddingModel: null },
     })),
     createModelChoice: vi.fn(async () => {
       throw new Error('createModelChoice not stubbed');
@@ -611,6 +611,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     'accepted',
     'accepted',
     'proposed',
+    'skipped',
     'pending',
     'pending',
     'pending',

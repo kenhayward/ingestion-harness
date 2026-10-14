@@ -107,10 +107,11 @@ describe('export', () => {
       dataPolicy: 'local',
       projectName: 'Letter',
       briefVersion: 1,
-      brief,
+      brief: { ...brief, ontologies: [], ontologyGuidance: '' },
       draft: letter(1),
       survey: null,
       completedStages: [],
+      ontologies: [],
       samples: [
         {
           sampleId: dev.id,
@@ -718,7 +719,7 @@ describe('import', () => {
         state: string;
       }[]
     )
-      .filter((s) => s.stage !== 'references')
+      .filter((s) => s.stage !== 'references' && s.stage !== 'mapping')
       .map((s) => [s.stage, s.state]);
 
   it('imports the accepted survey and the completed stages', async () => {
@@ -965,5 +966,64 @@ describe('readBundle', () => {
     expect(err).toBeInstanceOf(BundleError);
     expect((err as Error).message).toBe(message);
     expect(await tmpEntries()).toEqual(before);
+  });
+});
+
+describe('bundles and the brief ontologies (ADR 0011)', () => {
+  const TTL = Buffer.from('@prefix owl: <http://www.w3.org/2002/07/owl#> .\n');
+  const ttlSha = createHash('sha256').update(TTL).digest('hex');
+  const addOntology = async (app: FastifyInstance) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/ontologies',
+      ...multipart(
+        { id: 'acme', label: 'Acme' },
+        { filename: 'a.ttl', content: TTL, contentType: 'text/turtle' },
+      ),
+    });
+    expect(res.statusCode).toBe(202);
+  };
+
+  it('names the ontology versions the brief chooses, with their bytes', async () => {
+    const { app, repo, add, start } = await project();
+    await addOntology(app);
+    await app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: { ontologies: [{ ontologyId: 'acme', version: 1, role: 'vocabulary' }] },
+    });
+    await add(1);
+    const view = (await start()).json() as ExportView;
+    expect(repo.exportJobs.get(view.jobId)!.params.ontologies).toEqual([
+      { id: 'acme', version: 1, sha256: ttlSha },
+    ]);
+  });
+
+  it('refuses a bundle whose ontologies the library lacks, and writes nothing', async () => {
+    const { app, workbench } = await testApp();
+    const manifest = { ontologies: [{ id: 'acme', version: 1, sha256: 'a'.repeat(64) }] };
+    const res = await importBundle(app, bundle({ manifest }));
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('bundle needs ontologies not in the library: acme v1');
+    expect(await workbench.listProjects()).toEqual([]);
+  });
+
+  it('imports a bundle whose ontologies the library has, pointing the brief at the local version with those bytes', async () => {
+    const { app } = await testApp();
+    await addOntology(app);
+    const manifest = { ontologies: [{ id: 'acme', version: 7, sha256: ttlSha }] };
+    const files = {
+      'brief.json': strToU8(
+        JSON.stringify({
+          purpose: 'Memos',
+          ontologies: [{ ontologyId: 'acme', version: 7, role: 'vocabulary' }],
+        }),
+      ),
+    };
+    expect((await importBundle(app, bundle({ manifest, files }))).statusCode).toBe(201);
+    const saved = (await app.inject('/api/workbench/projects/memo')).json();
+    expect(saved.brief.body.ontologies).toEqual([
+      { ontologyId: 'acme', version: 1, role: 'vocabulary' },
+    ]);
   });
 });

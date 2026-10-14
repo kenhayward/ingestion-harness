@@ -42,12 +42,14 @@ log = logging.getLogger(__name__)
 ENDPOINTS_ENV = "LLM_ENDPOINTS"
 #: Model choices from .env: `id=Label|endpoint/model[|default]`, `;`-separated.
 CHOICES_ENV = "LLM_CHOICES"
+#: The embedding model setting's .env default (an `endpoint/model-id`; unset: lexical retrieval).
+EMBEDDING_ENV = "EMBEDDING_MODEL"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _KINDS = ("anthropic", "openai-chat", "openai-responses")
 #: Names the worker resolves itself: never a choice id.
 RESERVED_CHOICE_IDS = frozenset({"default", "draft", "ocr"})
 #: The pipeline settings: the default choice's id, and the OCR and drafting models' refs.
-SETTINGS = ("default_choice", "drafting_model", "ocr_model")
+SETTINGS = ("default_choice", "drafting_model", "ocr_model", "embedding_model")
 
 
 @dataclass(frozen=True)
@@ -223,6 +225,8 @@ def seed_from_config(config: LLMConfig, env: Mapping[str, str] = os.environ) -> 
         settings["drafting_model"] = drafting
     if config.ocr is not None:
         settings["ocr_model"] = config.ocr.model
+    if embedding := (env.get(EMBEDDING_ENV) or "").strip():
+        settings["embedding_model"] = embedding
     return Seed(endpoints, choices, settings)
 
 
@@ -279,6 +283,8 @@ class LiveModels:
         self.ocr_model: str | None = (
             seed.settings.get("ocr_model", self._ocr.model) if self._ocr is not None else None
         )
+        #: Term and output embeddings for the mapping stage (ADR 0011); None: lexical only.
+        self.embedding_model: str | None = seed.settings.get("embedding_model")
 
     def refresh(self) -> bool:
         """Rebuild when the stored config changed; True when it did."""

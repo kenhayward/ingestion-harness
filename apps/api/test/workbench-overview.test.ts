@@ -88,6 +88,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       'outputs',
       'sections',
       'steps',
+      'mapping',
       'references',
       'evaluate',
       'revise',

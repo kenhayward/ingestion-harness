@@ -20,6 +20,7 @@ from rdflib import Literal as RdfLiteral
 from rdflib.collection import Collection
 from rdflib.namespace import DC, DCTERMS, OWL, RDF, RDFS, SH, SKOS, XSD
 
+from .embeddings import EmbeddingTerm, embed_after_import
 from .ontology_fetch import OntologySourceUnavailable
 from .pipeline import DocumentError, JobCancelled, check_cancelled
 from .storage import ontology_normalized_key, ontology_source_key
@@ -484,6 +485,57 @@ class OntologyStore(Protocol):
         (trimmed, any case); None if there is none."""
         ...
 
+    def local_only(self, ontology_id: str) -> bool:
+        """The ontology may only be sent to local models."""
+        ...
+
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        """The local-only ontologies among `versions` and the ontologies their terms were
+        imported from (`defined_in`), sorted: their text may only reach local models."""
+        ...
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        """Every term but shapes, its parents as labels."""
+        ...
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        """(kind, iri) -> text_sha256 of the vectors stored for the model."""
+        ...
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        """Upsert (kind, iri, text_sha256, vector) rows."""
+        ...
+
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        """Terms of `kinds` matching `query` by label and synonyms (trigram) or definition (full
+        text), best first."""
+        ...
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        """Terms of `kinds` nearest `vector` (cosine) under `model_ref`, nearest first."""
+        ...
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        """Any of `versions` has vectors for the model."""
+        ...
+
     def create_imported(
         self,
         *,
@@ -714,6 +766,173 @@ class PgOntologyStore:
         ).fetchone()
         return str(row[0]) if row else None
 
+    def local_only_sources(self, versions: list[tuple[str, int]]) -> list[str]:
+        if not versions:
+            return []
+        rows = self._conn.execute(
+            """SELECT o.id FROM ontologies o
+                WHERE o.local_only
+                  AND (o.id = ANY(%(ids)s::text[])
+                       OR o.id IN (SELECT DISTINCT split_part(t.defined_in, '@', 1)
+                                     FROM ontology_terms t
+                                     JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                                       ON t.ontology_id = p.id AND t.version = p.v
+                                    WHERE t.defined_in IS NOT NULL))
+                ORDER BY o.id""",
+            {"ids": [v[0] for v in versions], "vs": [v[1] for v in versions]},
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+
+    def local_only(self, ontology_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT local_only FROM ontologies WHERE id = %s", (ontology_id,)
+        ).fetchone()
+        return bool(row[0]) if row else False
+
+    def embedding_terms(self, ontology_id: str, version: int) -> list[EmbeddingTerm]:
+        rows = self._conn.execute(
+            """SELECT kind, iri, label, alt_labels, definition, parents FROM ontology_terms
+                WHERE ontology_id = %s AND version = %s AND kind <> 'shape'
+                ORDER BY kind, iri""",
+            (ontology_id, version),
+        ).fetchall()
+        labels: dict[str, str] = {}
+        for _, iri, label, *_rest in rows:
+            labels.setdefault(str(iri), str(label))
+        return [
+            EmbeddingTerm(
+                str(kind),
+                str(iri),
+                str(label),
+                list(alt_labels),
+                str(definition),
+                [labels.get(p, local_name(p)) for p in parents],
+            )
+            for kind, iri, label, alt_labels, definition, parents in rows
+        ]
+
+    def existing_embeddings(
+        self, ontology_id: str, version: int, model_ref: str
+    ) -> dict[tuple[str, str], str]:
+        rows = self._conn.execute(
+            """SELECT kind, iri, text_sha256 FROM ontology_term_embeddings
+                WHERE ontology_id = %s AND version = %s AND model_ref = %s""",
+            (ontology_id, version, model_ref),
+        ).fetchall()
+        return {(str(k), str(i)): str(s) for k, i, s in rows}
+
+    def store_embeddings(
+        self,
+        ontology_id: str,
+        version: int,
+        model_ref: str,
+        rows: list[tuple[str, str, str, list[float]]],
+    ) -> None:
+        if not rows:
+            return
+        with self._conn.transaction(), self._conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO ontology_term_embeddings
+                     (ontology_id, version, kind, iri, model_ref, dims, text_sha256, embedding)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector)
+                   ON CONFLICT (ontology_id, version, kind, iri, model_ref) DO UPDATE
+                     SET dims = excluded.dims, text_sha256 = excluded.text_sha256,
+                         embedding = excluded.embedding, created_at = now()""",
+                [
+                    (ontology_id, version, kind, iri, model_ref, len(vec), sha, vector_literal(vec))
+                    for kind, iri, sha, vec in rows
+                ],
+            )
+
+    def lexical(
+        self, versions: list[tuple[str, int]], query: str, kinds: list[str], limit: int
+    ) -> list[Term]:
+        if not versions or not query.strip():
+            return []
+        rows = self._conn.execute(
+            # Any word of the query may meet a definition (OR): an output's description is
+            # never all in one term's text.
+            f"""WITH q AS (SELECT lower(%(q)s) AS text,
+                       to_tsquery('simple', replace(plainto_tsquery('simple', %(q)s)::text,
+                                                    ' & ', ' | ')) AS ts),
+                scored AS (
+                  SELECT {_READ_COLUMNS},
+                         greatest(word_similarity(lower(t.label), q.text),
+                                  coalesce((SELECT max(word_similarity(lower(a), q.text))
+                                              FROM unnest(t.alt_labels) a), 0)) AS lex,
+                         ts_rank(d.doc, q.ts) AS fts,
+                         d.doc @@ q.ts AS matched
+                    FROM ontology_terms t
+                    JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                      ON t.ontology_id = p.id AND t.version = p.v
+                   CROSS JOIN q
+                   CROSS JOIN LATERAL (SELECT to_tsvector('simple', t.label || ' '
+                         || array_to_string(t.alt_labels, ' ') || ' ' || t.definition) AS doc) d
+                   WHERE t.kind = ANY(%(kinds)s::text[]))
+                SELECT * FROM scored
+                 WHERE lex >= 0.3 OR matched
+                 ORDER BY lex + fts DESC, label, iri
+                 LIMIT %(limit)s""",
+            {
+                "q": query,
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "limit": limit,
+            },
+        ).fetchall()
+        return _unique([_read_term(r) for r in rows])
+
+    def semantic(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        limit: int,
+    ) -> list[Term]:
+        from psycopg import sql
+
+        if not versions or not vector:
+            return []
+        dims = len(vector)
+        # An exact search over the asked versions only: an approximate index scan filtered
+        # afterwards lets other ontologies' closer terms crowd these out, and HNSW cannot index
+        # more than 2000 dimensions.
+        query = sql.SQL(
+            """WITH c AS MATERIALIZED (
+                 SELECT {cols}, e.embedding FROM ontology_term_embeddings e
+                   JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+                   JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                     ON e.ontology_id = p.id AND e.version = p.v
+                  WHERE e.model_ref = {ref} AND e.dims = {dims}
+                    AND e.kind = ANY(%(kinds)s::text[]))
+               SELECT * FROM c ORDER BY embedding <=> %(vec)s::vector LIMIT %(limit)s"""
+        ).format(cols=sql.SQL(_READ_COLUMNS), ref=sql.Literal(model_ref), dims=sql.Literal(dims))
+        rows = self._conn.execute(
+            query,
+            {
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "vec": vector_literal(vector),
+                "limit": limit,
+            },
+        ).fetchall()
+        return _unique([_read_term(r) for r in rows])
+
+    def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
+        if not versions:
+            return False
+        row = self._conn.execute(
+            """SELECT EXISTS (SELECT 1 FROM ontology_term_embeddings e
+                 JOIN unnest(%s::text[], %s::int[]) AS p(id, v)
+                   ON e.ontology_id = p.id AND e.version = p.v
+                WHERE e.model_ref = %s)""",
+            ([v[0] for v in versions], [v[1] for v in versions], model_ref),
+        ).fetchone()
+        return bool(row and row[0])
+
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self._conn.execute(
             """UPDATE ontology_versions SET status = 'failed', error = %s
@@ -740,6 +959,36 @@ def _resolved(iri: str, how: str, ontology_id: str, version: int) -> dict[str, A
         "version": version,
         "reason": None,
     }
+
+
+_READ_COLUMNS = (
+    "t.iri, t.kind, t.label, t.alt_labels, t.definition, t.parents, t.domains, t.ranges,"
+    " t.scheme, t.deprecated, t.root, t.child_count, t.defined_in"
+)
+
+
+def _read_term(row: Any) -> Term:
+    iri, kind, label, alt, definition, parents, domains, ranges, scheme, dep, root, n, d = row[:13]
+    return Term(
+        str(iri), kind, str(label), list(alt), str(definition), list(parents), list(domains),
+        list(ranges), scheme, bool(dep), bool(root), int(n), defined_in=d,
+    )  # fmt: skip
+
+
+def _unique(terms: list[Term]) -> list[Term]:
+    """One row per IRI (a term indexed under several kinds or versions), first kept."""
+    seen: set[str] = set()
+    out: list[Term] = []
+    for t in terms:
+        if t.iri not in seen:
+            seen.add(t.iri)
+            out.append(t)
+    return out
+
+
+def vector_literal(vector: list[float]) -> str:
+    """pgvector's text form: `[0.1,0.2]`."""
+    return "[" + ",".join(repr(float(v)) for v in vector) + "]"
 
 
 def import_id(iri: str) -> str:
@@ -950,6 +1199,7 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
             "application/n-triples",
         )
         store.save(oid, version, parsed)
+        embed_after_import(deps, queue, job.id, oid, version)
     except DocumentError as exc:
         store.fail(oid, version, str(exc))
         raise

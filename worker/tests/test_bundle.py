@@ -321,3 +321,15 @@ def test_export_records_the_size_of_its_zip(fixture_specs_dir: Path) -> None:
         BUNDLE_EXPORTED,
         {"samples": ["s1"], "bytes": len(zipped)},
     )
+
+
+def test_export_names_the_brief_ontologies_and_older_manifests_stay_as_they_were(
+    fixture_specs_dir: Path,
+) -> None:
+    store, deps = make(fixture_specs_dir)
+    acme = {"id": "acme", "version": 1, "sha256": "a" * 64}
+    manifest = run_export(export_job(ontologies=[acme]), deps, FakeQueue())
+    assert manifest["ontologies"] == [acme]
+    files = read_zip(store.get("runs", export_key("letter", "job-x")))
+    assert json.loads(files["manifest.json"])["ontologies"] == [acme]
+    assert "ontologies" not in run_export(export_job(), deps, FakeQueue())
