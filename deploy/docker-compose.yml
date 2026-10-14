@@ -25,7 +25,11 @@ x-db-env: &db-env
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # postgres:17-alpine with pgvector (ADR 0011: ontology term embeddings).
+    build:
+      context: ..
+      dockerfile: deploy/docker/postgres.Dockerfile
+    image: ingestion-postgres:17-pgvector-0.8.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ingest}

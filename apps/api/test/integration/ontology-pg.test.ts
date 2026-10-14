@@ -1,7 +1,7 @@
 /**
  * Opt-in Postgres test for PgOntologyRepo (migration 0032). Skipped unless IH_TEST_DATABASE_URL
  * points at a THROWAWAY database: it applies db/migrations and writes ontology rows. Example:
- * docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
+ * docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  */
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';

@@ -4,7 +4,7 @@
  *
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies
  * db/migrations and writes 1,000 projects (under a random id prefix). Example:
- *   docker run --rm -d --name ih-test-pg-perf -e POSTGRES_PASSWORD=test -p 55442:5432 postgres:17-alpine
+ *   docker run --rm -d --name ih-test-pg-perf -e POSTGRES_PASSWORD=test -p 55442:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55442/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-list-perf
  *   docker stop ih-test-pg-perf
