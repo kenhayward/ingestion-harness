@@ -1120,6 +1120,28 @@
                       "model": {
                         "type": "string"
                       },
+                      "retired": {
+                        "type": "object",
+                        "properties": {
+                          "retiredAt": {
+                            "type": "string",
+                            "description": "When an admin retired the document type."
+                          },
+                          "retiredBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The label of the token that retired it; null without access control."
+                          }
+                        },
+                        "required": [
+                          "retiredAt",
+                          "retiredBy"
+                        ],
+                        "additionalProperties": true,
+                        "description": "Set only for a retired document type (listed with `?retired=include`)."
+                      },
                       "kind": {
                         "type": "string",
                         "enum": [
@@ -11366,6 +11388,17 @@
             "schema": {
               "type": "string",
               "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "retired",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
                 "activity",
                 "name",
                 "score",
@@ -11647,6 +11680,34 @@
                                   "ready"
                                 ],
                                 "additionalProperties": true
+                              },
+                              "retired": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "retiredAt": {
+                                        "type": "string",
+                                        "description": "When an admin retired the document type."
+                                      },
+                                      "retiredBy": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "description": "The label of the token that retired it; null without access control."
+                                      }
+                                    },
+                                    "required": [
+                                      "retiredAt",
+                                      "retiredBy"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -11670,7 +11731,8 @@
                               "devSamples",
                               "holdoutSamples",
                               "lastActivityAt",
-                              "flags"
+                              "flags",
+                              "retired"
                             ],
                             "additionalProperties": true
                           }
@@ -12065,13 +12127,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The new project."
@@ -12352,13 +12443,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -12626,13 +12746,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -13266,13 +13415,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "retired": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "retiredAt": {
+                                  "type": "string",
+                                  "description": "When an admin retired the document type."
+                                },
+                                "retiredBy": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "description": "The label of the token that retired it; null without access control."
+                                }
+                              },
+                              "required": [
+                                "retiredAt",
+                                "retiredBy"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "project",
                         "draft",
                         "published",
-                        "brief"
+                        "brief",
+                        "retired"
                       ],
                       "additionalProperties": true
                     }
@@ -17207,13 +17385,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -26042,13 +26249,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The project."
@@ -26346,13 +26582,42 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "project",
                     "draft",
                     "published",
-                    "brief"
+                    "brief",
+                    "retired"
                   ],
                   "additionalProperties": true,
                   "description": "The new project."
@@ -27249,13 +27514,42 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "retired": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "retiredAt": {
+                                  "type": "string",
+                                  "description": "When an admin retired the document type."
+                                },
+                                "retiredBy": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "description": "The label of the token that retired it; null without access control."
+                                }
+                              },
+                              "required": [
+                                "retiredAt",
+                                "retiredBy"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
                         "project",
                         "draft",
                         "published",
-                        "brief"
+                        "brief",
+                        "retired"
                       ],
                       "additionalProperties": true
                     },

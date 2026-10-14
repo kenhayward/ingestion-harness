@@ -218,7 +218,13 @@ export async function projectView(
   project: WorkbenchProject,
 ): Promise<ProjectView> {
   const { draft, published } = await versionsOf(app.deps.templates, project.id);
-  return { project, draft, published, brief: await app.deps.workbench.latestBrief(project.id) };
+  return {
+    project,
+    draft,
+    published,
+    brief: await app.deps.workbench.latestBrief(project.id),
+    retired: null,
+  };
 }
 
 const SampleParams = z.object({ id: Id, sid: z.string().uuid() });

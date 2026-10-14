@@ -535,6 +535,7 @@ export function projectView(overrides: Partial<ProjectView> = {}): ProjectView {
     draft: 1,
     published: null,
     brief: null,
+    retired: null,
     ...overrides,
   };
 }
@@ -566,6 +567,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     holdoutSamples: 2,
     lastActivityAt: '2026-10-13T08:00:00.000Z',
     flags: { attention: true, running: false, ready: false },
+    retired: null,
     ...overrides,
   };
 }
