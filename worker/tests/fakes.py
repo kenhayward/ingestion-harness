@@ -14,6 +14,7 @@ from ingest_worker.llm.base import (
 )
 from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
+from ingest_worker.ontology import ParsedOntology
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
 
@@ -307,3 +308,23 @@ class MemoryLlmConfigStore:
             cfg.model_copy(update={"models": []}), source="ui", edited=True
         )
         self._changed(before)
+
+
+@dataclass
+class MemoryOntologyStore:
+    """OntologyStore over dicts: what the ontology job wrote, for assertions."""
+
+    status: dict[tuple[str, int], str] = field(default_factory=dict)
+    errors: dict[tuple[str, int], str] = field(default_factory=dict)
+    saved: dict[tuple[str, int], ParsedOntology] = field(default_factory=dict)
+
+    def start(self, ontology_id: str, version: int) -> None:
+        self.status[(ontology_id, version)] = "parsing"
+
+    def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
+        self.saved[(ontology_id, version)] = parsed
+        self.status[(ontology_id, version)] = "ready"
+
+    def fail(self, ontology_id: str, version: int, error: str) -> None:
+        self.status[(ontology_id, version)] = "failed"
+        self.errors[(ontology_id, version)] = error

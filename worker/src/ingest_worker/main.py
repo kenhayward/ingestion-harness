@@ -16,6 +16,7 @@ from .drafting import run_draft
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
 from .ocr import OcrSettings
+from .ontology import PgOntologyStore, run_ontology_import
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -45,7 +46,8 @@ FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save a
 
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
-    """Claim and run one job (process, publish, rerun, prepare, segment, draft or export).
+    """Claim and run one job (process, publish, rerun, prepare, segment, draft, export or
+    ontology).
     Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
@@ -89,6 +91,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             manifest = run_export(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
+            return True
+        if job.task == "ontology":
+            parsed = run_ontology_import(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s indexed %d ontology terms", job.id, len(parsed.terms))
             return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
@@ -207,6 +214,8 @@ def main() -> None:
             if settings.example_template.is_file()
             else None
         ),
+        ontologies=PgOntologyStore(psycopg.connect(settings.database_url, autocommit=True)),
+        ontology_max_triples=settings.ontology_max_triples,
     )
     log.info(
         "worker %s started: %d specs, providers=%s, ocr=%s, converter=%s",

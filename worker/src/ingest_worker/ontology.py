@@ -11,14 +11,22 @@ import re
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from rdflib import BNode, Graph, URIRef
 from rdflib import Literal as RdfLiteral
 from rdflib.collection import Collection
 from rdflib.namespace import DC, DCTERMS, OWL, RDF, RDFS, SH, SKOS, XSD
 
-from .pipeline import DocumentError
+from .pipeline import DocumentError, JobCancelled, check_cancelled
+from .storage import ontology_normalized_key
+
+if TYPE_CHECKING:
+    import psycopg
+
+    from .pipeline import PipelineDeps
+    from .queue import ClaimedJob, JobQueue
 
 TermKind = Literal[
     "class",
@@ -357,3 +365,165 @@ def parse_ontology(
         terms=terms,
         normalized=("\n".join(lines) + "\n").encode("utf-8"),
     )
+
+
+# --- The `ontology` job ----------------------------------------------------------------------
+
+#: Job event when a version is indexed; mirrors ONTOLOGY_INDEXED_EVENT in packages/shared.
+ONTOLOGY_INDEXED = "ontology indexed"
+
+
+class OntologyStore(Protocol):
+    """The ontology tables the job writes (the API reads them)."""
+
+    def start(self, ontology_id: str, version: int) -> None: ...
+    def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None: ...
+    def fail(self, ontology_id: str, version: int, error: str) -> None: ...
+
+
+class OntologyJobParams(BaseModel):
+    """What the API's OntologyRepo.createVersion puts in the job's params."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    ontology_id: str = Field(alias="ontologyId", min_length=2)
+    version: int = Field(gt=0)
+    source_key: str = Field(alias="sourceKey", min_length=1)
+    file_name: str = Field(alias="fileName", min_length=1)
+    media_type: str = Field(alias="mediaType", min_length=1)
+
+
+_TERM_COLUMNS = (
+    "ontology_id, version, iri, kind, label, alt_labels, definition, parents, domains, ranges,"
+    " scheme, deprecated, root, child_count"
+)
+_TERM_TYPES = [
+    "text",
+    "int4",
+    "text",
+    "text",
+    "text",
+    "text[]",
+    "text",
+    "text[]",
+    "text[]",
+    "text[]",
+    "text",
+    "bool",
+    "bool",
+    "int4",
+]
+
+
+class PgOntologyStore:
+    """OntologyStore on Postgres (migration 0032). A ready version is immutable (trigger)."""
+
+    def __init__(self, conn: psycopg.Connection[Any]) -> None:
+        self._conn = conn
+
+    def start(self, ontology_id: str, version: int) -> None:
+        self._conn.execute(
+            """UPDATE ontology_versions SET status = 'parsing', error = NULL
+                WHERE ontology_id = %s AND version = %s AND status IN ('queued', 'parsing')""",
+            (ontology_id, version),
+        )
+
+    def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
+        from psycopg.types.json import Jsonb
+
+        with self._conn.transaction():
+            self._conn.execute(
+                "DELETE FROM ontology_terms WHERE ontology_id = %s AND version = %s",
+                (ontology_id, version),
+            )
+            with (
+                self._conn.cursor() as cur,
+                cur.copy(f"COPY ontology_terms ({_TERM_COLUMNS}) FROM STDIN") as copy,
+            ):
+                copy.set_types(_TERM_TYPES)
+                for t in parsed.terms:
+                    copy.write_row(
+                        (
+                            ontology_id,
+                            version,
+                            t.iri,
+                            t.kind,
+                            t.label,
+                            t.alt_labels,
+                            t.definition,
+                            t.parents,
+                            t.domain,
+                            t.range,
+                            t.scheme,
+                            t.deprecated,
+                            t.root,
+                            t.child_count,
+                        )
+                    )
+            self._conn.execute(
+                """UPDATE ontology_versions
+                      SET status = 'ready', error = NULL, ontology_iri = %s, version_iri = %s,
+                          license = %s, kinds = %s, stats = %s, imports = %s
+                    WHERE ontology_id = %s AND version = %s AND status <> 'ready'""",
+                (
+                    parsed.ontology_iri,
+                    parsed.version_iri,
+                    parsed.license,
+                    parsed.kinds,
+                    Jsonb(parsed.stats()),
+                    Jsonb([{"iri": i, "resolution": "unresolved"} for i in parsed.imports]),
+                    ontology_id,
+                    version,
+                ),
+            )
+
+    def fail(self, ontology_id: str, version: int, error: str) -> None:
+        self._conn.execute(
+            """UPDATE ontology_versions SET status = 'failed', error = %s
+                WHERE ontology_id = %s AND version = %s AND status <> 'ready'""",
+            (error, ontology_id, version),
+        )
+
+
+def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ParsedOntology:
+    """Parse the uploaded file, keep its canonical N-Triples, index its terms. A file that
+    cannot be read fails the version (and the job goes to review); other errors retry, failing
+    the version on the last attempt so it never stays 'parsing'."""
+    try:
+        params = OntologyJobParams.model_validate(job.params or {})
+    except ValidationError as exc:
+        raise DocumentError(f"invalid ontology import parameters: {exc}") from exc
+    store = deps.ontologies
+    if store is None:
+        raise DocumentError("this worker has no ontology store")
+    oid, version = params.ontology_id, params.version
+    store.start(oid, version)
+    try:
+        data = deps.store.get_optional(deps.buckets.runs, params.source_key)
+        if data is None:
+            raise DocumentError(f"the uploaded file is missing ({params.source_key})")
+        parsed = parse_ontology(
+            data, params.media_type, params.file_name, max_triples=deps.ontology_max_triples
+        )
+        check_cancelled(job, queue)
+        deps.store.put(
+            deps.buckets.runs,
+            ontology_normalized_key(oid, version),
+            parsed.normalized,
+            "application/n-triples",
+        )
+        store.save(oid, version, parsed)
+    except DocumentError as exc:
+        store.fail(oid, version, str(exc))
+        raise
+    except JobCancelled:
+        store.fail(oid, version, "the import was cancelled")
+        raise
+    except Exception as exc:
+        if job.attempts >= job.max_attempts:
+            store.fail(oid, version, f"{type(exc).__name__}: {exc}")
+        raise
+    queue.event(
+        job.id, "info", ONTOLOGY_INDEXED, {"terms": len(parsed.terms), "triples": parsed.triples}
+    )
+    return parsed

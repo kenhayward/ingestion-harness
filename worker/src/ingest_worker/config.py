@@ -36,6 +36,8 @@ class Settings:
     example_template: Path
     #: Gotenberg converting Word (.docx) sources to PDF; None: Word documents need review.
     converter_url: str | None
+    #: Ontology imports over this many triples are refused (ADR 0011).
+    ontology_max_triples: int = 2_000_000
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
@@ -75,4 +77,5 @@ class Settings:
                 )
             ),
             converter_url=env.get("CONVERTER_URL") or None,
+            ontology_max_triples=int(env.get("ONTOLOGY_MAX_TRIPLES", "2000000")),
         )
