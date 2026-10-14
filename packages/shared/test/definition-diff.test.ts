@@ -48,6 +48,8 @@ describe('changeSubject', () => {
     ['pipeline order', 'the pipeline'],
     ['review.required', 'the review setting'],
     ['model', "the document type's model"],
+    ['semantics.fields.sender.property', 'the ontology mapping'],
+    ['delivery.formats', 'the delivered formats'],
     ['preamble', 'the preamble'],
     ['name', 'the name'],
   ])('%s -> %s', (path, subject) => expect(changeSubject(path)).toBe(subject));

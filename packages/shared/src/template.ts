@@ -137,6 +137,99 @@ export function outputCoverage(definition: unknown): OutputCoverage {
   };
 }
 
+/** A term: a CURIE (`acme:Batch`, with `semantics.prefixes` or a built-in prefix) or an IRI. */
+const TermRef = z.string().min(1);
+
+/** Prefixes every mapping may use without declaring them. */
+export const CURIE_PREFIXES: Record<string, string> = {
+  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+  rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
+  owl: 'http://www.w3.org/2002/07/owl#',
+  xsd: 'http://www.w3.org/2001/XMLSchema#',
+  skos: 'http://www.w3.org/2004/02/skos/core#',
+  dcterms: 'http://purl.org/dc/terms/',
+  prov: 'http://www.w3.org/ns/prov#',
+};
+
+const OntologyPinSchema = z
+  .object({ id: z.string().min(1), version: z.number().int().positive() })
+  .strict();
+
+/** How one field or column becomes RDF: a literal, an entity, or a link to a SKOS concept. */
+export const OutputMappingSchema = z
+  .object({
+    property: TermRef,
+    /** The value names an entity: its class and readable IRI template (e.g. `party/{value|slug}`). */
+    object: z
+      .object({ class: TermRef, iri: z.string().min(1), label: z.boolean().optional() })
+      .strict()
+      .optional(),
+    /** The value links to a concept: by explicit value, or by label within `scheme`. */
+    concepts: z
+      .object({
+        scheme: TermRef.optional(),
+        values: z.record(z.string(), TermRef).optional(),
+        match: z.literal('label').optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type OutputMapping = z.infer<typeof OutputMappingSchema>;
+
+/** The recipe's ontology mapping (ADR 0011): validated, versioned and immutable with the recipe. */
+export const SemanticsSchema = z
+  .object({
+    ontologies: z.array(OntologyPinSchema).default([]),
+    /** SHACL shapes the document's graph must satisfy (rollout step 5). */
+    shapes: z.array(OntologyPinSchema).default([]),
+    prefixes: z.record(z.string().regex(/^[A-Za-z][\w-]*$/), z.string().url()).default({}),
+    document: z.object({ class: TermRef, iri: z.string().min(1).default('doc/{source}') }).strict(),
+    fields: z.record(z.string(), OutputMappingSchema).default({}),
+    tables: z
+      .record(
+        z.string(),
+        z
+          .object({
+            /** The property from the document to each row. */
+            link: TermRef,
+            class: TermRef,
+            /** Readable row IRI from its columns (absent: a blank node). */
+            iri: z.string().min(1).optional(),
+            columns: z.record(z.string(), OutputMappingSchema).default({}),
+          })
+          .strict(),
+      )
+      .default({}),
+    /** Recipe-local terms, for outputs no pinned ontology has a term for. */
+    local: z
+      .array(
+        z
+          .object({
+            iri: TermRef,
+            kind: z.enum([
+              'class',
+              'object_property',
+              'datatype_property',
+              'annotation_property',
+              'concept',
+            ]),
+            label: z.string().min(1),
+            definition: z.string().optional(),
+          })
+          .strict(),
+      )
+      .default([]),
+  })
+  .strict();
+export type Semantics = z.infer<typeof SemanticsSchema>;
+
+export const DELIVERY_FORMATS = ['csv', 'json', 'rdf'] as const;
+export type DeliveryFormat = (typeof DELIVERY_FORMATS)[number];
+export const DeliverySchema = z
+  .object({ formats: z.array(z.enum(DELIVERY_FORMATS)).min(1) })
+  .strict();
+
 export const TemplateSchema = z
   .object({
     id: Id,
@@ -173,6 +266,10 @@ export const TemplateSchema = z
       .object({ required: z.enum(['always', 'on_warnings', 'never']).default('on_warnings') })
       .strict()
       .default({}),
+    /** How the recipe's outputs map to ontology terms (absent: no RDF). */
+    semantics: SemanticsSchema.optional(),
+    /** What publishing delivers (absent: CSV and JSON). */
+    delivery: DeliverySchema.optional(),
   })
   .strict()
   .superRefine((t, ctx) => {
@@ -238,6 +335,40 @@ export const TemplateSchema = z
         }
       }
     }
+    const formats = t.delivery?.formats ?? [];
+    dupes(formats).forEach((f) => issue(`delivery: "${f}" is listed twice`));
+    if (formats.includes('rdf') && !t.semantics) {
+      issue('delivery: rdf needs an ontology mapping (semantics)');
+    }
+    if (t.semantics) {
+      const mapping = (label: string, def: z.infer<typeof ValueDefSchema>, m: OutputMapping) => {
+        if (m.object && m.concepts) {
+          issue(`semantics: ${label}: map it to an entity or to concepts, not both`);
+        }
+        if (def.type === 'enum' && m.concepts?.values) {
+          Object.keys(m.concepts.values)
+            .filter((v) => !(def.enum ?? []).includes(v))
+            .forEach((v) => issue(`semantics: ${label}: "${v}" is not one of its values`));
+        }
+      };
+      for (const [id, m] of Object.entries(t.semantics.fields)) {
+        const def = t.outputs.fields.find((f) => f.id === id);
+        if (def) mapping(`field "${id}"`, def, m);
+        else issue(`semantics: unknown field "${id}"`);
+      }
+      for (const [id, tm] of Object.entries(t.semantics.tables)) {
+        const table = tables.get(id);
+        if (!table) {
+          issue(`semantics: unknown table "${id}"`);
+          continue;
+        }
+        for (const [cid, m] of Object.entries(tm.columns)) {
+          const def = table.columns.find((c) => c.id === cid);
+          if (def) mapping(`column "${id}.${cid}"`, def, m);
+          else issue(`semantics: table "${id}": unknown column "${cid}"`);
+        }
+      }
+    }
     for (const step of t.pipeline) {
       if (step.type !== 'check') continue;
       [step.values, step.reference, step.aliases]
@@ -257,4 +388,9 @@ export function stepModel(
   step: Pick<z.infer<typeof ExtractStepSchema>, 'model'>,
 ): string {
   return step.model !== 'default' ? step.model : (template.model ?? 'default');
+}
+
+/** What publishing delivers. Held in step with `Template.delivery_formats` in the worker. */
+export function deliveryFormats(template: Pick<Template, 'delivery'>): DeliveryFormat[] {
+  return template.delivery?.formats ?? ['csv', 'json'];
 }

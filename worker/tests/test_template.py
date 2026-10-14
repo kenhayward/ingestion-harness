@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from ingest_worker.config import REPO_ROOT
 from ingest_worker.template import Template, compile_step
 
 SECTIONS = {"sections": [{"id": "head", "anchor": r"\A"}, {"id": "body", "anchor": "^BODY"}]}
@@ -177,3 +179,31 @@ def test_steps_inherit_the_document_types_model(
     t = Template.model_validate(raw)
     assert t.step_model(t.extract_steps()[0]) == runs
     assert compile_step(t, t.extract_steps()[0]).model == runs
+
+
+SEMANTICS_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "template-semantics.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", SEMANTICS_FIXTURE["cases"], ids=[c["name"] for c in SEMANTICS_FIXTURE["cases"]]
+)
+def test_semantics_and_delivery_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    definition = {**SEMANTICS_FIXTURE["base"], **case["patch"]}
+    if case["valid"]:
+        Template.model_validate(definition)
+    else:
+        with pytest.raises(ValidationError):
+            Template.model_validate(definition)
+
+
+def test_delivered_formats_default_to_csv_and_json() -> None:
+    base = Template.model_validate(SEMANTICS_FIXTURE["base"])
+    assert base.delivery_formats() == ["csv", "json"]
+    json_only = Template.model_validate(
+        {**SEMANTICS_FIXTURE["base"], "delivery": {"formats": ["json"]}}
+    )
+    assert json_only.delivery_formats() == ["json"]

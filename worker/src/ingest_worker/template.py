@@ -102,6 +102,73 @@ class ReviewPolicy(_Model):
     required: Literal["always", "on_warnings", "never"] = "on_warnings"
 
 
+class OntologyPin(_Model):
+    id: str = Field(min_length=1)
+    version: int = Field(gt=0)
+
+
+class EntityMapping(_Model):
+    """The value names an entity: its class and readable IRI template."""
+
+    class_: str = Field(alias="class", min_length=1)
+    iri: str = Field(min_length=1)
+    label: bool | None = None
+
+
+class ConceptMapping(_Model):
+    """The value links to a SKOS concept: by explicit value, or by label within `scheme`."""
+
+    scheme: str | None = None
+    values: dict[str, str] | None = None
+    match: Literal["label"] | None = None
+
+
+class OutputMapping(_Model):
+    """How one field or column becomes RDF (OutputMappingSchema in TS)."""
+
+    property: str = Field(min_length=1)
+    object: EntityMapping | None = None
+    concepts: ConceptMapping | None = None
+
+
+class DocumentMapping(_Model):
+    class_: str = Field(alias="class", min_length=1)
+    iri: str = Field(default="doc/{source}", min_length=1)
+
+
+class TableMapping(_Model):
+    link: str = Field(min_length=1)
+    class_: str = Field(alias="class", min_length=1)
+    iri: str | None = None
+    columns: dict[str, OutputMapping] = Field(default_factory=dict)
+
+
+class LocalTerm(_Model):
+    iri: str = Field(min_length=1)
+    kind: Literal["class", "object_property", "datatype_property", "annotation_property", "concept"]
+    label: str = Field(min_length=1)
+    definition: str | None = None
+
+
+class Semantics(_Model):
+    """The recipe's ontology mapping (ADR 0011; SemanticsSchema in TS)."""
+
+    ontologies: list[OntologyPin] = Field(default_factory=list)
+    shapes: list[OntologyPin] = Field(default_factory=list)
+    prefixes: dict[str, str] = Field(default_factory=dict)
+    document: DocumentMapping
+    fields: dict[str, OutputMapping] = Field(default_factory=dict)
+    tables: dict[str, TableMapping] = Field(default_factory=dict)
+    local: list[LocalTerm] = Field(default_factory=list)
+
+
+DeliveryFormat = Literal["csv", "json", "rdf"]
+
+
+class Delivery(_Model):
+    formats: list[DeliveryFormat] = Field(min_length=1)
+
+
 class TemplateDocument(DocumentLayout):
     #: Prefix each page with "[page N]" (original PDF numbering) so models can cite pages.
     page_markers: bool = Field(default=True, alias="pageMarkers")
@@ -123,6 +190,10 @@ class Template(_Model):
     outputs: OutputsDef
     pipeline: list[Step] = Field(min_length=1)
     review: ReviewPolicy = Field(default_factory=ReviewPolicy)
+    #: How the outputs map to ontology terms (None: no RDF).
+    semantics: Semantics | None = None
+    #: What publishing delivers (None: CSV and JSON).
+    delivery: Delivery | None = None
 
     # --- lookups ---------------------------------------------------------------------------
 
@@ -140,6 +211,10 @@ class Template(_Model):
         if step.model != "default":
             return step.model
         return self.model or "default"
+
+    def delivery_formats(self) -> list[DeliveryFormat]:
+        """What publishing delivers (deliveryFormats in TS)."""
+        return list(self.delivery.formats) if self.delivery else ["csv", "json"]
 
     def filler_of_field(self, field_id: str) -> ExtractStep:
         return next(s for s in self.extract_steps() if field_id in s.fields)
@@ -181,6 +256,48 @@ class Template(_Model):
         )
 
     # --- validation --------------------------------------------------------------------------
+
+    def _semantics_errors(self) -> list[str]:
+        """Delivery and mapping rules beyond the schema (TemplateSchema.superRefine in TS)."""
+        errors: list[str] = []
+        formats = list(self.delivery.formats) if self.delivery else []
+        errors += [
+            f"delivery: {f!r} is listed twice"
+            for f in sorted({f for f in formats if formats.count(f) > 1})
+        ]
+        if "rdf" in formats and self.semantics is None:
+            errors.append("delivery: rdf needs an ontology mapping (semantics)")
+        if self.semantics is None:
+            return errors
+
+        def mapping(label: str, value: ValueDef, m: OutputMapping) -> None:
+            if m.object is not None and m.concepts is not None:
+                errors.append(f"semantics: {label}: map it to an entity or to concepts, not both")
+            if value.type == "enum" and m.concepts is not None and m.concepts.values:
+                errors.extend(
+                    f"semantics: {label}: {v!r} is not one of its values"
+                    for v in m.concepts.values
+                    if v not in (value.enum or [])
+                )
+
+        fields = {f.id: f for f in self.outputs.fields}
+        for fid, m in self.semantics.fields.items():
+            if fid in fields:
+                mapping(f"field {fid!r}", fields[fid], m)
+            else:
+                errors.append(f"semantics: unknown field {fid!r}")
+        tables = {t.id: t for t in self.outputs.tables}
+        for tid, tm in self.semantics.tables.items():
+            if tid not in tables:
+                errors.append(f"semantics: unknown table {tid!r}")
+                continue
+            columns = {c.id: c for c in tables[tid].columns}
+            for cid, m in tm.columns.items():
+                if cid in columns:
+                    mapping(f"column {tid}.{cid}", columns[cid], m)
+                else:
+                    errors.append(f"semantics: table {tid!r}: unknown column {cid!r}")
+        return errors
 
     @model_validator(mode="after")
     def _consistency(self) -> Template:
@@ -243,6 +360,7 @@ class Template(_Model):
                     for p in filter(None, (check.values, check.reference, check.aliases)):
                         if self._resolve(p) is None:
                             errors.append(f"check {check.id!r}: unknown field or column {p!r}")
+        errors += self._semantics_errors()
         if errors:
             raise ValueError("; ".join(errors))
         return self

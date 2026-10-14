@@ -98,6 +98,8 @@ export function changeSubject(path: string): string {
   if (path.startsWith('pipeline')) return 'the pipeline';
   if (path.startsWith('review')) return 'the review setting';
   if (path === 'model') return "the document type's model";
+  if (path.startsWith('semantics')) return 'the ontology mapping';
+  if (path.startsWith('delivery')) return 'the delivered formats';
   return `the ${path.split(/[.[ ]/)[0]}`;
 }
 
