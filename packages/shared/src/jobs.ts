@@ -167,10 +167,23 @@ export const JobProgressSchema = z.discriminatedUnion('kind', [
 ]);
 export type JobProgress = z.infer<typeof JobProgressSchema>;
 
+/**
+ * When this attempt finished reading the document (its last `prepare progress` event: the text
+ * layer, or the last OCR page) and found its sections (`segmented`); null when not (yet) known.
+ * The Progress list times each step from these, the step runs and the job's own times.
+ */
+export const StageTimesSchema = z.object({
+  readAt: z.string().nullable(),
+  segmentedAt: z.string().nullable(),
+});
+export type StageTimes = z.infer<typeof StageTimesSchema>;
+
 export const JobDetailSchema = JobSummarySchema.extend({
   outputs: z.array(JobOutputSchema),
   /** `GET /api/jobs/:id` only: a running extraction's progress (null otherwise or before any). */
   progress: JobProgressSchema.nullable().optional(),
+  /** `GET /api/jobs/:id` only: when this attempt finished reading and segmenting. */
+  stageTimes: StageTimesSchema.optional(),
 });
 export type JobDetail = z.infer<typeof JobDetailSchema>;
 
@@ -178,6 +191,7 @@ export type JobDetail = z.infer<typeof JobDetailSchema>;
 export const JobLiveSchema = z.object({
   job: JobSummarySchema,
   progress: JobProgressSchema.nullable(),
+  stageTimes: StageTimesSchema,
 });
 export type JobLive = z.infer<typeof JobLiveSchema>;
 

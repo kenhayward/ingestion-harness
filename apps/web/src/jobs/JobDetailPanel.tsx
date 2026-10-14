@@ -1,10 +1,17 @@
 import { useEffect, useId, useState } from 'react';
-import type { JobOutput, JobProgress, JobSummary, ModelChoice, StepRun } from '@ih/shared';
+import type {
+  JobOutput,
+  JobProgress,
+  JobSummary,
+  ModelChoice,
+  StageTimes,
+  StepRun,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { JobActions } from './JobActions.js';
-import { modelLabel, progressSteps, relativeTime } from './derive.js';
+import { formatDuration, modelLabel, progressSteps, relativeTime, stepSeconds } from './derive.js';
 
 /** The callout for a job someone has to act on (or that stopped). */
 function callout(job: JobSummary): { title: string; lines: string[]; tone: string } | null {
@@ -49,6 +56,7 @@ export function JobDetailPanel({
   wide = false,
   liveTick,
   progress: runProgress = null,
+  stageTimes: pushedTimes,
 }: {
   api: Api;
   job: JobSummary;
@@ -64,8 +72,11 @@ export function JobDetailPanel({
   liveTick?: number;
   /** Home's live follow: where the running job is (null: not known). */
   progress?: JobProgress | null;
+  /** Home's live follow: when reading and segmenting finished (else the panel's own load). */
+  stageTimes?: StageTimes;
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
+  const [loadedTimes, setLoadedTimes] = useState<StageTimes | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,7 +86,9 @@ export function JobDetailPanel({
     setError(null);
     api.getJob(job.id).then(
       (d) => {
-        if (!cancelled) setOutputs(d.outputs);
+        if (cancelled) return;
+        setOutputs(d.outputs);
+        setLoadedTimes(d.stageTimes ?? null);
       },
       (err: Error) => {
         if (!cancelled) setError(err.message);
@@ -117,13 +130,25 @@ export function JobDetailPanel({
       </span>
     </div>
   );
+  // A running step and a waiting review count up every second.
+  const ticking = job.status === 'running' || job.status === 'awaiting_review';
+  const clock = useClock(now, ticking);
+  const steps = progressSteps(job, runs, runProgress);
+  const seconds = stepSeconds(job, runs, pushedTimes ?? loadedTimes, steps, clock);
   const progress = (
     <ol className="progress" aria-label="Progress">
-      {progressSteps(job, runs, runProgress).map((step) => (
+      {steps.map((step, i) => (
         <li key={step.label} className={`step-${step.state}`}>
           <span className="step-icon" aria-hidden="true" />
           <span className="step-label">{step.label}</span>
           <span className="step-state">{step.text}</span>
+          {seconds[i] != null && (
+            <span className="step-time">
+              <Icon name="clock" size={12} />
+              <span className="visually-hidden">Time taken </span>
+              {formatDuration(seconds[i])}
+            </span>
+          )}
         </li>
       ))}
     </ol>
@@ -232,4 +257,16 @@ export function JobDetailPanel({
       {actions}
     </aside>
   );
+}
+
+/** `now`, moved on to the current time every second while `ticking`. */
+function useClock(now: number, ticking: boolean): number {
+  const [tick, setTick] = useState(now);
+  useEffect(() => {
+    setTick(now);
+    if (!ticking) return;
+    const timer = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [now, ticking]);
+  return ticking ? Math.max(now, tick) : now;
 }
