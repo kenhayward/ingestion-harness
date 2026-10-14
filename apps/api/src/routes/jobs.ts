@@ -10,6 +10,8 @@ import {
   type JobSummary,
   outputContentType,
   outputExtension,
+  ShaclReportSchema,
+  shaclReportKey,
 } from '@ih/shared';
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
@@ -361,6 +363,39 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         await removeJobFiles(app.deps, res.removed, req.log);
       }
       return { deleted, remaining: Math.max(0, ids.length - limit), cutoff };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/jobs/:id/shacl-report',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getShaclReport',
+        summary: "Get a job's SHACL report",
+        description: md`
+          The SHACL report of the job's document graph (ADR 0011): written when its recipe pins
+          shapes and a graph was rendered, at processing and again at publishing. Violations
+          are review reasons and refuse a publish that delivers RDF; warnings and infos are
+          issues. Each result names the output (\`field\`, \`table.column\`) its path publishes.
+        `,
+        params: z.object({ id: z.string().uuid().describe('The job id.') }),
+        response: {
+          200: res('The report.', ShaclReportSchema),
+          404: error('`no SHACL report for this job`, or `not found`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      if (!(await app.deps.repo.getJob(req.params.id))) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const raw = await app.deps.store.get(app.deps.buckets.runs, shaclReportKey(req.params.id));
+      const report = raw ? ShaclReportSchema.safeParse(JSON.parse(raw.toString('utf8'))) : null;
+      if (!report?.success) return reply.code(404).send({ error: 'no SHACL report for this job' });
+      return report.data;
     },
   );
 

@@ -57,6 +57,11 @@ def prepared_triage_key(pdf_sha256: str) -> str:
     return f"prepared/{pdf_sha256}/triage.json"
 
 
+def shacl_report_key(job_id: str) -> str:
+    """A job's SHACL report of its document's graph (runs bucket; ADR 0011 step 5)."""
+    return f"{job_id}/shacl-report.json"
+
+
 def graph_preview_key(project_id: str, job_id: str) -> str:
     """A graph preview's Turtle per sample (runs bucket, graph task; ADR 0011)."""
     return f"graphs/{project_id}/{job_id}.json"

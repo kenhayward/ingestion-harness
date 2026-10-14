@@ -141,3 +141,30 @@ def test_the_worker_runs_graph_jobs(fixture_specs_dir: Path) -> None:
     run_once(queue, deps, "w1")
     assert queue.completed
     assert ("runs", graph_preview_key("letter", "g1")) in store.objects
+
+
+def test_a_preview_carries_each_samples_shacl_report(fixture_specs_dir: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, store = make(fixture_specs_dir)
+    shapes = Graph().parse(
+        data="""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <https://ex.example/def/> .
+        ex:S a sh:NodeShape ; sh:targetClass ex:Letter ;
+          sh:property [ sh:path ex:sender ; sh:maxLength 9 ] .""",
+        format="turtle",
+    )
+    store.put(
+        "runs",
+        ontology_normalized_key("s", 1),
+        shapes.serialize(format="nt", encoding="utf-8"),
+        "x",
+    )
+    definition = {
+        **DEFINITION,
+        "semantics": {**DEFINITION["semantics"], "shapes": [{"id": "s", "version": 1}]},
+    }
+    result = run_graph_preview(job(definition=definition), deps, FakeQueue())
+    one, two = result["samples"]
+    assert one["report"]["conforms"] is True  # "Draft Ltd"
+    assert two["report"]["conforms"] is False  # "Reviewed Ltd" is longer than 9
+    assert run_graph_preview(job(), deps, FakeQueue())["samples"][0]["report"] is None

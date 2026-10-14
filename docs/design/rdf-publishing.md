@@ -744,8 +744,8 @@ proposal and are never applied.
   byte for the same input (tests compare with `rdflib.compare.isomorphic` and also check
   stability).
 - `validate(graph, shapes, ontologies) -> ShaclReport` runs pySHACL with `inference="none"`.
-  The ontology graphs are passed as `ont_graph` so that `sh:class` checks see
-  `rdfs:subClassOf`.
+  The ontology graphs are merged into a copy of the data graph so that `sh:class` checks see
+  `rdfs:subClassOf` and the ontologies' own typing (pySHACL's `ont_graph` misses the latter).
 
 Provenance in each graph:
 
@@ -1032,6 +1032,16 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
    term embeddings, recall fixture), Mapping tab, overview stage, bundle changes.
 5. **SHACL:** validation in process and publish, review reasons, the
    `publish → awaiting_review` transition, the Review screen's Graph tab.
+   *As built:* pySHACL's `ont_graph` does not see instance typing in the ontologies (an
+   `acme:Memo a acme:Note` triple), so the ontologies are merged into a copy of the data graph
+   instead. Step re-runs validate too. A refused publish reuses `await_review` (the drafts stay
+   in the outputs bucket), and only a publish that delivers `rdf` is refused: a recipe that
+   renders a graph without delivering it publishes its CSV/JSON with the violations already
+   reviewed. The Mapping editor pins shapes like vocabularies; graph previews carry each
+   sample's report.
+   Results whose focus node only the ontologies describe are dropped (no edit could fix
+   them). Previews validate in a child process capped at `GRAPH_TIMEOUT_S`; rendering is
+   not capped.
 6. **Fuseki:** compose service, config, `GraphStorePublisher`, graph identity per source with
    `published_graphs` versions and versioned Turtle copies, `published_entities` and
    `mint_entity_iri`, TBox loads, job graph status,

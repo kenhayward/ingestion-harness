@@ -456,3 +456,151 @@ def test_approving_an_old_draft_without_a_mapping_never_reads_the_inbox(tmp_path
     run_once(queue, deps, "w1")
     assert queue.completed and not queue.failed
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+
+
+# --- SHACL (ADR 0011 step 5) ----------------------------------------------------------------
+
+SHAPES_NT = (
+    Graph()
+    .parse(
+        data="""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <https://ex.example/def/> .
+    ex:ProtocolShape a sh:NodeShape ; sh:targetClass ex:Protocol ;
+      sh:property [ sh:path ex:product ; sh:maxLength 5 ; sh:message "a product code is short" ] .""",
+        format="turtle",
+    )
+    .serialize(format="nt", encoding="utf-8")
+)
+SHAPED = {**SEMANTICS, "shapes": [{"id": "ex-shapes", "version": 1}]}
+
+
+def with_shapes(deps: PipelineDeps) -> PipelineDeps:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps.store.put(
+        "runs", ontology_normalized_key("ex-shapes", 1), SHAPES_NT, "application/n-triples"
+    )
+    return deps
+
+
+def test_a_shapes_violation_is_a_review_reason_and_the_report_is_kept(tmp_path: Path) -> None:
+    deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, with_shapes(deps), "w1")
+    [(_, _, reasons)] = queue.awaiting
+    assert "SHACL: ProtocolShape on product: a product code is short" in reasons
+    report = json.loads(deps.store.get("runs", "job-1/shacl-report.json"))
+    assert report["conforms"] is False
+    assert report["results"][0]["output"] == "product"
+    document = json.loads(deps.store.get("outputs", "demo/v1/document/doc-1.json"))
+    assert "SHACL: ProtocolShape on product: a product code is short" in document["review_reasons"]
+
+
+def test_without_a_graph_nothing_is_validated(tmp_path: Path) -> None:
+    deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), None)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, with_shapes(deps), "w1")
+    assert queue.completed and not queue.awaiting
+    assert ("runs", "job-1/shacl-report.json") not in deps.store.objects  # type: ignore[attr-defined]
+
+
+def test_missing_shapes_send_the_job_to_review(tmp_path: Path) -> None:
+    deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")  # the shapes version's file was never stored
+    [(_, reason)] = queue.reviewed
+    assert "ex-shapes v1 is not available" in reason
+
+
+def shaped_review(
+    tmp_path: Path, formats: list[str]
+) -> tuple[PipelineDeps, MemoryObjectStore, FakeQueue]:
+    template = {
+        **TEMPLATE,
+        "review": {"required": "always"},
+        "semantics": SHAPED,
+        "delivery": {"formats": formats},
+    }
+    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, with_shapes(deps), "w1")
+    assert queue.awaiting
+    queue.jobs = [replace(JOB, task="publish")]
+    queue.decisions["job-1"] = {
+        "reviewer": "kh",
+        "note": None,
+        "reviewed_at": "2026-10-14T10:05:00Z",
+    }
+    return deps, target, queue
+
+
+def product_edit(value: str) -> dict[str, Any]:
+    return {
+        "field": "product", "table": None, "row": None, "column": None, "value": value,
+        "editor": "kh", "reason": None, "at": "2026-10-14T10:00:00Z",
+    }  # fmt: skip
+
+
+def test_a_publish_that_delivers_rdf_is_refused_while_the_graph_violates_shapes(
+    tmp_path: Path,
+) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
+    run_once(queue, deps, "w1")
+    assert not queue.completed and not queue.published and not target.objects
+    (_, outputs, reasons) = queue.awaiting[-1]
+    assert len(queue.awaiting) == 2 and outputs == []
+    assert "SHACL: ProtocolShape on product: a product code is short" in reasons
+    assert any(e[2] == "publish refused: graph violates shapes" for e in queue.events)
+
+
+def test_after_an_edit_that_fixes_the_value_the_publish_goes_through(tmp_path: Path) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
+    queue.edits["job-1"] = [product_edit("Rich")]
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert has(target, "published", "pvp/" + GRAPH_KEY)
+
+
+def test_without_rdf_delivered_a_violation_never_stops_the_publish(tmp_path: Path) -> None:
+    deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
+    assert any(e[2] == "graph violates shapes" for e in queue.events)
+
+
+WARNING_NT = (
+    Graph()
+    .parse(
+        data="""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <https://ex.example/def/> .
+    ex:ProtocolShape a sh:NodeShape ; sh:targetClass ex:Protocol ;
+      sh:property [ sh:path ex:product ; sh:maxLength 5 ; sh:severity sh:Warning ] .""",
+        format="turtle",
+    )
+    .serialize(format="nt", encoding="utf-8")
+)
+
+
+def test_a_step_rerun_replaces_the_shacl_issues_instead_of_counting_them(tmp_path: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), BASE_IRI)
+    deps.store.put("runs", ontology_normalized_key("ex-shapes", 1), WARNING_NT, "text/plain")
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    for _ in range(2):
+        deps.models._providers["local"].responses = [RESPONSES[0]]  # type: ignore[attr-defined]
+        queue.jobs = [replace(JOB, task="rerun", rerun={"step": "header"})]
+        run_once(queue, deps, "w1")
+    document = json.loads(deps.store.get("outputs", "demo/v1/document/doc-1.json"))
+    assert [i["step"] for i in document["issues"]].count("shacl") == 1
+    assert not any("normalisation issue" in r for r in document["review_reasons"])
+
+
+def test_a_publish_without_rdf_needs_no_shapes_file(tmp_path: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
+    del deps.store.objects[("runs", ontology_normalized_key("ex-shapes", 1))]  # type: ignore[attr-defined]
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.reviewed
+    assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")

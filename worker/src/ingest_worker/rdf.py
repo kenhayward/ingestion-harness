@@ -41,6 +41,16 @@ _PLACEHOLDER = re.compile(r"\{(\w+)(?:\|(\w+))?\}")
 _ABSOLUTE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
+def expand_term(curie: str, prefixes: dict[str, str]) -> URIRef:
+    """A CURIE (or an IRI) as an IRI; ValueError for an undeclared prefix."""
+    prefix, sep, local = curie.partition(":")
+    if sep and prefix in prefixes and not local.startswith("//"):
+        return URIRef(prefixes[prefix] + local)
+    if _ABSOLUTE.match(curie):
+        return URIRef(curie)
+    raise ValueError(f"unknown prefix in {curie!r}")
+
+
 @dataclass(frozen=True)
 class GraphContext:
     #: The effective base IRI (ends with `/`).
@@ -100,12 +110,7 @@ class _Renderer:
     # --- names -------------------------------------------------------------------------------
 
     def expand(self, curie: str) -> URIRef:
-        prefix, sep, local = curie.partition(":")
-        if sep and prefix in self.prefixes and not local.startswith("//"):
-            return URIRef(self.prefixes[prefix] + local)
-        if _ABSOLUTE.match(curie):
-            return URIRef(curie)
-        raise ValueError(f"unknown prefix in {curie!r}")
+        return expand_term(curie, self.prefixes)
 
     def own(self, path: str) -> URIRef:
         return URIRef(self.base + path)
@@ -329,3 +334,108 @@ def render_graph(template: Template, document: dict[str, Any], ctx: GraphContext
 def to_turtle(graph: Graph) -> bytes:
     """Turtle with the graph's bound prefixes; rdflib sorts subjects, so output is stable."""
     return graph.serialize(format="turtle", encoding="utf-8")
+
+
+# --- SHACL (step 5) --------------------------------------------------------------------------
+
+SH = Namespace("http://www.w3.org/ns/shacl#")
+
+
+def _local(node: Node | None) -> str:
+    text = str(node) if node is not None else ""
+    return re.split(r"[#/]", text)[-1] if text else ""
+
+
+@dataclass(frozen=True)
+class ShaclResult:
+    #: `Violation`, `Warning` or `Info`.
+    severity: str
+    #: The node shape (its IRI) whose constraint failed.
+    shape: str
+    focus: str
+    path: str
+    #: The output the path publishes (`field`, `table` or `table.column`), else the path IRI.
+    output: str
+    message: str
+    value: str
+
+    def reason(self) -> str:
+        return f"SHACL: {_local(URIRef(self.shape)) or self.shape} on {self.output}: {self.message}"
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "severity": self.severity,
+            "shape": self.shape,
+            "focus": self.focus,
+            "path": self.path,
+            "output": self.output,
+            "message": self.message,
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True)
+class ShaclReport:
+    results: list[ShaclResult]
+
+    @property
+    def conforms(self) -> bool:
+        """No violation (warnings and infos never block)."""
+        return not self.violations()
+
+    def violations(self) -> list[ShaclResult]:
+        return [r for r in self.results if r.severity == "Violation"]
+
+    def to_json(self) -> dict[str, Any]:
+        return {"conforms": self.conforms, "results": [r.to_json() for r in self.results]}
+
+
+def validate(
+    graph: Graph, shapes: Graph, ontologies: Graph, outputs_by_property: dict[str, str]
+) -> ShaclReport:
+    """pySHACL over one document's graph, no inference; the ontologies are merged in so that
+    `sh:class` sees the concepts' types and `rdfs:subClassOf`. Only results whose focus node the
+    document's graph describes are kept."""
+    from pyshacl import validate as run_shacl
+
+    # pySHACL's `ont_graph` does not carry instance typing (a concept's rdf:type), so the
+    # ontologies are merged into a copy of the document's graph instead.
+    data = Graph()
+    data += graph
+    data += ontologies
+    _, results_graph, _ = run_shacl(
+        data_graph=data,
+        shacl_graph=shapes,
+        inference="none",
+        abort_on_first=False,
+        allow_warnings=True,
+    )
+    assert isinstance(results_graph, Graph)
+    # A property shape is usually a blank node: report the node shape that holds it.
+    holder = {str(prop): node for node, prop in shapes.subject_objects(SH.property)}
+    results: list[ShaclResult] = []
+    for r in results_graph.subjects(RDF.type, SH.ValidationResult):
+        focus = results_graph.value(r, SH.focusNode)
+        if focus is None or (focus, None, None) not in graph:
+            # A node only the ontologies describe: no review edit can fix it, so it never
+            # holds back the document.
+            continue
+        source = results_graph.value(r, SH.sourceShape)
+        shape = holder.get(str(source), source)
+        path = results_graph.value(r, SH.resultPath)
+        path_text = str(path) if isinstance(path, URIRef) else ""
+        message = results_graph.value(r, SH.resultMessage)
+        value = results_graph.value(r, SH.value)
+        results.append(
+            ShaclResult(
+                severity=_local(results_graph.value(r, SH.resultSeverity)) or "Violation",
+                shape=str(shape) if shape is not None else "",
+                focus=str(focus),
+                path=path_text,
+                output=outputs_by_property.get(path_text) or path_text or "document",
+                message=str(message) if message is not None else "does not conform",
+                value=str(value) if value is not None else "",
+            )
+        )
+    results.sort(key=lambda r: (r.severity != "Violation", r.output, r.message, r.focus))
+    return ShaclReport(results)

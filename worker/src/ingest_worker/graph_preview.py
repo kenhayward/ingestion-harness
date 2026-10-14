@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .pipeline import DocumentError, JobCancelled, PipelineDeps, check_cancelled
 from .queue import ClaimedJob, JobQueue
 from .rdf import GraphContext, render_graph, to_turtle
+from .shacl import load_graphs, outputs_by_property, validate_with_timeout
 from .storage import graph_preview_key, reviewed_document_key
 from .template import Template
 
@@ -68,6 +69,11 @@ def run_graph_preview(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> d
     def concepts(scheme: str, label: str) -> str | None:
         return store.concept_by_label(pins, scheme, label) if store else None
 
+    shapes = ontology_graph = None
+    if template.semantics.shapes:
+        shapes = load_graphs(deps, [(p.id, p.version) for p in template.semantics.shapes])
+        ontology_graph = load_graphs(deps, pins)
+    by_property = outputs_by_property(template)
     samples: list[dict[str, Any]] = []
     for sample in params.samples:
         check_cancelled(job, queue)
@@ -92,6 +98,11 @@ def run_graph_preview(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> d
                 "fileName": sample.file_name,
                 "turtle": turtle,
                 "triples": len(graph),
+                "report": (
+                    validate_with_timeout(graph, shapes, ontology_graph, by_property).to_json()
+                    if shapes is not None and ontology_graph is not None
+                    else None
+                ),
             }
         )
     result = {"samples": samples}

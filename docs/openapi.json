@@ -5126,6 +5126,149 @@
         }
       }
     },
+    "/api/jobs/{id}/shacl-report": {
+      "get": {
+        "operationId": "getShaclReport",
+        "summary": "Get a job's SHACL report",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "The SHACL report of the job's document graph (ADR 0011): written when its recipe pins\nshapes and a graph was rendered, at processing and again at publishing. Violations\nare review reasons and refuse a publish that delivers RDF; warnings and infos are\nissues. Each result names the output (`field`, `table.column`) its path publishes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conforms": {
+                      "type": "boolean"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "Violation",
+                              "Warning",
+                              "Info"
+                            ]
+                          },
+                          "shape": {
+                            "type": "string"
+                          },
+                          "focus": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "output": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "severity",
+                          "shape",
+                          "focus",
+                          "path",
+                          "output",
+                          "message",
+                          "value"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "conforms",
+                    "results"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The report."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`no SHACL report for this job`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`no SHACL report for this job`, or `not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{id}/outputs/{outputId}": {
       "get": {
         "operationId": "downloadJobOutput",
@@ -32469,6 +32612,71 @@
                                   },
                                   "triples": {
                                     "type": "integer"
+                                  },
+                                  "report": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "conforms": {
+                                            "type": "boolean"
+                                          },
+                                          "results": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "severity": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "Violation",
+                                                    "Warning",
+                                                    "Info"
+                                                  ]
+                                                },
+                                                "shape": {
+                                                  "type": "string"
+                                                },
+                                                "focus": {
+                                                  "type": "string"
+                                                },
+                                                "path": {
+                                                  "type": "string"
+                                                },
+                                                "output": {
+                                                  "type": "string"
+                                                },
+                                                "message": {
+                                                  "type": "string"
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "severity",
+                                                "shape",
+                                                "focus",
+                                                "path",
+                                                "output",
+                                                "message",
+                                                "value"
+                                              ],
+                                              "additionalProperties": true
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "conforms",
+                                          "results"
+                                        ],
+                                        "additionalProperties": true
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "default": null
                                   }
                                 },
                                 "required": [
@@ -32728,6 +32936,71 @@
                                   },
                                   "triples": {
                                     "type": "integer"
+                                  },
+                                  "report": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "conforms": {
+                                            "type": "boolean"
+                                          },
+                                          "results": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "severity": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "Violation",
+                                                    "Warning",
+                                                    "Info"
+                                                  ]
+                                                },
+                                                "shape": {
+                                                  "type": "string"
+                                                },
+                                                "focus": {
+                                                  "type": "string"
+                                                },
+                                                "path": {
+                                                  "type": "string"
+                                                },
+                                                "output": {
+                                                  "type": "string"
+                                                },
+                                                "message": {
+                                                  "type": "string"
+                                                },
+                                                "value": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "severity",
+                                                "shape",
+                                                "focus",
+                                                "path",
+                                                "output",
+                                                "message",
+                                                "value"
+                                              ],
+                                              "additionalProperties": true
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "conforms",
+                                          "results"
+                                        ],
+                                        "additionalProperties": true
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "default": null
                                   }
                                 },
                                 "required": [
