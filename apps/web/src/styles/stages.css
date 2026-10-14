@@ -2767,6 +2767,23 @@ label.inline.list-select {
 .eval-runbar-note {
   min-width: 0;
 }
+/* Why Evaluate is off when every reference was outdated (Evaluate run bar, Revise). */
+.eval-runbar-why {
+  order: 10;
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-md);
+}
+.revise-no-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .eval-runbar-actions {
   display: flex;
   flex-wrap: wrap;

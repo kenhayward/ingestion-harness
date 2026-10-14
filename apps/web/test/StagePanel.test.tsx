@@ -291,6 +291,18 @@ describe('StagePanel', () => {
     );
   });
 
+  it('after steps, says test runs refresh the figures but only Evaluate scores', async () => {
+    const p = changeProposalView({ stage: 'steps', status: 'accepted', acceptedChanges: [0, 1] });
+    panel({ listProposals: vi.fn(async () => [p]) }, { stage: 'steps' });
+    expect(await screen.findByRole('link', { name: 'Run on dev samples' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/runs',
+    );
+    expect(screen.getByRole('region', { name: 'Proposal' })).toHaveTextContent(
+      "Run the steps on the dev samples to refresh the per-step figures. Test runs aren't scored: Evaluate on dev scores the draft against your verified references.",
+    );
+  });
+
   it('links to the Template tab for edits by hand', async () => {
     panel({ listProposals: vi.fn(async () => [changeProposalView()]) });
     expect(

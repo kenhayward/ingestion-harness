@@ -74,7 +74,7 @@ const NEXT: Record<ChangeStage, { tab: string; label: string; text: string }> = 
   steps: {
     tab: 'runs',
     label: 'Run on dev samples',
-    text: 'Run the steps on the dev samples to refresh the per-step figures, then verify references.',
+    text: "Run the steps on the dev samples to refresh the per-step figures. Test runs aren't scored: Evaluate on dev scores the draft against your verified references.",
   },
   revise: {
     tab: 'evaluate',
