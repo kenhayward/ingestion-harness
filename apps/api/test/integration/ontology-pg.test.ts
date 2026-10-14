@@ -108,6 +108,40 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     expect(await repo.get('pv-pg')).toBeNull();
   });
 
+  it('fetches a bounded number of rows to describe a hub term', async () => {
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
+    const created = await repo.createVersion(input({ sha256: 'hub' }));
+    if (!created.ok) throw new Error('not created');
+    const S = `${C}Stages`;
+    await pool.query(
+      `INSERT INTO ontology_terms (ontology_id, version, iri, kind, label, parents, scheme, root)
+       VALUES ('pv-pg', 1, $1, 'scheme', 'Stages', '{}', NULL, true)`,
+      [S],
+    );
+    await pool.query(
+      `INSERT INTO ontology_terms (ontology_id, version, iri, kind, label, parents, scheme)
+       SELECT 'pv-pg', 1, $1 || 'c' || n, 'concept', 'Concept ' || lpad(n::text, 4, '0'),
+              ARRAY[$2], $2
+         FROM generate_series(1, 1000) n`,
+      [C, S],
+    );
+    let fetched = 0;
+    const counting = {
+      query: async (...args: Parameters<pg.Pool['query']>) => {
+        const result = await (pool.query as (...a: unknown[]) => Promise<pg.QueryResult>)(...args);
+        fetched += result.rows.length;
+        return result;
+      },
+      connect: () => pool.connect(),
+    } as unknown as pg.Pool;
+    const detail = await new PgOntologyRepo(counting).term('pv-pg', 1, S);
+    expect(detail!.concepts).toHaveLength(200);
+    expect(detail!.children).toHaveLength(200);
+    expect(detail!.concepts[0]!.label).toBe('Concept 0001');
+    expect(fetched).toBeLessThanOrEqual(2 * 200 + 10);
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
+  });
+
   it('reads a version whose job stopped as failed, and lets it be deleted', async () => {
     const created = await repo.createVersion(input({ sha256: 'stuck' }));
     if (!created.ok) throw new Error('not created');

@@ -59,6 +59,10 @@ CREATE TABLE ontology_terms (
 );
 CREATE INDEX ontology_terms_label_trgm ON ontology_terms USING gin (lower(label) gin_trgm_ops);
 CREATE INDEX ontology_terms_parents ON ontology_terms USING gin (parents);
+CREATE INDEX ontology_terms_domains ON ontology_terms USING gin (domains);
+CREATE INDEX ontology_terms_ranges ON ontology_terms USING gin (ranges);
+CREATE INDEX ontology_terms_scheme ON ontology_terms (ontology_id, version, scheme)
+  WHERE scheme IS NOT NULL;
 CREATE INDEX ontology_terms_iri ON ontology_terms (ontology_id, version, iri);
 
 -- A ready version is immutable: its terms were indexed from exactly these bytes.

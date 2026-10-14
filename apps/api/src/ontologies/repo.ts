@@ -692,20 +692,61 @@ export class PgOntologyRepo implements OntologyRepo {
 
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {
     if (!(await this.hasVersion(id, version))) return null;
-    // The term and every row that can be its neighbour: its own rows, rows it names, rows
-    // naming it.
-    const { rows } = await this.pool.query<TermRow>(
-      `WITH own AS (
-         SELECT * FROM ontology_terms WHERE ontology_id = $1 AND version = $2 AND iri = $3)
-       SELECT ${TERM_COLS} FROM ontology_terms t
-        WHERE t.ontology_id = $1 AND t.version = $2
-          AND (t.iri = $3
-               OR t.iri IN (SELECT unnest(parents || domains || ranges) FROM own)
-               OR t.iri IN (SELECT scheme FROM own WHERE scheme IS NOT NULL)
-               OR t.parents @> ARRAY[$3] OR t.domains @> ARRAY[$3] OR t.ranges @> ARRAY[$3]
-               OR t.scheme = $3)`,
-      [id, version, iri],
-    );
-    return termDetail(rows.map(toTerm), iri);
+    const own = (
+      await this.pool.query<TermRow>(
+        `SELECT ${TERM_COLS} FROM ontology_terms
+          WHERE ontology_id = $1 AND version = $2 AND iri = $3`,
+        [id, version, iri],
+      )
+    ).rows
+      .map(toTerm)
+      .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind))[0];
+    if (!own) return null;
+    // Every neighbour list is its own bounded query: a hub (a scheme of 50,000 concepts) is
+    // described with at most DETAIL_LIMIT rows per list.
+    const named = [...new Set([...own.parents, ...own.domain, ...own.range, own.scheme ?? ''])];
+    const refRows = (
+      await this.pool.query<{ iri: string; kind: OntologyTermKind; label: string }>(
+        `SELECT DISTINCT ON (iri) iri, kind, label FROM ontology_terms
+          WHERE ontology_id = $1 AND version = $2 AND iri = ANY($3::text[])
+          ORDER BY iri, array_position($4::text[], kind)`,
+        [id, version, named.filter(Boolean), KIND_ORDER],
+      )
+    ).rows;
+    const byIri = new Map(refRows.map((r) => [r.iri, r]));
+    const refs = (iris: readonly string[]): TermRef[] =>
+      iris.flatMap((i) => {
+        const r = byIri.get(i);
+        return r ? [{ iri: r.iri, kind: r.kind, label: r.label }] : [];
+      });
+    const list = async (where: string, extra: unknown[] = []): Promise<TermRef[]> =>
+      (
+        await this.pool.query<{ iri: string; kind: OntologyTermKind; label: string }>(
+          `SELECT iri, kind, label FROM ontology_terms
+            WHERE ontology_id = $1 AND version = $2 AND ${where}
+            ORDER BY lower(label), iri LIMIT ${DETAIL_LIMIT}`,
+          [id, version, iri, ...extra],
+        )
+      ).rows.map((r) => ({ iri: r.iri, kind: r.kind, label: r.label }));
+    const properties = [...PROPERTY_KINDS];
+    const [children, asDomain, asRange, concepts, shapes] = await Promise.all([
+      list('parents @> ARRAY[$3] AND iri <> $3'),
+      list('kind = ANY($4::text[]) AND domains @> ARRAY[$3]', [properties]),
+      list('kind = ANY($4::text[]) AND ranges @> ARRAY[$3]', [properties]),
+      own.kind === 'scheme' ? list(`kind = 'concept' AND scheme = $3`) : Promise.resolve([]),
+      list(`kind = 'shape' AND domains @> ARRAY[$3]`),
+    ]);
+    return {
+      ...own,
+      parentTerms: refs(own.parents),
+      children,
+      domainTerms: refs(own.domain),
+      rangeTerms: refs(own.range),
+      schemeTerm: own.scheme ? (refs([own.scheme])[0] ?? null) : null,
+      asDomain,
+      asRange,
+      concepts,
+      shapes,
+    };
   }
 }
