@@ -102,6 +102,19 @@ describe('OntologyPage', () => {
     expect(await screen.findByRole('heading', { name: 'Protocol' })).toBeInTheDocument();
   });
 
+  it('moves back to the parent with ArrowLeft on real IRIs', async () => {
+    view();
+    const tree = await screen.findByRole('tree', { name: 'Classes hierarchy' });
+    const document = await within(tree).findByRole('treeitem', { name: /Document/ });
+    document.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    const protocol = await within(tree).findByRole('treeitem', { name: /Protocol/ });
+    await userEvent.keyboard('{ArrowDown}');
+    expect(protocol).toHaveFocus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(document).toHaveFocus();
+  });
+
   it('searches terms instead of the tree', async () => {
     const api = view();
     await screen.findByRole('tree');

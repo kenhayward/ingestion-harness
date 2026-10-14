@@ -85,7 +85,15 @@ export interface LoadedChildren {
 }
 
 export type TreeRow =
-  | { kind: 'term'; term: OntologyTerm; level: number; path: string; cycle: boolean }
+  | {
+      kind: 'term';
+      term: OntologyTerm;
+      level: number;
+      path: string;
+      /** The parent row's path ('' for a root): IRIs contain '/', so it is never re-derived. */
+      parentPath: string;
+      cycle: boolean;
+    }
   | { kind: 'more'; level: number; path: string; hidden: number };
 
 /**
@@ -104,7 +112,7 @@ export function visibleRows(
     for (const term of page.items) {
       const p = `${path}/${term.iri}`;
       const cycle = ancestors.includes(term.iri);
-      rows.push({ kind: 'term', term, level, path: p, cycle });
+      rows.push({ kind: 'term', term, level, path: p, parentPath: path, cycle });
       if (!cycle && open.has(p)) walk(term.iri, level + 1, p, [...ancestors, term.iri]);
     }
     if (page.total > page.items.length) {

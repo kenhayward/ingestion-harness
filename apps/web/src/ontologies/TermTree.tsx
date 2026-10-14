@@ -82,8 +82,7 @@ export function TermTree({
     else if (ev.key === 'ArrowLeft' && row.kind === 'term') {
       if (open.has(row.path)) toggle(row);
       else {
-        const parentPath = row.path.slice(0, row.path.lastIndexOf('/'));
-        const parent = rows.findIndex((r) => r.path === parentPath);
+        const parent = rows.findIndex((r) => r.path === row.parentPath);
         if (parent >= 0) move(parent);
       }
     } else if ((ev.key === 'Enter' || ev.key === ' ') && row.kind === 'term') {
