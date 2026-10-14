@@ -94,6 +94,12 @@ const PATHS = {
       <path d="M4 20h16" />
     </>
   ),
+  install: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4M12 7v5M9.5 9.5L12 12l2.5-2.5" />
+    </>
+  ),
   open: (
     <>
       <path d="M14 4h6v6M20 4l-9 9" />

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
+import { useInstallAvailable, type InstallPrompt } from '../pwa/install.js';
 import type { Route } from '../router.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
@@ -60,11 +61,24 @@ function NavLink({
   );
 }
 
+/** What Install CT Studio is called everywhere (docs/design/pwa.md). */
+const INSTALL_LABEL = 'Install CT Studio';
+
 /**
- * An admin's name opens the account menu (Models, Access, Sign out; ADR 0010). It closes on
- * Escape (focus back on the name), a click outside, or a choice.
+ * An admin's name opens the account menu (Models, Access, Install CT Studio while the browser
+ * offers it, Sign out; ADR 0010). It closes on Escape (focus back on the name), a click outside,
+ * or a choice.
  */
-function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+function AccountMenu({
+  me,
+  onInstall,
+  onSignOut,
+}: {
+  me: Me;
+  /** Set while the browser offers install. */
+  onInstall: (() => void) | null;
+  onSignOut: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -124,6 +138,19 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <Icon name="key" />
             Access
           </a>
+          {onInstall && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onInstall();
+              }}
+            >
+              <Icon name="install" />
+              {INSTALL_LABEL}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -148,6 +175,7 @@ export function AppShell({
   jobs,
   query,
   onQuery,
+  install,
   onUpload,
   onSignOut,
   children,
@@ -157,6 +185,8 @@ export function AppShell({
   jobs: readonly JobSummary[];
   query: string;
   onQuery: (query: string) => void;
+  /** The browser's offer to install the app: Install CT Studio shows while there is one. */
+  install: InstallPrompt;
   onUpload: () => void;
   onSignOut: () => void;
   children: ReactNode;
@@ -164,6 +194,7 @@ export function AppShell({
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
   const attention = attentionCount(jobs);
+  const onInstall = useInstallAvailable(install) ? () => void install.install() : null;
   // Project pages need the width: the nav starts collapsed there, and expanding it lasts for the
   // visit. Elsewhere the person's own choice holds, remembered per browser.
   const onProject = route.name === 'project';
@@ -218,13 +249,24 @@ export function AppShell({
           <kbd aria-hidden="true">Ctrl K</kbd>
         </label>
         <div className="top-actions">
+          {onInstall && (
+            <button
+              type="button"
+              className="icon bordered"
+              aria-label={INSTALL_LABEL}
+              title={INSTALL_LABEL}
+              onClick={onInstall}
+            >
+              <Icon name="install" size={18} />
+            </button>
+          )}
           <ThemeSwitch />
           <button type="button" className="primary" onClick={onUpload}>
             <Icon name="upload" />
             Upload document
           </button>
           {me.role === 'admin' ? (
-            <AccountMenu me={me} onSignOut={onSignOut} />
+            <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
           ) : (
             <div
               className="user-chip"

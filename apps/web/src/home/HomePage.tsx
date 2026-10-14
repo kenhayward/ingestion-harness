@@ -3,6 +3,7 @@ import type { JobProgress, JobSummary, StageTimes } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
 import { UploadStrip } from '../jobs/UploadStrip.js';
+import type { LaunchedFiles } from '../pwa/launch.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 
 /** The newest job queued by `me`, else the newest job of all (null without jobs). */
@@ -117,6 +118,8 @@ export function HomePage({
   livePollMs = 1000,
   pickPending,
   onPicked,
+  launched,
+  focusUpload = 0,
 }: {
   api: Api;
   /** The signed-in token's label (jobs record it as `createdBy`). */
@@ -132,6 +135,10 @@ export function HomePage({
   /** Upload document (top bar) was pressed: the upload strip opens the file picker. */
   pickPending: boolean;
   onPicked: () => void;
+  /** Files opened with the installed app, for the upload strip (docs/design/pwa.md). */
+  launched?: LaunchedFiles;
+  /** Bumped by the Upload documents shortcut (#/upload): the upload strip takes focus. */
+  focusUpload?: number;
 }) {
   const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
@@ -182,6 +189,8 @@ export function HomePage({
           onUploaded={() => void refresh()}
           pickPending={pickPending}
           onPicked={onPicked}
+          launched={launched}
+          focusRequest={focusUpload}
         />
       </section>
       {error && <p role="alert">Failed to load jobs: {error}</p>}
