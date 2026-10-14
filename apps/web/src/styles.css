@@ -288,6 +288,13 @@ th {
   box-shadow: var(--ih-seg-shadow);
 }
 
+/* The notifications bell (docs/design/pwa.md): on reads as the accent. */
+.notify-toggle[aria-pressed='true'] {
+  color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  border-color: var(--ih-accent);
+}
+
 /* App shell: top bar + left nav + page */
 html {
   /* Anchors and scrollIntoView land below the pinned top bar. */
@@ -321,6 +328,23 @@ html {
   padding: 12px 24px;
   background: var(--ih-surface);
   border-bottom: 1px solid var(--ih-border);
+}
+/* Installed app with the title bar hidden (manifest display_override, docs/design/pwa.md): the
+   top bar is the title bar. Its empty space drags the window, its controls stay clickable, and it
+   keeps clear of the window buttons (minimise, maximise, close) the OS draws over its right end.
+   The env() values exist only in this mode; the window's chevron turns the mode off again. */
+@media (display-mode: window-controls-overlay) {
+  .top-bar {
+    min-height: env(titlebar-area-height, 0px);
+    padding-left: max(24px, calc(env(titlebar-area-x, 0px) + 12px));
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px);
+    app-region: drag;
+    -webkit-app-region: drag;
+  }
+  .top-bar > * {
+    app-region: no-drag;
+    -webkit-app-region: no-drag;
+  }
 }
 .brand {
   display: flex;
@@ -458,6 +482,28 @@ html {
   color: var(--ih-warn-fg);
   font-size: var(--ih-text-sm);
   font-weight: 600;
+}
+/* Beside the page, the nav is the window's height under the top bar and stays put while the page
+   scrolls (API docs stays bottom left); a nav taller than the window scrolls on its own. Narrower
+   than that it wraps above the page and scrolls away with it, as before. The full nav (220px)
+   sits beside a 640px page from about 861px; the collapsed one (68px) from 709px. */
+@media (min-width: 900px) {
+  .side-nav {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
+}
+@media (min-width: 720px) {
+  .side-nav.compact {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
 }
 /* Pinned to the bottom of the nav. */
 .side-nav a.nav-foot {
@@ -1214,6 +1260,23 @@ button.danger-fill {
     flex: 1 1 100%;
   }
 }
+/* What each dropped folder gave: "Invoices: 12 files to process · 3 other files left out". */
+.upload-folders {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ih-text-md);
+}
+.upload-folders li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ih-muted);
+}
 .upload-list {
   flex: 1 1 100%;
   margin: 0;
@@ -1488,6 +1551,14 @@ button.danger-fill {
 .step-state {
   margin-left: auto;
   font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.step-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px; /* the clock, a space, the time */
+  font-size: var(--ih-text-sm);
+  font-variant-numeric: tabular-nums;
   color: var(--ih-muted);
 }
 .meta {
@@ -2418,6 +2489,71 @@ a.button.icon.bordered {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+/* A dialog with an icon or description (New project): header row, body, footer strip. The
+   body scrolls, so the strip reaches the rounded edges. */
+.dialog.dialog-rich {
+  width: min(480px, 100%);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 24px 20px;
+}
+.dialog-icon {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.dialog-rich h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.dialog-description {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.dialog-rich .dialog-body {
+  padding: 4px 24px 24px;
+  overflow: auto;
+}
+.dialog-rich .dialog-actions {
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-top: 1px solid var(--ih-border-soft);
+  background: var(--ih-surface2);
+}
+.dialog-rich .dialog-actions button {
+  min-height: 40px;
+}
+.dialog-rich .dialog-actions button.primary:disabled {
+  border-color: var(--ih-border);
+  background: var(--ih-surface);
+  color: var(--ih-muted);
+  opacity: 1;
+}
+@media (max-width: 480px) {
+  .dialog-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .dialog-icon .icon {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 .segmentation-grid .anchor-errors {

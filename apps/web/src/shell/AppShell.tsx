@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
+import { useInstallAvailable, type InstallPrompt } from '../pwa/install.js';
+import type { NotifySetting } from '../pwa/notify.js';
 import type { Route } from '../router.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
@@ -61,10 +63,57 @@ function NavLink({
 }
 
 /**
- * An admin's name opens the account menu (Models, Access, Sign out; ADR 0010). It closes on
- * Escape (focus back on the name), a click outside, or a choice.
+ * The notifications bell (docs/design/pwa.md): toasts when your jobs finish while the app is in
+ * the background. Refused in the browser, it says where to allow it again.
  */
-function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+function NotifyBell({ notify }: { notify: NotifySetting }) {
+  if (notify.state === 'unsupported') return null;
+  if (notify.state === 'blocked') {
+    return (
+      <button
+        type="button"
+        className="icon bordered"
+        aria-label="Notifications are blocked"
+        aria-disabled="true"
+        title="Notifications are blocked for this site: allow them in the browser's site permissions (the padlock in the address bar, or the app's … menu → App info)"
+      >
+        <Icon name="bellOff" size={18} />
+      </button>
+    );
+  }
+  const label = 'Notify me when my jobs finish';
+  return (
+    <button
+      type="button"
+      className="icon bordered notify-toggle"
+      aria-label={label}
+      aria-pressed={notify.state === 'on'}
+      title={notify.state === 'on' ? `${label}: on` : label}
+      onClick={() => void notify.toggle()}
+    >
+      <Icon name="bell" size={18} />
+    </button>
+  );
+}
+
+/** What Install CT Studio is called everywhere (docs/design/pwa.md). */
+const INSTALL_LABEL = 'Install CT Studio';
+
+/**
+ * An admin's name opens the account menu (Models, Access, Install CT Studio while the browser
+ * offers it, Sign out; ADR 0010). It closes on Escape (focus back on the name), a click outside,
+ * or a choice.
+ */
+function AccountMenu({
+  me,
+  onInstall,
+  onSignOut,
+}: {
+  me: Me;
+  /** Set while the browser offers install. */
+  onInstall: (() => void) | null;
+  onSignOut: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -124,6 +173,19 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <Icon name="key" />
             Access
           </a>
+          {onInstall && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onInstall();
+              }}
+            >
+              <Icon name="install" />
+              {INSTALL_LABEL}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -148,6 +210,8 @@ export function AppShell({
   jobs,
   query,
   onQuery,
+  install,
+  notify,
   onUpload,
   onSignOut,
   children,
@@ -157,6 +221,10 @@ export function AppShell({
   jobs: readonly JobSummary[];
   query: string;
   onQuery: (query: string) => void;
+  /** The browser's offer to install the app: Install CT Studio shows while there is one. */
+  install: InstallPrompt;
+  /** Toasts for your jobs: the bell's state and toggle. */
+  notify: NotifySetting;
   onUpload: () => void;
   onSignOut: () => void;
   children: ReactNode;
@@ -164,6 +232,7 @@ export function AppShell({
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
   const attention = attentionCount(jobs);
+  const onInstall = useInstallAvailable(install) ? () => void install.install() : null;
   // Project pages need the width: the nav starts collapsed there, and expanding it lasts for the
   // visit. Elsewhere the person's own choice holds, remembered per browser.
   const onProject = route.name === 'project';
@@ -218,13 +287,25 @@ export function AppShell({
           <kbd aria-hidden="true">Ctrl K</kbd>
         </label>
         <div className="top-actions">
+          {onInstall && (
+            <button
+              type="button"
+              className="icon bordered"
+              aria-label={INSTALL_LABEL}
+              title={INSTALL_LABEL}
+              onClick={onInstall}
+            >
+              <Icon name="install" size={18} />
+            </button>
+          )}
+          <NotifyBell notify={notify} />
           <ThemeSwitch />
           <button type="button" className="primary" onClick={onUpload}>
             <Icon name="upload" />
             Upload document
           </button>
           {me.role === 'admin' ? (
-            <AccountMenu me={me} onSignOut={onSignOut} />
+            <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
           ) : (
             <div
               className="user-chip"

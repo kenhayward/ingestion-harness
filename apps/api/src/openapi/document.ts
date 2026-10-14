@@ -141,6 +141,11 @@ const DESCRIPTION = md`
   \`{ "error": "sign in required" }\`. "Try it" in these docs uses your session when you are
   signed in to the app in the same browser.
 
+  A request that changes something (\`POST\`, \`PUT\`, \`PATCH\`, \`DELETE\`) and that the
+  browser marks as sent from another site's page (\`Sec-Fetch-Site: cross-site\`) is refused
+  with \`403\` \`{ "error": "cross-site request refused" }\`, signing in included. Scripts and
+  other clients that send no \`Sec-Fetch-Site\` are unaffected.
+
   ## Errors
 
   Errors are JSON: \`{ "error": "message" }\`, or \`{ "error": [ ...Zod issues ] }\` for some

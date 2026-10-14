@@ -35,7 +35,9 @@ Server-Sent Events: `{ job, progress }` at once and on every change, a comment e
 it also re-reads the job, so a lost notification only delays an update), ending once the job
 leaves `queued`/`running`. Home follows its latest job this way and polls `GET /api/jobs/:id`
 (which carries the same `progress`) every second only if the stream is unavailable. nginx
-passes the stream unbuffered (its own `location`; the API also sends `X-Accel-Buffering: no`).
+passes the stream unbuffered (its own `location`; the API also sends `X-Accel-Buffering: no`,
+which the app's nginx passes on with `proxy_pass_header` so an outer nginx such as NGINX Proxy
+Manager does not buffer it either: nginx hides upstream `X-Accel-*` headers by default).
 
 Review (documents read by a transformation recipe): the recipe's review policy (`always` / `on_warnings` / `never`) decides
 whether a processed document waits in `awaiting_review`. Drafts stay in the outputs bucket.

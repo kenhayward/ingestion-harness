@@ -102,6 +102,30 @@ const PATHS = {
       <path d="M4 20h16" />
     </>
   ),
+  bell: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0" />
+    </>
+  ),
+  bellOff: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0M3 3l18 18" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
+  install: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4M12 7v5M9.5 9.5L12 12l2.5-2.5" />
+    </>
+  ),
   open: (
     <>
       <path d="M14 4h6v6M20 4l-9 9" />
@@ -170,7 +194,16 @@ const PATHS = {
 export type IconName = keyof typeof PATHS;
 
 /** Inline stroke icon; always decorative (the control around it carries the accessible name). */
-export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
+export function Icon({
+  name,
+  size = 16,
+  strokeWidth = 2,
+}: {
+  name: IconName;
+  size?: number;
+  /** Thinner for large icons (the New project tile draws the bench at 36 px with 1.6). */
+  strokeWidth?: number;
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -180,7 +213,7 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
     >

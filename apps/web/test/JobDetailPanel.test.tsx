@@ -226,3 +226,67 @@ describe('JobDetailPanel', () => {
     expect(screen.getByRole('button', { name: 'Retry gone.pdf' })).toBeInTheDocument();
   });
 });
+
+describe('JobDetailPanel step times', () => {
+  const at = (s: number) => new Date(Date.parse('2026-10-12T10:00:00Z') + s * 1000).toISOString();
+  const done = job({
+    id: 't',
+    status: 'succeeded',
+    startedAt: at(0),
+    finishedAt: at(100),
+    updatedAt: at(100),
+  });
+
+  it('puts the time each step took under its status, with a clock', async () => {
+    const api = fakeApi({
+      getJob: vi.fn(async () => ({
+        ...done,
+        outputs: [],
+        stageTimes: { readAt: at(20), segmentedAt: at(25) },
+      })),
+      getStepRuns: vi.fn(async () => [run({ startedAt: at(30), finishedAt: at(90) })]),
+    });
+    render(<JobDetailPanel api={api} job={done} {...defaults} wide />);
+    const steps = await within(panel()).findAllByRole('listitem');
+    const progress = within(panel()).getByRole('list', { name: 'Progress' });
+    await within(progress).findByText('00:20');
+    const times = within(progress)
+      .getAllByRole('listitem')
+      .map((li) => li.querySelector('.step-time')?.textContent ?? null);
+    expect(times).toEqual([
+      'Time taken 00:20',
+      'Time taken 00:05',
+      'Time taken 01:05',
+      'Time taken 00:10',
+      'Time taken 00:00',
+    ]);
+    const clock = progress.querySelector('.step-time svg');
+    expect(clock).toHaveAttribute('aria-hidden', 'true');
+    expect(steps.length).toBeGreaterThan(0);
+  });
+
+  it('shows no time for a step that has not run or was never timed', async () => {
+    const queued = job({ id: 'q', status: 'queued' });
+    render(<JobDetailPanel api={fakeApi()} job={queued} {...defaults} wide />);
+    await act(async () => {});
+    expect(panel().querySelector('.step-time')).toBeNull();
+  });
+
+  it('takes the times Home pushes over the ones it loaded', async () => {
+    const running = job({ id: 'r', status: 'running', startedAt: at(0), finishedAt: null });
+    render(
+      <JobDetailPanel
+        api={fakeApi()}
+        job={running}
+        {...defaults}
+        now={Date.parse(at(60))}
+        wide
+        progress={{ kind: 'step', step: 'a', index: 1, of: 2, attempt: 1, chunk: null }}
+        stageTimes={{ readAt: at(20), segmentedAt: at(25) }}
+      />,
+    );
+    const progress = within(panel()).getByRole('list', { name: 'Progress' });
+    expect(await within(progress).findByText('00:20')).toBeInTheDocument();
+    expect(within(progress).getByText('00:05')).toBeInTheDocument();
+  });
+});

@@ -81,25 +81,104 @@ describe('SampleText marks', () => {
     expect(screen.queryByRole('note')).toBeNull();
   });
 
-  it('shows one page at a time with per-page chips in paged mode', async () => {
-    const api = fakeApi({
-      getSampleText: vi.fn(async () => ({
-        sha256: 'abc',
-        pages: [
-          { number: 1, text: 'HEADER', ocr: false },
-          { number: 2, text: 'scanned', ocr: true },
-        ],
+  it('shows every page in the Sections view (not paged)', async () => {
+    render(<SampleText api={paged(3)} projectId="letter" sampleId="s1" />);
+    for (const n of [1, 2, 3]) {
+      expect(await screen.findByRole('region', { name: `Page ${n}` })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull();
+  });
+});
+
+/** A sample of `count` pages; page 2 was read by OCR. */
+function paged(count: number) {
+  return fakeApi({
+    getSampleText: vi.fn(async () => ({
+      sha256: 'abc',
+      pages: Array.from({ length: count }, (_, i) => ({
+        number: i + 1,
+        text: i === 0 ? 'intro\nHEADER' : `text of page ${i + 1}`,
+        ocr: i === 1,
       })),
-    });
-    render(<SampleText api={api} projectId="letter" sampleId="s1" paged />);
-    const chips = await screen.findByRole('group', { name: 'Pages' });
-    expect(within(chips).getByRole('button', { name: 'Page 1' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('region', { name: 'Page 1' })).toHaveTextContent('[page 1] HEADER');
+    })),
+  });
+}
+
+describe('SampleText pager (Samples preview, paged)', () => {
+  const pager = async () => within(await screen.findByRole('navigation', { name: 'Pages' }));
+  const label = (p: ReturnType<typeof within>) => p.getByText(/^Page \d+$/).parentElement!;
+
+  it('pages one at a time: Page n of N, previous and next', async () => {
+    render(<SampleText api={paged(3)} projectId="letter" sampleId="s1" paged />);
+    const p = await pager();
+    const previous = p.getByRole('button', { name: 'Previous page' });
+    const next = p.getByRole('button', { name: 'Next page' });
+    expect(label(p)).toHaveTextContent('Page 1 of 3');
+    expect(label(p)).toHaveAttribute('aria-live', 'polite');
+    expect(previous).toBeDisabled();
+    expect(next).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Page 1' })).toHaveTextContent('[page 1] intro');
     expect(screen.queryByRole('region', { name: 'Page 2' })).toBeNull();
-    await userEvent.click(within(chips).getByRole('button', { name: 'Page 2 OCR' }));
-    expect(screen.getByRole('region', { name: 'Page 2' })).toHaveTextContent('[page 2] scanned');
+
+    await userEvent.click(next);
+    expect(label(p)).toHaveTextContent('Page 2 of 3');
+    expect(previous).toBeEnabled();
+    expect(next).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Page 2' })).toHaveTextContent('text of page 2');
+
+    await userEvent.click(next);
+    expect(label(p)).toHaveTextContent('Page 3 of 3');
+    expect(next).toBeDisabled();
+
+    await userEvent.click(previous);
+    expect(label(p)).toHaveTextContent('Page 2 of 3');
+  });
+
+  it('has both buttons disabled for a one-page sample', async () => {
+    render(<SampleText api={paged(1)} projectId="letter" sampleId="s1" paged />);
+    const p = await pager();
+    expect(label(p)).toHaveTextContent('Page 1 of 1');
+    expect(p.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    expect(p.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  });
+
+  it('tags only the pages read by OCR', async () => {
+    render(<SampleText api={paged(3)} projectId="letter" sampleId="s1" paged />);
+    const p = await pager();
+    expect(p.queryByText('OCR')).toBeNull();
+    await userEvent.click(p.getByRole('button', { name: 'Next page' }));
+    expect(p.getByText('OCR')).toHaveAttribute('title', 'This page was read by OCR');
+    await userEvent.click(p.getByRole('button', { name: 'Next page' }));
+    expect(p.queryByText('OCR')).toBeNull();
+  });
+
+  it('turns pages with the arrow keys inside the text', async () => {
+    render(<SampleText api={paged(3)} projectId="letter" sampleId="s1" paged />);
+    const p = await pager();
+    screen.getByRole('region', { name: 'Page 1' }).focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(label(p)).toHaveTextContent('Page 2 of 3');
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}');
+    expect(label(p)).toHaveTextContent('Page 3 of 3'); // stays on the last page
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(label(p)).toHaveTextContent('Page 2 of 3');
+  });
+
+  it('still marks section starts on the shown page and scrolls to the focused one', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    render(
+      <SampleText
+        api={paged(2)}
+        projectId="letter"
+        sampleId="s1"
+        paged
+        marks={[{ page: 1, line: 'HEADER', label: 'header' }]}
+        focus="header"
+      />,
+    );
+    const note = await screen.findByRole('note', { name: 'header starts here' });
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(scroll.mock.contexts.at(-1)).toBe(note);
   });
 });

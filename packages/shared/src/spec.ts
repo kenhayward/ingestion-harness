@@ -6,7 +6,9 @@ import { RetirementSchema } from './retirement.js';
  * worker/src/ingest_worker/specs.py — both sides validate every file under /specs
  * in their test suites, so a change here must be made there too.
  */
-const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
+/** Ids of document types, sections, fields and steps: lowercase, starting with a letter. */
+export const ID_PATTERN = /^[a-z][a-z0-9_-]*$/;
+const Id = z.string().regex(ID_PATTERN, 'lowercase id: [a-z][a-z0-9_-]*');
 
 export const SectionSchema = z
   .object({

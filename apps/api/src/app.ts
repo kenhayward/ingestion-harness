@@ -58,6 +58,11 @@ export interface AppDeps {
   jobWatch?: JobWatch | null;
   /** How often a live job stream re-reads its job and pings (default 15 s; tests shorten it). */
   liveHeartbeatMs?: number;
+  /**
+   * Sites allowed to frame the app (`FRAME_ANCESTORS`, ADR 0012): over HTTPS the session cookie
+   * is then SameSite=None; Secure; Partitioned. null/absent: SameSite=Strict, no framing.
+   */
+  frameAncestors?: string | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };

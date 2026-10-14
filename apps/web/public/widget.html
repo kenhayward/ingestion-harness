@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  The page to register as a dashboard widget (ADR 0012), e.g. a 3DEXPERIENCE "Run your app" widget:
+  https://<host>/widget.html. Such a dashboard fetches a page once and serves its copy from its own
+  site, so the app's own page would run there, call /api on the dashboard's site, and name assets a
+  later deploy removes. This page only frames the app, so the app runs on its own origin (sign-in,
+  /api, the framing headers) and a deploy never breaks the copy. nginx rewrites the frame's root
+  src to the absolute origin it was asked under (deploy/docker/nginx.conf, first match only), so
+  that src must appear exactly once, and the page loads nothing else
+  (test/widget-page.test.ts).
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CT Studio</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe src="/" title="CT Studio" allow="clipboard-write; fullscreen"></iframe>
+  </body>
+</html>

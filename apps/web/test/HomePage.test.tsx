@@ -152,12 +152,16 @@ describe('HomePage live progress', () => {
     expect(vi.mocked(api.getJob).mock.calls.length).toBe(1);
   });
 
-  it('says it is live while following a job', async () => {
+  it('shows no live or refresh indicator: updates are pushed', async () => {
     const api = fakeApi({ getJob: vi.fn(() => new Promise<never>(() => {})) });
     live([job({ createdBy: 'ken', status: 'queued' })], api);
-    expect(await screen.findByText('Live · following this job')).toBeInTheDocument();
+    await screen.findByRole('complementary', { name: 'Job details' });
+    expect(screen.queryByText(/^Live ·/)).toBeNull();
+    expect(screen.queryByText(/refreshes every/)).toBeNull();
   });
 });
+
+const NO_TIMES = { readAt: null, segmentedAt: null };
 
 describe('HomePage pushed progress', () => {
   type On = { update(live: JobLive): void; gone(): void; error(): void };
@@ -192,11 +196,16 @@ describe('HomePage pushed progress', () => {
     await waitFor(() => expect(r.watchJob).toHaveBeenCalledWith('j1', expect.anything()));
     const panel = await screen.findByRole('complementary', { name: 'Job details' });
     act(() =>
-      r.on().update({ job: running, progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 12 } }),
+      r.on().update({
+        stageTimes: NO_TIMES,
+        job: running,
+        progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 12 },
+      }),
     );
     expect(await within(panel).findByText('OCR 3 of 12 pages')).toBeInTheDocument();
     act(() =>
       r.on().update({
+        stageTimes: NO_TIMES,
         job: { ...running, updatedAt: '2030-01-01T00:00:00Z' },
         progress: { kind: 'step', step: 'head', index: 1, of: 2, attempt: 1, chunk: null },
       }),
@@ -207,6 +216,7 @@ describe('HomePage pushed progress', () => {
     expect(vi.mocked(r.api.getJob).mock.calls.length).toBeLessThanOrEqual(2);
     act(() =>
       r.on().update({
+        stageTimes: NO_TIMES,
         job: { ...running, status: 'succeeded', updatedAt: '2030-01-01T00:00:01Z' },
         progress: null,
       }),
@@ -220,7 +230,6 @@ describe('HomePage pushed progress', () => {
     await waitFor(() => expect(r.watchJob).toHaveBeenCalled());
     act(() => r.on().error());
     await waitFor(() => expect(vi.mocked(r.api.getJob).mock.calls.length).toBeGreaterThan(2));
-    expect(screen.getByText('Live · following this job')).toBeInTheDocument();
   });
 
   it('stops listening when the job is deleted, and reloads the list', async () => {

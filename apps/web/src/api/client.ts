@@ -597,27 +597,37 @@ export class ApiError extends Error {
   }
 }
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
-      res.status,
-    );
+/**
+ * The message of an error response. `error` is a message, or the Zod issues of a body that failed
+ * validation (the API's ErrorBody), read as `path: message` so a list never shows as
+ * "[object Object]"; anything else falls back to the status.
+ */
+async function errorMessage(res: Response): Promise<string> {
+  const body: { error?: unknown } = await res.json().catch(() => ({}));
+  const { error } = body;
+  if (typeof error === 'string' && error) return error;
+  if (Array.isArray(error)) {
+    const issues = error
+      .map((i: { path?: unknown; message?: unknown }) => {
+        if (typeof i?.message !== 'string') return null;
+        const path = Array.isArray(i.path) ? i.path.join('.') : '';
+        return path ? `${path}: ${i.message}` : i.message;
+      })
+      .filter((m): m is string => m !== null);
+    if (issues.length) return issues.join('; ');
   }
+  return `${res.status} ${res.statusText}`.trim();
+}
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
   return res.json() as Promise<T>;
 }
 
 /** For 204 responses: throws the API error like json() does. */
 async function noContent(response: Promise<Response>): Promise<void> {
   const res = await response;
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
-      res.status,
-    );
-  }
+  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
 }
 
 function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
@@ -761,10 +771,7 @@ export function createHttpApi(base = '/api'): Api {
     cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
     deleteJob: async (id) => {
       const res = await apiFetch(`${base}/jobs/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(await errorMessage(res));
     },
     cleanupJobs: (req) => post<CleanupResult>(`${base}/jobs/cleanup`, req),
     upload: ({ file, specId, specVersion, model }) => {
@@ -954,10 +961,7 @@ export function createHttpApi(base = '/api'): Api {
     outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
     getOutputText: async (jobId, outputId, stage) => {
       const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(await errorMessage(res));
       return res.text();
     },
     listResults: (query = {}) => {

@@ -4,6 +4,7 @@ import {
   type JobStatus,
   type JobSummary,
   type ModelChoice,
+  type StageTimes,
   type StepRun,
 } from '@ih/shared';
 import { statusGroup, type StatusGroup } from '../shell/derive.js';
@@ -149,6 +150,47 @@ export function progressSteps(
     state: states[i]!,
     text: states[i] === 'current' && running ? running : STATE_TEXT[states[i]!],
   }));
+}
+
+/**
+ * How long each of the five progress steps took, in seconds (null: not run, or not known). From
+ * the job's claim (`startedAt`): reading ends at `times.readAt` (or, for runs from before reading
+ * was reported, at `segmentedAt`, with no time for Sections), Sections at `segmentedAt`,
+ * Extraction at the last step run of this extraction (re-runs are not counted), Validation at
+ * `finishedAt`, and Review & publish when the job was published or rejected. A step still
+ * running, or a review still waiting, counts up to `now`.
+ */
+export function stepSeconds(
+  job: JobSummary,
+  runs: readonly StepRun[] | null,
+  times: StageTimes | null,
+  steps: readonly { state: StepState }[],
+  now: number,
+): (number | null)[] {
+  const t = (iso: string | null | undefined) => (iso ? Date.parse(iso) : null);
+  const start = t(job.startedAt);
+  if (start === null || job.status === 'queued') return steps.map(() => null);
+  const read = t(times?.readAt) ?? t(times?.segmentedAt);
+  const segmented = t(times?.segmentedAt);
+  const extracted = (runs ?? [])
+    .filter((r) => r.trigger === 'process' && Date.parse(r.startedAt) >= start)
+    .map((r) => Date.parse(r.finishedAt))
+    .reduce<number | null>((a, b) => (a === null || b > a ? b : a), null);
+  const finished = t(job.finishedAt);
+  const decided = job.status === 'succeeded' || job.status === 'rejected' ? t(job.updatedAt) : null;
+  const bounds: [number | null, number | null][] = [
+    [start, read],
+    [times?.readAt ? read : null, segmented],
+    [segmented, extracted ?? finished],
+    [extracted, finished],
+    [finished, decided],
+  ];
+  return steps.map(({ state }, i) => {
+    if (state === 'todo') return null;
+    const [from, to] = bounds[i]!;
+    const end = state === 'current' || state === 'wait' ? now : to;
+    return from === null || end === null || end < from ? null : (end - from) / 1000;
+  });
 }
 
 const pages = (n: number) => `${n} ${n === 1 ? 'page' : 'pages'}`;

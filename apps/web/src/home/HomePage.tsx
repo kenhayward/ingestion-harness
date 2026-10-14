@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { JobProgress, JobSummary } from '@ih/shared';
+import type { JobProgress, JobSummary, StageTimes } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
 import { UploadStrip } from '../jobs/UploadStrip.js';
+import type { LaunchedFiles } from '../pwa/launch.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 
 /** The newest job queued by `me`, else the newest job of all (null without jobs). */
@@ -28,9 +29,16 @@ function useLiveJob(
   job: JobSummary | null,
   ms: number,
   onFinished: () => void,
-): { job: JobSummary | null; progress: JobProgress | null; tick: number; following: boolean } {
+): {
+  job: JobSummary | null;
+  progress: JobProgress | null;
+  stageTimes: StageTimes | null;
+  tick: number;
+  following: boolean;
+} {
   const [fresh, setFresh] = useState<JobSummary | null>(null);
   const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [stageTimes, setStageTimes] = useState<StageTimes | null>(null);
   const [tick, setTick] = useState(0);
   /** The job whose stream failed: it is polled instead. */
   const [pollingFor, setPollingFor] = useState<string | null>(null);
@@ -43,17 +51,21 @@ function useLiveJob(
   const id = following ? current.id : null;
   const polling = id !== null && pollingFor === id;
 
-  const seen = useCallback((summary: JobSummary, now: JobProgress | null) => {
-    setFresh(summary);
-    setProgress(now);
-    setTick((t) => t + 1);
-    if (!isActive(summary)) finished.current();
-  }, []);
+  const seen = useCallback(
+    (summary: JobSummary, now: JobProgress | null, times: StageTimes | null) => {
+      setFresh(summary);
+      setProgress(now);
+      setStageTimes(times);
+      setTick((t) => t + 1);
+      if (!isActive(summary)) finished.current();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (id === null || polling) return;
     return api.watchJob(id, {
-      update: (live) => seen(live.job, live.progress),
+      update: (live) => seen(live.job, live.progress, live.stageTimes),
       gone: () => finished.current(),
       error: () => setPollingFor(id),
     });
@@ -67,7 +79,7 @@ function useLiveJob(
       try {
         const detail = await api.getJob(id);
         if (stopped) return;
-        seen(detail, detail.progress ?? null);
+        seen(detail, detail.progress ?? null, detail.stageTimes ?? null);
         if (!isActive(detail)) return; // the effect ends with `following`
       } catch {
         if (stopped) return; // a missed read: the list poll still runs, try again next tick
@@ -81,8 +93,15 @@ function useLiveJob(
     };
   }, [api, id, ms, polling, seen]);
 
-  const live = current !== null && fresh?.id === current.id && current.status === 'running';
-  return { job: current, progress: live ? progress : null, tick, following };
+  const ours = current !== null && fresh?.id === current.id;
+  const live = ours && current.status === 'running';
+  return {
+    job: current,
+    progress: live ? progress : null,
+    stageTimes: ours ? stageTimes : null,
+    tick,
+    following,
+  };
 }
 
 /**
@@ -99,6 +118,8 @@ export function HomePage({
   livePollMs = 1000,
   pickPending,
   onPicked,
+  launched,
+  focusUpload = 0,
 }: {
   api: Api;
   /** The signed-in token's label (jobs record it as `createdBy`). */
@@ -107,13 +128,17 @@ export function HomePage({
   /** The last poll failed with this message (the card shows the previous result). */
   error: string | null;
   refresh: () => Promise<void>;
-  /** Poll interval, for the live indicator; <= 0 = not polling. */
+  /** The jobs list's poll interval; <= 0 = not polling (tests), and the latest job is not followed. */
   pollMs: number;
   /** While the latest job is queued or running it is re-read this often; <= 0 = never. */
   livePollMs?: number;
   /** Upload document (top bar) was pressed: the upload strip opens the file picker. */
   pickPending: boolean;
   onPicked: () => void;
+  /** Files opened with the installed app, for the upload strip (docs/design/pwa.md). */
+  launched?: LaunchedFiles;
+  /** Bumped by the Upload documents shortcut (#/upload): the upload strip takes focus. */
+  focusUpload?: number;
 }) {
   const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
@@ -144,16 +169,6 @@ export function HomePage({
             Upload a PDF or Word document, watch it run, review what was extracted.
           </p>
         </div>
-        {pollMs > 0 && (
-          <span className={error ? 'live live-warn' : 'live'}>
-            <span className="live-dot" aria-hidden="true" />
-            {error
-              ? 'Reconnecting…'
-              : live.following
-                ? 'Live · following this job'
-                : `Live · refreshes every ${pollMs / 1000} s`}
-          </span>
-        )}
       </div>
       <section aria-labelledby="home-upload-heading">
         <h2 id="home-upload-heading" className="section-heading">
@@ -164,6 +179,8 @@ export function HomePage({
           onUploaded={() => void refresh()}
           pickPending={pickPending}
           onPicked={onPicked}
+          launched={launched}
+          focusRequest={focusUpload}
         />
       </section>
       {error && <p role="alert">Failed to load jobs: {error}</p>}
@@ -180,6 +197,7 @@ export function HomePage({
           wide
           liveTick={live.tick}
           progress={live.progress}
+          {...(live.stageTimes ? { stageTimes: live.stageTimes } : {})}
         />
       ) : (
         <p className="muted">No jobs yet: upload a document to start.</p>

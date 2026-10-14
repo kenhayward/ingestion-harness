@@ -62,6 +62,27 @@ grep -qi 'immutable' <<<"$(headers "/$asset")" || fail "assets must be cached as
 security_headers "/$asset" "/$asset"
 echo "ok   caching and security headers on the page and its assets"
 
+# Installed app (docs/design/pwa.md): browsers want the manifest's own type, and the manifest
+# and the service worker must be revalidated so changes reach installed copies.
+manifest_headers="$(headers /site.webmanifest)"
+grep -qi '^Content-Type: application/manifest+json' <<<"$manifest_headers" ||
+  fail "site.webmanifest must be served as application/manifest+json"
+grep -qi '^Cache-Control: no-cache' <<<"$manifest_headers" || fail "site.webmanifest must be no-cache"
+security_headers /site.webmanifest "site.webmanifest"
+sw_headers="$(headers /sw.js)"
+grep -qiE '^Content-Type: (application|text)/javascript' <<<"$sw_headers" || fail "sw.js must be JavaScript"
+grep -qi '^Cache-Control: no-cache' <<<"$sw_headers" || fail "sw.js must be no-cache"
+security_headers /sw.js "sw.js"
+grep -qi '^Content-Type: text/html' <<<"$(headers /offline.html)" || fail "offline.html must be served"
+echo "ok   manifest, service worker and offline page"
+
+# Dashboard widget page (ADR 0012): frames the app by the absolute origin it was asked under.
+grep -qi '^Cache-Control: no-cache' <<<"$(headers /widget.html)" || fail "widget.html must be no-cache"
+security_headers /widget.html "widget.html"
+widget="$(curl -fsS -H 'Host: ct.example' -H 'X-Forwarded-Proto: https' "$BASE_URL/widget.html")"
+grep -qF 'src="https://ct.example/"' <<<"$widget" || fail "widget.html must frame the absolute origin"
+echo "ok   widget page"
+
 [[ "$(status "$BASE_URL/api/specs")" == 401 ]] || fail "/api/specs must need a session"
 echo "ok   /api/specs without a session -> 401"
 
