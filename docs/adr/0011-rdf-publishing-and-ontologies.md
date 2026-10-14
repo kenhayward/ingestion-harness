@@ -88,8 +88,27 @@ accepts each change. Mapping should work the same way.
   - **At publish:** after the review edits are applied, the graph is validated again before
     anything is written. If it still violates the shapes, the job goes back to
     `awaiting_review` and nothing is delivered. This is a new transition.
-- **Opt-in per document type.** Only recipes with a `semantics` block produce RDF. Fuseki is
-  deployment configuration (`RDF_*`), and without it nothing changes.
+- **Opt-in per document type.** Only recipes with a `semantics` block produce RDF. The Fuseki
+  connection is deployment configuration (`RDF_ENDPOINT`, `RDF_DATASET`, `RDF_USER`,
+  `RDF_PASSWORD`). Without it, Turtle still goes to S3 and nothing is loaded.
+- **The customer owns the IRIs: one customer per deployment.**
+  - **Customer domain:** the published data belongs to the customer, so its IRIs live under
+    the customer's domain (for example `https://data.acme.example/ct/`).
+  - **Fallback:** when no base is set, IRIs live under ours,
+    `https://id.stocks-hayward.com/{customerSlug}/`. The slug keeps different customers'
+    deployments from minting the same IRIs.
+  - **No customer at all:** without a customer slug or a base, RDF publishing is skipped.
+  - **Where it is set:** an admin sets the customer and base IRI in a new admin-only
+    **Linked data** panel (`#/linked-data`, `GET|PUT /api/linked-data/settings`). The values
+    are stored in `linked_data_settings`, with every change of base kept in an append-only
+    history. `.env` only seeds the first value.
+  - **Rules:** the base must be a stable `https` IRI ending in `/`. It must never be the
+    address of CT Studio, Fuseki or the object store, and it must not use `localhost`.
+  - **Changing it:** after graphs have been published, a change must be confirmed and
+    applies to new publishes only. Re-minting the published graphs is an explicit operator
+    rebuild.
+  - **Layout under the base:** `doc/`, `job/`, `graph/document/`, `graph/ontology/`, entity
+    paths from the recipe's IRI templates, and `def/{type}/` for the default vocabulary.
 - **Fuseki deployment.**
   - **Service:** a pinned compose service on TDB2 with a persistent volume.
   - **Access:** only the worker holds write credentials, for Graph Store Protocol writes.
@@ -114,6 +133,9 @@ accepts each change. Mapping should work the same way.
 - **Recipe versions and outputs.** Changing a mapping needs a new recipe version, like any
   other change. A mapping never changes extraction prompts, so the step cache, regression and
   scores are unaffected.
+- **IRI stability is the customer's to keep.** When a customer's base is set, the customer must
+  keep that domain and path stable. Moving it means re-minting, which consumers see as every
+  identifier changing. We commit to keeping `id.stocks-hayward.com` for identifiers only.
 - **Backfill.** Documents published before a mapping existed can be backfilled from
   `reviewed-document.json` in the runs bucket, using the mapping of a later version of their
   type.

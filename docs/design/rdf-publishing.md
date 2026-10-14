@@ -25,6 +25,7 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Opt-in | Per document type: only recipes with a published mapping produce RDF |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
+| Base IRI | The published data belongs to the customer: one customer per deployment, under the customer's own domain, set by an admin in a new Linked data panel; when none is set, `https://id.stocks-hayward.com/{customer}/` |
 
 ## Goals and non-goals
 
@@ -68,6 +69,120 @@ target. This design adds a second, semantic endpoint, built from these parts:
                                 │
  approve ──▶ publish task: edits → render → SHACL → S3 (csv/json/ttl) → Fuseki GSP PUT
 ```
+
+## IRI policy and the base IRI
+
+**Decided (2026-10-14):** the published data belongs to the customer, so its IRIs live under
+the customer's domain. Each deployment serves one customer. An admin sets the customer and their
+base IRI in a new **Linked data** panel. When no base is set, the deployment falls back to our
+identifier domain, `https://id.stocks-hayward.com/`.
+
+### The effective base
+- **Customer base** (preferred): the admin's `baseIri`, for example
+  `https://data.acme.example/ct/`. The customer owns the domain and decides whether and how its
+  IRIs resolve.
+- **Fallback:** `https://id.stocks-hayward.com/{customerSlug}/`.
+  - **Why a slug:** each deployment has its own database, so without a per-customer path,
+    entity IRIs from two customers' deployments (`batch/pv-2301`) would be identical and merge
+    when anyone combines the data.
+  - **What we commit to:** we reserve `id.stocks-hayward.com` for identifiers only and keep its
+    paths stable. Resolving them (303 redirects to a description) can come later.
+- **No customer slug and no base:** RDF publishing is off for the deployment. A publish skips
+  the graph with the event `graph skipped: set the customer on the Linked data page`, so CSV
+  and JSON are still delivered. Graph previews still render, using the placeholder
+  `https://id.stocks-hayward.com/unset/` and saying so.
+
+`effectiveBaseIri(settings)` (`packages/shared/src/linked-data.ts`) and
+`rdf.effective_base_iri` (worker) compute the same answer, held in step by the shared fixture
+`base-iri.json`.
+
+### Layout under the base
+```
+{base}doc/{document_id}               the document (uuid, opaque)
+{base}job/{job_id}                    provenance activity
+{base}graph/document/{document_id}    the document's named graph
+{base}graph/ontology/{id}/{version}   an ontology version's graph (TBox)
+{base}{entity}/{key}                  entities from recipe IRI templates (batch, substance, …)
+{base}def/{typeId}/{term}             default vocabulary and recipe-local terms
+```
+A recipe may still give an absolute IRI template, for example when a customer mandates a
+separate namespace for one kind of entity. Entity keys must be scoped (for example
+`batch/{site|slug}/{batch_number|slug}`) so that values that repeat across sites or
+manufacturers do not collide.
+
+### Rules for a base IRI
+`LinkedDataSettingsSchema` checks these; the API refuses anything else with a 400 naming the rule:
+- an absolute `https` IRI that ends in `/`, with no query, fragment or user info, at most 200
+  characters;
+- a host name, never an IP address, `localhost` or a `.local`/`.test`/`.internal` name;
+- not a CT Studio, Fuseki or SeaweedFS address of this deployment (the API compares it with
+  its own public origin and `RDF_ENDPOINT`), because identity must not depend on where the data
+  is hosted;
+- the panel also warns, without refusing, when the path contains an environment or product
+  word (`staging`, `test`, `dev`, `fuseki`, `sparql`, `ct-studio`, a version number).
+
+Staging is its own deployment with its own setting. Use a separate base (for example
+`https://data-staging.acme.example/ct/`) or a separate fallback slug (`acme-staging`), so test
+graphs can never pass for production data.
+
+### Storage (migration `linked_data_settings`)
+- **`linked_data_settings`:** a single row (`id boolean PRIMARY KEY DEFAULT true CHECK (id)`)
+  with `customer_name`, `customer_slug` (`^[a-z0-9][a-z0-9-]{1,62}$`), `base_iri` (null = the
+  fallback), `updated_by` (token label) and `updated_at`.
+- **`linked_data_base_history`:** append-only, one row per change of the effective base:
+  `from_base`, `to_base`, `changed_by`, `changed_at`, and `graphs_published` (the number
+  published under `from_base`).
+- **Seeding:** `LINKED_DATA_CUSTOMER` (`slug=Name`) and `LINKED_DATA_BASE_IRI` in `.env` seed
+  the row on API start only when there is none, so a deployment can come up preconfigured.
+  After that the panel wins, as for LLM endpoints (ADR 0010).
+
+### How the base is used
+- **Read once per job:** the worker reads the effective base when a process or publish task
+  starts, so one document never mixes two bases.
+- **Recorded:** the base appears in the provenance (`ct:baseIri`) and in the
+  `graph published` event.
+- **Ontology graphs:** TBox graph IRIs use the base too.
+
+### Changing the base after publishing
+IRIs are identities, so changing the base re-mints every IRI for consumers.
+- **Before any graph is published:** the base can be changed freely.
+- **After that:**
+  - **Confirm:** `PUT` needs `confirm` equal to the new effective base. Without it the answer
+    is a 409:
+    `<n> graphs were published under <old base>: confirm the new base to change it`.
+  - **Effect:** the change applies to new publishes only, and the panel says so.
+  - **Re-minting:** published graphs keep their old IRIs until an operator runs
+    `python -m ingest_worker.rdf_rebuild --remint`. That re-renders every published document
+    from its `reviewed-document.json` under the new base, overwrites the `.ttl` in S3, drops
+    the old graphs and reloads the ontology graphs.
+  - **No `owl:sameAs` links** from old to new IRIs. Consumers are told through the history.
+- Every change is logged as `linked data base changed` and recorded in the history.
+
+### Admin panel: Linked data
+- **Web:** `apps/web/src/linked-data/LinkedDataPage.tsx`, route `#/linked-data`.
+  - **Who sees it:** admins only. It sits in the Admin nav and the admin `AccountMenu` (Models,
+    Linked data, Access, Sign out). Users never see the entry, and the route shows the usual
+    admin-only notice.
+  - **Customer:** name and slug. The slug is filled in from the name until it is edited.
+  - **Base IRI:** an input whose placeholder shows the fallback for the current slug. The rule
+    warnings appear inline.
+  - **Effective base preview:** example IRIs for a document, an entity
+    (`batch/site-1/pv-2301`), a graph and a vocabulary term. The preview updates as you type.
+  - **Status:** graphs published under the current base (count, last publish), and whether the
+    worker has a Fuseki endpoint (from the newest `graph published` or `graph skipped` event).
+  - **History:** past bases, who changed them and when, and how many graphs each had.
+  - **Save:** when graphs exist, Save opens a confirm `Dialog`. You type the new base to
+    confirm, and the dialog explains that re-minting is a separate operator step.
+- **API** (tag `Linked data`):
+
+  | Route | Access | Purpose |
+  | --- | --- | --- |
+  | `GET /api/linked-data/settings` | admin | Settings, effective base, history, published counts |
+  | `PUT /api/linked-data/settings` | admin | Save the customer and base (rules above; `confirm` after publishing) |
+  | `GET /api/linked-data/base` | any signed-in user | The effective base only, so the Mapping tab and graph previews can show real example IRIs |
+
+  The access sweep and the OpenAPI conformance tests cover all three routes (`x-admin` on the
+  first two).
 
 ## Ontology library
 
@@ -135,7 +250,7 @@ The worker (`worker/src/ingest_worker/ontology.py`):
 4. **Index** the terms into `ontology_terms` across the version and its resolved imports, and
    write `normalized.nt`.
 5. **Load the TBox into Fuseki** (when configured): a Graph Store Protocol `PUT` of
-   `normalized.nt` to `{RDF_BASE_IRI}graph/ontology/{id}/{version}`.
+   `normalized.nt` to `{base}graph/ontology/{id}/{version}`.
 6. **Finish:** set `status = ready`, with the `stats`.
 
 Parse errors become `status = failed` with the message, and the job goes to `needs_review` (a
@@ -227,7 +342,7 @@ semantics:
     acme: https://data.acme.example/def/pv/
   document:
     class: acme:ProcessValidationProtocol
-    iri: "doc/{document_id}"         # relative to RDF_BASE_IRI
+    iri: "doc/{document_id}"         # relative to the base IRI
   fields:
     protocol_number: { property: acme:protocolNumber }        # datatype from the field type
     execution_date:  { property: acme:executionDate }
@@ -284,10 +399,10 @@ semantics:
     case-insensitively.
   - **No match:** an unmatched value becomes a literal plus an issue. The SHACL shapes can make
     it a violation.
-- **Unmapped outputs** use the recipe's default vocabulary, `{RDF_BASE_IRI}def/{typeId}/{id}`,
+- **Unmapped outputs** use the recipe's default vocabulary, `{base}def/{typeId}/{id}`,
   so nothing is silently dropped. The recipe checks list them (warn), and a shape can require
   them.
-- **IRIs** are relative to `RDF_BASE_IRI` (deployment config) unless absolute. Templates may
+- **IRIs** are relative to the deployment's base IRI (see *IRI policy*) unless absolute. Templates may
   use `{document_id}`, `{type}`, `{version}`, `{value}` (fields), or column ids (rows).
 
 **Validation** (`semanticsIssues` in TS inside `templateIssues`; `Semantics.issues` in Python;
@@ -416,7 +531,7 @@ Provenance in each graph:
     ct:reviewedBy "jane (token label)" ; prov:endedAtTime "2026-10-14T…"^^xsd:dateTime .
 ```
 
-Graph IRIs: `{RDF_BASE_IRI}graph/document/{document_id}`. Re-uploading the same file creates a
+Graph IRIs: `{base}graph/document/{document_id}`. Re-uploading the same file creates a
 new document, and so a new graph; `dcterms:source` lets consumers group them by sha256.
 
 ### Graph previews
@@ -471,9 +586,10 @@ with `S3Publisher` (today's `Target`) and `GraphStorePublisher`. Unit tests use
   - SPARQL Update is not exposed.
   - Shiro: the user `ct-writer` (worker) may use `/ct/data`; the user `ct-reader` may use
     `/ct/sparql` and `/ct/get`; `/$/*` admin is localhost only.
-- **Worker env:** `RDF_ENDPOINT`, `RDF_DATASET`, `RDF_USER`, `RDF_PASSWORD`, `RDF_BASE_IRI`.
-  When `RDF_ENDPOINT` is unset, no Fuseki writes happen. The Turtle in S3 still needs only
-  `RDF_BASE_IRI`.
+- **Worker env:** `RDF_ENDPOINT`, `RDF_DATASET`, `RDF_USER`, `RDF_PASSWORD`. When
+  `RDF_ENDPOINT` is unset, no Fuseki writes happen, and the Turtle still goes to S3. The base
+  IRI is not an environment variable: it is the admin's Linked data setting (see
+  *IRI policy*).
 - **Consumers:** read-only SPARQL through the reverse proxy, like the lake S3 host. Phase 1
   uses one shared reader credential. Per-consumer credentials are an open question.
 - **Operations:**
@@ -495,6 +611,7 @@ with `S3Publisher` (today's `Target`) and `GraphStorePublisher`. Unit tests use
 ## Web summary
 | Where | What |
 | --- | --- |
+| `#/linked-data` (new admin page) | Customer, base IRI with fallback preview, published counts, history, confirm on change |
 | `#/ontologies` (new page) | Library cards, ontology view (tree, detail, neighbourhood graph), imports panel; Import… (admins) |
 | Brief tab | Ontologies section (pinned picks, roles, guidance) |
 | Overview map, `ProjectRail` | `mapping` stage box (optional); metrics: outputs mapped n/m, SHACL violations on the last preview |
@@ -543,6 +660,7 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 | Job tasks `ontology`, `graph`; `publish → awaiting_review` | `packages/shared/src/jobs.ts` | migration CHECK list, `queue.py` |
 | Object keys | `ontologySourceKey`, `graphPreviewKey`, `.ttl` in `outputKey` | `storage.ontology_source_key`, `graph_preview_key`, `output_key(…, "ttl")` |
 | Ontology tables | `OntologyRepo` (`apps/api/src/ontologies/`) | `PgOntologyStore` (worker reads terms, writes parse results) |
+| Linked data settings, base IRI | `LinkedDataSettingsSchema`, `effectiveBaseIri`, `FALLBACK_BASE_IRI` in `packages/shared/src/linked-data.ts`; `LinkedDataRepo` | `rdf.effective_base_iri`, `PgLinkedDataSettings` (reads `linked_data_settings`); shared fixture `packages/shared/test/fixtures/base-iri.json` |
 
 ## Rollout (each PR green and deployable)
 1. **Library:** migration 0032, `ontology` jobs (file upload only), term index, routes, the
@@ -551,7 +669,7 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
    neighbourhood route and Cytoscape view.
 3. **Recipe `semantics` and rendering:** contract on both sides, validation, the recipe
    editor's Mapping sub-tab (hand mapping), Turtle in test runs, graph previews, sample graph
-   view.
+   view, and the Linked data admin panel (`linked_data_settings`, base IRI with fallback).
 4. **Brief and the LLM mapping stage:** brief ontologies, `mapping` stage, shortlist
    retrieval, Mapping tab, overview stage, bundle changes.
 5. **SHACL:** validation in process and publish, review reasons, the
@@ -565,9 +683,9 @@ Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). S
 pulled forward if consumers need SPARQL early with hand-written mappings.
 
 ## Open questions (for the chief architect)
-1. **IRI policy:** the base IRI (`RDF_BASE_IRI`), and whether entity IRIs should be readable
-   (`batch/pv-2301`) or opaque (`sha1`). Readable IRIs leak values into identifiers and change
-   when a value is corrected.
+1. **Entity IRI opacity:** should entity IRIs be readable (`batch/acme-site-1/pv-2301`) or
+   opaque (a hash of the scoped key)? Readable IRIs leak values into identifiers. Either way
+   they change when a value is corrected. The base IRI itself is decided (see *IRI policy*).
 2. **Graph identity:** one graph per uploaded document (proposed), or per source file (sha256)
    so re-uploads replace earlier graphs?
 3. **Consumer access:** one shared read-only SPARQL user, per-consumer credentials (as with
