@@ -107,7 +107,11 @@ accepts each change. Mapping should work the same way.
   - **At publish:** after the review edits are applied, the graph is validated again before
     anything is written. If it still violates the shapes, the job goes back to
     `awaiting_review` and nothing is delivered. This is a new transition.
-- **Opt-in per document type.** Only recipes with a `semantics` block produce RDF. The Fuseki
+- **Delivered formats are chosen per recipe.** A recipe's `delivery.formats` is any non-empty
+  subset of `csv`, `json` and `rdf`. When absent, it is `[csv, json]`, exactly today's behaviour.
+  A structure-focused type may deliver JSON only, and a semantic type may add RDF. `rdf` needs a
+  `semantics` block. A mapping without `rdf` is kept and previewed but not delivered. Internal
+  files (draft JSON for review, reviewed documents, test-run outputs) are always written. The Fuseki
   connection is deployment configuration (`RDF_ENDPOINT`, `RDF_DATASET`, `RDF_USER`,
   `RDF_PASSWORD`). Without it, Turtle still goes to S3 and nothing is loaded.
 - **The customer owns the IRIs: one customer per deployment.**
@@ -188,6 +192,10 @@ accepts each change. Mapping should work the same way.
   apart, and the Mapping tab warns about overlapping properties.
 - **Readable IRIs are a one-way door for exposure.** Making existing IRIs non-revealing later
   means re-minting them, a breaking change. Moving to registered IDs does not.
+- **Chaining types is kept open.** Extracting semantic and structural meaning from one file
+  through two chained types (fan-out at upload, or a follow-on type reading the first's
+  reviewed values) is a later design. Shared document IRIs, one graph per file and type, the
+  OCR cache keyed by sha256 and per-recipe delivery already keep it possible.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).

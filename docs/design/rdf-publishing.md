@@ -22,7 +22,8 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Library | Shared, deployment-wide, admin-managed, tagged by customer or industry; a project's brief picks pinned versions |
 | Visualisation | Class/property browser, interactive neighbourhood graph, mapping view, sample document graph |
 | SHACL failures | Violations are review reasons; invalid graphs are never delivered |
-| Opt-in | Per document type: only recipes with a published mapping produce RDF |
+| Opt-in | Per recipe: delivered formats are chosen per recipe (`delivery.formats`, any of CSV, JSON, RDF; default CSV and JSON, as today). RDF needs a mapping |
+| Chaining types | Kept open, not built: two types on one file stay independent, linked through the shared document node |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
 | Graph identity | One graph per original document (the uploaded file's sha256) **and document type**, however often it is processed; the newest publish replaces it, a version number is kept from day one, and the document node `doc/{sha256}` is shared across types |
@@ -485,6 +486,46 @@ term sets from `PgOntologyStore`.
   A mapping never enters prompts, so it does not change the step cache key or extraction
   results.
 
+## Delivery formats per recipe
+
+**Decided (2026-10-14):** RDF is optional for each recipe, like every other delivered format. A
+recipe focused on document structure may want only JSON in S3; a recipe feeding intelligence
+systems may want CSV, JSON and RDF.
+
+A recipe gains an optional `delivery` block (`DeliverySchema` in
+`packages/shared/src/template.ts`, `Delivery` in `worker/src/ingest_worker/template.py`, shared
+fixture `delivery-formats.json`):
+
+```yaml
+delivery:
+  formats: [json, rdf]      # any non-empty subset of csv, json, rdf
+```
+
+- **Default.** Absent means `[csv, json]`, exactly what is delivered today, so every existing
+  recipe and published version behaves as before.
+- **What it controls.** It controls what is **delivered** to the target (and, for `rdf`, loaded
+  into Fuseki), and what the Results page lists. Internal files are unaffected: the draft
+  document JSON in the outputs bucket (which review reads), `reviewed-document.json` in the
+  runs bucket, and test-run outputs are always written.
+- **`csv`:** the per-output CSVs (fields, tables, checks, issues).
+- **`json`:** the document JSON.
+- **`rdf`:** the Turtle in S3 and the graph in Fuseki. It requires a `semantics` block
+  (`semanticsIssues`: `delivery.formats includes rdf but the recipe has no ontology mapping`,
+  which blocks publishing). SHACL validation, the `published_graphs` versions and the
+  `published_entities` keys apply only when `rdf` is delivered.
+- **Mapping without RDF.** A `semantics` block without `rdf` in `formats` is allowed: the
+  mapping is kept and previewed, but nothing is delivered as RDF. A warning in `ChecksPanel`
+  says so, so a mapping can be drafted before RDF is switched on.
+- **Versioning.** The block is part of the recipe, so changing formats needs a new version, like
+  any other change. Each published document records the formats it was delivered in through its
+  `job_outputs` rows.
+- **Withdrawal** removes whatever was delivered. It reads the `job_outputs` rows and
+  `published_graphs`, not the current recipe.
+- **Web.** The recipe editor's General tab gets *Delivered formats* (CSV, JSON, RDF tick boxes;
+  RDF disabled with a reason until there is a mapping). The Workbench `mapping` stage shows as
+  *not used* when the brief selects no ontologies; when ontologies are selected but `rdf` is not
+  delivered, its banner says the mapping will not be delivered yet.
+
 ## LLM-suggested mapping (Workbench stage `mapping`)
 
 ### Where it sits
@@ -842,6 +883,7 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 ## Contracts (both sides, same PR)
 | Contract | TypeScript | Python |
 | --- | --- | --- |
+| Recipe `delivery.formats` (default `[csv, json]`) | `DeliverySchema`, `deliveryFormats` in `packages/shared/src/template.ts` | `template.Delivery`, `render_document` honours it; fixture `delivery-formats.json` |
 | Recipe `semantics` block, validation | `SemanticsSchema`, `semanticsIssues` in `packages/shared/src/template.ts` | `template.Semantics`, `Semantics.issues`; fixture `semantics-issues.json` |
 | Brief ontologies | `BriefBodySchema.ontologies/ontologyGuidance`, `BRIEF_SECTIONS` | `drafting.DraftParams` (brief passed in params) |
 | Mapping change ops | `DraftChangeSchema` (5 ops), `applyChanges` | `draft_changes.apply_changes`, `draft_stages.MAPPING`; fixture `draft-changes.json` |
@@ -856,8 +898,8 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 2. **URL import and graph view:** allowlisted fetch, `owl:imports`, hardening tests,
    neighbourhood route and Cytoscape view.
 3. **Recipe `semantics` and rendering:** contract on both sides, validation, the recipe
-   editor's Mapping sub-tab (hand mapping), Turtle in test runs, graph previews, sample graph
-   view, and the Linked data admin panel (`linked_data_settings`, base IRI with fallback).
+   editor's Mapping sub-tab (hand mapping), `delivery.formats` (General tab), Turtle in test
+   runs, graph previews, sample graph view, and the Linked data admin panel (`linked_data_settings`, base IRI with fallback).
 4. **Brief and the LLM mapping stage:** brief ontologies, `mapping` stage, hybrid shortlist
    retrieval with embeddings (`embed` on providers, `embedding_model` setting, pgvector image,
    term embeddings, recall fixture), Mapping tab, overview stage, bundle changes.
@@ -873,6 +915,37 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 
 Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). Step 6 can be
 pulled forward if consumers need SPARQL early with hand-written mappings.
+
+## Later: chaining document types
+
+A file may need both kinds of meaning: semantic facts (tables, entities, ontology terms) from
+one type, and structure and narrative from another. Today that is two independent extractions
+of the same file. **Chaining** them is kept open but not designed or built in this phase. These
+choices already keep it possible:
+
+- **Shared identity.** Both types' graphs describe the same `doc/{sha256}` node and share
+  entities by scoped key, so chained outputs link up without new IRIs.
+- **Independent graphs.** One graph per file and type means a chained type never overwrites its
+  partner, and each can be withdrawn on its own.
+- **Shared preparation.** Prepared text and the OCR cache are keyed by the file's sha256, so a
+  second type on the same file does not OCR again.
+- **Per-recipe delivery.** A structural type can deliver JSON only while its semantic partner
+  delivers RDF.
+
+Shapes a later design could take, from simplest:
+1. **Fan-out at upload.** Pick several document types for one file and get one independent job
+   per type. No new pipeline concepts are needed.
+2. **Follow-on types.** A recipe declares `then: [typeId]`. Publishing the first type queues
+   the second for the same document (`params.chainedFrom`), and the second type's steps can read
+   the first's reviewed values as `context`, the same mechanism steps use within one recipe
+   today.
+3. **Composite recipe.** One recipe with two pipelines and one review. This is the most
+   coupled, and probably unnecessary given 1 and 2.
+
+Open points for that design: whether review happens once or per type; how a chain's later
+type is retired or deleted relative to its partner; and whether the structural type also
+publishes a thin RDF layer (sections and the entities each mentions) so narrative and facts
+link in the graph.
 
 ## Open questions (for the chief architect)
 1. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from
