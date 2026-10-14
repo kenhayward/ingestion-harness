@@ -87,7 +87,8 @@ export function UploadStrip({
 
   useEffect(() => {
     api.listSpecs().then(
-      (all) => {
+      (listed) => {
+        const all = listed.filter((s) => !s.retired); // the API leaves them out; never offer one
         // Only the newest version of each type: uploads should not pick an old one.
         const newest = new Map<string, number>();
         for (const s of all) newest.set(s.id, Math.max(newest.get(s.id) ?? 0, s.version));

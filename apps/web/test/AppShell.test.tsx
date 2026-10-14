@@ -158,6 +158,7 @@ const template = (id: string, name: string) => ({
   description: null,
   published: 1,
   draft: null,
+  retired: null,
   versions: [],
   summary: {
     sections: 1,
