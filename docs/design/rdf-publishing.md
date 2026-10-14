@@ -23,7 +23,7 @@ target. This design adds a second, semantic endpoint, built from these parts:
 | Visualisation | Class/property browser, interactive neighbourhood graph, mapping view, sample document graph |
 | SHACL failures | Violations are review reasons; invalid graphs are never delivered |
 | Opt-in | Per recipe: delivered formats are chosen per recipe (`delivery.formats`, any of CSV, JSON, RDF; default CSV and JSON, as today). RDF needs a mapping |
-| Chaining types | Kept open, not built: two types on one file stay independent, linked through the shared document node |
+| Chaining types | Direction chosen, not built this phase: follow-on types (`then`), chains of any length (A → B → C) and branches; each link reads upstream reviewed values and is reviewed on its own |
 | Data policy | Mapping follows the project's data policy; a `localOnly` ontology also forces local models |
 | TBox in Fuseki | Yes: one named graph per ontology version |
 | Graph identity | One graph per original document (the uploaded file's sha256) **and document type**, however often it is processed; the newest publish replaces it, a version number is kept from day one, and the document node `doc/{sha256}` is shared across types |
@@ -916,36 +916,70 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
 Steps 1–3 deliver value without Fuseki (browsing, mapping and Turtle in S3). Step 6 can be
 pulled forward if consumers need SPARQL early with hand-written mappings.
 
-## Later: chaining document types
+## Later: chained document types (follow-on types)
 
-A file may need both kinds of meaning: semantic facts (tables, entities, ontology terms) from
-one type, and structure and narrative from another. Today that is two independent extractions
-of the same file. **Chaining** them is kept open but not designed or built in this phase. These
-choices already keep it possible:
+A file may need several kinds of meaning: semantic facts (tables, entities, ontology terms)
+from one type, and structure and narrative from another, possibly refined by a third. **Chosen
+direction (2026-10-14): follow-on types**, which allow chains of any length (A → B → C). This
+is not built in this phase. It gets its own design doc before implementation. The rules below
+fix the direction so that nothing built now works against it.
 
-- **Shared identity.** Both types' graphs describe the same `doc/{sha256}` node and share
-  entities by scoped key, so chained outputs link up without new IRIs.
-- **Independent graphs.** One graph per file and type means a chained type never overwrites its
-  partner, and each can be withdrawn on its own.
-- **Shared preparation.** Prepared text and the OCR cache are keyed by the file's sha256, so a
-  second type on the same file does not OCR again.
-- **Per-recipe delivery.** A structural type can deliver JSON only while its semantic partner
+### What these choices already provide
+- **Shared identity.** Every link's graph describes the same `doc/{sha256}` node and shares
+  entities by scoped key, so a chain's outputs link up without new IRIs.
+- **Independent graphs.** One graph per file and type means a link never overwrites another,
+  and each can be withdrawn on its own.
+- **Shared preparation.** Prepared text and the OCR cache are keyed by the file's sha256, so
+  later links do not OCR again.
+- **Per-recipe delivery.** A structural link can deliver JSON only, while a semantic link
   delivers RDF.
 
-Shapes a later design could take, from simplest:
-1. **Fan-out at upload.** Pick several document types for one file and get one independent job
-   per type. No new pipeline concepts are needed.
-2. **Follow-on types.** A recipe declares `then: [typeId]`. Publishing the first type queues
-   the second for the same document (`params.chainedFrom`), and the second type's steps can read
-   the first's reviewed values as `context`, the same mechanism steps use within one recipe
-   today.
-3. **Composite recipe.** One recipe with two pipelines and one review. This is the most
-   coupled, and probably unnecessary given 1 and 2.
+### The direction
+- **Declared in the recipe.** A recipe gains an optional `then` list of document type ids, for
+  example `then: [pv-structure]`. Publishing a job of A queues one job per listed type for the
+  **same document** (same `document_id`, so the same sha256), with `params.chain`: the ordered
+  list of `{typeId, version, jobId}` links so far. A list allows branching (A → [B, C]) as well
+  as chains (A → B → C).
+- **Each link runs its type's current published version.** That is the newest published version
+  when the link is queued, not one pinned by the upstream recipe. So a downstream type can be
+  improved without republishing its upstream. `params.chain` records the versions actually used.
+- **Downstream links read upstream values.** A link's extract steps can read any upstream
+  link's reviewed values as `context`, namespaced by type (`context: { batches:
+  "@pv-tables.batches.batch_number" }`), the same mechanism steps use within one recipe today.
+  - **What is read:** the values come from each upstream job's `reviewed-document.json`, as
+    published.
+  - **Missing upstream:** a step naming a type that is not upstream in this chain is a recipe
+    issue at publish time when it can be checked, else `(none)` at run time.
+- **Each link is reviewed on its own.** Each link follows its own recipe's review rules. A
+  link is queued only when its upstream job is **published**, so it never reads unapproved
+  values.
+- **No cycles, bounded depth.**
+  - **At publish:** publishing a recipe whose `then` would create a cycle through the
+    published versions of the types involved is refused with a 409 naming the cycle.
+  - **At run time:** a link whose type already appears in `params.chain` is not queued (event
+    `chain stopped: cycle at <type>`). Neither is a link past `MAX_CHAIN_DEPTH` (5).
+- **No duplicate runs.** When a link's type already has a queued or running job for the same
+  document from the same chain root, no second one is queued.
+- **Re-processing re-runs the chain.** Every publish of an upstream link queues its downstream
+  links again, so corrections flow down and each link's graph is replaced (versioned) as usual.
+- **Failures stay local.** A failed or rejected link stops only its own branch. Upstream outputs
+  stay delivered.
+- **Rules carry down.** The project's data policy (`params.dataPolicy`) and the uploader
+  (`created_by`) are carried to every link. A retired type in `then` is skipped with an event.
+- **Provenance.** Each link's activity says `prov:wasInformedBy` the upstream job's activity,
+  so consumers can follow the chain in the graph.
 
-Open points for that design: whether review happens once or per type; how a chain's later
-type is retired or deleted relative to its partner; and whether the structural type also
-publishes a thin RDF layer (sections and the entities each mentions) so narrative and facts
-link in the graph.
+### Open points for the chain design
+- **Deleting upstream:** withdrawing an upstream link (job deletion or retirement) does not
+  cascade by default. Should downstream outputs built from its values be withdrawn too, or
+  only flagged as derived from withdrawn data?
+- **Testing in the Workbench:** a downstream type's test runs need upstream values. The
+  proposal is to use the newest published upstream document of the same file, with a *Run
+  upstream first* action when there is none.
+- **UI:** where a chain is shown, for example a chain strip on the job detail and Home's live
+  progress across links.
+- **Structural links in the graph:** whether a structural type also publishes a thin RDF layer
+  (sections and the entities each mentions) so narrative and facts link in the graph.
 
 ## Open questions (for the chief architect)
 1. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from

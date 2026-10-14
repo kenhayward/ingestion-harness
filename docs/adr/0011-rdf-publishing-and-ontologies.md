@@ -192,10 +192,12 @@ accepts each change. Mapping should work the same way.
   apart, and the Mapping tab warns about overlapping properties.
 - **Readable IRIs are a one-way door for exposure.** Making existing IRIs non-revealing later
   means re-minting them, a breaking change. Moving to registered IDs does not.
-- **Chaining types is kept open.** Extracting semantic and structural meaning from one file
-  through two chained types (fan-out at upload, or a follow-on type reading the first's
-  reviewed values) is a later design. Shared document IRIs, one graph per file and type, the
-  OCR cache keyed by sha256 and per-recipe delivery already keep it possible.
+- **Chained types are the chosen direction, built later.** A recipe's `then` lists follow-on
+  types. Publishing a job queues them for the same document. They form chains of any length
+  (A → B → C) and branches, with no cycles and a depth cap. Each link reads upstream reviewed
+  values as step context, is reviewed on its own and has its own graph. Shared document IRIs,
+  one graph per file and type, the OCR cache keyed by sha256 and per-recipe delivery already
+  support it. It gets its own design before implementation.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).
