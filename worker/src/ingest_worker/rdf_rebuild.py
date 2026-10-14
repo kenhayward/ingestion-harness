@@ -1,0 +1,306 @@
+"""Operator commands for the triple store (ADR 0011 step 6).
+
+    docker exec ingestion-worker-1 python -m ingest_worker.rdf_rebuild            # reload all
+    docker exec ingestion-worker-1 python -m ingest_worker.rdf_rebuild --backfill TYPE
+    docker exec ingestion-worker-1 python -m ingest_worker.rdf_rebuild --remint
+
+- **rebuild** loads every ontology graph (its normalised N-Triples, runs bucket) and every
+  current document graph (its versioned Turtle copy in the target) into the store, for an empty
+  or restored dataset. Nothing is re-rendered.
+- **--backfill TYPE** publishes the graphs of TYPE's delivered documents that have none, from
+  their reviewed documents, with TYPE's newest published recipe that maps to ontologies (the
+  provenance records that version).
+- **--remint** re-renders every current graph not yet under the Linked data base, from its
+  reviewed document and the recipe version it was rendered with, as the next version of its
+  graph under the new base; the graph under the old base is dropped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+import psycopg
+from pydantic import ValidationError
+
+from .pipeline import DocumentError, PipelineDeps
+from .queue import ClaimedJob, JobQueue
+from .storage import graph_version_key, ontology_normalized_key, reviewed_document_key
+from .template import Template
+from .template_pipeline import build_graph, publish_graph
+
+
+@dataclass(frozen=True)
+class DeliveredJob:
+    """A succeeded, non-test publish of a document type, with its document."""
+
+    job_id: str
+    document_id: str
+    template_id: str
+    template_version: int
+    sha256: str
+    bucket: str
+    object_key: str
+
+
+class RebuildSource(Protocol):
+    def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
+        """Newest first."""
+        ...
+
+    def job(self, job_id: str) -> DeliveredJob | None: ...
+
+    def published_templates(self, template_id: str) -> dict[int, dict[str, Any]]:
+        """Version -> definition of each published version."""
+        ...
+
+
+@dataclass
+class MemoryRebuildSource:
+    jobs: list[DeliveredJob] = field(default_factory=list)
+    templates: dict[int, dict[str, Any]] = field(default_factory=dict)
+
+    def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
+        return [j for j in self.jobs if j.template_id == template_id]
+
+    def job(self, job_id: str) -> DeliveredJob | None:
+        return next((j for j in self.jobs if j.job_id == job_id), None)
+
+    def published_templates(self, template_id: str) -> dict[int, dict[str, Any]]:
+        return {v: t for v, t in self.templates.items() if t.get("id") == template_id}
+
+
+class PgRebuildSource:
+    def __init__(self, conn: psycopg.Connection[Any]) -> None:
+        self._conn = conn
+
+    _JOBS = """SELECT j.id::text, j.document_id::text, d.spec_id, d.spec_version, d.sha256,
+                      d.bucket, d.object_key
+                 FROM jobs j JOIN documents d ON d.id = j.document_id
+                WHERE j.task = 'publish' AND j.status = 'succeeded' AND NOT j.test"""
+
+    def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
+        rows = self._conn.execute(
+            self._JOBS + " AND d.spec_id = %s ORDER BY j.updated_at DESC", (template_id,)
+        ).fetchall()
+        return [DeliveredJob(*r) for r in rows]
+
+    def job(self, job_id: str) -> DeliveredJob | None:
+        row = self._conn.execute(self._JOBS + " AND j.id = %s", (job_id,)).fetchone()
+        return DeliveredJob(*row) if row else None
+
+    def published_templates(self, template_id: str) -> dict[int, dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT version, definition FROM templates WHERE id = %s AND status = 'published'",
+            (template_id,),
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+
+def _claimed(job: DeliveredJob, template: Template) -> ClaimedJob:
+    return ClaimedJob(
+        job.job_id,
+        job.document_id,
+        template.id,
+        template.version,
+        job.bucket,
+        job.object_key,
+        None,
+        0,
+        0,
+        task="publish",
+    )
+
+
+def _reviewed(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] | None:
+    raw = deps.store.get_optional(deps.buckets.runs, reviewed_document_key(job.job_id))
+    if raw is None:
+        return None
+    document: dict[str, Any] = json.loads(raw)
+    document["source_sha256"] = job.sha256
+    return document
+
+
+def _publish(
+    deps: PipelineDeps, queue: JobQueue, job: DeliveredJob, template: Template
+) -> int | None:
+    """Render a delivered job's reviewed document with `template` and publish its graph."""
+    document = _reviewed(deps, job)
+    if document is None:
+        return None
+    claimed = _claimed(job, template)
+    graph = build_graph(claimed, deps, queue, template, document)
+    if graph is None:
+        return None
+    return publish_graph(claimed, deps, queue, template, document, graph)
+
+
+def rebuild(deps: PipelineDeps) -> list[str]:
+    store, registry, target = deps.graph_store, deps.graph_registry, deps.target
+    if store is None or registry is None or target is None:
+        return ["rebuild needs RDF_ENDPOINT, the database and the target"]
+    lines: list[str] = []
+    ontologies = graphs = missing = 0
+    for ontology_id, version, _base, graph_iri in registry.all_ontologies():
+        data = deps.store.get_optional(
+            deps.buckets.runs, ontology_normalized_key(ontology_id, version)
+        )
+        if data is None:
+            missing += 1
+            lines.append(f"missing {ontology_id} v{version}: import it again in the library")
+            continue
+        store.put(graph_iri, data, "application/n-triples")
+        ontologies += 1
+        lines.append(f"loaded {graph_iri}")
+    for g in registry.all_current():
+        key = target.prefix + graph_version_key(g.sha256, g.template_id, g.version)
+        body = target.store.get_optional(target.bucket, key)
+        if body is None:
+            missing += 1
+            lines.append(f"missing {key}")
+            continue
+        store.put(g.graph_iri, body, "text/turtle")
+        graphs += 1
+        lines.append(f"loaded {g.graph_iri} v{g.version}")
+    lines.append(
+        f"rebuild: {ontologies} ontology graphs, {graphs} document graphs, {missing} missing"
+    )
+    return lines
+
+
+def _mapped(definition: dict[str, Any]) -> Template | None:
+    try:
+        template = Template.model_validate(definition)
+    except ValidationError:
+        return None
+    return template if template.semantics is not None else None
+
+
+def backfill(
+    deps: PipelineDeps, queue: JobQueue, source: RebuildSource, template_id: str
+) -> list[str]:
+    published = source.published_templates(template_id)
+    mapped = [t for v in sorted(published, reverse=True) if (t := _mapped(published[v]))]
+    if not mapped or deps.graph_registry is None:
+        return [f"{template_id} has no published recipe with an ontology mapping"]
+    template = mapped[0]
+    lines: list[str] = []
+    done = skipped = 0
+    seen: set[str] = set()
+    for job in source.delivered_jobs(template_id):
+        if job.sha256 in seen or deps.graph_registry.current(job.sha256, template_id):
+            seen.add(job.sha256)
+            skipped += 1
+            continue
+        seen.add(job.sha256)
+        try:
+            version = _publish(deps, queue, job, template)
+        except DocumentError as exc:
+            version = None
+            lines.append(f"skipped {job.job_id}: {exc}")
+        if version is None:
+            skipped += 1
+            continue
+        done += 1
+        lines.append(f"published {job.sha256}/{template_id} v{version} from job {job.job_id}")
+    lines.append(f"backfill {template_id} v{template.version}: {done} published, {skipped} skipped")
+    return lines
+
+
+def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
+    registry, store = deps.graph_registry, deps.graph_store
+    base = deps.linked_data.effective_base() if deps.linked_data else None
+    if registry is None or base is None:
+        return ["remint needs the database and a Linked data base"]
+    lines: list[str] = []
+    moved = already = 0
+    for g in registry.all_current():
+        if g.base_iri == base:
+            already += 1
+            continue
+        job = source.job(g.job_id)
+        definition = source.published_templates(g.template_id).get(g.template_version)
+        template = _mapped(definition) if definition else None
+        if job is None or template is None:
+            lines.append(f"skipped {g.graph_iri}: its job or recipe version is gone")
+            continue
+        try:
+            version = _publish(deps, queue, job, template)
+        except DocumentError as exc:
+            lines.append(f"skipped {g.graph_iri}: {exc}")
+            continue
+        if version is None:
+            lines.append(f"skipped {g.graph_iri}: no reviewed document")
+            continue
+        if store is not None:
+            store.delete(g.graph_iri)
+        moved += 1
+        lines.append(f"re-minted {g.graph_iri} as v{version}")
+    lines.append(f"remint under {base}: {moved} re-minted, {already} already there")
+    return lines
+
+
+def main(argv: list[str] = sys.argv[1:]) -> int:
+    from .config import Settings
+    from .graph_registry import PgGraphRegistry
+    from .graph_store import graph_store_from_env
+    from .linked_data import PgLinkedDataSettings
+    from .llm.registry import ModelRegistry
+    from .ontology import PgOntologyStore
+    from .pdf import extract_pages
+    from .pipeline import Buckets, Target
+    from .queue import PgJobQueue
+    from .specs import load_specs
+    from .storage import S3ObjectStore
+
+    parser = argparse.ArgumentParser(prog="python -m ingest_worker.rdf_rebuild")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--backfill", metavar="TYPE", help="publish TYPE's missing graphs")
+    group.add_argument("--remint", action="store_true", help="re-mint under the current base")
+    args = parser.parse_args(argv)
+
+    import os
+
+    settings = Settings.from_env()
+    library = psycopg.connect(settings.database_url, autocommit=True)
+    deps = PipelineDeps(
+        store=S3ObjectStore(
+            settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
+        ),
+        specs=load_specs(settings.specs_dir),
+        models=ModelRegistry({}, {}, {}),
+        extract_text=extract_pages,
+        buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
+        target=Target(
+            store=S3ObjectStore(
+                settings.target_endpoint,
+                settings.target_region,
+                settings.target_access_key,
+                settings.target_secret_key,
+            ),
+            bucket=settings.target_bucket,
+            prefix=settings.target_prefix,
+        ),
+        ontologies=PgOntologyStore(library),
+        linked_data=PgLinkedDataSettings(library),
+        graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
+        graph_store=graph_store_from_env(os.environ),
+    )
+    queue = PgJobQueue(settings.database_url)
+    source = PgRebuildSource(library)
+    if args.backfill:
+        lines = backfill(deps, queue, source, args.backfill)
+    elif args.remint:
+        lines = remint(deps, queue, source)
+    else:
+        lines = rebuild(deps)
+    for line in lines:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
