@@ -96,7 +96,23 @@ export interface RemovedJob {
   draftObjects: StoredObject[];
   /** The inbox PDF, when no remaining document row or reference needs it. */
   inboxObject: StoredObject | null;
+  /**
+   * The `withdraw` job queued for what the job delivered (ADR 0011 step 7), else null. Absent
+   * for a Workbench project's jobs: test runs, never delivered.
+   */
+  withdrawJobId?: string | null;
 }
+
+/** Background jobs of the linked data (ADR 0011 step 7): withdrawals and republishes. */
+export interface WithdrawalStatus {
+  queued: number;
+  running: number;
+  failed: number;
+}
+
+/** `withdraw` and `republish` jobs: priority, attempts (a withdrawal retries until it succeeds). */
+export const WITHDRAW_JOB = { priority: 0, maxAttempts: 100 } as const;
+export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
 
 export type DeleteJobResult =
   | { result: 'deleted'; removed: RemovedJob }
@@ -251,8 +267,21 @@ export interface IngestionRepo {
   retryJob(id: string, opts?: RetryOptions): Promise<JobSummary | null>;
   /** queued/running -> cancelled (+ event). Null if unknown or not cancellable. */
   cancelJob(id: string): Promise<JobSummary | null>;
-  /** Delete a finished job (+ its document unless still needed). Storage is the caller's job. */
+  /**
+   * Delete a finished job (+ its document unless still needed). Storage is the caller's job,
+   * except what the job delivered: a `withdraw` job is queued for its published target objects
+   * and graph versions, in the same transaction (ADR 0011 step 7).
+   */
   deleteJob(id: string): Promise<DeleteJobResult>;
+  /**
+   * Retiring a type withdraws what it delivered: its jobs' published outputs are marked
+   * withdrawn, its current graphs are forgotten, and one `withdraw` job is queued (null when
+   * nothing was left to withdraw).
+   */
+  withdrawType(typeId: string, by: string | null): Promise<string | null>;
+  /** Unretiring re-delivers the type's withdrawn outputs: a `republish` job, or null. */
+  republishType(typeId: string, by: string | null): Promise<string | null>;
+  withdrawalStatus(): Promise<WithdrawalStatus>;
   /**
    * Ids of finished jobs whose updated_at is before `cutoffIso`, oldest first. Regression runs
    * (reference_id set) feed regression scores and metrics, so they're left out unless asked.

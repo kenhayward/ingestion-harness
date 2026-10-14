@@ -2534,7 +2534,7 @@
         "tags": [
           "Specs"
         ],
-        "description": "Retires every version of a document type (a recipe or a legacy spec). Nothing is\ndeleted: its jobs, results, references and versions stay readable, and jobs already\nqueued or running finish. It is left out of `GET /api/specs` (unless\n`?retired=include`) and of the Workbench list (unless `retired=include`), and new\nwork for it is refused with a 409 `{name} is retired: unretire it to use it again`:\nuploads, retries, test and regression runs, new drafts, publishing, imports and the\nWorkbench actions that queue jobs. Retiring a retired type keeps its first retirement.",
+        "description": "Retires every version of a document type (a recipe or a legacy spec). Nothing is\ndeleted: its jobs, results, references and versions stay readable, and jobs already\nqueued or running finish. It is left out of `GET /api/specs` (unless\n`?retired=include`) and of the Workbench list (unless `retired=include`), and new\nwork for it is refused with a 409 `{name} is retired: unretire it to use it again`:\nuploads, retries, test and regression runs, new drafts, publishing, imports and the\nWorkbench actions that queue jobs. Retiring a retired type keeps its first retirement.\nWhat the type delivered is withdrawn (ADR 0011): its jobs' published outputs are removed\nfrom the target and its graphs from the triple store, by a queued `withdraw` job; the\njobs, their drafts and reviewed documents stay.",
         "parameters": [
           {
             "schema": {
@@ -2704,7 +2704,7 @@
         "tags": [
           "Specs"
         ],
-        "description": "Makes a retired document type available again for uploads and new work. This route is\nthe only way to unretire a type: the web app has no Unretire button (retiring is also on\nthe Document types page). A type that is not retired is left as it is (still a 204).",
+        "description": "Makes a retired document type available again for uploads and new work. This route is\nthe only way to unretire a type: the web app has no Unretire button (retiring is also on\nthe Document types page). A type that is not retired is left as it is (still a 204).\nWhat its retirement withdrew is delivered again by a queued `republish` job.",
         "parameters": [
           {
             "schema": {
