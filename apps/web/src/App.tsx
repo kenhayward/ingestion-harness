@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
+import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { AccessPage } from './access/AccessPage.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
@@ -127,7 +128,7 @@ function SignedInApp({
   } else if (route.name === 'access') {
     page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'ontologies') {
-    page = <p>Ontologies</p>;
+    page = <OntologiesPage api={api} role={me.role} />;
   } else if (route.name === 'ontology') {
     page = <p>{route.ontologyId}</p>;
   } else if (route.name === 'models') {

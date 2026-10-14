@@ -3288,3 +3288,37 @@ tr.confirming td {
     gap: 0.25rem;
   }
 }
+
+/* Ontologies (ADR 0011) */
+.ontologies-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ih-space-4);
+}
+.ontology-card {
+  padding: 16px 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.ontology-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ontology-card-head h2 {
+  margin: 0;
+  font-size: var(--ih-text-lg);
+}
+.ontology-version {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
