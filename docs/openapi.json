@@ -37279,6 +37279,246 @@
           }
         }
       }
+    },
+    "/api/ontologies/{id}/versions/{version}/neighbourhood": {
+      "get": {
+        "operationId": "getOntologyNeighbourhood",
+        "summary": "A term and what it is related to",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "The graph view of a term: the term, its parents and children, the properties whose\ndomain or range it is (and a property's own domain and range), concept schemes and\nbroader concepts, and the shapes targeting it, `depth` hops out (1 or 2). At most\n150 nodes (`truncated` says when more were left out); an IRI the version names but\ndoes not define is an `external` node.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "in": "query",
+            "name": "iri",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2,
+              "default": 1
+            },
+            "in": "query",
+            "name": "depth",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Ontology id, e.g. `idmp-o`."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "Version number (1 is the first import)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The neighbourhood.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "iri": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "class",
+                                  "object_property",
+                                  "datatype_property",
+                                  "annotation_property",
+                                  "concept",
+                                  "scheme",
+                                  "shape"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "external"
+                                ]
+                              }
+                            ]
+                          },
+                          "focus": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "iri",
+                          "label",
+                          "kind",
+                          "focus"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "subClassOf",
+                              "subPropertyOf",
+                              "broader",
+                              "inScheme",
+                              "domain",
+                              "range",
+                              "targets"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "target",
+                          "kind"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "nodes",
+                    "edges",
+                    "truncated"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The neighbourhood."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`iri` is missing, or `depth` is not 1 or 2.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`iri` is missing, or `depth` is not 1 or 2."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such ontology or version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No such ontology or version."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

@@ -205,6 +205,21 @@ describe('browsing terms', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
+  it('returns a term neighbourhood', async () => {
+    const { app } = await ready();
+    const url = (q: string) => `/api/ontologies/pv/versions/1/neighbourhood${q}`;
+    const res = await app.inject({ url: url(`?iri=${encodeURIComponent(`${C}Protocol`)}`) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().edges).toContainEqual({
+      source: `${C}Protocol`,
+      target: `${C}Document`,
+      kind: 'subClassOf',
+    });
+    expect((await app.inject({ url: url('') })).statusCode).toBe(400);
+    const unknown = await app.inject({ url: '/api/ontologies/pv/versions/9/neighbourhood?iri=x' });
+    expect(unknown.statusCode).toBe(404);
+  });
+
   it('describes a term', async () => {
     const { app } = await ready();
     const res = await app.inject({ url: term(`${C}Protocol`) });

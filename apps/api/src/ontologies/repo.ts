@@ -67,6 +67,16 @@ export interface OntologyRepo {
   deleteVersion(id: string, version: number): Promise<DeleteVersionResult>;
   terms(id: string, version: number, query: TermQuery): Promise<TermPage | null>;
   term(id: string, version: number, iri: string): Promise<TermDetail | null>;
+  /**
+   * Rows whose IRI is in `iris`, or whose parents, domains, ranges or scheme name one of
+   * them, by label, at most `limit` (the graph view's hops); null for an unknown version.
+   */
+  neighbours(
+    id: string,
+    version: number,
+    iris: string[],
+    limit: number,
+  ): Promise<OntologyTerm[] | null>;
 }
 
 /** What a version whose import job ended without finishing it reads as. */
@@ -317,6 +327,26 @@ export class MemoryOntologyRepo implements OntologyRepo {
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {
     if (!this.version(id, version)) return null;
     return termDetail((this.termsByVersion.get(`${id}:${version}`) ?? []).map(publicTerm), iri);
+  }
+
+  async neighbours(
+    id: string,
+    version: number,
+    iris: string[],
+    limit: number,
+  ): Promise<OntologyTerm[] | null> {
+    if (!this.version(id, version)) return null;
+    const wanted = new Set(iris);
+    return (this.termsByVersion.get(`${id}:${version}`) ?? [])
+      .filter(
+        (t) =>
+          wanted.has(t.iri) ||
+          [...t.parents, ...t.domain, ...t.range].some((x) => wanted.has(x)) ||
+          (t.scheme !== null && wanted.has(t.scheme)),
+      )
+      .sort(byLabel)
+      .slice(0, limit)
+      .map(publicTerm);
   }
 
   /** Test seeder: the worker indexed the version. */
@@ -728,6 +758,24 @@ export class PgOntologyRepo implements OntologyRepo {
       offset: query.offset,
       limit: query.limit,
     };
+  }
+
+  async neighbours(
+    id: string,
+    version: number,
+    iris: string[],
+    limit: number,
+  ): Promise<OntologyTerm[] | null> {
+    if (!(await this.hasVersion(id, version))) return null;
+    const { rows } = await this.pool.query<TermRow>(
+      `SELECT ${TERM_COLS} FROM ontology_terms
+        WHERE ontology_id = $1 AND version = $2
+          AND (iri = ANY($3::text[]) OR parents && $3::text[] OR domains && $3::text[]
+               OR ranges && $3::text[] OR scheme = ANY($3::text[]))
+        ORDER BY lower(label), iri LIMIT $4`,
+      [id, version, iris, limit],
+    );
+    return rows.map(toTerm);
   }
 
   async term(id: string, version: number, iri: string): Promise<TermDetail | null> {

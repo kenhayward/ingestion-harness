@@ -5,6 +5,8 @@ import {
   ONTOLOGY_ACCEPT,
   ONTOLOGY_ID_RE,
   OntologyDetailSchema,
+  NeighbourhoodQuerySchema,
+  NeighbourhoodSchema,
   OntologyFromUrlBodySchema,
   OntologySettingsSchema,
   OntologyPatchSchema,
@@ -23,6 +25,7 @@ import {
 import { binary, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { multipartField } from '../uploads.js';
 import { contentDisposition } from './jobs.js';
+import { buildNeighbourhood } from '../ontologies/neighbourhood.js';
 
 /** The ontology library (ADR 0011): anyone signed in reads, admins import and manage. */
 
@@ -507,5 +510,50 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       fetchHosts: app.deps.ontologyFetch.hosts,
       maxBytes: app.deps.ontologyFetch.maxBytes,
     }),
+  );
+
+  /** Rows per hop the neighbourhood reads; the builder keeps NEIGHBOURHOOD_LIMIT nodes of them. */
+  const HOP_ROWS = 500;
+
+  app.get(
+    '/ontologies/:id/versions/:version/neighbourhood',
+    {
+      schema: {
+        ...base(
+          'getOntologyNeighbourhood',
+          'A term and what it is related to',
+          md`
+            The graph view of a term: the term, its parents and children, the properties whose
+            domain or range it is (and a property's own domain and range), concept schemes and
+            broader concepts, and the shapes targeting it, \`depth\` hops out (1 or 2). At most
+            150 nodes (\`truncated\` says when more were left out); an IRI the version names but
+            does not define is an \`external\` node.
+          `,
+        ),
+        params: VersionParams,
+        querystring: NeighbourhoodQuerySchema,
+        response: {
+          200: res('The neighbourhood.', NeighbourhoodSchema),
+          400: error('`iri` is missing, or `depth` is not 1 or 2.'),
+          404: NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = VersionParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'version not found' });
+      const query = NeighbourhoodQuerySchema.safeParse(req.query ?? {});
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      const { id, version } = params.data;
+      const { ontologies } = app.deps;
+      if (!(await ontologies.neighbours(id, version, [], 1))) {
+        return reply.code(404).send({ error: 'version not found' });
+      }
+      return buildNeighbourhood(
+        query.data.iri,
+        query.data.depth,
+        async (iris) => (await ontologies.neighbours(id, version, iris, HOP_ROWS)) ?? [],
+      );
+    },
   );
 }

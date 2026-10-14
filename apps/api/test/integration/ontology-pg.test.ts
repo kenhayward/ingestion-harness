@@ -139,6 +139,10 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     expect(detail!.children).toHaveLength(200);
     expect(detail!.concepts[0]!.label).toBe('Concept 0001');
     expect(fetched).toBeLessThanOrEqual(2 * 200 + 10);
+    const near = await repo.neighbours('pv-pg', 1, [S], 300);
+    expect(near).toHaveLength(300);
+    expect(near![0]!.label).toBe('Concept 0001');
+    expect(await repo.neighbours('pv-pg', 9, [S], 10)).toBeNull();
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
   });
 
