@@ -57,9 +57,19 @@ export const JobSummarySchema = z.object({
    * rerun: one step again; prepare: workbench sample text + OCR only; segment: workbench
    * anchor preview over a project's prepared samples (no document; ADR 0007);
    * draft: workbench drafting stage (no document); export: workbench drafting bundle (no
-   * document, migration 0019).
+   * document, migration 0019); ontology: parse and index an imported ontology version (no
+   * document, migration 0032; never a JobSummary).
    */
-  task: z.enum(['process', 'publish', 'rerun', 'prepare', 'segment', 'draft', 'export']),
+  task: z.enum([
+    'process',
+    'publish',
+    'rerun',
+    'prepare',
+    'segment',
+    'draft',
+    'export',
+    'ontology',
+  ]),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
   /** Regression run: the reference document this test job re-runs. */
