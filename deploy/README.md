@@ -69,6 +69,11 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
      `= /api/workbench/projects/import` with `client_max_body_size 650m; proxy_request_buffering
      off;`, or raise the host-wide limit. Otherwise the import fails with "bundle too large for
      the proxy".
+   - Live job progress (Home) is a Server-Sent Events stream, `GET /api/jobs/{id}/events`. The
+     app's nginx passes the API's `X-Accel-Buffering: no` on, which NPM honours, so nothing is
+     needed here; a proxy that ignores that header must not buffer that path (in nginx,
+     `proxy_buffering off;`), or Home shows each running job stuck on its first step until it
+     finishes.
 4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds
    on `127.0.0.1` (the defaults). Postgres and the API container are never published.
 5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
