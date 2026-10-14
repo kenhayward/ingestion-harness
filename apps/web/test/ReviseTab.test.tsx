@@ -296,7 +296,9 @@ describe('ReviseTab', () => {
       { pollMs: 1 },
     );
     await screen.findByRole('region', { name: 'Proposal' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
+    // The page is told from an effect, which runs just after the render that shows the card:
+    // wait for it rather than assume it ran before the card appeared (flaky on slow CI).
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
   });
 
   it('surfaces a failure to start the revision', async () => {
