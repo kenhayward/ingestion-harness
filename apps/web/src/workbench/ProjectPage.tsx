@@ -28,6 +28,7 @@ const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
   outputs: 'Outputs',
   sections: 'Section anchors',
   steps: 'Extraction steps',
+  mapping: 'Ontology mapping',
   references: 'References',
   evaluate: 'Evaluate',
   revise: 'Revise',
@@ -308,7 +309,7 @@ export function ProjectPage({
               retired={retired}
             />
           )}
-          {(tab === 'outputs' || tab === 'steps') && (
+          {(tab === 'outputs' || tab === 'steps' || tab === 'mapping') && (
             <StagePanel
               key={tab}
               api={api}

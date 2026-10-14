@@ -23,6 +23,7 @@ export const OVERVIEW_STAGES = [
   'outputs',
   'sections',
   'steps',
+  'mapping',
   'references',
   'evaluate',
   'revise',
@@ -43,6 +44,7 @@ export const OVERVIEW_LABEL: Record<OverviewStage, string> = {
   outputs: 'Outputs',
   sections: 'Sections',
   steps: 'Steps',
+  mapping: 'Mapping',
   references: 'References',
   evaluate: 'Evaluate',
   revise: 'Revise',
@@ -84,6 +86,11 @@ export interface OverviewInputs {
   /** The newest revise proposal's status; null when revise never ran. */
   revise: ProposalStatus | null;
   /**
+   * The mapping stage (ADR 0011): `used` once the brief chooses a vocabulary ontology, and its
+   * state (`mappingStage`). Absent: not used.
+   */
+  mapping?: { used: boolean; state: StageState };
+  /**
    * `running`: an evaluation of the open draft (dev or holdout) is queued or running.
    * `revisedSince`: a revision was applied to the open draft after its newest evaluation (or it
    * has none), so the next step is to see whether the revision helped (absent: false).
@@ -106,6 +113,7 @@ const PHASE: Record<OverviewStage, Exclude<OverviewPhase, 'published'>> = {
   outputs: 'draft',
   sections: 'draft',
   steps: 'draft',
+  mapping: 'draft',
   references: 'verify',
   evaluate: 'verify',
   revise: 'verify',
@@ -115,7 +123,12 @@ const PHASE: Record<OverviewStage, Exclude<OverviewPhase, 'published'>> = {
 const isDone = (state: OverviewState) => state === 'accepted' || state === 'skipped';
 
 /** Stages a draft can be published without: verification is optional. */
-export const OPTIONAL_STAGES: readonly OverviewStage[] = ['references', 'evaluate', 'revise'];
+export const OPTIONAL_STAGES: readonly OverviewStage[] = [
+  'mapping',
+  'references',
+  'evaluate',
+  'revise',
+];
 
 /** Optional stages and Publish (the goal) are never a step still to do. */
 const firstToDo = (entries: readonly OverviewEntry[]) =>
@@ -148,7 +161,7 @@ function evaluateState({ running }: OverviewInputs['evaluation'], gate: GateView
   return gate.iterationId !== null ? 'warn' : 'pending';
 }
 
-/** The ten stages' states; with no open draft every stage is done. */
+/** The stages' states; with no open draft every stage is done. */
 export function overviewStates(inputs: OverviewInputs): OverviewEntry[] {
   if (inputs.draft === null) return OVERVIEW_STAGES.map((stage) => ({ stage, state: 'accepted' }));
   const drafted = (stage: OverviewStage): OverviewState =>
@@ -160,6 +173,7 @@ export function overviewStates(inputs: OverviewInputs): OverviewEntry[] {
     outputs: drafted('outputs'),
     sections: drafted('sections'),
     steps: drafted('steps'),
+    mapping: inputs.mapping?.used ? inputs.mapping.state : 'skipped',
     references: drafted('references'),
     evaluate: evaluateState(inputs.evaluation, inputs.gate),
     revise: reviseState(inputs.revise),
@@ -257,7 +271,7 @@ export function runsState(runs: {
   return runs.total > 0 ? 'accepted' : 'pending';
 }
 
-/** The project page's tabs that show a status: the ten stages, then the by-hand tabs. */
+/** The project page's tabs that show a status: the stages, then the by-hand tabs. */
 export const OVERVIEW_TABS = [...OVERVIEW_STAGES, 'template', 'runs'] as const;
 export type OverviewTab = (typeof OVERVIEW_TABS)[number];
 
@@ -297,6 +311,8 @@ export interface MetricFacts {
   outputs: { fields: number; tables: number; applied: number | null; proposed: number | null };
   sections: { anchorsFound: number | null; devSamples: number };
   steps: { proposed: number | null; model: string | null };
+  /** Outputs the open draft maps, of all its outputs; the brief's vocabulary ontologies. */
+  mapping: { mapped: number; outputs: number; ontologies: number };
   references: {
     devVerified: number;
     devTotal: number;
@@ -317,6 +333,7 @@ export const EMPTY_FACTS: MetricFacts = {
   outputs: { fields: 0, tables: 0, applied: null, proposed: null },
   sections: { anchorsFound: null, devSamples: 0 },
   steps: { proposed: null, model: null },
+  mapping: { mapped: 0, outputs: 0, ontologies: 0 },
   references: { devVerified: 0, devTotal: 0, holdoutVerified: 0, holdoutTotal: 0 },
   evaluate: { dev: null, holdout: null },
   revise: { open: 0, lastAt: null },
@@ -377,6 +394,10 @@ export function boxMetrics(
       ),
     ],
     steps: [m('Proposed changes', n(f.steps.proposed)), m('Model', f.steps.model ?? DASH)],
+    mapping: [
+      m('Mapped outputs', `${f.mapping.mapped} / ${f.mapping.outputs}`),
+      m('Ontologies', String(f.mapping.ontologies)),
+    ],
     references: [
       m('Dev', `${f.references.devVerified} / ${f.references.devTotal}`),
       m('Holdout', `${f.references.holdoutVerified} / ${f.references.holdoutTotal}`),
@@ -449,7 +470,7 @@ function staleCauseLabel(stages: OverviewInputs['stages'], stage: OverviewStage)
   const order: readonly string[] = [...STAGE_ORDER, 'references'];
   const own = stages.find((s) => s.stage === stage)?.completedAt ?? null;
   const cause = stages
-    .filter((s) => order.indexOf(s.stage) < order.indexOf(stage))
+    .filter((s) => order.includes(s.stage) && order.indexOf(s.stage) < order.indexOf(stage))
     .filter((s) => s.completedAt !== null && own !== null && s.completedAt > own)
     .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0];
   return cause ? OVERVIEW_LABEL[cause.stage as OverviewStage] : null;
@@ -492,6 +513,12 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       if (state === 'proposed') return 'Needs your decision';
       if (state === 'accepted') return 'Applied';
       return ctx.openFeedback > 0 ? `${ctx.openFeedback} open` : 'No feedback';
+    case 'mapping':
+      if (!inputs.mapping?.used) return 'Not used: the brief chooses no ontologies';
+      if (state === 'stale') return "Stale — the outputs or the brief's ontologies changed";
+      if (state === 'accepted') return 'Mapped';
+      if (state === 'pending') return 'Optional, not started';
+      return DRAFTED[state] ?? 'Not started';
     case 'publish':
       return `Ready to publish v${inputs.draft}`;
     default:
@@ -674,9 +701,9 @@ export type ProjectListQuery = z.infer<typeof ProjectListQuerySchema>;
 export const ProjectListItemSchema = ProjectSummarySchema.extend({
   stages: z
     .array(z.object({ stage: z.enum(OVERVIEW_STAGES), state: OverviewStateSchema }))
-    .length(10),
+    .length(OVERVIEW_STAGES.length),
   phase: z.enum(OVERVIEW_PHASES),
-  done: z.number().int().min(0).max(10),
+  done: z.number().int().min(0).max(OVERVIEW_STAGES.length),
   next: z
     .object({
       kind: z.enum(NEXT_ACTION_KINDS),

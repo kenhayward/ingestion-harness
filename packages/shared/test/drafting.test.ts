@@ -11,6 +11,8 @@ import {
   referencesStage,
   stableJson,
   stageStates,
+  mappingKeepUpTo,
+  mappingStage,
   type DraftChange,
   type StageView,
 } from '../src/index.js';
@@ -515,5 +517,87 @@ describe('answeredFeedback (RV2)', () => {
     ['an out-of-range index answers nothing', [c(['f1'])], [3], ['f1'], []],
   ])('%s', (_name, changes, applied, sent, expected) => {
     expect(answeredFeedback(changes, applied, sent)).toEqual(expected);
+  });
+});
+
+describe('mappingStage (ADR 0011)', () => {
+  const T = (n: number) => `2026-10-14T10:0${n}:00.000Z`;
+  const accepted = (at: string, acceptedChanges: number[] = [0]) => ({
+    stage: 'mapping' as const,
+    status: 'accepted' as const,
+    createdAt: at,
+    decidedAt: at,
+    acceptedChanges,
+  });
+  const base = {
+    proposals: [],
+    skips: [],
+    confirms: [],
+    outputsCompletedAt: T(0),
+    briefChangedAt: T(0),
+  };
+
+  it.each<[string, Partial<Parameters<typeof mappingStage>[0]>, string, string | null]>([
+    ['never run', {}, 'pending', null],
+    ['accepted', { proposals: [accepted(T(2))] }, 'accepted', T(2)],
+    [
+      'running over an acceptance',
+      {
+        proposals: [
+          accepted(T(2)),
+          { stage: 'mapping', status: 'running', createdAt: T(3), decidedAt: null },
+        ],
+      },
+      'running',
+      T(2),
+    ],
+    [
+      'stale after the outputs completed again',
+      { proposals: [accepted(T(2))], outputsCompletedAt: T(4) },
+      'stale',
+      T(2),
+    ],
+    [
+      'stale after the brief chose other ontologies',
+      { proposals: [accepted(T(2))], briefChangedAt: T(5) },
+      'stale',
+      T(2),
+    ],
+    [
+      'kept, so not stale',
+      {
+        proposals: [accepted(T(2))],
+        outputsCompletedAt: T(4),
+        confirms: [{ stage: 'mapping', confirmedAt: T(5), upTo: T(4) }],
+      },
+      'accepted',
+      T(2),
+    ],
+    [
+      'kept, then the outputs completed again',
+      {
+        proposals: [accepted(T(2))],
+        outputsCompletedAt: T(6),
+        confirms: [{ stage: 'mapping', confirmedAt: T(5), upTo: T(4) }],
+      },
+      'stale',
+      T(2),
+    ],
+    [
+      'an empty acceptance after one keeps it up to its time',
+      { proposals: [accepted(T(2)), accepted(T(5), [])], outputsCompletedAt: T(4) },
+      'accepted',
+      T(2),
+    ],
+    ['skipped', { skips: [{ stage: 'mapping', skippedAt: T(3) }] }, 'skipped', T(3)],
+  ])('%s', (_name, over, state, completedAt) => {
+    const view = mappingStage({ ...base, ...over } as Parameters<typeof mappingStage>[0]);
+    expect(view).toMatchObject({ stage: 'mapping', state, completedAt });
+  });
+
+  it('keeps up to the later of the outputs and the brief selection', () => {
+    expect(mappingKeepUpTo(T(4), T(2))).toBe(T(4));
+    expect(mappingKeepUpTo(null, T(2))).toBe(T(2));
+    expect(mappingKeepUpTo(null, null)).toBeNull();
   });
 });

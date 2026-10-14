@@ -283,6 +283,7 @@ export const AVAILABLE_STAGES: readonly DraftStage[] = [
   'sections',
   'steps',
   'revise',
+  'mapping',
 ];
 
 /** In how many of the samples the model was shown it saw a candidate (handoff SV2). */

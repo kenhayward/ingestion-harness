@@ -6,6 +6,7 @@ import {
   briefSectionText,
   briefVersions,
   BriefBodySchema,
+  ontologySelectionChangedAt,
   ontologySelectionKey,
   vocabularyOf,
   type Brief,
@@ -196,5 +197,30 @@ describe('brief ontologies (ADR 0011)', () => {
       { ontologyId: 'acme', version: 1 },
       { ontologyId: 'b', version: 1 },
     ]);
+  });
+});
+
+describe('ontologySelectionChangedAt', () => {
+  const acme = { ontologyId: 'acme', version: 1, role: 'vocabulary' as const };
+  it.each<[string, Brief[], string | null]>([
+    ['no briefs', [], null],
+    ['briefs without ontologies', [brief(1, { purpose: 'a' }), brief(2, { purpose: 'b' })], null],
+    [
+      'the first version choosing one',
+      [brief(1), brief(2, { ontologies: [acme] }), brief(3, { ontologies: [acme], purpose: 'x' })],
+      brief(2).createdAt,
+    ],
+    [
+      'the guidance changing later',
+      [brief(1, { ontologies: [acme] }), brief(3, { ontologies: [acme], ontologyGuidance: 'g' })],
+      brief(3).createdAt,
+    ],
+    [
+      'out of order',
+      [brief(3, { ontologies: [acme], purpose: 'x' }), brief(2, { ontologies: [acme] })],
+      brief(2).createdAt,
+    ],
+  ])('%s', (_name, briefs, expected) => {
+    expect(ontologySelectionChangedAt(briefs)).toBe(expected);
   });
 });

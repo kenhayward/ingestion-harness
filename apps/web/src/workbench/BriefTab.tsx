@@ -419,7 +419,7 @@ export function BriefTab({
                         {i === 0 && <span className="version-tag current">CURRENT</span>}
                         {v.usedBy.map((s) => (
                           <span key={s} className="version-tag">
-                            used by {s === 'mapping' ? 'Mapping' : OVERVIEW_LABEL[s]}
+                            used by {OVERVIEW_LABEL[s]}
                           </span>
                         ))}
                       </div>

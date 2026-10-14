@@ -58,6 +58,22 @@ export function vocabularyOf(body: BriefBody): { ontologyId: string; version: nu
     .sort((x, y) => x.ontologyId.localeCompare(y.ontologyId) || x.version - y.version);
 }
 
+/**
+ * When the brief's vocabulary picks or guidance last changed (a version whose selection differs
+ * from the one before; the first version against none); null while it never chose any.
+ */
+export function ontologySelectionChangedAt(briefs: readonly Brief[]): string | null {
+  const none = ontologySelectionKey(EMPTY_BRIEF);
+  let previous = none;
+  let at: string | null = null;
+  for (const b of [...briefs].sort((x, y) => x.version - y.version)) {
+    const key = ontologySelectionKey(b.body);
+    if (key !== previous) at = b.createdAt;
+    previous = key;
+  }
+  return at;
+}
+
 /** What the mapping stage depends on in the brief: its vocabulary picks and guidance. */
 export function ontologySelectionKey(body: BriefBody): string {
   return JSON.stringify([vocabularyOf(body), (body.ontologyGuidance ?? '').trim()]);

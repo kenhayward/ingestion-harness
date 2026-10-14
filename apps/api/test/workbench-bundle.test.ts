@@ -719,7 +719,7 @@ describe('import', () => {
         state: string;
       }[]
     )
-      .filter((s) => s.stage !== 'references')
+      .filter((s) => s.stage !== 'references' && s.stage !== 'mapping')
       .map((s) => [s.stage, s.state]);
 
   it('imports the accepted survey and the completed stages', async () => {

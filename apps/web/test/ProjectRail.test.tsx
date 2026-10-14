@@ -34,6 +34,7 @@ describe('ProjectRail', () => {
         'outputs',
         'sections',
         'steps',
+        'mapping',
         'references',
         'evaluate',
         'revise',

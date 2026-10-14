@@ -611,6 +611,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     'accepted',
     'accepted',
     'proposed',
+    'skipped',
     'pending',
     'pending',
     'pending',

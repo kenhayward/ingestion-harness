@@ -16,8 +16,11 @@ import {
   type ProjectListItem,
   type ProjectView,
   type WorkbenchProject,
+  EMPTY_BRIEF,
+  vocabularyOf,
 } from '@ih/shared';
 import { handEditedAt } from '../templates/changes.js';
+import { mappedOutputs } from '../workbench/mapping.js';
 import type { IterationRecord, ProposalRecord } from '../workbench/repo.js';
 import { md, res } from '../openapi/zod.js';
 import {
@@ -179,6 +182,10 @@ async function gatherFacts(
     },
     evaluate: { dev: evaluated?.scores?.score ?? null, holdout: gate.score },
     revise: { open: ctx.openFeedback, lastAt: newest('revise')?.createdAt ?? null },
+    mapping: {
+      ...mappedOutputs(template?.definition ?? null),
+      ontologies: vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length,
+    },
     publish: { live: view.published },
   };
   return { facts, degraded };
@@ -282,6 +289,10 @@ export async function overviewParts(
     },
     stages,
     revise: revise ? statusOf(revise, draftJob.get(revise.id) ?? null) : null,
+    mapping: {
+      used: vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length > 0,
+      state: stages.find((s) => s.stage === 'mapping')?.state ?? 'pending',
+    },
     evaluation: {
       running:
         view.draft !== null &&

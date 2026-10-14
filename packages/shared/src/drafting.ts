@@ -512,6 +512,78 @@ export function stageStates(
   });
 }
 
+/**
+ * The mapping stage (ADR 0011): outside `STAGE_ORDER`, so it never makes other stages stale.
+ * It completes like the others (accepted or skipped; an empty acceptance after a completion
+ * keeps it), and it is stale when the outputs stage completed after it, or the brief's ontology
+ * selection or guidance changed after it, and after its newest keep.
+ */
+export function mappingStage(input: {
+  proposals: readonly ProposalLike[];
+  skips: readonly StageSkip[];
+  confirms: readonly StageConfirm[];
+  outputsCompletedAt: string | null;
+  /** When the brief's vocabulary picks or guidance last changed (`ontologySelectionChangedAt`). */
+  briefChangedAt: string | null;
+}): StageView {
+  const mine = input.proposals.filter((p) => p.stage === 'mapping');
+  const skipped = input.skips.filter((s) => s.stage === 'mapping').map((s) => s.skippedAt);
+  const decided = mine
+    .filter(
+      (p) => (p.status === 'accepted' || p.status === 'partially_accepted') && p.decidedAt !== null,
+    )
+    .sort((a, b) => a.decidedAt!.localeCompare(b.decidedAt!));
+  const done: { kind: 'accepted' | 'skipped'; at: string }[] = [];
+  const keeps = input.confirms.filter((c) => c.stage === 'mapping').map((c) => c.upTo);
+  for (const p of decided) {
+    const at = p.decidedAt!;
+    const empty = Array.isArray(p.acceptedChanges) && p.acceptedChanges.length === 0;
+    if (empty && (done.length > 0 || skipped.some((x) => x < at))) keeps.push(at);
+    else done.push({ kind: 'accepted', at });
+  }
+  done.push(...skipped.map((at) => ({ kind: 'skipped' as const, at })));
+  done.sort((a, b) => b.at.localeCompare(a.at));
+  const completed = done[0] ?? null;
+  const latest = [...mine].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const active =
+    latest !== undefined &&
+    (latest.status === 'running' || latest.status === 'ready') &&
+    (completed === null || latest.createdAt > completed.at);
+  const keptUpTo = newest(keeps);
+  const since =
+    completed === null
+      ? null
+      : keptUpTo !== null && keptUpTo > completed.at
+        ? keptUpTo
+        : completed.at;
+  const stale =
+    since !== null &&
+    [input.outputsCompletedAt, input.briefChangedAt].some((t) => t !== null && t > since);
+  const state: StageState = active
+    ? latest.status === 'running'
+      ? 'running'
+      : 'proposed'
+    : completed
+      ? stale
+        ? 'stale'
+        : completed.kind
+      : 'pending';
+  return {
+    stage: 'mapping',
+    state,
+    completedAt: completed?.at ?? null,
+    skippedAt: newest(skipped),
+  };
+}
+
+/** What a keep of the mapping is confirmed against: the later of its two causes of staleness. */
+export function mappingKeepUpTo(
+  outputsCompletedAt: string | null,
+  briefChangedAt: string | null,
+): string | null {
+  return newest([outputsCompletedAt, briefChangedAt].filter((t): t is string => t !== null));
+}
+
 /** The first earlier stage that is not complete, or null when `stage` may run. */
 export function blockingStage(states: StageView[], stage: DraftStage): DraftStage | null {
   const index = STAGE_ORDER.indexOf(stage);
