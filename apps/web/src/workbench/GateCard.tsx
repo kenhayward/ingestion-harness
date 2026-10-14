@@ -102,6 +102,7 @@ export function GateCard({
   devScore,
   onChanged,
   onPublished,
+  retired = null,
 }: {
   api: Api;
   projectId: string;
@@ -116,6 +117,8 @@ export function GateCard({
   /** The gate or the threshold may have changed: reload them. */
   onChanged: () => void;
   onPublished: () => void;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
 }) {
   const hintsId = useId();
   const saved = threshold?.value;
@@ -263,8 +266,8 @@ export function GateCard({
           <button
             type="button"
             className="primary"
-            disabled={busy}
-            title={busy ? 'Working…' : undefined}
+            disabled={busy || retired !== null}
+            title={retired ?? (busy ? 'Working…' : undefined)}
             onClick={() => void publish()}
           >
             Publish v{draft}

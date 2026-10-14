@@ -67,11 +67,14 @@ export function SamplesTab({
   api,
   projectId,
   pollMs,
+  retired = null,
   onChanged,
 }: {
   api: Api;
   projectId: string;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   /** Called after a successful upload, retry, role change or removal. */
   onChanged?: () => void;
 }) {
@@ -160,7 +163,7 @@ export function SamplesTab({
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setOver(false);
-    if (!uploading && slotsLeft > 0) void upload([...e.dataTransfer.files]);
+    if (!uploading && slotsLeft > 0 && retired === null) void upload([...e.dataTransfer.files]);
   };
 
   if (samples === null) {
@@ -247,7 +250,8 @@ export function SamplesTab({
                 aria-label="Add sample documents"
                 accept={SOURCE_ACCEPT}
                 multiple
-                disabled={uploading || summary.slots === 0}
+                disabled={uploading || summary.slots === 0 || retired !== null}
+                title={retired ?? undefined}
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
                   e.target.value = '';

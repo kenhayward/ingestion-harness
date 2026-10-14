@@ -91,6 +91,7 @@ export function StagePanel({
   dataPolicy,
   hasDraft,
   pollMs,
+  retired = null,
   onApplied,
   onConfirmed,
   onSkipped,
@@ -109,6 +110,8 @@ export function StagePanel({
   dataPolicy: DataPolicy;
   hasDraft: boolean;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   onApplied: () => void;
   /**
    * After Keep on a stale stage; defaults to `onApplied`. The draft is unchanged, so the sections
@@ -339,7 +342,8 @@ export function StagePanel({
       <button
         type="button"
         className={proposal ? undefined : 'primary'}
-        disabled={running || busy || !hasDraft}
+        disabled={running || busy || !hasDraft || retired !== null}
+        title={retired ?? undefined}
         onClick={() => void run()}
       >
         {proposal ? 'Propose again' : PROPOSE[stage]}

@@ -48,6 +48,7 @@ export function EvaluateTab({
   draft,
   published,
   pollMs,
+  retired = null,
   onRestored,
   onStarted,
   onGateChanged,
@@ -59,6 +60,8 @@ export function EvaluateTab({
   draft: number | null;
   published: number | null;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   onRestored: () => void;
   /** Called after an evaluation or a model comparison has been started. */
   onStarted?: () => void;
@@ -178,7 +181,8 @@ export function EvaluateTab({
       ? `No verified ${set} references yet — save some on the References tab`
       : null;
   const evaluateBlocked =
-    draft === null
+    retired ??
+    (draft === null
       ? 'Start a draft version first'
       : noReferences
         ? noReferences
@@ -188,8 +192,9 @@ export function EvaluateTab({
             ? 'A model comparison is still running'
             : busy
               ? 'Starting…'
-              : null;
-  const compareBlocked = draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked;
+              : null);
+  const compareBlocked =
+    retired ?? (draft !== null && holdout ? COMPARE_HOLDOUT_REASON : evaluateBlocked);
 
   /** Run from the re-process dialog: a refusal stays there, with its reason. */
   const evaluate = async (model: string | null) => {
@@ -219,6 +224,7 @@ export function EvaluateTab({
       <p className="muted">{POLICY_NOTE[dataPolicy]}</p>
       <GateCard
         api={api}
+        retired={retired}
         projectId={projectId}
         draft={draft}
         published={published}

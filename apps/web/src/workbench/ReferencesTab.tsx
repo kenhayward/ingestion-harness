@@ -67,6 +67,7 @@ export function ReferencesTab({
   published,
   item = null,
   pollMs,
+  retired = null,
   onChanged,
 }: {
   api: Api;
@@ -76,6 +77,8 @@ export function ReferencesTab({
   published: number | null;
   item?: OverviewItem | null;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   onChanged: () => void;
 }) {
   const models = useModelChoices(api);
@@ -167,8 +170,8 @@ export function ReferencesTab({
   const holdout = holdoutRows ?? [];
   const devCount = unverifiedCount(dev);
   const holdoutCount = unverifiedCount(holdout);
-  const devReason = runReason(hasDraft, busy || running, devCount, 'dev');
-  const holdoutReason = runReason(hasDraft, busy || running, holdoutCount, 'holdout');
+  const devReason = retired ?? runReason(hasDraft, busy || running, devCount, 'dev');
+  const holdoutReason = retired ?? runReason(hasDraft, busy || running, holdoutCount, 'holdout');
   const banner = readyBanner(dev, holdout, version, hasDraft);
   const right = useMemo(() => rightFirstTime(dev, draftDef), [dev, draftDef]);
   const needs = useMemo(() => outputNeeds(dev, draftDef), [dev, draftDef]);
@@ -317,13 +320,14 @@ export function ReferencesTab({
             version={version}
             published={published}
             reverifyReason={
-              !hasDraft
+              retired ??
+              (!hasDraft
                 ? 'Start a draft version first'
                 : [...dev, ...holdout].some(
                       (r) => r.sampleId === current && r.run !== null && isActive(r.run.status),
                     )
                   ? 'This sample is already running'
-                  : null
+                  : null)
             }
             onReverified={async () => {
               setMessage('1 run queued');

@@ -70,6 +70,7 @@ export function ReviseTab({
   dataPolicy,
   draft,
   pollMs,
+  retired = null,
   onApplied,
   onChanged,
   now = Date.now(),
@@ -79,6 +80,8 @@ export function ReviseTab({
   dataPolicy: DataPolicy;
   draft: number | null;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   onApplied: () => void;
   /** Something the overview shows changed (feedback, a revision asked, rejected or ready). */
   onChanged: () => void;
@@ -216,15 +219,17 @@ export function ReviseTab({
   const other = openProposalStage(data.proposals);
   const header = failuresHeader(preview, models);
   const earlier = earlierRevisions(data.proposals, data.feedback);
-  const askReason = !preview.draft
-    ? 'Start the next version on the Recipe tab first'
-    : running
-      ? 'A revision is being drafted'
-      : !preview.feedback.length
-        ? 'Add feedback first: a revision answers your feedback'
-        : preview.model === null
-          ? 'Set the drafting model on the Models page first'
-          : null;
+  const askReason =
+    retired ??
+    (!preview.draft
+      ? 'Start the next version on the Recipe tab first'
+      : running
+        ? 'A revision is being drafted'
+        : !preview.feedback.length
+          ? 'Add feedback first: a revision answers your feedback'
+          : preview.model === null
+            ? 'Set the drafting model on the Models page first'
+            : null);
   const badge = (c: DraftChange) => {
     const numbers = answerNumbers(c, shown);
     return numbers.length ? <AnswersBadge numbers={numbers} /> : null;
