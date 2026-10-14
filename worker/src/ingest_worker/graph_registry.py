@@ -147,7 +147,18 @@ _GRAPH_COLUMNS = """sha256, template_id, graph_iri, version, job_id::text, docum
 
 
 def _graph(row: tuple[Any, ...]) -> PublishedGraph:
-    return PublishedGraph(*row[:9], published_at=row[9].isoformat())
+    return PublishedGraph(
+        sha256=row[0],
+        template_id=row[1],
+        graph_iri=row[2],
+        version=row[3],
+        job_id=row[4],
+        document_id=row[5],
+        template_version=row[6],
+        base_iri=row[7],
+        triples=row[8],
+        published_at=row[9].isoformat(),
+    )
 
 
 class PgGraphRegistry:
