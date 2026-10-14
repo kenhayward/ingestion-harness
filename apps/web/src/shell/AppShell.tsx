@@ -169,6 +169,10 @@ function AccountMenu({
             <Icon name="chip" />
             Models
           </a>
+          <a role="menuitem" href="#/linked-data" onClick={() => setOpen(false)}>
+            <Icon name="link" />
+            Linked data
+          </a>
           <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
             <Icon name="key" />
             Access
@@ -403,6 +407,13 @@ export function AppShell({
                 icon="chip"
                 label="Models"
                 current={section === 'models'}
+                compact={compact}
+              />
+              <NavLink
+                href="#/linked-data"
+                icon="link"
+                label="Linked data"
+                current={section === 'linked-data'}
                 compact={compact}
               />
               <NavLink

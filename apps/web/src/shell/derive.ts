@@ -3,7 +3,15 @@ import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
 export type Section =
-  'home' | 'jobs' | 'results' | 'templates' | 'ontologies' | 'workbench' | 'access' | 'models';
+  | 'home'
+  | 'jobs'
+  | 'results'
+  | 'templates'
+  | 'ontologies'
+  | 'workbench'
+  | 'access'
+  | 'models'
+  | 'linked-data';
 
 const SECTION: Record<Route['name'], Section> = {
   home: 'home',
@@ -17,6 +25,7 @@ const SECTION: Record<Route['name'], Section> = {
   project: 'workbench',
   access: 'access',
   models: 'models',
+  'linked-data': 'linked-data',
   ontologies: 'ontologies',
   ontology: 'ontologies',
 };
@@ -79,6 +88,7 @@ const PAGE: Record<Route['name'], string> = {
   project: 'Workbench',
   access: 'Access',
   models: 'Models',
+  'linked-data': 'Linked data',
   ontologies: 'Ontologies',
   ontology: 'Ontologies',
 };

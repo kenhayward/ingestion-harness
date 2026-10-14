@@ -4,6 +4,7 @@ import {
   describeDefinitionChange,
   VALUE_TYPES,
   type DataPolicy,
+  type DeliveryFormat,
   type JobSummary,
   type OverviewItem,
   type Retirement,
@@ -39,10 +40,11 @@ import {
 import { choiceName } from '../jobs/derive.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
+import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
 
 type Path = (string | number)[];
-type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
+type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'mapping' | 'yaml' | 'quality';
 
 /** The Templates page's order (UI handoff §5). */
 const STANDALONE_TABS: [Tab, string][] = [
@@ -50,6 +52,7 @@ const STANDALONE_TABS: [Tab, string][] = [
   ['sections', 'Sections'],
   ['pipeline', 'Pipeline'],
   ['outputs', 'Outputs'],
+  ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
 ];
@@ -60,7 +63,15 @@ const EMBEDDED_TABS: [Tab, string][] = [
   ['sections', 'Sections'],
   ['outputs', 'Outputs'],
   ['pipeline', 'Pipeline'],
+  ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
+];
+
+/** What publishing can deliver (DELIVERY_FORMATS), in that order. */
+const FORMATS: [DeliveryFormat, string][] = [
+  ['csv', 'CSV'],
+  ['json', 'JSON'],
+  ['rdf', 'RDF (Turtle)'],
 ];
 
 /** Kept recipe edits (`ih.recipeDraft.<id>.<version>`): the definition, and unapplied YAML. */
@@ -384,7 +395,12 @@ export function TemplateEditor({
         projectId: templateId,
         definition: def,
         issues,
-        serverIssues: dirty ? [] : view.issues.map(issueText),
+        serverIssues: dirty
+          ? []
+          : view.issues.filter((i) => i.severity !== 'warning').map(issueText),
+        serverWarnings: dirty
+          ? []
+          : view.issues.filter((i) => i.severity === 'warning').map(issueText),
         stages: embedded.stages ?? null,
       })
     : [];
@@ -578,6 +594,36 @@ export function TemplateEditor({
                       )
                     }
                   />
+                  <fieldset className="formats">
+                    <legend>Delivered formats</legend>
+                    {FORMATS.map(([format, label]) => {
+                      const formats: DeliveryFormat[] = def.delivery?.formats ?? ['csv', 'json'];
+                      const on = formats.includes(format);
+                      const noMapping = format === 'rdf' && !def.semantics && !on;
+                      return (
+                        <label key={format}>
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            disabled={noMapping || (on && formats.length === 1)}
+                            onChange={() => {
+                              const next = FORMATS.map(([f]) => f).filter((f) =>
+                                f === format ? !on : formats.includes(f),
+                              );
+                              const isDefault = next.join() === 'csv,json';
+                              update(['delivery'], isDefault ? undefined : { formats: next });
+                            }}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                    {!def.semantics && (
+                      <p className="muted">
+                        Add an ontology mapping on the Mapping tab to deliver RDF.
+                      </p>
+                    )}
+                  </fieldset>
                 </div>
                 {stageLink('revise', 'Revise proposes a new preamble from your feedback')}
               </>
@@ -626,6 +672,16 @@ export function TemplateEditor({
                 />
                 {stageLink('sections', 'Ask the model in Sections')}
               </>
+            )}
+
+            {tab === 'mapping' && (
+              <MappingEditor
+                api={api}
+                definition={def}
+                semantics={def.semantics}
+                onChange={(next) => update(['semantics'], next)}
+                preview={embedded ? { projectId: templateId, dirty } : undefined}
+              />
             )}
 
             {tab === 'outputs' && (

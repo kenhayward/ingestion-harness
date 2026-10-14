@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
+import { LinkedDataPage } from './linked-data/LinkedDataPage.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { OntologyPage } from './ontologies/OntologyPage.js';
 import { AccessPage } from './access/AccessPage.js';
@@ -175,6 +176,8 @@ function SignedInApp({
     );
   } else if (route.name === 'models') {
     page = <ModelsPage api={api} me={me} />;
+  } else if (route.name === 'linked-data') {
+    page = <LinkedDataPage api={api} me={me} />;
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} query={query} role={me.role} />;
   } else if (route.name === 'template') {

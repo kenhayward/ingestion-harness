@@ -1,13 +1,14 @@
 import { OVERVIEW_TAB_LABEL, outputCoverage, type OverviewItem } from '@ih/shared';
 
 /** The embedded editor's sub-tabs (handoff §10; Quality is the Templates page's only). */
-export type SubTab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml';
+export type SubTab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'mapping' | 'yaml';
 
 export const SUB_TAB_LABEL: Record<SubTab, string> = {
   general: 'General',
   sections: 'Sections',
   outputs: 'Outputs',
   pipeline: 'Pipeline',
+  mapping: 'Mapping',
   yaml: 'YAML',
 };
 
@@ -26,6 +27,7 @@ const COVERAGE = /is (not filled by any step|filled by more than one step)$/;
 /** The sub-tab where a validation issue (as `validateDefinition` words it) is fixed. */
 export function issueSubTab(issue: string): SubTab {
   if (/^document\.sections/.test(issue)) return 'sections';
+  if (/^semantics\b/.test(issue)) return 'mapping';
   if (/^(outputs|duplicate output id|output id ")/.test(issue)) return 'outputs';
   if (/^(pipeline|step "|check "|duplicate step id)/.test(issue)) return 'pipeline';
   return 'general';
@@ -46,6 +48,8 @@ export function templateChecks(input: {
   issues: readonly string[];
   /** The saved version's issues (they add the model checks); empty while edits are pending. */
   serverIssues: readonly string[];
+  /** The saved version's warnings (unmapped outputs): shown, never blocking. */
+  serverWarnings?: readonly string[];
   stages: readonly OverviewItem[] | null;
 }): TemplateCheck[] {
   const tab = (t: string) => `#/workbench/${input.projectId}/${t}`;
@@ -72,6 +76,15 @@ export function templateChecks(input: {
     checks.push({
       tone: 'danger',
       text: issue,
+      link: { label: `Open ${SUB_TAB_LABEL[sub]}`, subTab: sub },
+      subTabs: [sub],
+    });
+  }
+  for (const warning of input.serverWarnings ?? []) {
+    const sub = issueSubTab(warning);
+    checks.push({
+      tone: 'warn',
+      text: warning,
       link: { label: `Open ${SUB_TAB_LABEL[sub]}`, subTab: sub },
       subTabs: [sub],
     });

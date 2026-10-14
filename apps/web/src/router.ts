@@ -24,6 +24,7 @@ export type Route =
   | { name: 'templates' }
   | { name: 'access' }
   | { name: 'models' }
+  | { name: 'linked-data' }
   | { name: 'ontologies' }
   | { name: 'ontology'; ontologyId: string }
   | { name: 'results' }
@@ -59,6 +60,7 @@ export function parseHash(hash: string): Route {
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
   if (hash === '#/models') return { name: 'models' };
+  if (hash === '#/linked-data') return { name: 'linked-data' };
   if (hash === '#/ontologies') return { name: 'ontologies' };
   return { name: 'home' };
 }
