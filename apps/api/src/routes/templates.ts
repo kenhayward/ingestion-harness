@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
+import { RetirementSchema } from '@ih/shared';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { TemplateIssueSchema, templateIssues, validateTemplate } from '../templates/definitions.js';
@@ -67,6 +68,9 @@ const TemplateTypeSchema = z.object({
   description: z.string().nullable(),
   published: z.number().int().nullable().describe('The latest published version.'),
   draft: z.number().int().nullable().describe('The open draft version.'),
+  retired: RetirementSchema.nullable().describe(
+    'Set when the document type is retired (hidden from new work); null when it is not.',
+  ),
   versions: z.array(
     z.object({
       version: z.number().int(),
@@ -176,13 +180,18 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           every version, and a summary of the version shown (the draft first): counts of
           sections, fields, tables and references, the draft's validation issues, and that
           version's last regression (\`matched\` counts references reproduced exactly).
+          \`retired\` is set for a retired document type.
         `,
         response: { 200: res('The document types.', z.array(TemplateTypeSchema)) },
       },
     },
     async (req) => {
       const byId = new Map<string, TemplateRecord[]>();
-      for (const r of await repo().list()) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
+      const [records, retirements] = await Promise.all([
+        repo().list(),
+        app.deps.templates.listRetirements(),
+      ]);
+      for (const r of records) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
       const entries = [...byId.entries()].map(([id, versions]) => {
         const published = versions.filter((v) => v.status === 'published').at(-1) ?? null;
         const draft = versions.find((v) => v.status === 'draft') ?? null;
@@ -193,6 +202,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           description: latest.definition.description ?? null,
           published: published?.version ?? null,
           draft: draft?.version ?? null,
+          retired: retirements.get(id) ?? null,
           versions: versions.map((v) => ({
             version: v.version,
             status: v.status,

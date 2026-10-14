@@ -1094,7 +1094,21 @@
         "tags": [
           "Specs"
         ],
-        "description": "Every version a document can be uploaded with: published database recipes, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run.",
+        "description": "Every version a document can be uploaded with: published database recipes, and the\ndefinitions in the repository's `specs/` folder (legacy `spec.yaml`, and\n`template.yaml` files not yet seeded into the database), sorted by id and version.\nDrafts are not listed; they can only be test-run. Retired document types are left out\nunless `retired=include`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "include"
+              ]
+            },
+            "in": "query",
+            "name": "retired",
+            "required": false,
+            "description": "`include`: list retired document types too, each with `retired`."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The document type versions.",
@@ -1160,6 +1174,38 @@
                     "additionalProperties": true
                   },
                   "description": "The document type versions."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid query.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid query."
                 }
               }
             }
@@ -7357,7 +7403,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).",
+        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
         "responses": {
           "200": {
             "description": "The document types.",
@@ -7401,6 +7447,35 @@
                           }
                         ],
                         "description": "The open draft version."
+                      },
+                      "retired": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "retiredAt": {
+                                "type": "string",
+                                "description": "When an admin retired the document type."
+                              },
+                              "retiredBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The label of the token that retired it; null without access control."
+                              }
+                            },
+                            "required": [
+                              "retiredAt",
+                              "retiredBy"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
                       },
                       "versions": {
                         "type": "array",
@@ -7510,6 +7585,7 @@
                       "description",
                       "published",
                       "draft",
+                      "retired",
                       "versions",
                       "summary"
                     ],
@@ -11593,7 +11669,7 @@
         "tags": [
           "Projects & data policy"
         ],
-        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase`, `policy` and `ids` (comma-separated, at most 20) narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase`, `policy` and `ids`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters. Unused by the\nweb; kept for API consumers.",
+        "description": "A page of the Workbench projects (one per document type), each with its stage states,\nphase, next step, holdout score and sample counts. `q` matches the name or id;\n`phase`, `policy` and `ids` (comma-separated, at most 20) narrow the list; `filter` picks a chip. `total` counts\nwhat every filter leaves, and `facets` count each chip ignoring `filter` (but\nhonouring `q`, `phase`, `policy` and `ids`). Sorts: `activity` (latest first),\n`name`, `score` (lowest first, none last), `samples` (fewest first). A page\npast the end has no items. Rows are recomputed only for projects that changed since\nthe last request. Retired document types are left out unless `retired=include`, or\n`ids` names them; each row's `retired` is read live.\n\nDeprecated: `all=1` returns every project unpaged, as an array of summaries (draft,\npublished version and sample count), and ignores the other parameters. Unused by the\nweb; kept for API consumers.",
         "parameters": [
           {
             "schema": {

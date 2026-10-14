@@ -15,7 +15,7 @@ const RECOMPUTE_CONCURRENCY = 8;
  * Salts every cached fingerprint: bump it when the list row's shape or the code deriving it
  * (the overview, `listItemFrom`) changes, so a deploy invalidates every cached row.
  */
-export const LIST_CACHE_VERSION = 3;
+export const LIST_CACHE_VERSION = 4;
 
 /**
  * Every project's list row, recomputing only those whose fingerprint moved (or whose cached row
@@ -91,10 +91,21 @@ async function computeListCache(app: FastifyInstance): Promise<ProjectListItem[]
   return fingerprints.flatMap((f) => rows.get(f.id) ?? []);
 }
 
-/** GET /api/workbench/projects: the cached rows, searched, counted, sorted and paged (W1). */
+/**
+ * GET /api/workbench/projects: the cached rows, searched, counted, sorted and paged (W1). The
+ * retirement is overlaid on every request, never cached: retiring changes no table the
+ * fingerprints read, so it shows on the next request without recomputing a row.
+ */
 export async function listProjectsPage(
   app: FastifyInstance,
   query: ProjectListQuery,
 ): Promise<ProjectListPage> {
-  return queryProjects(await refreshListCache(app), query);
+  const [rows, retirements] = await Promise.all([
+    refreshListCache(app),
+    app.deps.templates.listRetirements(),
+  ]);
+  return queryProjects(
+    rows.map((r) => ({ ...r, retired: retirements.get(r.id) ?? null })),
+    query,
+  );
 }

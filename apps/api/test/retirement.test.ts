@@ -1,3 +1,4 @@
+import type { ProjectListPage } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
 import { accessApp, letter, testApp } from './helpers.js';
 
@@ -63,5 +64,93 @@ describe('DELETE /api/specs/:id/retirement', () => {
     expect((await app.inject(unretire('letter'))).statusCode).toBe(204);
     expect(await templates.retirement('letter')).toBeNull();
     expect((await app.inject(unretire('letter'))).statusCode).toBe(204);
+  });
+});
+
+describe('listings of a retired type', () => {
+  async function retiredLetter() {
+    const ctx = await testApp();
+    await ctx.templates.create('letter', 1, letter(1), 'published');
+    await ctx.templates.create('memo', 1, { ...letter(1), id: 'memo', name: 'Memo' }, 'published');
+    await ctx.app.inject(retire('letter'));
+    return ctx;
+  }
+
+  it('leaves it out of GET /api/specs unless retired=include (D2)', async () => {
+    const { app } = await retiredLetter();
+    const ids = (body: { id: string }[]) => [...new Set(body.map((s) => s.id))];
+    const plain = (await app.inject('/api/specs')).json();
+    expect(ids(plain)).not.toContain('letter');
+    expect(ids(plain)).toContain('memo');
+    const all = await app.inject('/api/specs?retired=include');
+    expect(all.statusCode).toBe(200);
+    const letterRow = all.json().find((s: { id: string }) => s.id === 'letter');
+    expect(letterRow.retired).toEqual({ retiredAt: expect.any(String), retiredBy: null });
+    expect(all.json().find((s: { id: string }) => s.id === 'memo').retired).toBeUndefined();
+    expect((await app.inject('/api/specs?retired=yes')).statusCode).toBe(400);
+  });
+
+  it('lists legacy file-only types with kind spec until retired (the legacy cards, D16)', async () => {
+    const { app } = await retiredLetter();
+    const legacy = (body: { id: string; version: number; kind: string }[]) =>
+      body.filter((s) => s.kind === 'spec').map((s) => `${s.id} v${s.version}`);
+    expect(legacy((await app.inject('/api/specs')).json())).toEqual(['demo v1', 'demo v2']);
+    await app.inject(retire('demo'));
+    expect(legacy((await app.inject('/api/specs')).json())).toEqual([]);
+    expect(legacy((await app.inject('/api/specs?retired=include')).json())).toEqual([
+      'demo v1',
+      'demo v2',
+    ]);
+  });
+
+  it('still resolves the definition (reading is allowed)', async () => {
+    const { app } = await retiredLetter();
+    expect((await app.inject('/api/specs/letter')).statusCode).toBe(200);
+  });
+
+  it('marks it on GET /api/templates (D3)', async () => {
+    const { app } = await retiredLetter();
+    const list = (await app.inject('/api/templates')).json();
+    expect(list.find((t: { id: string }) => t.id === 'letter').retired).toMatchObject({
+      retiredBy: null,
+    });
+    expect(list.find((t: { id: string }) => t.id === 'memo').retired).toBeNull();
+  });
+
+  it('carries it on the project view and overview', async () => {
+    const { app } = await testApp();
+    await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects',
+      payload: { id: 'letter', name: 'Letter' },
+    });
+    expect((await app.inject('/api/workbench/projects/letter')).json().retired).toBeNull();
+    await app.inject(retire('letter'));
+    expect((await app.inject('/api/workbench/projects/letter')).json().retired).toMatchObject({
+      retiredBy: null,
+    });
+    expect(
+      (await app.inject('/api/workbench/projects/letter/overview')).json().project.retired,
+    ).not.toBeNull();
+  });
+
+  it('hides it from the Workbench list until asked for, live after a retire or unretire', async () => {
+    const { app } = await testApp();
+    for (const [id, name] of [
+      ['letter', 'Letter'],
+      ['memo', 'Memo'],
+    ]) {
+      await app.inject({ method: 'POST', url: '/api/workbench/projects', payload: { id, name } });
+    }
+    const list = async (qs = '') =>
+      (await app.inject(`/api/workbench/projects${qs}`)).json() as ProjectListPage;
+    expect((await list()).items.map((i) => i.id).sort()).toEqual(['letter', 'memo']);
+    await app.inject(retire('letter'));
+    expect((await list()).items.map((i) => i.id)).toEqual(['memo']);
+    const all = await list('?retired=include');
+    expect(all.items.find((i) => i.id === 'letter')?.retired).not.toBeNull();
+    expect((await list('?ids=letter')).items.map((i) => i.id)).toEqual(['letter']);
+    await app.inject(unretire('letter'));
+    expect((await list()).items.map((i) => i.id).sort()).toEqual(['letter', 'memo']);
   });
 });

@@ -176,6 +176,17 @@ describe('template lifecycle', () => {
     );
     expect(JSON.stringify(res.json().issues)).toContain('custom prompt files');
   });
+  it('seeds a missing version of a retired type and leaves it retired (D9)', async () => {
+    const { templates } = await testApp();
+    await templates.retire('process-validation-protocol', 'ken');
+    expect(await seedTemplates(templates, repoSpecsDir)).toContain(
+      'process-validation-protocol v3',
+    );
+    expect((await templates.get('process-validation-protocol', 3))?.status).toBe('published');
+    expect(await templates.retirement('process-validation-protocol')).toMatchObject({
+      retiredBy: 'ken',
+    });
+  });
 });
 
 describe('import / export', () => {

@@ -217,13 +217,17 @@ export async function projectView(
   app: FastifyInstance,
   project: WorkbenchProject,
 ): Promise<ProjectView> {
-  const { draft, published } = await versionsOf(app.deps.templates, project.id);
+  const [{ draft, published }, brief, retired] = await Promise.all([
+    versionsOf(app.deps.templates, project.id),
+    app.deps.workbench.latestBrief(project.id),
+    app.deps.templates.retirement(project.id),
+  ]);
   return {
     project,
     draft,
     published,
-    brief: await app.deps.workbench.latestBrief(project.id),
-    retired: null,
+    brief,
+    retired,
   };
 }
 
@@ -1150,7 +1154,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           honouring \`q\`, \`phase\`, \`policy\` and \`ids\`). Sorts: \`activity\` (latest first),
           \`name\`, \`score\` (lowest first, none last), \`samples\` (fewest first). A page
           past the end has no items. Rows are recomputed only for projects that changed since
-          the last request.
+          the last request. Retired document types are left out unless \`retired=include\`, or
+          \`ids\` names them; each row's \`retired\` is read live.
 
           Deprecated: \`all=1\` returns every project unpaged, as an array of summaries (draft,
           published version and sample count), and ignores the other parameters. Unused by the

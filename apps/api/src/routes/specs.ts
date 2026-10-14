@@ -28,7 +28,7 @@ const TYPE_NOT_FOUND = error('`document type not found`.');
 
 export const specRoutes: FastifyPluginAsync = async (app) => {
   /** Document types available for upload (published templates + file definitions). */
-  app.get(
+  app.get<{ Querystring: Record<string, string> }>(
     '/specs',
     {
       schema: {
@@ -39,12 +39,31 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
           Every version a document can be uploaded with: published database recipes, and the
           definitions in the repository's \`specs/\` folder (legacy \`spec.yaml\`, and
           \`template.yaml\` files not yet seeded into the database), sorted by id and version.
-          Drafts are not listed; they can only be test-run.
+          Drafts are not listed; they can only be test-run. Retired document types are left out
+          unless \`retired=include\`.
         `,
-        response: { 200: res('The document type versions.', z.array(DefinitionSummarySchema)) },
+        querystring: z
+          .object({
+            retired: z
+              .enum(['include'])
+              .optional()
+              .describe('`include`: list retired document types too, each with `retired`.'),
+          })
+          .strict(),
+        response: {
+          200: res('The document type versions.', z.array(DefinitionSummarySchema)),
+          400: error('Zod issues for an invalid query.'),
+        },
       },
     },
-    async () => listDefinitions(app.deps),
+    async (req, reply) => {
+      const query = z
+        .object({ retired: z.enum(['include']).optional() })
+        .strict()
+        .safeParse(req.query);
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      return listDefinitions(app.deps, { includeRetired: query.data.retired === 'include' });
+    },
   );
 
   app.get<{ Params: { id: string }; Querystring: { version?: string } }>(
