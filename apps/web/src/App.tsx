@@ -8,7 +8,9 @@ import { JobsPage } from './jobs/JobsPage.js';
 import { ResultDetailView } from './results/ResultDetail.js';
 import { ResultsPage } from './results/ResultsPage.js';
 import { ReviewPage } from './review/ReviewPage.js';
-import { navigate, useHashRoute } from './router.js';
+import { installPrompt as appInstallPrompt, type InstallPrompt } from './pwa/install.js';
+import { launchedFiles, type LaunchedFiles } from './pwa/launch.js';
+import { navigate, parseHash, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
 import { routeTitle, sectionOf } from './shell/derive.js';
 import { useDocumentTitle } from './shell/useDocumentTitle.js';
@@ -19,7 +21,19 @@ import { ProjectPage } from './workbench/ProjectPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 
 /** Sign-in gate (ADR 0006): the app renders only for a valid session. */
-export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
+export function App({
+  api,
+  pollMs = 3000,
+  launched = launchedFiles,
+  install = appInstallPrompt,
+}: {
+  api: Api;
+  pollMs?: number;
+  /** Files opened with the installed app (docs/design/pwa.md); they wait for sign-in. */
+  launched?: LaunchedFiles;
+  /** The browser's offer to install the app (the top bar's Install CT Studio). */
+  install?: InstallPrompt;
+}) {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [ended, setEnded] = useState(false);
   /** The session check failed for another reason (API restarting, proxy error): not "signed out". */
@@ -76,6 +90,8 @@ export function App({ api, pollMs = 3000 }: { api: Api; pollMs?: number }) {
       api={api}
       pollMs={pollMs}
       me={me}
+      launched={launched}
+      install={install}
       onSignOut={() => {
         void api.logout().finally(() => setMe(null));
       }}
@@ -87,14 +103,31 @@ function SignedInApp({
   api,
   pollMs,
   me,
+  launched,
+  install,
   onSignOut,
 }: {
   api: Api;
   pollMs: number;
   me: Me;
+  launched: LaunchedFiles;
+  install: InstallPrompt;
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
+  // Opened files are uploaded from Home: go there from any other page.
+  useEffect(() => {
+    const toHome = () => {
+      if (launched.waiting && parseHash(window.location.hash).name !== 'home') navigate('#/');
+    };
+    toHome();
+    return launched.subscribe(toHome);
+  }, [launched]);
+  /** Each visit to #/upload (a hashchange gives a new route) focuses the upload strip again. */
+  const [uploadFocus, setUploadFocus] = useState(0);
+  useEffect(() => {
+    if (route.name === 'home' && route.focusUpload) setUploadFocus((n) => n + 1);
+  }, [route]);
   useDocumentTitle(routeTitle(route));
   const { jobs, error, refresh } = useJobs(api, pollMs);
   const [query, setQuery] = useState('');
@@ -177,6 +210,8 @@ function SignedInApp({
         pollMs={pollMs}
         pickPending={pickPending}
         onPicked={() => setPickPending(false)}
+        launched={launched}
+        focusUpload={uploadFocus}
       />
     );
   }
@@ -187,6 +222,7 @@ function SignedInApp({
       jobs={jobs}
       query={query}
       onQuery={setQuery}
+      install={install}
       onUpload={() => {
         navigate('#/');
         setPickPending(true);

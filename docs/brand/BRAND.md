@@ -73,5 +73,7 @@ png/  ct-studio-icon-{16,32,48,64,128,256}.png
 web/  favicon.ico (16/32/48)  favicon.svg (switches to the dark tile in dark OS mode)
       apple-touch-icon.png (180, full-bleed)  icon-192.png  icon-512.png  icon-maskable-512.png
       site.webmanifest  head-snippet.html
+      (in the app, apps/web/public/, also icon-{48,64,128,256}.png from png/, shortcut-*.png and
+      screenshot-*.png for the installed app: docs/design/pwa.md)
 CLAUDE-CODE-RENAME.md            the in-app rename task for Claude Code
 ```
