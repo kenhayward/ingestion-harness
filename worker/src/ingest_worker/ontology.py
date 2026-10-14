@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -111,6 +111,8 @@ class Term:
     deprecated: bool
     root: bool = False
     child_count: int = 0
+    #: "<ontologyId>@<version>" for a term indexed from an import; None for the own terms.
+    defined_in: str | None = None
 
 
 @dataclass
@@ -123,10 +125,16 @@ class ParsedOntology:
     imports: list[str]
     terms: list[Term] = field(default_factory=list)
     normalized: bytes = b""
+    #: The ontology's own name (rdfs:label, dcterms:title or dc:title of its header).
+    title: str | None = None
+    #: How each of `imports` was resolved (OntologyImport in packages/shared); set by the job.
+    import_entries: list[dict[str, Any]] = field(default_factory=list)
 
     def stats(self) -> dict[str, int]:
+        own = [t for t in self.terms if t.defined_in is None]
+
         def count(*kinds: str) -> int:
-            return sum(1 for t in self.terms if t.kind in kinds)
+            return sum(1 for t in own if t.kind in kinds)
 
         return {
             "triples": self.triples,
@@ -135,6 +143,7 @@ class ParsedOntology:
             "concepts": count("concept"),
             "schemes": count("scheme"),
             "shapes": count("shape"),
+            "imported": len(self.terms) - len(own),
         }
 
 
@@ -324,10 +333,8 @@ def _header(graph: Graph) -> tuple[list[URIRef], str | None, str | None]:
     return headers, versions[0] if versions else None, license_
 
 
-def parse_ontology(
-    data: bytes, media_type: str, file_name: str, *, max_triples: int = DEFAULT_MAX_TRIPLES
-) -> ParsedOntology:
-    """Parse one ontology file and index its terms. Every refusal is a DocumentError."""
+def read_graph(data: bytes, media_type: str, file_name: str, *, max_triples: int) -> Graph:
+    """Parse one ontology file into a graph. Every refusal is a DocumentError."""
     fmt = rdf_format(media_type, file_name, data)
     _refuse_unsafe(fmt, data)
     graph = Graph()
@@ -335,16 +342,48 @@ def parse_ontology(
         graph.parse(data=data, format=fmt)
     except Exception as exc:  # rdflib raises a different type per parser
         raise DocumentError(f"cannot read {file_name} as {FORMAT_NAMES[fmt]}: {exc}") from exc
-    triples = len(graph)
-    if triples > max_triples:
-        raise DocumentError(f"ontology too large ({triples} triples, limit {max_triples})")
+    if len(graph) > max_triples:
+        raise DocumentError(f"ontology too large ({len(graph)} triples, limit {max_triples})")
+    return graph
 
-    headers, version_iri, license_ = _header(graph)
-    imports = sorted({str(o) for h in headers for o in graph.objects(h, OWL.imports)})
-    terms = [_term(graph, iri, kind) for iri, kind in _kinds_of(graph).items()]
+
+def _title(graph: Graph, ontology: URIRef | None) -> str | None:
+    if ontology is None:
+        return None
+    for predicate in (RDFS.label, DCTERMS.title, DC.title):
+        found = _pick(_literals(graph, ontology, predicate))
+        if found is not None:
+            return str(found)
+    return None
+
+
+def index_graph(
+    own: Graph,
+    *,
+    imports: Sequence[tuple[Graph, str]] = (),
+    max_triples: int = DEFAULT_MAX_TRIPLES,
+) -> ParsedOntology:
+    """Index a version's terms together with its imports' (each graph with its
+    "<ontologyId>@<version>"), so trees and search cross into imported ontologies. The header,
+    imports list and normalized form are the version's own."""
+    combined = Graph()
+    for graph in (own, *(g for g, _ in imports)):
+        for triple in graph:
+            combined.add(triple)
+    if len(combined) > max_triples:
+        raise DocumentError(f"ontology too large ({len(combined)} triples, limit {max_triples})")
+
+    headers, version_iri, license_ = _header(own)
+    imported = sorted({str(o) for h in headers for o in own.objects(h, OWL.imports)})
+    terms: list[Term] = []
+    for iri, kind in _kinds_of(combined).items():
+        t = _term(combined, iri, kind)
+        if (iri, RDF.type, None) not in own:
+            t.defined_in = next((label for g, label in imports if (iri, RDF.type, None) in g), None)
+        terms.append(t)
     terms.sort(key=lambda t: (t.kind, t.iri))
     _mark_roots(terms)
-    present = {t.kind for t in terms}
+    present = {t.kind for t in terms if t.defined_in is None}
     owl = bool(headers) or bool(present & {"class", *PROPERTY_KINDS})
     kinds = [
         name
@@ -355,17 +394,31 @@ def parse_ontology(
         )
         if has
     ]
-    lines = sorted(line for line in graph.serialize(format="nt").splitlines() if line.strip())
+    lines = sorted(line for line in own.serialize(format="nt").splitlines() if line.strip())
     return ParsedOntology(
-        triples=triples,
+        triples=len(own),
         ontology_iri=str(headers[0]) if headers else None,
         version_iri=version_iri,
         license=license_,
         kinds=kinds,
-        imports=imports,
+        imports=imported,
         terms=terms,
         normalized=("\n".join(lines) + "\n").encode("utf-8"),
+        title=_title(own, headers[0] if headers else None),
     )
+
+
+def parse_ontology(
+    data: bytes,
+    media_type: str,
+    file_name: str,
+    *,
+    max_triples: int = DEFAULT_MAX_TRIPLES,
+    imports: Sequence[tuple[Graph, str]] = (),
+) -> ParsedOntology:
+    """Parse one ontology file and index its terms (with its imports' graphs, if given)."""
+    graph = read_graph(data, media_type, file_name, max_triples=max_triples)
+    return index_graph(graph, imports=imports, max_triples=max_triples)
 
 
 # --- The `ontology` job ----------------------------------------------------------------------
@@ -396,7 +449,7 @@ class OntologyJobParams(BaseModel):
 
 _TERM_COLUMNS = (
     "ontology_id, version, iri, kind, label, alt_labels, definition, parents, domains, ranges,"
-    " scheme, deprecated, root, child_count"
+    " scheme, deprecated, root, child_count, defined_in"
 )
 _TERM_TYPES = [
     "text",
@@ -413,6 +466,7 @@ _TERM_TYPES = [
     "bool",
     "bool",
     "int4",
+    "text",
 ]
 
 
@@ -459,6 +513,7 @@ class PgOntologyStore:
                             t.deprecated,
                             t.root,
                             t.child_count,
+                            t.defined_in,
                         )
                     )
             self._conn.execute(
