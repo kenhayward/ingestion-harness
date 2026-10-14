@@ -114,6 +114,29 @@ export const PREPARE_PROGRESS_EVENT = 'prepare progress';
 /** Job event the worker writes once a document is split into sections (worker: pipeline.SEGMENTED). */
 export const SEGMENTED_EVENT = 'segmented';
 
+/**
+ * Job event when a publish delivered its document's graph (ADR 0011 step 6; worker
+ * `template_pipeline.GRAPH_PUBLISHED`): the graph's IRI, its new version, its triples and whether
+ * it went to the triple store (`endpoint`; false: S3 only, no `RDF_ENDPOINT`).
+ */
+export const GRAPH_PUBLISHED_EVENT = 'graph published';
+export const GraphPublishedSchema = z.object({
+  graph: z.string(),
+  version: z.number().int().positive(),
+  triples: z.number().int().nonnegative(),
+  endpoint: z.boolean(),
+});
+
+/** `JobDetail.graph`: the newest graph this job published. */
+export const JobGraphSchema = z.object({
+  iri: z.string(),
+  version: z.number().int(),
+  triples: z.number().int(),
+  endpoint: z.boolean(),
+  publishedAt: z.string(),
+});
+export type JobGraph = z.infer<typeof JobGraphSchema>;
+
 /** Where a document read is: the text layer read, or `page` of `of` OCR pages done. */
 export const PrepareProgressSchema = z.object({
   stage: z.enum(['text', 'ocr']),
@@ -228,6 +251,8 @@ export type StageTimes = z.infer<typeof StageTimesSchema>;
 
 export const JobDetailSchema = JobSummarySchema.extend({
   outputs: z.array(JobOutputSchema),
+  /** `GET /api/jobs/:id` only: the newest graph this job published (ADR 0011), else null. */
+  graph: JobGraphSchema.nullable().optional(),
   /** `GET /api/jobs/:id` only: a running extraction's progress (null otherwise or before any). */
   progress: JobProgressSchema.nullable().optional(),
   /** `GET /api/jobs/:id` only: when this attempt finished reading and segmenting. */

@@ -174,6 +174,24 @@ export function LinkedDataPage({ api, me }: { api: Api; me: Me }) {
             {view.rdfPublished} RDF outputs published
             {view.effectiveBase ? ` under ${view.effectiveBase}` : ''}.
           </p>
+          {view.effectiveBase && (
+            <p>
+              {view.graphs.published} {view.graphs.published === 1 ? 'graph' : 'graphs'} published
+              under <code>{view.effectiveBase}</code>
+              {view.graphs.lastPublishedAt
+                ? `, the newest ${when(view.graphs.lastPublishedAt)}`
+                : ''}
+              .
+            </p>
+          )}
+          {view.graphs.endpoint === true && (
+            <p className="muted">Graphs go to the triple store (Fuseki) and to S3.</p>
+          )}
+          {view.graphs.endpoint === false && (
+            <p className="muted">
+              No triple store is configured (<code>RDF_ENDPOINT</code>): graphs go to S3 only.
+            </p>
+          )}
           {view.history.length > 0 && (
             <table aria-label="Base IRI history">
               <thead>

@@ -19,7 +19,7 @@ export S3_ENDPOINT="http://localhost:${S3_PUBLIC_PORT:-8335}"
 
 case "${1:-up}" in
   up)
-    compose up -d --wait postgres seaweedfs converter
+    compose up -d --wait postgres seaweedfs converter fuseki
     (cd "$REPO_ROOT" && npm run migrate)
     (cd "$REPO_ROOT/worker" && uv run python -m ingest_worker.admin init-buckets)
     cat <<EOF
@@ -27,6 +27,7 @@ Infra ready. Export these for npm run dev:api / uv run ingest-worker:
   export DATABASE_URL=$DATABASE_URL
   export S3_ENDPOINT=$S3_ENDPOINT S3_ACCESS_KEY=$S3_ACCESS_KEY S3_SECRET_KEY=<from $ENV_FILE>
   export CONVERTER_URL=http://localhost:${CONVERTER_PORT:-3010}
+  export RDF_ENDPOINT=http://localhost:${FUSEKI_PORT:-3030} RDF_USER=ct-writer RDF_PASSWORD=<RDF_WRITER_PASSWORD from $ENV_FILE, else dev-writer>
 EOF
     ;;
   down) compose down ;;

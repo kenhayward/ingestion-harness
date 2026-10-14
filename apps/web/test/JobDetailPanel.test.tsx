@@ -290,3 +290,43 @@ describe('JobDetailPanel step times', () => {
     expect(within(progress).getByText('00:05')).toBeInTheDocument();
   });
 });
+
+describe('JobDetailPanel graph (ADR 0011 step 6)', () => {
+  const published = job({ id: 'j9', status: 'succeeded' });
+  const detail = (graph: unknown) =>
+    fakeApi({
+      getJob: vi.fn(async () => ({ ...published, outputs: [], graph }) as never),
+      getStepRuns: vi.fn(async () => []),
+    });
+
+  it('names the published graph, its version and where it went', async () => {
+    const graph = {
+      iri: 'https://data.acme.example/graph/source/ab/demo',
+      version: 2,
+      triples: 42,
+      endpoint: true,
+      publishedAt: '2026-10-12T11:00:00Z',
+    };
+    render(<JobDetailPanel api={detail(graph)} job={published} {...defaults} />);
+    expect(await within(panel()).findByText('Graph')).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('Version 2 · 42 triples · in the triple store');
+    expect(panel()).toHaveTextContent('https://data.acme.example/graph/source/ab/demo');
+  });
+
+  it('says when the graph went to S3 only, and shows nothing without one', async () => {
+    const s3 = {
+      iri: 'https://data.acme.example/graph/source/ab/demo',
+      version: 1,
+      triples: 1,
+      endpoint: false,
+      publishedAt: '2026-10-12T11:00:00Z',
+    };
+    const { unmount } = render(<JobDetailPanel api={detail(s3)} job={published} {...defaults} />);
+    expect(await within(panel()).findByText(/S3 only/)).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('Version 1 · 1 triple · S3 only');
+    unmount();
+    render(<JobDetailPanel api={detail(null)} job={published} {...defaults} />);
+    await within(panel()).findByText('Document type');
+    expect(within(panel()).queryByText('Graph')).toBeNull();
+  });
+});

@@ -1,0 +1,27 @@
+# Apache Jena Fuseki (ADR 0011 step 6): one dataset `ct`. Every named graph shows in the default
+# graph (union), so readers query all documents and ontologies at once.
+#   /ct/sparql  SPARQL query                 ct-reader, ct-writer
+#   /ct/get     Graph Store Protocol, read   ct-reader, ct-writer
+#   /ct/data    Graph Store Protocol, write  ct-writer (the worker) only
+# No SPARQL Update. The admin endpoints (/$/backup, /$/compact) answer localhost only.
+PREFIX :        <#>
+PREFIX fuseki:  <http://jena.apache.org/fuseki#>
+PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
+
+[] rdf:type fuseki:Server ;
+   fuseki:services ( :ct ) .
+
+:ct rdf:type fuseki:Service ;
+    fuseki:name "ct" ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "sparql" ;
+                      fuseki:allowedUsers "ct-reader", "ct-writer" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-r ; fuseki:name "get" ;
+                      fuseki:allowedUsers "ct-reader", "ct-writer" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data" ;
+                      fuseki:allowedUsers "ct-writer" ] ;
+    fuseki:dataset :dataset .
+
+:dataset rdf:type tdb2:DatasetTDB2 ;
+    tdb2:location "/fuseki/databases/ct" ;
+    tdb2:unionDefaultGraph true .

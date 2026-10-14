@@ -135,6 +135,48 @@ SeaweedFS (`TARGET_S3_ENDPOINT` empty).
    **Revoke** stops a key within seconds; deleting the consumer removes its SeaweedFS user.
    The API deletes expired keys every minute.
 
+## Triple store (Fuseki)
+
+Delivered graphs (recipes that deliver `rdf`, ADR 0011) go to Apache Jena Fuseki when the `rdf`
+profile is on: `COMPOSE_PROFILES=rdf`, `RDF_ENDPOINT=http://fuseki:3030`, and the two users'
+passwords `RDF_WRITER_PASSWORD` (the worker) and `RDF_READER_PASSWORD` (consumers) in the env
+file. Without them nothing changes: graphs still go to S3, and the Linked data page says so.
+Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
+
+- **Dataset:** `ct`, TDB2 on the `fuseki-data` volume, every named graph in the default graph.
+  Only the worker reaches it (internal network `rdf`, no published ports).
+- **Backups:** nightly, from the deploy host's cron. Each one is an N-Quads dump in the volume
+  (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host with the other backups.
+
+  ```bash
+  15 2 * * * cd /opt/ingestion-harness && deploy/scripts/compose.sh exec -T fuseki /opt/fuseki/admin.sh backup
+  ```
+- **Compaction:** weekly, because replacing graphs leaves garbage in TDB2.
+
+  ```bash
+  45 2 * * 0 cd /opt/ingestion-harness && deploy/scripts/compose.sh exec -T fuseki /opt/fuseki/admin.sh compact
+  ```
+- **Rebuild** an empty or lost dataset from what was delivered: every ontology graph from its
+  normalised file and every current document graph from its versioned copy in the target
+  (`graphs/<sha256>/<type>/v<n>.ttl`). Nothing is re-rendered.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild
+  ```
+- **Backfill** a document type whose mapping was added after documents were delivered: their
+  reviewed documents are rendered with the type's newest published recipe that maps to
+  ontologies.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild --backfill <type>
+  ```
+- **Re-mint** after changing the base IRI on the Linked data page: every graph is re-rendered
+  under the new base as its next version, and the graph under the old base is dropped.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild --remint
+  ```
+
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
 
 Zscaler's PAC file returns `PROXY 127.0.0.1:8888; PROXY 127.0.0.1:9001`. Docker Desktop tries

@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type {
+  JobGraph,
   JobOutput,
   JobProgress,
   JobSummary,
@@ -77,6 +78,7 @@ export function JobDetailPanel({
 }) {
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [loadedTimes, setLoadedTimes] = useState<StageTimes | null>(null);
+  const [graph, setGraph] = useState<JobGraph | null>(null);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +91,7 @@ export function JobDetailPanel({
         if (cancelled) return;
         setOutputs(d.outputs);
         setLoadedTimes(d.stageTimes ?? null);
+        setGraph(d.graph ?? null);
       },
       (err: Error) => {
         if (!cancelled) setError(err.message);
@@ -169,6 +172,17 @@ export function JobDetailPanel({
         <>
           <dt>Queued by</dt>
           <dd>{job.createdBy}</dd>
+        </>
+      )}
+      {graph && (
+        <>
+          <dt>Graph</dt>
+          <dd>
+            Version {graph.version} · {graph.triples} {graph.triples === 1 ? 'triple' : 'triples'} ·{' '}
+            {graph.endpoint ? 'in the triple store' : 'S3 only'}
+            <br />
+            <code className="graph-iri">{graph.iri}</code>
+          </dd>
         </>
       )}
     </dl>

@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
+  GRAPH_PUBLISHED_EVENT,
   JobDetailSchema,
   JobStatusSchema,
   JobSummarySchema,
@@ -16,7 +17,7 @@ import {
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
-import { jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
+import { jobGraph, jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
 import { queueSummary } from '../jobs/queue-summary.js';
 import {
   draftOutputsSnapshot,
@@ -147,7 +148,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           Download one with \`GET /api/jobs/{id}/outputs/{outputId}\`. While an extraction
           runs, \`progress\` says where it is (as \`GET /api/jobs/{id}/events\` sends it);
           \`stageTimes\` says when this attempt finished reading the document and found its
-          sections.
+          sections. \`graph\` is the newest graph the job published (ADR 0011): its IRI,
+          version and triples, and whether it reached the triple store.
         `,
         params: JobParams,
         response: { 200: res('The job.', JobDetailSchema), 404: NOT_FOUND },
@@ -159,8 +161,16 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       }
       const job = await app.deps.repo.getJob(req.params.id);
       if (!job) return reply.code(404).send({ error: 'not found' });
-      const events = await app.deps.repo.latestEvents([job.id], PROGRESS_EVENTS);
-      return { ...job, progress: jobProgress(job, events), stageTimes: stageTimes(job, events) };
+      const events = await app.deps.repo.latestEvents(
+        [job.id],
+        [...PROGRESS_EVENTS, GRAPH_PUBLISHED_EVENT],
+      );
+      return {
+        ...job,
+        progress: jobProgress(job, events),
+        stageTimes: stageTimes(job, events),
+        graph: jobGraph(events),
+      };
     },
   );
 

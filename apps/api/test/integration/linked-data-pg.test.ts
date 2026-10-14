@@ -55,4 +55,23 @@ describe.skipIf(!url)('linked data settings against Postgres', { timeout: 30_000
       pool.query(`INSERT INTO linked_data_settings (id) VALUES (false)`),
     ).rejects.toThrow();
   });
+
+  it('reads the published graphs under a base and the newest event', async () => {
+    await pool.query('DELETE FROM published_graphs');
+    const base = 'https://data.acme.example/ct/';
+    expect(await repo.graphStatus(base)).toMatchObject({ published: 0, lastPublishedAt: null });
+    await pool.query(
+      `INSERT INTO published_graphs (sha256, template_id, graph_iri, version, job_id,
+         document_id, template_version, base_iri, triples, published_at)
+       VALUES ('ab', 'demo', $1, 1, gen_random_uuid(), gen_random_uuid(), 1, $2, 5,
+               '2026-10-14T10:00:00Z'),
+              ('cd', 'demo', $1, 1, gen_random_uuid(), gen_random_uuid(), 1, 'https://old.example/', 5,
+               '2026-10-14T11:00:00Z')`,
+      [`${base}graph/source/ab/demo`, base],
+    );
+    const status = await repo.graphStatus(base);
+    expect(status.published).toBe(1);
+    expect(status.lastPublishedAt).toBe('2026-10-14T10:00:00.000Z');
+    await pool.query('DELETE FROM published_graphs');
+  });
 });

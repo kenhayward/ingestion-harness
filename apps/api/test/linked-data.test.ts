@@ -100,3 +100,26 @@ describe('linked data settings', () => {
     expect((await app.inject({ url: '/api/linked-data/base', headers })).statusCode).toBe(200);
   });
 });
+
+describe('published graphs on the Linked data panel (ADR 0011 step 6)', () => {
+  it('counts the graphs under the current base and says whether they reach Fuseki', async () => {
+    const { app, put, linkedData } = await setup();
+    await put(body({ baseIri: 'https://data.acme.example/ct/' }));
+    expect((await app.inject({ url: '/api/linked-data/settings' })).json().graphs).toEqual({
+      published: 0,
+      lastPublishedAt: null,
+      endpoint: null,
+    });
+    linkedData.graphs = [
+      { base: 'https://data.acme.example/ct/', at: '2026-10-14T10:00:00.000Z' },
+      { base: 'https://data.acme.example/ct/', at: '2026-10-14T11:00:00.000Z' },
+      { base: 'https://old.example/', at: '2026-10-13T10:00:00.000Z' },
+    ];
+    linkedData.endpoint = true;
+    expect((await app.inject({ url: '/api/linked-data/settings' })).json().graphs).toEqual({
+      published: 2,
+      lastPublishedAt: '2026-10-14T11:00:00.000Z',
+      endpoint: true,
+    });
+  });
+});

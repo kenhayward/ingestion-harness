@@ -62,6 +62,11 @@ def shacl_report_key(job_id: str) -> str:
     return f"{job_id}/shacl-report.json"
 
 
+def graph_version_key(sha256: str, template_id: str, version: int) -> str:
+    """One published version of a (file, document type) graph, in the target (ADR 0011)."""
+    return f"graphs/{sha256}/{template_id}/v{version}.ttl"
+
+
 def graph_preview_key(project_id: str, job_id: str) -> str:
     """A graph preview's Turtle per sample (runs bucket, graph task; ADR 0011)."""
     return f"graphs/{project_id}/{job_id}.json"

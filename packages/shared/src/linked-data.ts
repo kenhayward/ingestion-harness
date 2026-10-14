@@ -30,12 +30,23 @@ export const LinkedDataHistoryEntrySchema = z.object({
 });
 export type LinkedDataHistoryEntry = z.infer<typeof LinkedDataHistoryEntrySchema>;
 
+/** The graphs published to the triple store (ADR 0011 step 6, `published_graphs`). */
+export const LinkedDataGraphsSchema = z.object({
+  /** Current graphs minted under the current base. */
+  published: z.number().int(),
+  lastPublishedAt: z.string().nullable(),
+  /** Whether the newest publish reached Fuseki (false: S3 only); null before any publish. */
+  endpoint: z.boolean().nullable(),
+});
+export type LinkedDataGraphs = z.infer<typeof LinkedDataGraphsSchema>;
+
 export const LinkedDataViewSchema = z.object({
   settings: LinkedDataSettingsSchema,
   /** Null: RDF is skipped until a customer or base is set. */
   effectiveBase: z.string().nullable(),
   /** RDF outputs published under the current base. */
   rdfPublished: z.number().int(),
+  graphs: LinkedDataGraphsSchema,
   /** Newest first. */
   history: z.array(LinkedDataHistoryEntrySchema),
 });

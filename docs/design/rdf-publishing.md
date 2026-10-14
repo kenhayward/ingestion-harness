@@ -1046,6 +1046,27 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
    `published_graphs` versions and versioned Turtle copies, `published_entities` and
    `mint_entity_iri`, TBox loads, job graph status,
    rebuild and backfill commands, backups and compaction docs, smoke test.
+   *As built:*
+   - **Opt-in.** Fuseki 6.2.0 is built from the Maven Central jar (sha512 pinned) and is
+     opt-in through the compose profile `rdf`. The passwords come from the env file, and an
+     env file without them deploys as before, publishing graphs to S3 only.
+   - **No Shiro.** Fuseki main's own `--passwd` and the per-endpoint `fuseki:allowedUsers`
+     replace the Shiro file. The admin endpoints answer localhost only, through
+     `/opt/fuseki/admin.sh`.
+   - **The port is `GraphStore`**, not a `Publisher`. S3 delivery is unchanged, and the graph
+     is published after it, as the next version.
+   - **Versions without Fuseki.** The version and the target copy are recorded even without
+     `RDF_ENDPOINT`. That way the counts and a later rebuild see every delivered graph.
+   - **Entity keys** hold the raw key values, before filters.
+   - **TBox loads** run inside the graph's publish: under its lock, and before its PUT.
+   - **Re-mint** drops the graph under the old base first, then publishes it under the new
+     one. A failure in between leaves the version under the old base, so the next
+     `--remint` picks the graph up again, and there are never two copies.
+   - **Documents delivered without review** publish their graph too: the process job does it
+     after recording its outputs. Backfill and re-mint read their draft document when there is
+     no reviewed one.
+   - **Order of a publish.** Delivered outputs are recorded (`job_outputs`) before the graph's
+     PUT, so a store failure never leaves target objects without a record.
 7. **Withdrawal and consumer access:** `withdraw`/`republish` jobs on job deletion,
    retirement and unretirement (with the ADR 0005 and retirement amendments), the shared
    `ct-reader` user through the proxy, docs for consumers.
