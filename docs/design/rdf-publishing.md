@@ -823,7 +823,8 @@ change applies to CSV and JSON as well as RDF, and it needs its own short ADR am
   `graph/source/*/{typeId}` graph, and its jobs' published target objects. Graphs of the same
   files under other types stay. The type and
   its jobs stay readable, as retirement promises. The reviewed documents stay in the runs bucket.
-- **Unretiring** queues one `republish` job (document-less, `priority = -10`). For each
+- **Unretiring** is expected to be a very unusual exception; re-delivery is the accepted cost.
+  It queues one `republish` job (document-less, `priority = -10`). For each
   withdrawn job it re-renders the CSV, JSON and Turtle from `{job}/reviewed-document.json` with
   that job's recipe version, writes them back to the target and re-publishes the graphs as new
   versions. Retirement can therefore be undone, at the cost of re-delivery. `rdf_rebuild` uses
@@ -1036,17 +1037,24 @@ fix the direction so that nothing built now works against it.
   any link point at the same shared page nodes (see *Fact provenance*), so a consumer can go
   from a fact to the section and narrative it came from.
 
-## Open questions (for the chief architect)
-1. **Withdrawal on retirement:** this design makes retirement reversible by re-delivering from
-   the kept reviewed documents when the type is unretired. Is re-delivery acceptable, or should
-   retiring only hide the type and leave delivered data in place?
+## Decision log
 
-Resolved on 2026-10-14 (see *Scope decisions*):
-- base IRI;
-- graph identity (per file and document type);
-- entity IRIs (readable, five safeguards);
-- consumer access;
-- ontology licensing;
-- retrieval;
-- deletion and retirement;
-- corrections.
+There are no open questions. These decisions were taken with the product owner on 2026-10-14
+(details in the sections above):
+- **Base IRI:** the customer's domain, one customer per deployment, set in the Linked data
+  panel; when none is set, `id.stocks-hayward.com/{customer}/`.
+- **Graph identity:** one graph per original file and document type, with the document node
+  shared across types.
+- **Entity IRIs:** readable, with five safeguards that keep a move to registered IDs open.
+- **Consumer access:** one shared read-only SPARQL user.
+- **Ontology licensing:** library ontologies (IDMP-O etc.) are exposed to customers.
+- **Retrieval:** hybrid lexical and embedding search, in the mapping-stage PR.
+- **Deletion:** deleting a job withdraws its graphs and published S3 outputs.
+- **Corrections:** a correction replaces the graph; versions are kept for future history.
+- **Retirement:** retiring withdraws what the type delivered, and unretiring re-delivers it from
+  the kept reviewed documents. Re-delivery is acceptable; unretiring is expected to be a very
+  unusual exception.
+- **Delivered formats:** chosen per recipe (CSV, JSON, RDF); RDF needs a mapping.
+- **Chained types:** follow-on types (A → B → C). A chain is withdrawn as one atomic unit, while
+  delivery stays per link. Retiring a type in a chain withdraws every chain containing it.
+- **Fact provenance:** every published fact links to its page, quote, section and step.

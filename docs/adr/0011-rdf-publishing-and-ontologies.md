@@ -137,7 +137,8 @@ accepts each change. Mapping should work the same way.
     that job published the current version.
   - **Retiring a document type:** withdraws every graph and published output the type
     delivered.
-  - **Unretiring:** re-delivers them from the reviewed documents kept in the runs bucket.
+  - **Unretiring:** re-delivers them from the reviewed documents kept in the runs bucket. This
+    is accepted, and expected to be a very unusual exception.
   - **How it runs:** the API queues worker `withdraw` and `republish` jobs. Only the worker can
     write to the target and reach Fuseki.
   - **What it changes:** this reverses the earlier rule that published copies are kept, so
