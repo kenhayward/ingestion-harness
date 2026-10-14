@@ -16,10 +16,13 @@ export function QualityPanel({
   api,
   templateId,
   version,
+  retired = null,
 }: {
   api: Api;
   templateId: string;
   version: number;
+  /** Why nothing may run (a retired document type); null otherwise. */
+  retired?: string | null;
 }) {
   const [versions, setVersions] = useState<number[]>([]);
   const [diff, setDiff] = useState<VersionDiff | null>(null);
@@ -221,7 +224,12 @@ export function QualityPanel({
               </span>
             ))}
           </p>
-          <button type="button" onClick={() => setAsking(true)}>
+          <button
+            type="button"
+            disabled={retired !== null}
+            title={retired ?? undefined}
+            onClick={() => setAsking(true)}
+          >
             Run regression on v{version}…
           </button>{' '}
           {asking && (

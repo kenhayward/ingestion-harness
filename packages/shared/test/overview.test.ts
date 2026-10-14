@@ -814,6 +814,7 @@ describe('ProjectOverviewSchema', () => {
         draft: 2,
         published: 1,
         brief: null,
+        retired: null,
       },
       stages: overviewItems(ctx({}, i)),
       next: overviewNext(i),

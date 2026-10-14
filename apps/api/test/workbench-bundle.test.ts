@@ -498,6 +498,22 @@ const importBundle = (app: FastifyInstance, zip: Buffer, fields: Record<string, 
   });
 
 describe('import', () => {
+  it('refuses a bundle under a retired id and writes nothing', async () => {
+    const { app, repo, store, templates, workbench } = await testApp();
+    await templates.retire('memo', 'ken');
+    const counts = async () => ({
+      templates: (await templates.list()).length,
+      projects: (await workbench.listProjects()).length,
+      objects: store.objects.size,
+      jobs: repo.jobs.size,
+    });
+    const before = await counts();
+    const res = await importBundle(app, bundle());
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('memo is retired: unretire it to use it again');
+    expect(await counts()).toEqual(before);
+  });
+
   it('imports a Word sample as a .docx', async () => {
     const { app, store } = await testApp();
     const word = docx();

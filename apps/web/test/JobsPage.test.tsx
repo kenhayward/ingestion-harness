@@ -111,6 +111,23 @@ describe('JobsPage', () => {
     const list = screen.getByRole('region', { name: 'Job list' });
     expect(await within(list).findByText('Supplier invoice v3')).toBeInTheDocument();
   });
+
+  it('asks for retired document types too, so old jobs keep their names', async () => {
+    const api = fakeApi({
+      listSpecs: vi.fn(async () => [
+        {
+          id: 'inv',
+          version: 3,
+          title: 'Supplier invoice',
+          retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' },
+        },
+      ]),
+    });
+    page([job({ filename: 'a.pdf', specId: 'inv', specVersion: 3 })], { api });
+    const list = screen.getByRole('region', { name: 'Job list' });
+    expect(await within(list).findByText('Supplier invoice v3')).toBeInTheDocument();
+    expect(api.listSpecs).toHaveBeenCalledWith({ retired: 'include' });
+  });
 });
 
 describe('JobsPage: My jobs', () => {

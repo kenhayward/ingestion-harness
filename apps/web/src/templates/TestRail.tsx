@@ -20,6 +20,7 @@ export function TestRail({
   version,
   jobs,
   typeModel,
+  retired = null,
 }: {
   api: Api;
   templateId: string;
@@ -27,6 +28,8 @@ export function TestRail({
   jobs: readonly JobSummary[];
   /** The draft's own model choice, to name the "no override" option. */
   typeModel: { model?: string };
+  /** Why nothing may run (a retired document type); null otherwise. */
+  retired?: string | null;
 }) {
   const inputId = useId();
   const [sample, setSample] = useState<File | null>(null);
@@ -58,7 +61,7 @@ export function TestRail({
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
-          choose(e.dataTransfer.files[0]);
+          if (retired === null) choose(e.dataTransfer.files[0]);
         }}
       >
         <span className="drop-icon" aria-hidden="true">
@@ -76,6 +79,8 @@ export function TestRail({
         type="file"
         accept={SOURCE_ACCEPT}
         aria-label="Sample document"
+        disabled={retired !== null}
+        title={retired ?? undefined}
         onChange={(e) => {
           choose(e.target.files?.[0]);
           e.target.value = '';
@@ -84,7 +89,8 @@ export function TestRail({
       <button
         type="button"
         className="primary block"
-        disabled={!sample || busy}
+        disabled={retired !== null || !sample || busy}
+        title={retired ?? undefined}
         onClick={() => setAsking(true)}
       >
         {sample ? `Run test on ${sample.name}…` : 'Run test'}

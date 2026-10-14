@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RetirementSchema } from './retirement.js';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
 import { JobStatusSchema, PrepareProgressSchema } from './jobs.js';
 
@@ -76,6 +77,8 @@ export const ProjectViewSchema = z.object({
   draft: z.number().int().nullable(),
   published: z.number().int().nullable(),
   brief: BriefSchema.nullable(),
+  /** The document type is retired: nothing new runs for it (null when it is not). */
+  retired: RetirementSchema.nullable(),
 });
 export type ProjectView = z.infer<typeof ProjectViewSchema>;
 

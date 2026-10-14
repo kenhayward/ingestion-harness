@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RetirementSchema } from './retirement.js';
 import { STAGE_ORDER, type StageState, type StageView } from './drafting.js';
 import { GateViewSchema, percent, type GateView } from './evaluation.js';
 import {
@@ -634,6 +635,8 @@ export const ProjectListQuerySchema = z
     filter: z.enum(LIST_FILTERS).default('all'),
     phase: z.enum(OVERVIEW_PHASES).optional(),
     policy: z.enum(DATA_POLICIES).optional(),
+    /** `include`: list retired document types too (default: left out unless `ids` names them). */
+    retired: z.enum(['include']).optional(),
     sort: z.enum(LIST_SORTS).default('activity'),
     /** Comma-separated project ids (at most 20): only those rows (the list's pinned and recent cards). */
     ids: z
@@ -678,6 +681,8 @@ export const ProjectListItemSchema = ProjectSummarySchema.extend({
   lastActivityAt: z.string(),
   /** What the facets count (running also covers unfinished runs, which no stage shows). */
   flags: z.object({ attention: z.boolean(), running: z.boolean(), ready: z.boolean() }),
+  /** Live, never cached: the list route overlays it on every request (null when active). */
+  retired: RetirementSchema.nullable(),
 });
 export type ProjectListItem = z.infer<typeof ProjectListItemSchema>;
 
@@ -717,6 +722,7 @@ export function listItemFrom(input: {
     devSamples: input.devSamples,
     holdoutSamples: input.holdoutSamples,
     lastActivityAt: input.lastActivityAt,
+    retired: null,
     flags: {
       attention: has('stale', 'proposed', 'warn'),
       running: has('running') || input.runsUnfinished > 0 || input.inputs.evaluation.running,
@@ -756,8 +762,11 @@ export function queryProjects(
   query: ProjectListQuery,
 ): ProjectListPage {
   const needle = query.q?.toLowerCase() ?? '';
+  // Retired projects only when asked for, or when named (the pinned and recent cards).
+  const showRetired = query.retired === 'include' || query.ids !== undefined;
   const base = items.filter(
     (i) =>
+      (showRetired || i.retired === null) &&
       (needle === '' ||
         i.name.toLowerCase().includes(needle) ||
         i.id.toLowerCase().includes(needle)) &&

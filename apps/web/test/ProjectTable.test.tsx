@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { PinButton, ProjectTable, ScoreBar } from '../src/workbench/ProjectTable.js';
+import { PinButton, ProjectCard, ProjectTable, ScoreBar } from '../src/workbench/ProjectTable.js';
 import { projectListItem } from './fake-api.js';
 
 const now = Date.parse('2026-10-13T12:00:00Z');
@@ -97,5 +97,33 @@ describe('ProjectTable', () => {
       'href',
       '#/workbench/letter',
     );
+  });
+});
+
+describe('retired projects in the list', () => {
+  it('tags a retired project in the table and on its card', () => {
+    const item = projectListItem({
+      retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' },
+    });
+    const { unmount } = render(
+      <ProjectTable items={[item]} pinned={new Set()} onTogglePin={vi.fn()} now={Date.now()} />,
+    );
+    // ProjectTable renders the table and the phone cards: one tag in each.
+    const tags = screen.getAllByText('Retired');
+    expect(tags).toHaveLength(2);
+    for (const tag of tags) {
+      expect(tag).toHaveAttribute(
+        'title',
+        expect.stringContaining('Retired by ken on 14 Oct 2026'),
+      );
+    }
+    unmount();
+    render(<ProjectCard item={item} now={Date.now()} />);
+    expect(screen.getByText('Retired')).toBeInTheDocument();
+  });
+
+  it('has no tag for an active project', () => {
+    render(<ProjectCard item={projectListItem()} now={Date.now()} />);
+    expect(screen.queryByText('Retired')).toBeNull();
   });
 });

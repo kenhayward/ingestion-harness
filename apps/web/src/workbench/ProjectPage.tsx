@@ -8,6 +8,8 @@ import { ExportPanel } from './ExportPanel.js';
 import { forgetProject, rememberProject } from './listDerive.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { OverviewTab } from './OverviewTab.js';
+import { RETIRED_REASON } from '../ui/retired.js';
+import { RetiredBanner } from '../ui/RetiredBanner.js';
 import { ProjectHeader } from './ProjectHeader.js';
 import { ProjectRail } from './ProjectRail.js';
 import { ReferencesTab } from './ReferencesTab.js';
@@ -213,6 +215,8 @@ export function ProjectPage({
   if (!view) return error ? <p role="alert">{error}</p> : <p>Loading…</p>;
 
   const { project, draft, published } = view;
+  /** A retired type: every job-creating action is off, with this reason (D7). */
+  const retired = view.retired ? RETIRED_REASON : null;
   const itemOf = (t: ProjectTab) => overview?.stages.find((s) => s.stage === t) ?? null;
   const header = (t: Exclude<ProjectTab, 'overview'>, description?: string) => (
     <TabHeader title={TAB_TITLE[t]} item={itemOf(t)} description={description} />
@@ -226,6 +230,8 @@ export function ProjectPage({
         onTogglePolicy={() => void togglePolicy()}
       />
       {error && <p role="alert">{error}</p>}
+      {/* No Unretire here, for admins either: unretiring is API-only (D14). */}
+      {view.retired && <RetiredBanner retirement={view.retired} typeId={project.id} />}
       {overviewError && (
         <p role="alert">
           Could not load the project status: {overviewError}{' '}
@@ -259,6 +265,7 @@ export function ProjectPage({
                 projectId={project.id}
                 pollMs={pollMs}
                 onChanged={loadOverview}
+                retired={retired}
               />
             </>
           )}
@@ -297,6 +304,7 @@ export function ProjectPage({
               pollMs={pollMs}
               onChanged={changed}
               item={itemOf('survey')}
+              retired={retired}
             />
           )}
           {(tab === 'outputs' || tab === 'steps') && (
@@ -315,6 +323,7 @@ export function ProjectPage({
               pollMs={pollMs}
               onApplied={changed}
               onSkipped={changed}
+              retired={retired}
             />
           )}
           {tab === 'sections' && (
@@ -334,6 +343,7 @@ export function ProjectPage({
                 onConfirmed={loadOverview}
                 onSkipped={changed}
                 blockedReason={anchorsDirty ? 'Save your unsaved anchors first' : null}
+                retired={retired}
               />
               <SectionsTab
                 key={revision}
@@ -356,6 +366,7 @@ export function ProjectPage({
               item={itemOf('references')}
               pollMs={pollMs}
               onChanged={changed}
+              retired={retired}
             />
           )}
           {tab === 'evaluate' &&
@@ -374,6 +385,7 @@ export function ProjectPage({
               onRestored={changed}
               onStarted={loadOverview}
               onGateChanged={loadOverview}
+              retired={retired}
             />
           )}
           {tab === 'revise' && header('revise')}
@@ -386,6 +398,7 @@ export function ProjectPage({
               pollMs={pollMs}
               onApplied={changed}
               onChanged={loadOverview}
+              retired={retired}
             />
           )}
           {tab === 'runs' && (
@@ -397,6 +410,7 @@ export function ProjectPage({
               item={itemOf('runs')}
               pollMs={pollMs}
               onChanged={loadOverview}
+              retired={retired}
             />
           )}
           {tab === 'template' &&
@@ -418,6 +432,7 @@ export function ProjectPage({
                   stages: overview?.stages ?? null,
                   item: itemOf('template'),
                   published,
+                  retired: view.retired ?? null,
                 }}
               />
             ) : (
@@ -428,6 +443,8 @@ export function ProjectPage({
                   <button
                     type="button"
                     className="primary"
+                    disabled={retired !== null}
+                    title={retired ?? undefined}
                     onClick={() =>
                       void act(async () => {
                         await api.newDraft(project.id, published!);

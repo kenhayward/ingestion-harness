@@ -1,11 +1,13 @@
 import type { JobSummary, TemplateChange } from '@ih/shared';
+import { RETIRED_REASON } from '../ui/retired.js';
 import { plural } from './quality.js';
 
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /** Why Publish is disabled (shown as its title and next to it), or null when it can publish. */
-export function publishBlocker(dirty: boolean, issues: number): string | null {
+export function publishBlocker(dirty: boolean, issues: number, retired = false): string | null {
+  if (retired) return RETIRED_REASON;
   if (dirty) return 'Save the draft before publishing';
   if (issues > 0) return `Fix ${plural(issues, 'validation issue')}`;
   return null;

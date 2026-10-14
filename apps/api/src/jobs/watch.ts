@@ -11,7 +11,7 @@ export interface JobWatch {
   close(): Promise<void>;
 }
 
-/** Postgres channel the `jobs_notify_changed` triggers notify (migration 0030); payload: job id. */
+/** Postgres channel the `jobs_notify_changed` triggers notify (migration 0031); payload: job id. */
 export const JOB_CHANGED_CHANNEL = 'ih_job_changed';
 
 class Listeners {

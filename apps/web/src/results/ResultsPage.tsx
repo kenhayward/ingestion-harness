@@ -43,7 +43,8 @@ export function ResultsPage({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listSpecs().then(
+    // Retired types too: old jobs and results keep their names.
+    api.listSpecs({ retired: 'include' }).then(
       (specs) => {
         const byId = new Map(specs.map((s) => [s.id, s.title]));
         setTypes(

@@ -11,6 +11,7 @@ import {
   tryOnBlockedReason,
   unsavedText,
 } from '../src/templates/editor-derive.js';
+import { RETIRED_REASON } from '../src/ui/retired.js';
 import { job } from './fake-api.js';
 
 describe('publishBlocker', () => {
@@ -158,4 +159,11 @@ describe('rowTableMinWidth', () => {
       expect(rowTableMinWidth(columns)).toBe(expected);
     },
   );
+});
+
+describe('publishBlocker for a retired type', () => {
+  it('names the retirement before any other reason', () => {
+    expect(publishBlocker(true, 3, true)).toBe(RETIRED_REASON);
+    expect(publishBlocker(false, 0, false)).toBeNull();
+  });
 });

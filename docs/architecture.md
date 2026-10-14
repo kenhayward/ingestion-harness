@@ -29,7 +29,7 @@ Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md)
 Live progress: while a job runs, the worker writes advisory progress events (`prepare progress`:
 the text layer, then each OCR page; `segmented`; `step progress`: one per model call, attempt
 and chunk), for production and Workbench jobs alike. Triggers on `jobs`, `job_events` and
-`step_runs` (migration 0030) `NOTIFY ih_job_changed` with the job id; the API holds one
+`step_runs` (migration 0031) `NOTIFY ih_job_changed` with the job id; the API holds one
 `LISTEN` connection (`PgJobWatch`, reconnecting) and serves `GET /api/jobs/:id/events` as
 Server-Sent Events: `{ job, progress }` at once and on every change, a comment every 15 s (when
 it also re-reads the job, so a lost notification only delays an update), ending once the job

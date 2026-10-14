@@ -113,6 +113,7 @@ import {
   type ChangeStage,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
+import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
@@ -169,7 +170,9 @@ const EVALUATION_REFUSED = {
   404: PROJECT_NOT_FOUND,
   409: error(
     '`no open draft; start the next version on the Recipe tab`, or `no verified references ' +
-      'for the {set} samples; verify …`.',
+      'for the {set} samples; verify …`, or ' +
+      RETIRED_DOC +
+      '.',
   ),
 };
 const IterationIdParams = z.object({
@@ -217,8 +220,18 @@ export async function projectView(
   app: FastifyInstance,
   project: WorkbenchProject,
 ): Promise<ProjectView> {
-  const { draft, published } = await versionsOf(app.deps.templates, project.id);
-  return { project, draft, published, brief: await app.deps.workbench.latestBrief(project.id) };
+  const [{ draft, published }, brief, retired] = await Promise.all([
+    versionsOf(app.deps.templates, project.id),
+    app.deps.workbench.latestBrief(project.id),
+    app.deps.templates.retirement(project.id),
+  ]);
+  return {
+    project,
+    draft,
+    published,
+    brief,
+    retired,
+  };
 }
 
 const SampleParams = z.object({ id: Id, sid: z.string().uuid() });
@@ -1128,6 +1141,8 @@ async function startIteration(
 /** /api/workbench (ADR 0007, phase 1): projects, samples, brief, dev test runs. */
 export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   const { workbench, templates } = app.deps;
+  /** Routes that queue model or document work refuse a retired document type (D4). */
+  const notRetired = refuseRetired(app);
 
   app.get<{ Querystring: Record<string, string> }>(
     '/workbench/projects',
@@ -1144,7 +1159,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           honouring \`q\`, \`phase\`, \`policy\` and \`ids\`). Sorts: \`activity\` (latest first),
           \`name\`, \`score\` (lowest first, none last), \`samples\` (fewest first). A page
           past the end has no items. Rows are recomputed only for projects that changed since
-          the last request.
+          the last request. Retired document types are left out unless \`retired=include\`, or
+          \`ids\` names them; each row's \`retired\` is read live.
 
           Deprecated: \`all=1\` returns every project unpaged, as an array of summaries (draft,
           published version and sample count), and ignores the other parameters. Unused by the
@@ -1205,7 +1221,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           400: error(
             'Zod issues for an invalid id, or `name is required for a new document type`.',
           ),
-          409: error('`a workbench project for {id} already exists`.'),
+          409: error('`a workbench project for {id} already exists`, or ' + RETIRED_DOC + '.'),
         },
       },
     },
@@ -1216,6 +1232,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (await workbench.getProject(id)) {
         return reply.code(409).send({ error: `a workbench project for ${id} already exists` });
       }
+      const retired = await retiredProblem(app.deps, id);
+      if (retired) return reply.code(409).send({ error: retired });
       const { draft, latest } = await versionsOf(templates, id);
       let name = body.data.name;
       if (latest === null) {
@@ -1337,7 +1355,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const id = req.params.id;
-      const removed = await workbench.deleteProject(id);
+      const removed = await workbench.deleteProject(id, {
+        keepRetirement: app.deps.specs.get(id) !== undefined,
+      });
       if (!removed) return reply.code(404).send({ error: 'project not found' });
       if (removed === 'published') {
         return reply.code(409).send({
@@ -1409,6 +1429,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/publish',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Holdout & publish gate'],
         operationId: 'publishProject',
@@ -1437,8 +1458,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           ),
           404: PROJECT_NOT_FOUND,
           409: res(
-            '`no open draft to publish`, or `the draft changed while publishing; check the gate ' +
-              'again`.',
+            '`no open draft to publish`, `the draft changed while publishing; check the gate ' +
+              'again`, or ' +
+              RETIRED_DOC +
+              '.',
             z.object({ error: z.string(), gate: GateViewSchema.optional() }),
           ),
         },
@@ -1561,6 +1584,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/samples',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Samples & brief'],
         operationId: 'addSample',
@@ -1591,8 +1615,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           404: PROJECT_NOT_FOUND,
           406: error('The request is not `multipart/form-data`.'),
           409: error(
-            '`a project holds at most 12 samples`, or `this file is already a sample of the ' +
-              'project`.',
+            '`a project holds at most 12 samples`, `this file is already a sample of the ' +
+              'project`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
           413: error('The file is larger than the upload limit.'),
           415: error(`\`${NOT_A_SOURCE}\`.`),
@@ -1843,6 +1869,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/test-runs',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Test runs'],
         operationId: 'startTestRuns',
@@ -1869,7 +1896,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           404: PROJECT_NOT_FOUND,
           409: error(
             '`no open draft to test; start the next version first`, `no prepared dev ' +
-              'samples to run`, or `<file> is not prepared yet`.',
+              'samples to run`, `<file> is not prepared yet`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -2458,6 +2487,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string; stage: string } }>(
     '/workbench/projects/:id/stages/:stage',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Drafting stages & proposals'],
         operationId: 'startStage',
@@ -2498,7 +2528,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
               'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
-              'already running`.',
+              'already running`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -2674,6 +2706,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/holdout/reference-runs',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Holdout & publish gate'],
         operationId: 'startHoldoutReferenceRuns',
@@ -2692,8 +2725,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           404: PROJECT_NOT_FOUND,
           409: error(
             '`no open draft; start the next version on the Recipe tab`, `no prepared holdout ' +
-              'samples to run`, `every holdout sample already has a reference`, or `reference ' +
-              'runs are already running`.',
+              'samples to run`, `every holdout sample already has a reference`, `reference ' +
+              'runs are already running`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -2756,6 +2791,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string; sid: string } }>(
     '/workbench/projects/:id/references/:sid/run',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Drafting stages & proposals'],
         operationId: 'startSampleReferenceRun',
@@ -2772,8 +2808,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           400: DRAFT_NOT_VALID,
           404: error('`project not found` or `sample not found` (unknown or not ready).'),
           409: error(
-            '`no open draft; start the next version on the Recipe tab` or `a reference run ' +
-              'of this sample is already running`.',
+            '`no open draft; start the next version on the Recipe tab`, `a reference run ' +
+              'of this sample is already running`, or ' +
+              RETIRED_DOC +
+              '.',
           ),
         },
       },
@@ -3103,6 +3141,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/evaluations',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Evaluation, iterations & comparisons'],
         operationId: 'evaluate',
@@ -3159,6 +3198,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: ProjectParams }>(
     '/workbench/projects/:id/evaluations/compare',
     {
+      preHandler: notRetired,
       schema: {
         tags: ['Evaluation, iterations & comparisons'],
         operationId: 'compareModels',

@@ -43,6 +43,7 @@ export function SurveyTab({
   brief,
   onBriefSaved,
   pollMs,
+  retired = null,
   onChanged,
   item = null,
   now = Date.now(),
@@ -53,6 +54,8 @@ export function SurveyTab({
   brief: Brief | null;
   onBriefSaved: (brief: Brief) => void;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   /** Called after a decision or a skip, so the page can reload stage states. */
   onChanged?: () => void;
   /** The overview item: the header's status line (same text as the rail). */
@@ -153,8 +156,8 @@ export function SurveyTab({
       <button
         type="button"
         className={proposal ? undefined : 'primary'}
-        disabled={running || busy || unsavedAnswers}
-        title={unsavedAnswers ? 'Save your answers first' : undefined}
+        disabled={running || busy || unsavedAnswers || retired !== null}
+        title={retired ?? (unsavedAnswers ? 'Save your answers first' : undefined)}
         onClick={() => void run()}
       >
         {proposal ? 'Run again' : 'Run survey'}

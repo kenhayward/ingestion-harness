@@ -211,3 +211,30 @@ describe('queryProjects', () => {
     });
   });
 });
+
+describe('retired projects', () => {
+  const retirement = { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' };
+  const items: ProjectListItem[] = [item('alpha'), { ...item('beta'), retired: retirement }];
+  const ids = (page: ReturnType<typeof queryProjects>) => page.items.map((i) => i.id);
+
+  it('leaves the retirement null in a derived row (the API overlays the live one)', () => {
+    expect(item('alpha').retired).toBeNull();
+  });
+  it('leaves retired projects out by default, from the facets too', () => {
+    const page = queryProjects(items, q());
+    expect(ids(page)).toEqual(['alpha']);
+    expect(page.total).toBe(1);
+    expect(page.facets.all).toBe(1);
+  });
+  it('lists them with retired=include', () => {
+    const page = queryProjects(items, q({ retired: 'include' }));
+    expect(ids(page)).toEqual(['alpha', 'beta']);
+    expect(page.facets.all).toBe(2);
+  });
+  it('lists them when ids names them (pinned and recent cards)', () => {
+    expect(ids(queryProjects(items, q({ ids: 'beta' })))).toEqual(['beta']);
+  });
+  it('refuses any other retired value', () => {
+    expect(ProjectListQuerySchema.safeParse({ retired: 'only' }).success).toBe(false);
+  });
+});

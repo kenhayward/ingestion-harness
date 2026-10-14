@@ -698,3 +698,27 @@ describe('http api: following a job live', () => {
     expect(source.readyState).toBe(FakeEventSource.CLOSED);
   });
 });
+
+describe('http api: retired document types', () => {
+  it('lists specs with or without retired ones, and retires', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'PUT'
+        ? Response.json({ id: 'a b', retired: { retiredAt: 'x', retiredBy: null } })
+        : Response.json([]),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.listSpecs();
+    await api.listSpecs({ retired: 'include' });
+    await api.retireType('a b');
+    await api.listProjectPage({ retired: 'include' });
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
+      ['/api/specs', 'GET'],
+      ['/api/specs?retired=include', 'GET'],
+      ['/api/specs/a%20b/retirement', 'PUT'],
+      ['/api/workbench/projects?retired=include', 'GET'],
+    ]);
+    // Unretiring is API-only (D14): the web client has no call for it.
+    expect('unretireType' in api).toBe(false);
+  });
+});

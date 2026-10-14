@@ -1,32 +1,63 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
+import type { SpecSummary } from '@ih/shared';
 import type { Api, TemplateListItem } from '../api/client.js';
 import { matchesQuery } from '../shell/derive.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
+import { unretireHint } from '../ui/retired.js';
+import { LegacyTypeCard } from './LegacyTypeCard.js';
+import { legacyTypes } from './legacy.js';
+import { RetireDialog } from './RetireDialog.js';
 import { TemplateCard } from './TemplateCard.js';
 
 type Opened = { record: { id: string; version: number } };
 
-/** Document types (UI handoff §4): a card per type, plus New and Import in dialogs. */
+/**
+ * Document types (UI handoff §4): a card per database recipe and per legacy file-only spec
+ * (D16), plus New and Import in dialogs. Retired types are not shown (D15).
+ */
 export function TemplatesPage({
   api,
   onNavigate,
   query = '',
+  role = 'user',
 }: {
   api: Api;
   onNavigate: (hash: string) => void;
   /** Top-bar search: shows only matching document types. */
   query?: string;
+  /** Admins get Retire… on every card. */
+  role?: 'admin' | 'user';
 }) {
   const [items, setItems] = useState<TemplateListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<'new' | 'import' | null>(null);
 
-  useEffect(() => {
-    api.listTemplates().then(setItems, (err: Error) => setError(err.message));
-  }, [api]);
+  const [specs, setSpecs] = useState<SpecSummary[]>([]);
+  /** The card whose Retire… confirm is open. */
+  const [retiring, setRetiring] = useState<{ id: string; name: string } | null>(null);
+  /** Said after a retire, since the card leaves the page. */
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const shown = (items ?? []).filter((t) => matchesQuery(query, t.id, t.name));
+  const reload = useCallback(() => {
+    api.listTemplates().then(setItems, (err: Error) => setError(err.message));
+    // Legacy cards (D16); GET /api/specs leaves retired types out. Optional: no error shown.
+    api.listSpecs().then(setSpecs, () => setSpecs([]));
+  }, [api]);
+  useEffect(reload, [reload]);
+
+  // Retired types are not shown here at all (D15); unretiring is API-only (D14).
+  const active = (items ?? []).filter((t) => !t.retired);
+  const legacy = items === null ? [] : legacyTypes(specs, new Set(items.map((t) => t.id)));
+  const shown = active.filter((t) => matchesQuery(query, t.id, t.name));
+  const shownLegacy = legacy.filter((l) => matchesQuery(query, l.id, l.title));
+  const retire = (id: string, name: string) =>
+    role === 'admin'
+      ? () => {
+          setNotice(null);
+          setRetiring({ id, name });
+        }
+      : undefined;
 
   return (
     <div className="templates-page">
@@ -50,18 +81,45 @@ export function TemplatesPage({
         </div>
       </div>
       {error && <p role="alert">{error}</p>}
+      {notice && (
+        <p role="status" className="muted">
+          {notice}
+        </p>
+      )}
       {items === null ? (
         !error && <p>Loading…</p>
-      ) : items.length === 0 ? (
+      ) : active.length + legacy.length === 0 ? (
         <p>No document types yet.</p>
-      ) : shown.length === 0 ? (
+      ) : shown.length + shownLegacy.length === 0 ? (
         <p>No document types match “{query.trim()}”.</p>
       ) : (
         <div className="type-grid">
           {shown.map((t) => (
-            <TemplateCard key={t.id} api={api} item={t} onNavigate={onNavigate} />
+            <TemplateCard
+              key={t.id}
+              api={api}
+              item={t}
+              onNavigate={onNavigate}
+              onRetire={retire(t.id, t.name)}
+            />
+          ))}
+          {shownLegacy.map((l) => (
+            <LegacyTypeCard key={l.id} item={l} onRetire={retire(l.id, l.title)} />
           ))}
         </div>
+      )}
+      {retiring && (
+        <RetireDialog
+          api={api}
+          id={retiring.id}
+          name={retiring.name}
+          onClose={() => setRetiring(null)}
+          onRetired={() => {
+            setNotice(`${retiring.name} is retired. ${unretireHint(retiring.id)}`);
+            setRetiring(null);
+            reload();
+          }}
+        />
       )}
       {dialog === 'new' && (
         <NewTypeDialog api={api} onNavigate={onNavigate} onClose={() => setDialog(null)} />

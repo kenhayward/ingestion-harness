@@ -674,3 +674,45 @@ describe('ProjectPage', () => {
     await waitFor(() => expect(getProjectOverview.mock.calls.length).toBeGreaterThan(calls));
   });
 });
+
+describe('ProjectPage of a retired type (D7, D14, D18)', () => {
+  const retired = { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' };
+  it('still opens, with the banner naming the unretire route and no Unretire, even for admins', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ retired })),
+      getProjectOverview: vi.fn(async () => projectOverview()),
+    });
+    page(api, 'brief');
+    await screen.findByText(/Retired by ken on 14 Oct 2026/);
+    const banner = screen
+      .getAllByRole('note')
+      .find((n) => n.textContent?.includes('Retired by ken on 14 Oct 2026'));
+    expect(banner).toHaveTextContent('DELETE /api/specs/letter/retirement');
+    expect(screen.queryByRole('button', { name: /unretire/i })).toBeNull();
+    expect(api).not.toHaveProperty('unretireType');
+  });
+
+  it('opens the Recipe tab read-only from the projects own retired flag (M4)', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1, retired })),
+      getProjectOverview: vi.fn(async () => projectOverview()),
+      getTemplate: vi.fn(async () => templateView({ id: 'letter', version: 1 })),
+      listTemplates: vi.fn(async () => []), // the editor's own lookup would say "active"
+    });
+    page(api, 'template');
+    await userEvent.click(await screen.findByRole('tab', { name: /^General/ }));
+    await waitFor(() => expect(api.listTemplates).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await screen.findByLabelText('Name')).toBeDisabled();
+  });
+
+  it('shows no banner for an active type', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      getProjectOverview: vi.fn(async () => projectOverview()),
+    });
+    page(api, 'brief');
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByText(/Retired by/)).toBeNull();
+  });
+});

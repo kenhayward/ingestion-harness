@@ -74,7 +74,8 @@ export function JobsPage({
   const [typeModels, setTypeModels] = useState<ReadonlyMap<string, { model?: string }>>(new Map());
 
   useEffect(() => {
-    api.listSpecs().then(
+    // Retired types too: old jobs and results keep their names.
+    api.listSpecs({ retired: 'include' }).then(
       (specs) => {
         setSpecTitles(new Map(specs.map((s) => [s.id, s.title])));
         // Listed oldest version first: the newest one wins.

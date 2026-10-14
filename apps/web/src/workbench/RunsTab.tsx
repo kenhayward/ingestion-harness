@@ -38,6 +38,7 @@ export function RunsTab({
   draft,
   item,
   pollMs,
+  retired = null,
   onChanged,
 }: {
   api: Api;
@@ -46,6 +47,8 @@ export function RunsTab({
   draft: number | null;
   item: OverviewItem | null;
   pollMs: number;
+  /** Why job-creating actions are off (a retired document type); null when they are not. */
+  retired?: string | null;
   /** A run started or the last active one finished: the page reloads its overview. */
   onChanged: () => void;
 }) {
@@ -120,7 +123,8 @@ export function RunsTab({
   };
   // Before the first load there is no count to show: neither "0 dev samples" nor a reason to pick.
   const loading = data === null && draft !== null;
-  const blocked = loading ? 'Loading samples…' : runBlockedReason(draft, selected.size);
+  const blocked =
+    retired ?? (loading ? 'Loading samples…' : runBlockedReason(draft, selected.size));
   const label = loading ? 'Run on dev samples' : runLabel(selected.size);
 
   const { batches, others } = useMemo(() => runBatches(data?.runs ?? []), [data]);

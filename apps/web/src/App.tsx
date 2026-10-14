@@ -129,7 +129,7 @@ function SignedInApp({
   } else if (route.name === 'models') {
     page = <ModelsPage api={api} me={me} />;
   } else if (route.name === 'templates') {
-    page = <TemplatesPage api={api} onNavigate={navigate} query={query} />;
+    page = <TemplatesPage api={api} onNavigate={navigate} query={query} role={me.role} />;
   } else if (route.name === 'template') {
     page = (
       <TemplateEditor
