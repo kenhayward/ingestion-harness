@@ -81,7 +81,11 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
      `Content-Security-Policy: frame-ancestors` blocks the frame again. Sign-in inside the frame
      needs HTTPS (the session cookie becomes `SameSite=None; Secure; Partitioned`). If the frame
      still stays blank, the browser console names the refused ancestor: every site in the frame
-     chain must be listed.
+     chain must be listed. Register `https://<host>/widget.html` as the widget, not the app's root:
+     a 3DEXPERIENCE "Run your app" widget copies the page it is given onto its own site, where the
+     app's own page would call `/api` on 3DEXPERIENCE and name assets the next deploy removes
+     (blank widget, 404s for `/assets/index-….js` in the app's log). `widget.html` only frames
+     the app, so it runs on its own origin and survives deploys.
 4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds
    on `127.0.0.1` (the defaults). Postgres and the API container are never published.
 5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
