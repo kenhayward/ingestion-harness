@@ -86,6 +86,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     access: null, // access enforcement is covered by access.test.ts
     llm,
     ontologies,
+    ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
     llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),

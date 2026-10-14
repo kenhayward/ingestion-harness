@@ -67,6 +67,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       s3Keys: null,
       llm: new MemoryLlmConfigRepo(),
       ontologies: new MemoryOntologyRepo(),
+      ontologyFetch: { hosts: [], maxBytes: 1 },
       llmSecrets: null,
       logger: { level: 'error' }, // a 500 prints its stack
     });

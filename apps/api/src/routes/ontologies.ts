@@ -5,6 +5,8 @@ import {
   ONTOLOGY_ACCEPT,
   ONTOLOGY_ID_RE,
   OntologyDetailSchema,
+  OntologyFromUrlBodySchema,
+  OntologySettingsSchema,
   OntologyPatchSchema,
   OntologySummarySchema,
   OntologyVersionViewSchema,
@@ -12,9 +14,11 @@ import {
   TermDetailSchema,
   TermPageSchema,
   TermQuerySchema,
+  ontologyFileNameFromUrl,
   ontologyFormat,
   ontologyNormalizedKey,
   ontologySourceKey,
+  ontologyUrlProblem,
 } from '@ih/shared';
 import { binary, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { multipartField } from '../uploads.js';
@@ -174,9 +178,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
             },
         fileName: file.filename,
         mediaType: format.mediaType,
-        sourceKey,
-        sha256,
-        bytes: body.length,
+        source: { kind: 'upload', sourceKey, sha256, bytes: body.length },
         by: by(req),
       });
       if (!result.ok) {
@@ -424,5 +426,86 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       const term = await app.deps.ontologies.term(id, version, query.data.iri);
       return term ?? reply.code(404).send({ error: 'term not found' });
     },
+  );
+
+  app.post(
+    '/ontologies/from-url',
+    {
+      preHandler: adminOnly,
+      schema: {
+        ...base(
+          'importOntologyFromUrl',
+          'Import an ontology from a URL',
+          md`
+            **Admin token required.** Queues the import of an ontology the worker fetches from
+            \`url\` as the next version of \`id\` (a new ontology needs \`label\`). Only
+            \`https\` URLs on hosts in \`ONTOLOGY_FETCH_ALLOW\` are accepted; the worker
+            checks each redirect again, refuses private addresses and caps the size. The
+            version has no bytes until it is fetched, and a file identical to an existing
+            version fails it.
+          `,
+        ),
+        'x-admin': true,
+        body: OntologyFromUrlBodySchema,
+        response: {
+          202: res('The queued version.', OntologyVersionViewSchema),
+          400: error('An invalid body, a URL that cannot be imported, or a missing name.'),
+          403: ADMINS_ONLY,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = OntologyFromUrlBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id, url, label } = body.data;
+      const problem = ontologyUrlProblem(url, app.deps.ontologyFetch.hosts);
+      if (problem) return reply.code(400).send({ error: problem });
+      const { ontologies } = app.deps;
+      const existing = await ontologies.get(id);
+      if (!existing && !label) return reply.code(400).send({ error: NAME_REQUIRED });
+      const result = await ontologies.createVersion({
+        ontologyId: id,
+        meta: existing
+          ? null
+          : {
+              label: label ?? id,
+              description: body.data.description ?? '',
+              tags: body.data.tags ?? [],
+              localOnly: body.data.localOnly ?? false,
+            },
+        fileName: ontologyFileNameFromUrl(url),
+        mediaType: '',
+        source: { kind: 'url', url },
+        by: by(req),
+      });
+      if (!result.ok) return reply.code(400).send({ error: NAME_REQUIRED });
+      req.log.info(
+        { ontology: id, version: result.version.version, url, by: by(req) },
+        'ontology import from URL queued',
+      );
+      return reply.code(202).send(result.version);
+    },
+  );
+
+  app.get(
+    '/ontology-settings',
+    {
+      schema: {
+        ...base(
+          'getOntologySettings',
+          'How ontologies can be imported',
+          md`
+            The hosts ontologies may be imported from by URL (\`ONTOLOGY_FETCH_ALLOW\`; empty
+            means URL imports are off) and the size limit of a fetched file, for the import
+            dialog.
+          `,
+        ),
+        response: { 200: res('The settings.', OntologySettingsSchema) },
+      },
+    },
+    async () => ({
+      fetchHosts: app.deps.ontologyFetch.hosts,
+      maxBytes: app.deps.ontologyFetch.maxBytes,
+    }),
   );
 }

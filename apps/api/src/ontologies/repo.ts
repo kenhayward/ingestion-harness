@@ -3,6 +3,8 @@ import type pg from 'pg';
 import {
   TERM_GROUPS,
   type OntologyDetail,
+  type OntologyImport,
+  type OntologyStats,
   type OntologyPatch,
   type OntologySummary,
   type OntologyTerm,
@@ -27,10 +29,12 @@ export interface NewOntologyVersion {
   /** Required when the ontology is new; ignored when it exists. */
   meta: { label: string; description: string; tags: string[]; localOnly: boolean } | null;
   fileName: string;
+  /** '' for a URL version: the worker learns it from the response. */
   mediaType: string;
-  sourceKey: string;
-  sha256: string;
-  bytes: number;
+  /** An uploaded file already in the runs bucket, or a URL the worker fetches. */
+  source:
+    | { kind: 'upload'; sourceKey: string; sha256: string; bytes: number }
+    | { kind: 'url'; url: string };
   by: string | null;
 }
 
@@ -75,10 +79,23 @@ const ACTIVE_JOB = ['queued', 'running'];
 const jobParams = (input: NewOntologyVersion, version: number) => ({
   ontologyId: input.ontologyId,
   version,
-  sourceKey: input.sourceKey,
+  ...(input.source.kind === 'upload'
+    ? { sourceKey: input.source.sourceKey }
+    : { sourceUrl: input.source.url }),
   fileName: input.fileName,
   mediaType: input.mediaType,
 });
+
+/** The bytes a version starts with: none for a URL version until it is fetched. */
+const sourceFields = (input: NewOntologyVersion) =>
+  input.source.kind === 'upload'
+    ? {
+        sha256: input.source.sha256,
+        bytes: input.source.bytes,
+        sourceKind: 'upload' as const,
+        sourceUrl: null,
+      }
+    : { sha256: null, bytes: null, sourceKind: 'url' as const, sourceUrl: input.source.url };
 
 const KIND_ORDER: readonly OntologyTermKind[] = [
   'class',
@@ -220,7 +237,8 @@ export class MemoryOntologyRepo implements OntologyRepo {
       };
       this.ontologies.set(o.id, o);
     }
-    const same = o.versions.find((v) => v.sha256 === input.sha256);
+    const fields = sourceFields(input);
+    const same = fields.sha256 && o.versions.find((v) => v.sha256 === fields.sha256);
     if (same) return { ok: false, reason: 'duplicate', version: same.version };
     const number = (o.versions[0]?.version ?? 0) + 1;
     const version: OntologyVersionView = {
@@ -229,10 +247,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
       status: 'queued',
       fileName: input.fileName,
       mediaType: input.mediaType,
-      sha256: input.sha256,
-      bytes: input.bytes,
-      sourceKind: 'upload',
-      sourceUrl: null,
+      ...fields,
       ontologyIri: null,
       versionIri: null,
       license: null,
@@ -345,7 +360,8 @@ export class MemoryOntologyRepo implements OntologyRepo {
 }
 
 const RAW_VERSION_COLS = `ontology_id, version, status, file_name, media_type, sha256, bytes,
-  ontology_iri, version_iri, license, kinds, stats, imports, error, imported_by, imported_at`;
+  source_kind, source_url, ontology_iri, version_iri, license, kinds, stats, imports, error,
+  imported_by, imported_at`;
 
 /** Unfinished while queued or parsing with no active job: then it reads as failed. */
 const STOPPED = `(v.status IN ('queued', 'parsing') AND NOT EXISTS (
@@ -354,7 +370,8 @@ const STOPPED = `(v.status IN ('queued', 'parsing') AND NOT EXISTS (
 /** A version as read (alias `v`): the effective status of the memory repo's `effective`. */
 const VERSION_COLS = `v.ontology_id, v.version,
   CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
-  v.file_name, v.media_type, v.sha256, v.bytes, v.ontology_iri, v.version_iri, v.license,
+  v.file_name, v.media_type, v.sha256, v.bytes, v.source_kind, v.source_url,
+  v.ontology_iri, v.version_iri, v.license,
   v.kinds, v.stats, v.imports,
   CASE WHEN ${STOPPED} THEN coalesce(v.error,
     (SELECT j.error FROM jobs j WHERE j.id = v.job_id), '${STOPPED_IMPORT}')
@@ -367,14 +384,18 @@ interface VersionRow {
   status: OntologyVersionView['status'];
   file_name: string;
   media_type: string;
-  sha256: string;
-  bytes: string | number;
+  sha256: string | null;
+  bytes: string | number | null;
+  source_kind: OntologyVersionView['sourceKind'];
+  source_url: string | null;
   ontology_iri: string | null;
   version_iri: string | null;
   license: string | null;
   kinds: OntologyVersionView['kinds'];
-  stats: OntologyVersionView['stats'];
-  imports: OntologyVersionView['imports'];
+  /** Rows from before migration 0033 lack `imported`. */
+  stats: (Omit<OntologyStats, 'imported'> & { imported?: number }) | null;
+  /** Rows from before migration 0033 carry only `iri` and `resolution`. */
+  imports: (Pick<OntologyImport, 'iri' | 'resolution'> & Partial<OntologyImport>)[];
   error: string | null;
   imported_by: string | null;
   imported_at: Date | string;
@@ -390,15 +411,21 @@ function toVersion(r: VersionRow): OntologyVersionView {
     fileName: r.file_name,
     mediaType: r.media_type,
     sha256: r.sha256,
-    bytes: Number(r.bytes),
-    sourceKind: 'upload',
-    sourceUrl: null,
+    bytes: r.bytes === null ? null : Number(r.bytes),
+    sourceKind: r.source_kind,
+    sourceUrl: r.source_url,
     ontologyIri: r.ontology_iri,
     versionIri: r.version_iri,
     license: r.license,
     kinds: r.kinds,
-    stats: r.stats,
-    imports: r.imports,
+    stats: r.stats ? { ...r.stats, imported: r.stats.imported ?? 0 } : null,
+    imports: r.imports.map((e) => ({
+      iri: e.iri,
+      resolution: e.resolution,
+      ontologyId: e.ontologyId ?? null,
+      version: e.version ?? null,
+      reason: e.reason ?? null,
+    })),
     error: r.error,
     importedBy: r.imported_by,
     importedAt: iso(r.imported_at),
@@ -441,7 +468,7 @@ function toSummary(r: OntologyRow): OntologySummary {
 }
 
 const TERM_COLS = `iri, kind, label, alt_labels, definition, parents, domains, ranges, scheme,
-  deprecated, child_count`;
+  deprecated, child_count, defined_in`;
 
 interface TermRow {
   iri: string;
@@ -455,6 +482,7 @@ interface TermRow {
   scheme: string | null;
   deprecated: boolean;
   child_count: number;
+  defined_in: string | null;
 }
 
 const toTerm = (r: TermRow): OntologyTerm => ({
@@ -469,7 +497,7 @@ const toTerm = (r: TermRow): OntologyTerm => ({
   scheme: r.scheme,
   deprecated: r.deprecated,
   childCount: r.child_count,
-  definedIn: null,
+  definedIn: r.defined_in,
 });
 
 /** `%`, `_` and `\` in a search are literal. */
@@ -531,10 +559,13 @@ export class PgOntologyRepo implements OntologyRepo {
           ],
         );
       }
-      const same = await client.query<{ version: number }>(
-        'SELECT version FROM ontology_versions WHERE ontology_id = $1 AND sha256 = $2',
-        [input.ontologyId, input.sha256],
-      );
+      const fields = sourceFields(input);
+      const same = fields.sha256
+        ? await client.query<{ version: number }>(
+            'SELECT version FROM ontology_versions WHERE ontology_id = $1 AND sha256 = $2',
+            [input.ontologyId, fields.sha256],
+          )
+        : { rows: [] };
       if (same.rows[0]) {
         await client.query('ROLLBACK');
         return { ok: false, reason: 'duplicate', version: same.rows[0].version };
@@ -554,15 +585,18 @@ export class PgOntologyRepo implements OntologyRepo {
       const jobId = job.rows[0]!.id;
       const { rows } = await client.query<VersionRow>(
         `INSERT INTO ontology_versions
-           (ontology_id, version, file_name, media_type, sha256, bytes, job_id, imported_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${RAW_VERSION_COLS}`,
+           (ontology_id, version, file_name, media_type, sha256, bytes, source_kind,
+            source_url, job_id, imported_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${RAW_VERSION_COLS}`,
         [
           input.ontologyId,
           next,
           input.fileName,
           input.mediaType,
-          input.sha256,
-          input.bytes,
+          fields.sha256,
+          fields.bytes,
+          fields.sourceKind,
+          fields.sourceUrl,
           jobId,
           input.by,
         ],
