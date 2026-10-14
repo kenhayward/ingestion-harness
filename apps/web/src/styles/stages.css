@@ -1512,6 +1512,21 @@ label.inline.list-select {
 }
 
 /* Brief tab (handoff §2) */
+/* Brief edits kept from an earlier visit (BriefTab): put back, unsaved. */
+.brief-restored {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+  font-size: var(--ih-text-md);
+}
+.brief-restored .icon {
+  flex: none;
+}
 .unsaved-note {
   display: inline-flex;
   align-items: center;
