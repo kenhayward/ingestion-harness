@@ -107,4 +107,25 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     });
     expect(await repo.get('pv-pg')).toBeNull();
   });
+
+  it('reads a version whose job stopped as failed, and lets it be deleted', async () => {
+    const created = await repo.createVersion(input({ sha256: 'stuck' }));
+    if (!created.ok) throw new Error('not created');
+    await pool.query(`UPDATE jobs SET status = 'running' WHERE id = $1`, [created.jobId]);
+    expect((await repo.get('pv-pg'))!.versions[0]!.status).toBe('queued');
+    expect(await repo.deleteVersion('pv-pg', 1)).toEqual({ result: 'busy' });
+    await pool.query(
+      `UPDATE jobs SET status = 'needs_review', error = 'this worker has no ontology store'
+        WHERE id = $1`,
+      [created.jobId],
+    );
+    expect((await repo.get('pv-pg'))!.versions[0]).toMatchObject({
+      status: 'failed',
+      error: 'this worker has no ontology store',
+    });
+    expect(
+      (await repo.list({ retired: false })).find((o) => o.id === 'pv-pg')!.latest,
+    ).toMatchObject({ status: 'failed' });
+    expect(await repo.deleteVersion('pv-pg', 1)).toMatchObject({ result: 'deleted' });
+  });
 });

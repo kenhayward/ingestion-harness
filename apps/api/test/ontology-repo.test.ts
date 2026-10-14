@@ -67,6 +67,8 @@ describe('MemoryOntologyRepo', () => {
       {
         id: expect.any(String),
         createdBy: 'Ken',
+        status: 'queued',
+        error: null,
         params: {
           ontologyId: 'pv',
           version: 1,
@@ -179,5 +181,30 @@ describe('MemoryOntologyRepo', () => {
     expect(prop!.domainTerms.map((r) => r.label)).toEqual(['Protocol']);
     expect(prop!.rangeTerms.map((r) => r.label)).toEqual(['Batch']);
     expect(await repo.term('pv', 1, `${C}Nope`)).toBeNull();
+  });
+});
+
+describe('imports that stop without finishing', () => {
+  it('reads a version whose job is no longer active as failed, and lets it be deleted', async () => {
+    const repo = new MemoryOntologyRepo();
+    const created = await repo.createVersion(input());
+    if (!created.ok) throw new Error('not created');
+    // The worker never reached the version (crash, no store): the job ended on its own.
+    repo.finishJob(created.jobId, 'needs_review', 'this worker has no ontology store');
+    expect((await repo.get('pv'))!.versions[0]).toMatchObject({
+      status: 'failed',
+      error: 'this worker has no ontology store',
+    });
+    expect((await repo.list({ retired: false }))[0]!.latest).toMatchObject({ status: 'failed' });
+    expect(await repo.deleteVersion('pv', 1)).toMatchObject({ result: 'deleted' });
+  });
+
+  it('keeps a version importing while its job is queued or running', async () => {
+    const repo = new MemoryOntologyRepo();
+    const created = await repo.createVersion(input());
+    if (!created.ok) throw new Error('not created');
+    repo.finishJob(created.jobId, 'running', null);
+    expect((await repo.get('pv'))!.versions[0]!.status).toBe('queued');
+    expect(await repo.deleteVersion('pv', 1)).toEqual({ result: 'busy' });
   });
 });

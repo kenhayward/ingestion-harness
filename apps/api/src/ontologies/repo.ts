@@ -65,6 +65,12 @@ export interface OntologyRepo {
   term(id: string, version: number, iri: string): Promise<TermDetail | null>;
 }
 
+/** What a version whose import job ended without finishing it reads as. */
+export const STOPPED_IMPORT = 'the import stopped before it finished';
+
+/** Job statuses in which an import may still finish its version. */
+const ACTIVE_JOB = ['queued', 'running'];
+
 /** The `ontology` job's params, read by the worker's OntologyJobParams. */
 const jobParams = (input: NewOntologyVersion, version: number) => ({
   ontologyId: input.ontologyId,
@@ -151,12 +157,37 @@ interface MemoryOntology extends Omit<OntologySummary, 'latest' | 'versionCount'
 export class MemoryOntologyRepo implements OntologyRepo {
   private readonly ontologies = new Map<string, MemoryOntology>();
   private readonly termsByVersion = new Map<string, StoredTerm[]>();
-  /** The `ontology` jobs created, for assertions. */
-  readonly jobs: { id: string; params: Record<string, unknown>; createdBy: string | null }[] = [];
+  /** The `ontology` jobs created, for assertions; tests move them on with `finishJob`. */
+  readonly jobs: {
+    id: string;
+    params: Record<string, unknown>;
+    createdBy: string | null;
+    status: string;
+    error: string | null;
+  }[] = [];
+  private readonly versionJobs = new Map<string, string>();
+
+  /**
+   * A version still queued or parsing whose job is no longer active never will finish (the
+   * worker crashed or could not reach it): it reads as failed, so it can be deleted.
+   */
+  private effective(v: OntologyVersionView): OntologyVersionView {
+    if (v.status !== 'queued' && v.status !== 'parsing') return v;
+    const job = this.jobs.find(
+      (j) => j.id === this.versionJobs.get(`${v.ontologyId}:${v.version}`),
+    );
+    if (job && ACTIVE_JOB.includes(job.status)) return v;
+    return { ...v, status: 'failed', error: v.error ?? job?.error ?? STOPPED_IMPORT };
+  }
 
   private summary(o: MemoryOntology): OntologySummary {
     const { versions, ...rest } = o;
-    return { ...rest, latest: versions[0] ?? null, versionCount: versions.length };
+    const latest = versions[0];
+    return {
+      ...rest,
+      latest: latest ? this.effective(latest) : null,
+      versionCount: versions.length,
+    };
   }
 
   private version(id: string, version: number): OntologyVersionView | null {
@@ -172,7 +203,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
 
   async get(id: string): Promise<OntologyDetail | null> {
     const o = this.ontologies.get(id);
-    return o ? { ...this.summary(o), versions: [...o.versions] } : null;
+    return o ? { ...this.summary(o), versions: o.versions.map((v) => this.effective(v)) } : null;
   }
 
   async createVersion(input: NewOntologyVersion): Promise<CreateVersionResult> {
@@ -212,7 +243,14 @@ export class MemoryOntologyRepo implements OntologyRepo {
     };
     o.versions.unshift(version);
     const jobId = randomUUID();
-    this.jobs.push({ id: jobId, params: jobParams(input, number), createdBy: input.by });
+    this.jobs.push({
+      id: jobId,
+      params: jobParams(input, number),
+      createdBy: input.by,
+      status: 'queued',
+      error: null,
+    });
+    this.versionJobs.set(`${o.id}:${number}`, jobId);
     return { ok: true, version, jobId };
   }
 
@@ -233,7 +271,8 @@ export class MemoryOntologyRepo implements OntologyRepo {
     const o = this.ontologies.get(id);
     const v = o?.versions.find((x) => x.version === version);
     if (!o || !v) return { result: 'missing' };
-    if (v.status === 'queued' || v.status === 'parsing') return { result: 'busy' };
+    const status = this.effective(v).status;
+    if (status === 'queued' || status === 'parsing') return { result: 'busy' };
     o.versions = o.versions.filter((x) => x !== v);
     this.termsByVersion.delete(`${id}:${version}`);
     if (o.versions.length === 0) this.ontologies.delete(id);
@@ -268,6 +307,14 @@ export class MemoryOntologyRepo implements OntologyRepo {
     Object.assign(this.version(id, version)!, { status: 'ready', kinds: ['owl'], ...extra });
   }
 
+  /** Test seeder: the queue moved an import job on (claimed, failed, reaped…). */
+  finishJob(jobId: string, status: string, error: string | null): void {
+    Object.assign(
+      this.jobs.find((j) => j.id === jobId)!,
+      { status, error },
+    );
+  }
+
   /** Test seeder: the worker could not read the file. */
   markFailed(id: string, version: number, error: string): void {
     Object.assign(this.version(id, version)!, { status: 'failed', error });
@@ -294,8 +341,22 @@ export class MemoryOntologyRepo implements OntologyRepo {
   }
 }
 
-const VERSION_COLS = `ontology_id, version, status, file_name, media_type, sha256, bytes,
+const RAW_VERSION_COLS = `ontology_id, version, status, file_name, media_type, sha256, bytes,
   ontology_iri, version_iri, license, kinds, stats, imports, error, imported_by, imported_at`;
+
+/** Unfinished while queued or parsing with no active job: then it reads as failed. */
+const STOPPED = `(v.status IN ('queued', 'parsing') AND NOT EXISTS (
+  SELECT 1 FROM jobs j WHERE j.id = v.job_id AND j.status IN ('queued', 'running')))`;
+
+/** A version as read (alias `v`): the effective status of the memory repo's `effective`. */
+const VERSION_COLS = `v.ontology_id, v.version,
+  CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
+  v.file_name, v.media_type, v.sha256, v.bytes, v.ontology_iri, v.version_iri, v.license,
+  v.kinds, v.stats, v.imports,
+  CASE WHEN ${STOPPED} THEN coalesce(v.error,
+    (SELECT j.error FROM jobs j WHERE j.id = v.job_id), '${STOPPED_IMPORT}')
+  ELSE v.error END AS error,
+  v.imported_by, v.imported_at`;
 
 interface VersionRow {
   ontology_id: string;
@@ -355,8 +416,8 @@ interface OntologyRow {
 const SUMMARY_SELECT = `
   SELECT o.*,
     (SELECT count(*)::int FROM ontology_versions v WHERE v.ontology_id = o.id) AS version_count,
-    (SELECT row_to_json(v) FROM (SELECT ${VERSION_COLS} FROM ontology_versions v
-       WHERE v.ontology_id = o.id ORDER BY version DESC LIMIT 1) v) AS latest
+    (SELECT row_to_json(x) FROM (SELECT ${VERSION_COLS} FROM ontology_versions v
+       WHERE v.ontology_id = o.id ORDER BY v.version DESC LIMIT 1) x) AS latest
   FROM ontologies o`;
 
 function toSummary(r: OntologyRow): OntologySummary {
@@ -428,7 +489,8 @@ export class PgOntologyRepo implements OntologyRepo {
     const summary = await this.summary(id);
     if (!summary) return null;
     const { rows } = await this.pool.query<VersionRow>(
-      `SELECT ${VERSION_COLS} FROM ontology_versions WHERE ontology_id = $1 ORDER BY version DESC`,
+      `SELECT ${VERSION_COLS} FROM ontology_versions v WHERE v.ontology_id = $1
+        ORDER BY v.version DESC`,
       [id],
     );
     return { ...summary, versions: rows.map(toVersion) };
@@ -487,7 +549,7 @@ export class PgOntologyRepo implements OntologyRepo {
       const { rows } = await client.query<VersionRow>(
         `INSERT INTO ontology_versions
            (ontology_id, version, file_name, media_type, sha256, bytes, job_id, imported_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${VERSION_COLS}`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${RAW_VERSION_COLS}`,
         [
           input.ontologyId,
           next,
@@ -544,8 +606,10 @@ export class PgOntologyRepo implements OntologyRepo {
         file_name: string;
         job_id: string | null;
       }>(
-        `SELECT status, sha256, file_name, job_id FROM ontology_versions
-          WHERE ontology_id = $1 AND version = $2 FOR UPDATE`,
+        `SELECT CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
+                v.sha256, v.file_name, v.job_id
+           FROM ontology_versions v WHERE v.ontology_id = $1 AND v.version = $2
+            FOR UPDATE OF v`,
         [id, version],
       );
       const row = rows[0];
