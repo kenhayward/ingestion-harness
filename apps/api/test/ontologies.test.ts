@@ -151,3 +151,51 @@ describe('reading and managing ontologies', () => {
     );
   });
 });
+
+describe('browsing terms', () => {
+  const C = 'https://example.org/pv#';
+  async function ready() {
+    const ctx = await setup();
+    await ctx.upload({ id: 'pv', label: 'Process validation' });
+    ctx.ontologies.markReady('pv', 1);
+    ctx.ontologies.seedTerms('pv', 1, [
+      { iri: `${C}Document`, kind: 'class', label: 'Document', root: true, childCount: 1 },
+      { iri: `${C}Protocol`, kind: 'class', label: 'Protocol', parents: [`${C}Document`] },
+    ]);
+    return ctx;
+  }
+  const terms = '/api/ontologies/pv/versions/1/terms';
+  const term = (iri: string) => `/api/ontologies/pv/versions/1/term?iri=${encodeURIComponent(iri)}`;
+
+  it('pages roots, children and search hits', async () => {
+    const { app } = await ready();
+    const roots = await app.inject({ url: `${terms}?group=classes&root=1` });
+    expect(roots.json()).toMatchObject({
+      total: 1,
+      offset: 0,
+      limit: 100,
+      items: [{ label: 'Document', childCount: 1 }],
+    });
+    const kids = await app.inject({ url: `${terms}?parent=${encodeURIComponent(`${C}Document`)}` });
+    expect(kids.json().items.map((t: { label: string }) => t.label)).toEqual(['Protocol']);
+    const hits = await app.inject({ url: `${terms}?q=proto&limit=5` });
+    expect(hits.json()).toMatchObject({ limit: 5, items: [{ label: 'Protocol' }] });
+  });
+
+  it('refuses a bad query and an unknown version', async () => {
+    const { app } = await ready();
+    expect((await app.inject({ url: `${terms}?group=nope` })).statusCode).toBe(400);
+    expect((await app.inject({ url: `${terms}?limit=999` })).statusCode).toBe(400);
+    const unknown = await app.inject({ url: '/api/ontologies/pv/versions/2/terms' });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it('describes a term', async () => {
+    const { app } = await ready();
+    const res = await app.inject({ url: term(`${C}Protocol`) });
+    expect(res.json()).toMatchObject({ label: 'Protocol', parentTerms: [{ label: 'Document' }] });
+    const missing = await app.inject({ url: '/api/ontologies/pv/versions/1/term' });
+    expect(missing.statusCode).toBe(400);
+    expect((await app.inject({ url: term(`${C}Nope`) })).statusCode).toBe(404);
+  });
+});

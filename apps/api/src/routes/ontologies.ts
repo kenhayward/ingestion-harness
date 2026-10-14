@@ -9,6 +9,9 @@ import {
   OntologySummarySchema,
   OntologyVersionViewSchema,
   TAG_RE,
+  TermDetailSchema,
+  TermPageSchema,
+  TermQuerySchema,
   ontologyFormat,
   ontologyNormalizedKey,
   ontologySourceKey,
@@ -340,6 +343,86 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
         .header('content-disposition', `attachment; filename="${name}"`)
         .header('x-content-type-options', 'nosniff')
         .send(body);
+    },
+  );
+
+  const TermDetailQuery = z.object({
+    iri: z.string().min(1).max(2000).describe('The term IRI.'),
+  });
+
+  app.get(
+    '/ontologies/:id/versions/:version/terms',
+    {
+      schema: {
+        ...base(
+          'listOntologyTerms',
+          'Search and page ontology terms',
+          md`
+            One page of a version's terms, by label. \`group\` keeps one browser tab
+            (\`classes\`, \`properties\`, \`concepts\` for schemes and their concepts, or
+            \`shapes\`); \`root=1\` keeps the tops of the hierarchy and \`parent\` one term's
+            children (a top concept's parent is its scheme); \`q\` searches labels, synonyms
+            and IRIs, exact and prefix matches first. At most 500 per page.
+          `,
+        ),
+        params: VersionParams,
+        querystring: TermQuerySchema,
+        response: {
+          200: res('One page of terms.', TermPageSchema),
+          400: error('An invalid query.'),
+          404: NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = VersionParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'version not found' });
+      const query = TermQuerySchema.safeParse(req.query ?? {});
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      const { group, q, parent, root, offset, limit } = query.data;
+      const page = await app.deps.ontologies.terms(params.data.id, params.data.version, {
+        ...(group ? { group } : {}),
+        ...(q ? { q } : {}),
+        ...(parent ? { parent } : {}),
+        root: root !== undefined,
+        offset,
+        limit,
+      });
+      return page ?? reply.code(404).send({ error: 'version not found' });
+    },
+  );
+
+  app.get(
+    '/ontologies/:id/versions/:version/term',
+    {
+      schema: {
+        ...base(
+          'getOntologyTerm',
+          'Describe one ontology term',
+          md`
+            A term with its neighbours in this version: parents and children, the classes a
+            property's domain and range name, the properties whose domain or range is this
+            class, a scheme's concepts and the SHACL shapes targeting it (each list at most
+            200).
+          `,
+        ),
+        params: VersionParams,
+        querystring: TermDetailQuery,
+        response: {
+          200: res('The term.', TermDetailSchema),
+          400: error('`iri` is missing.'),
+          404: error('No such version or term.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = VersionParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'version not found' });
+      const query = TermDetailQuery.safeParse(req.query ?? {});
+      if (!query.success) return reply.code(400).send({ error: 'iri is required' });
+      const { id, version } = params.data;
+      const term = await app.deps.ontologies.term(id, version, query.data.iri);
+      return term ?? reply.code(404).send({ error: 'term not found' });
     },
   );
 }
