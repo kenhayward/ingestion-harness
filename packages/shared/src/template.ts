@@ -151,7 +151,7 @@ export const CURIE_PREFIXES: Record<string, string> = {
   prov: 'http://www.w3.org/ns/prov#',
 };
 
-const OntologyPinSchema = z
+export const OntologyPinSchema = z
   .object({ id: z.string().min(1), version: z.number().int().positive() })
   .strict();
 
@@ -177,6 +177,36 @@ export const OutputMappingSchema = z
   .strict();
 export type OutputMapping = z.infer<typeof OutputMappingSchema>;
 
+/** A table's mapping: the link from the document to each row, the row class, its columns. */
+export const TableMappingSchema = z
+  .object({
+    /** The property from the document to each row. */
+    link: TermRef,
+    class: TermRef,
+    /** Readable row IRI from its columns (absent: `doc/{sha256}/{type}/{table}/{n}`). */
+    iri: z.string().min(1).optional(),
+    columns: z.record(z.string(), OutputMappingSchema).default({}),
+  })
+  .strict();
+export type TableMapping = z.infer<typeof TableMappingSchema>;
+
+/** A recipe-local term, for an output no pinned ontology has a term for. */
+export const LocalTermSchema = z
+  .object({
+    iri: TermRef,
+    kind: z.enum([
+      'class',
+      'object_property',
+      'datatype_property',
+      'annotation_property',
+      'concept',
+    ]),
+    label: z.string().min(1),
+    definition: z.string().optional(),
+  })
+  .strict();
+export type LocalTerm = z.infer<typeof LocalTermSchema>;
+
 /** The recipe's ontology mapping (ADR 0011): validated, versioned and immutable with the recipe. */
 export const SemanticsSchema = z
   .object({
@@ -186,40 +216,9 @@ export const SemanticsSchema = z
     prefixes: z.record(z.string().regex(/^[A-Za-z][\w-]*$/), z.string().url()).default({}),
     document: z.object({ class: TermRef, iri: z.string().min(1).default('doc/{source}') }).strict(),
     fields: z.record(z.string(), OutputMappingSchema).default({}),
-    tables: z
-      .record(
-        z.string(),
-        z
-          .object({
-            /** The property from the document to each row. */
-            link: TermRef,
-            class: TermRef,
-            /** Readable row IRI from its columns (absent: `doc/{sha256}/{type}/{table}/{n}`). */
-            iri: z.string().min(1).optional(),
-            columns: z.record(z.string(), OutputMappingSchema).default({}),
-          })
-          .strict(),
-      )
-      .default({}),
+    tables: z.record(z.string(), TableMappingSchema).default({}),
     /** Recipe-local terms, for outputs no pinned ontology has a term for. */
-    local: z
-      .array(
-        z
-          .object({
-            iri: TermRef,
-            kind: z.enum([
-              'class',
-              'object_property',
-              'datatype_property',
-              'annotation_property',
-              'concept',
-            ]),
-            label: z.string().min(1),
-            definition: z.string().optional(),
-          })
-          .strict(),
-      )
-      .default([]),
+    local: z.array(LocalTermSchema).default([]),
   })
   .strict();
 export type Semantics = z.infer<typeof SemanticsSchema>;

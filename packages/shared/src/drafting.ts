@@ -1,6 +1,14 @@
 import { z } from 'zod';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
-import { StepSchema, TableDefSchema, ValueDefSchema } from './template.js';
+import {
+  LocalTermSchema,
+  OntologyPinSchema,
+  OutputMappingSchema,
+  StepSchema,
+  TableDefSchema,
+  TableMappingSchema,
+  ValueDefSchema,
+} from './template.js';
 import {
   DRAFT_STAGES,
   ProposalStatusSchema,
@@ -15,7 +23,7 @@ import {
  * Drafting stages that propose changes to the draft template (ADR 0007, phase 3b).
  * Mirrors worker/src/ingest_worker/draft_changes.py (apply) and draft_stages.py (ops per stage).
  */
-export const CHANGE_STAGES = ['outputs', 'sections', 'steps', 'revise'] as const;
+export const CHANGE_STAGES = ['outputs', 'sections', 'steps', 'revise', 'mapping'] as const;
 export type ChangeStage = (typeof CHANGE_STAGES)[number];
 export const isChangeStage = (stage: DraftStage): stage is ChangeStage =>
   (CHANGE_STAGES as readonly string[]).includes(stage);
@@ -26,6 +34,17 @@ const reason = z.string();
  * stored before RV2 parse; `parseChangeBody` refuses it on the other stages.
  */
 const answers = z.array(z.string().min(1)).optional();
+/**
+ * Mapping stage (ADR 0011): how sure the model is, the observed values behind a change, and
+ * the shortlisted terms it chose from. Shown on the proposal, never written to the draft.
+ */
+const mappingMeta = {
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  evidence: z.array(z.string()).optional(),
+  alternatives: z
+    .array(z.object({ iri: z.string(), label: z.string(), score: z.number() }).strict())
+    .optional(),
+};
 export const DraftChangeSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('putField'), field: ValueDefSchema, reason, answers }).strict(),
   z.object({ op: z.literal('putTable'), table: TableDefSchema, reason, answers }).strict(),
@@ -38,12 +57,69 @@ export const DraftChangeSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('putStep'), step: StepSchema, reason, answers }).strict(),
   z.object({ op: z.literal('removeStep'), id: z.string(), reason, answers }).strict(),
   z.object({ op: z.literal('setPreamble'), preamble: z.string(), reason, answers }).strict(),
+  z
+    .object({
+      op: z.literal('setDocumentMapping'),
+      document: z.object({ class: z.string().min(1), iri: z.string().min(1) }).strict(),
+      ontologies: z.array(OntologyPinSchema),
+      prefixes: z.record(z.string().regex(/^[A-Za-z][\w-]*$/), z.string().url()),
+      reason,
+      answers,
+      ...mappingMeta,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('putFieldMapping'),
+      field: z.string().min(1),
+      mapping: OutputMappingSchema,
+      reason,
+      answers,
+      ...mappingMeta,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('putTableMapping'),
+      table: z.string().min(1),
+      mapping: TableMappingSchema,
+      reason,
+      answers,
+      ...mappingMeta,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('removeMapping'),
+      /** A field or table id, or `table.column`. */
+      id: z.string().min(1),
+      reason,
+      answers,
+      ...mappingMeta,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal('putLocalTerm'),
+      term: LocalTermSchema,
+      reason,
+      answers,
+      ...mappingMeta,
+    })
+    .strict(),
 ]);
 export type DraftChange = z.infer<typeof DraftChangeSchema>;
 
 const OUTPUT_OPS = ['putField', 'putTable', 'removeOutput'] as const;
 const SECTION_OPS = ['putSection', 'removeSection', 'setCopies'] as const;
 const STEP_OPS = ['putStep', 'removeStep', 'setPreamble'] as const;
+const MAPPING_OPS = [
+  'setDocumentMapping',
+  'putFieldMapping',
+  'putTableMapping',
+  'removeMapping',
+  'putLocalTerm',
+] as const;
 
 /** `revise` (phase 4c) may touch anything the three authoring stages can. */
 export const STAGE_OPS: Record<ChangeStage, readonly DraftChange['op'][]> = {
@@ -51,6 +127,7 @@ export const STAGE_OPS: Record<ChangeStage, readonly DraftChange['op'][]> = {
   sections: SECTION_OPS,
   steps: STEP_OPS,
   revise: [...OUTPUT_OPS, ...SECTION_OPS, ...STEP_OPS],
+  mapping: MAPPING_OPS,
 };
 
 /** Body of an outputs/sections/steps proposal (worker draft task, runs bucket). */
@@ -139,10 +216,35 @@ export function changeTarget(c: DraftChange): string {
       return `step:${c.id}`;
     case 'setPreamble':
       return 'preamble';
+    case 'setDocumentMapping':
+      return 'mapping:document';
+    case 'putFieldMapping':
+      return `mapping:output:${c.field}`;
+    case 'putTableMapping':
+      return `mapping:output:${c.table}`;
+    case 'removeMapping':
+      return `mapping:output:${c.id.split('.')[0]}`;
+    case 'putLocalTerm':
+      return `mapping:local:${c.term.iri}`;
   }
 }
 
 function valueAt(def: Def, target: string): unknown {
+  if (target.startsWith('mapping:')) {
+    const semantics = obj(def.semantics);
+    const [, part, ...rest] = target.split(':');
+    const id = rest.join(':');
+    if (part === 'document') {
+      const { document, ontologies, prefixes } = semantics;
+      return {
+        document: document ?? null,
+        ontologies: ontologies ?? null,
+        prefixes: prefixes ?? null,
+      };
+    }
+    if (part === 'local') return list(semantics.local).find((t) => t.iri === id) ?? null;
+    return obj(semantics.fields)[id] ?? obj(semantics.tables)[id] ?? null;
+  }
   const [kind, id] = target.split(':', 2) as [string, string | undefined];
   const outputs = obj(def.outputs);
   const document = obj(def.document);
@@ -186,8 +288,65 @@ export function applyChanges(definition: Def, changes: DraftChange[]): Def {
   let sections = list(document.sections);
   let pipeline = list(definition.pipeline);
   let preamble = definition.preamble;
+  let semantics: Def | null = definition.semantics ? { ...obj(definition.semantics) } : null;
+  /** The mapping to change: the recipe's, else a new one with no document class yet. */
+  const mapping = (): Def =>
+    (semantics ??= {
+      ontologies: [],
+      shapes: [],
+      prefixes: {},
+      document: { class: '', iri: 'doc/{source}' },
+      fields: {},
+      tables: {},
+      local: [],
+    });
   for (const c of changes) {
     switch (c.op) {
+      case 'setDocumentMapping': {
+        const m = mapping();
+        m.document = c.document;
+        m.ontologies = c.ontologies;
+        m.prefixes = { ...obj(m.prefixes), ...c.prefixes };
+        break;
+      }
+      case 'putFieldMapping': {
+        const m = mapping();
+        m.fields = { ...obj(m.fields), [c.field]: c.mapping };
+        break;
+      }
+      case 'putTableMapping': {
+        const m = mapping();
+        m.tables = { ...obj(m.tables), [c.table]: c.mapping };
+        break;
+      }
+      case 'removeMapping': {
+        const m = mapping();
+        const [table, column] = c.id.split('.', 2) as [string, string | undefined];
+        if (column !== undefined) {
+          const tables = obj(m.tables);
+          if (tables[table]) {
+            const t = obj(tables[table]);
+            const columns = { ...obj(t.columns) };
+            delete columns[column];
+            m.tables = { ...tables, [table]: { ...t, columns } };
+          }
+        } else {
+          const fields = { ...obj(m.fields) };
+          const tables = { ...obj(m.tables) };
+          delete fields[c.id];
+          delete tables[c.id];
+          m.fields = fields;
+          m.tables = tables;
+        }
+        break;
+      }
+      case 'putLocalTerm': {
+        const m = mapping();
+        const local = list(m.local);
+        const i = local.findIndex((t) => t.iri === c.term.iri);
+        m.local = i < 0 ? [...local, c.term] : local.map((t, j) => (j === i ? c.term : t));
+        break;
+      }
       case 'putField':
         fields = put(fields, c.field as Def);
         tables = drop(tables, c.field.id);
@@ -229,6 +388,7 @@ export function applyChanges(definition: Def, changes: DraftChange[]): Def {
   };
   if (preamble) out.preamble = preamble;
   else delete out.preamble;
+  if (semantics) out.semantics = semantics;
   return out;
 }
 
@@ -261,7 +421,7 @@ export interface StageSkip {
 }
 
 /** Stages whose stale state can be cleared without a new proposal (handoff SC1, migration 0026). */
-export const KEEPABLE_STAGES = ['outputs', 'sections', 'steps'] as const;
+export const KEEPABLE_STAGES = ['outputs', 'sections', 'steps', 'mapping'] as const;
 export type KeepableStage = (typeof KEEPABLE_STAGES)[number];
 
 /**

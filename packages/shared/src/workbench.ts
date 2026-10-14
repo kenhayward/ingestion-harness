@@ -273,6 +273,7 @@ export const DRAFT_STAGES = [
   'steps',
   'references',
   'revise',
+  'mapping',
 ] as const;
 export type DraftStage = (typeof DRAFT_STAGES)[number];
 /** Stages that can be run in this release (3b); `references` comes with phase 4. */

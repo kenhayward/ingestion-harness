@@ -1,8 +1,29 @@
-import { stableJson, type DraftChange, type ModelChoice } from '@ih/shared';
+import { stableJson, type DraftChange, type ModelChoice, type OutputMapping } from '@ih/shared';
 import { modelDisplayName } from '../jobs/derive.js';
 
 export type ChangeKind =
-  'FIELD' | 'TABLE' | 'SECTION' | 'COPIES' | 'EXTRACT' | 'CHECK' | 'REMOVE' | 'PREAMBLE';
+  | 'FIELD'
+  | 'TABLE'
+  | 'SECTION'
+  | 'COPIES'
+  | 'EXTRACT'
+  | 'CHECK'
+  | 'REMOVE'
+  | 'PREAMBLE'
+  | 'MAPPING'
+  | 'TERM';
+
+/** What an output maps to, in a few words: the property, then an entity or concepts. */
+function mappingText(m: OutputMapping): string {
+  if (m.object) return `${m.property} → ${m.object.class} (${m.object.iri})`;
+  if (m.concepts) {
+    const values = Object.entries(m.concepts.values ?? {});
+    return values.length
+      ? `${m.property} → ${values.map(([v, t]) => `${v}=${t}`).join(', ')}`
+      : `${m.property} → concepts of ${m.concepts.scheme ?? '(no scheme)'}`;
+  }
+  return m.property;
+}
 
 /** A change as the proposal card shows it: kind tag, tone, id (mono) and the rest in words. */
 export function changeParts(c: DraftChange): {
@@ -68,6 +89,33 @@ export function changeParts(c: DraftChange): {
         tone: 'neutral',
         id: null,
         text: c.preamble ? 'Set the prompt preamble' : 'Remove the prompt preamble',
+      };
+    case 'setDocumentMapping':
+      return {
+        kind: 'MAPPING',
+        tone: 'info',
+        id: 'document',
+        text: `${c.document.class} · ${c.ontologies.map((o) => `${o.id} v${o.version}`).join(', ') || 'no ontology'}`,
+      };
+    case 'putFieldMapping':
+      return { kind: 'MAPPING', tone: 'ok', id: c.field, text: mappingText(c.mapping) };
+    case 'putTableMapping':
+      return {
+        kind: 'MAPPING',
+        tone: 'ok',
+        id: c.table,
+        text: `${c.mapping.link} → ${c.mapping.class}; ${Object.entries(c.mapping.columns)
+          .map(([col, m]) => `${col}: ${mappingText(m)}`)
+          .join(', ')}`,
+      };
+    case 'removeMapping':
+      return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this mapping' };
+    case 'putLocalTerm':
+      return {
+        kind: 'TERM',
+        tone: 'neutral',
+        id: c.term.iri,
+        text: `${c.term.kind.replace('_', ' ')} "${c.term.label}"`,
       };
   }
 }
@@ -153,6 +201,15 @@ export function changeDiff(
     return `${MINUS} ${c.id}`;
   }
   if (c.op === 'setCopies' || c.op === 'setPreamble') return null;
+  if (
+    c.op === 'setDocumentMapping' ||
+    c.op === 'putFieldMapping' ||
+    c.op === 'putTableMapping' ||
+    c.op === 'removeMapping' ||
+    c.op === 'putLocalTerm'
+  ) {
+    return null; // the mapping card shows the term itself
+  }
   const before = existing(c, definition);
   const id =
     c.op === 'putField'
