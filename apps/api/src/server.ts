@@ -75,6 +75,7 @@ const app = await buildApp({
   // Throws on a malformed key: better a failed start than keys that can't be read back.
   llmSecrets: secretsKeys(process.env),
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
+  frameAncestors: config.FRAME_ANCESTORS,
   logger: { level: config.LOG_LEVEL },
 });
 

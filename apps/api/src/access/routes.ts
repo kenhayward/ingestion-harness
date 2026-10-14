@@ -74,6 +74,20 @@ const ADMINS_ONLY = error('`admins only`: the session was opened with a user tok
 /** Browsers cap cookie lifetimes at 400 days; the server still ends idle sessions after 7. */
 const MAX_COOKIE_AGE_S = 400 * 86_400;
 
+/**
+ * The session cookie's cross-site attributes. Normally SameSite=Strict. When other sites may frame
+ * the app (`deps.frameAncestors`, ADR 0012) and the request came over HTTPS, the cookie must
+ * reach the app inside their frame: SameSite=None (which needs Secure) and Partitioned (CHIPS,
+ * so browsers that block third-party cookies keep one per embedding site). The cross-site guard
+ * in `registerAccess` takes over SameSite=Strict's protection against forged requests.
+ */
+function cookieSite(req: FastifyRequest) {
+  const framed = Boolean(req.server.deps.frameAncestors) && req.protocol === 'https';
+  return framed
+    ? ({ sameSite: 'none', secure: true, partitioned: true } as const)
+    : ({ sameSite: 'strict', secure: req.protocol === 'https' } as const);
+}
+
 function setSession(
   req: FastifyRequest,
   reply: FastifyReply,
@@ -85,9 +99,8 @@ function setSession(
   // Secure only over HTTPS (via the proxies' X-Forwarded-Proto): plain-HTTP LAN access must work.
   void reply.setCookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    sameSite: 'strict',
     path: '/',
-    secure: req.protocol === 'https',
+    ...cookieSite(req),
     maxAge:
       expiresAt === null
         ? MAX_COOKIE_AGE_S
@@ -97,6 +110,9 @@ function setSession(
           ),
   });
 }
+
+/** Methods that change something: refused when the browser says another site sent them. */
+const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
  * Token access (ADR 0006): every /api route needs a valid session cookie except the routes marked
@@ -110,6 +126,12 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
   const limiter = new LoginLimiter();
 
   app.addHook('onRequest', async (req, reply) => {
+    // Another site's page may not change anything here (forged form posts and fetches), signing
+    // in included. Browsers mark such requests `Sec-Fetch-Site: cross-site`; the app's own
+    // requests, framed or not, are same-origin, and scripts send no such header.
+    if (UNSAFE.has(req.method) && req.headers['sec-fetch-site'] === 'cross-site') {
+      return reply.code(403).send({ error: 'cross-site request refused' });
+    }
     // Decide on the *matched route pattern*, never the raw URL: the router decodes and
     // normalises paths (e.g. /%61pi/specs matches /api/specs), so string checks on req.url can
     // be bypassed. Unmatched requests (no pattern) just 404 and serve nothing. Public routes are
@@ -189,7 +211,7 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const sessionId = req.cookies[SESSION_COOKIE];
       if (sessionId) await access.logout(sessionId);
-      void reply.clearCookie(SESSION_COOKIE, { path: '/' });
+      void reply.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, ...cookieSite(req) });
       return reply.code(204).send();
     },
   );

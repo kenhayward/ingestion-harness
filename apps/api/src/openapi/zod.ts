@@ -88,10 +88,29 @@ const SIGN_IN_REQUIRED = {
   required: ['error'],
 };
 
+const CROSS_SITE_REFUSED = {
+  type: 'object',
+  description: "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+  properties: { error: { type: 'string', const: 'cross-site request refused' } },
+  required: ['error'],
+};
+
+/** A route's own 403, or also the access hook's cross-site refusal. */
+function withCrossSite(existing: unknown) {
+  if (existing === undefined) return CROSS_SITE_REFUSED;
+  const own = existing as { description?: string };
+  return {
+    description: `${own.description ?? ''} Or sent from another site's page: refused.`.trim(),
+    anyOf: [existing, CROSS_SITE_REFUSED],
+  };
+}
+
+const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
 /**
  * `@fastify/swagger` transform: Zod → JSON Schema, plus what every route shares. Public routes
  * (and the health checks outside /api) need no session; the rest gain the 401 the access hook
- * sends.
+ * sends. Every /api route that changes something gains its cross-site 403.
  */
 export function transform({
   schema,
@@ -100,7 +119,7 @@ export function transform({
 }: {
   schema: RouteSchema | undefined;
   url: string;
-  route: { config?: unknown };
+  route: { config?: unknown; method?: string | string[] };
 }) {
   const out: RouteSchema = { ...(schema ?? {}) };
   // The docs browser's own routes, and routes not documented yet (no tags), stay out.
@@ -118,6 +137,10 @@ export function transform({
     out.security = [];
   } else if (out.response && !('401' in out.response)) {
     out.response = { ...out.response, 401: SIGN_IN_REQUIRED };
+  }
+  const methods = [route.method ?? []].flat();
+  if (out.response && url.startsWith('/api/') && methods.some((m) => UNSAFE_METHODS.includes(m))) {
+    out.response = { ...out.response, 403: withCrossSite(out.response['403']) };
   }
   return { schema: out, url };
 }
