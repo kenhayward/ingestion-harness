@@ -33941,10 +33941,34 @@
                                 "type": "string"
                               },
                               "sha256": {
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "bytes": {
-                                "type": "integer"
+                                "anyOf": [
+                                  {
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "sourceKind": {
+                                "type": "string",
+                                "enum": [
+                                  "upload",
+                                  "url",
+                                  "import"
+                                ]
+                              },
+                              "sourceUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "ontologyIri": {
                                 "type": [
@@ -33997,6 +34021,9 @@
                                       },
                                       "shapes": {
                                         "type": "integer"
+                                      },
+                                      "imported": {
+                                        "type": "integer"
                                       }
                                     },
                                     "required": [
@@ -34005,7 +34032,8 @@
                                       "properties",
                                       "concepts",
                                       "schemes",
-                                      "shapes"
+                                      "shapes",
+                                      "imported"
                                     ],
                                     "additionalProperties": true
                                   },
@@ -34025,13 +34053,40 @@
                                     "resolution": {
                                       "type": "string",
                                       "enum": [
-                                        "unresolved"
+                                        "unresolved",
+                                        "library",
+                                        "fetched"
+                                      ]
+                                    },
+                                    "ontologyId": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "version": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": [
+                                        "string",
+                                        "null"
                                       ]
                                     }
                                   },
                                   "required": [
                                     "iri",
-                                    "resolution"
+                                    "resolution",
+                                    "ontologyId",
+                                    "version",
+                                    "reason"
                                   ],
                                   "additionalProperties": true
                                 }
@@ -34060,6 +34115,8 @@
                               "mediaType",
                               "sha256",
                               "bytes",
+                              "sourceKind",
+                              "sourceUrl",
                               "ontologyIri",
                               "versionIri",
                               "license",
@@ -34207,10 +34264,34 @@
                       "type": "string"
                     },
                     "sha256": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "bytes": {
-                      "type": "integer"
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sourceKind": {
+                      "type": "string",
+                      "enum": [
+                        "upload",
+                        "url",
+                        "import"
+                      ]
+                    },
+                    "sourceUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "ontologyIri": {
                       "type": [
@@ -34263,6 +34344,9 @@
                             },
                             "shapes": {
                               "type": "integer"
+                            },
+                            "imported": {
+                              "type": "integer"
                             }
                           },
                           "required": [
@@ -34271,7 +34355,8 @@
                             "properties",
                             "concepts",
                             "schemes",
-                            "shapes"
+                            "shapes",
+                            "imported"
                           ],
                           "additionalProperties": true
                         },
@@ -34291,13 +34376,40 @@
                           "resolution": {
                             "type": "string",
                             "enum": [
-                              "unresolved"
+                              "unresolved",
+                              "library",
+                              "fetched"
+                            ]
+                          },
+                          "ontologyId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "version": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           }
                         },
                         "required": [
                           "iri",
-                          "resolution"
+                          "resolution",
+                          "ontologyId",
+                          "version",
+                          "reason"
                         ],
                         "additionalProperties": true
                       }
@@ -34326,6 +34438,8 @@
                     "mediaType",
                     "sha256",
                     "bytes",
+                    "sourceKind",
+                    "sourceUrl",
                     "ontologyIri",
                     "versionIri",
                     "license",
@@ -34634,10 +34748,34 @@
                               "type": "string"
                             },
                             "sha256": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "bytes": {
-                              "type": "integer"
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sourceKind": {
+                              "type": "string",
+                              "enum": [
+                                "upload",
+                                "url",
+                                "import"
+                              ]
+                            },
+                            "sourceUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "ontologyIri": {
                               "type": [
@@ -34690,6 +34828,9 @@
                                     },
                                     "shapes": {
                                       "type": "integer"
+                                    },
+                                    "imported": {
+                                      "type": "integer"
                                     }
                                   },
                                   "required": [
@@ -34698,7 +34839,8 @@
                                     "properties",
                                     "concepts",
                                     "schemes",
-                                    "shapes"
+                                    "shapes",
+                                    "imported"
                                   ],
                                   "additionalProperties": true
                                 },
@@ -34718,13 +34860,40 @@
                                   "resolution": {
                                     "type": "string",
                                     "enum": [
-                                      "unresolved"
+                                      "unresolved",
+                                      "library",
+                                      "fetched"
+                                    ]
+                                  },
+                                  "ontologyId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "version": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": [
+                                      "string",
+                                      "null"
                                     ]
                                   }
                                 },
                                 "required": [
                                   "iri",
-                                  "resolution"
+                                  "resolution",
+                                  "ontologyId",
+                                  "version",
+                                  "reason"
                                 ],
                                 "additionalProperties": true
                               }
@@ -34753,6 +34922,8 @@
                             "mediaType",
                             "sha256",
                             "bytes",
+                            "sourceKind",
+                            "sourceUrl",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -34800,10 +34971,34 @@
                             "type": "string"
                           },
                           "sha256": {
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "bytes": {
-                            "type": "integer"
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceKind": {
+                            "type": "string",
+                            "enum": [
+                              "upload",
+                              "url",
+                              "import"
+                            ]
+                          },
+                          "sourceUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "ontologyIri": {
                             "type": [
@@ -34856,6 +35051,9 @@
                                   },
                                   "shapes": {
                                     "type": "integer"
+                                  },
+                                  "imported": {
+                                    "type": "integer"
                                   }
                                 },
                                 "required": [
@@ -34864,7 +35062,8 @@
                                   "properties",
                                   "concepts",
                                   "schemes",
-                                  "shapes"
+                                  "shapes",
+                                  "imported"
                                 ],
                                 "additionalProperties": true
                               },
@@ -34884,13 +35083,40 @@
                                 "resolution": {
                                   "type": "string",
                                   "enum": [
-                                    "unresolved"
+                                    "unresolved",
+                                    "library",
+                                    "fetched"
+                                  ]
+                                },
+                                "ontologyId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "reason": {
+                                  "type": [
+                                    "string",
+                                    "null"
                                   ]
                                 }
                               },
                               "required": [
                                 "iri",
-                                "resolution"
+                                "resolution",
+                                "ontologyId",
+                                "version",
+                                "reason"
                               ],
                               "additionalProperties": true
                             }
@@ -34919,6 +35145,8 @@
                           "mediaType",
                           "sha256",
                           "bytes",
+                          "sourceKind",
+                          "sourceUrl",
                           "ontologyIri",
                           "versionIri",
                           "license",
@@ -35131,10 +35359,34 @@
                               "type": "string"
                             },
                             "sha256": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "bytes": {
-                              "type": "integer"
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sourceKind": {
+                              "type": "string",
+                              "enum": [
+                                "upload",
+                                "url",
+                                "import"
+                              ]
+                            },
+                            "sourceUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "ontologyIri": {
                               "type": [
@@ -35187,6 +35439,9 @@
                                     },
                                     "shapes": {
                                       "type": "integer"
+                                    },
+                                    "imported": {
+                                      "type": "integer"
                                     }
                                   },
                                   "required": [
@@ -35195,7 +35450,8 @@
                                     "properties",
                                     "concepts",
                                     "schemes",
-                                    "shapes"
+                                    "shapes",
+                                    "imported"
                                   ],
                                   "additionalProperties": true
                                 },
@@ -35215,13 +35471,40 @@
                                   "resolution": {
                                     "type": "string",
                                     "enum": [
-                                      "unresolved"
+                                      "unresolved",
+                                      "library",
+                                      "fetched"
+                                    ]
+                                  },
+                                  "ontologyId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "version": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": [
+                                      "string",
+                                      "null"
                                     ]
                                   }
                                 },
                                 "required": [
                                   "iri",
-                                  "resolution"
+                                  "resolution",
+                                  "ontologyId",
+                                  "version",
+                                  "reason"
                                 ],
                                 "additionalProperties": true
                               }
@@ -35250,6 +35533,8 @@
                             "mediaType",
                             "sha256",
                             "bytes",
+                            "sourceKind",
+                            "sourceUrl",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -35890,6 +36175,12 @@
                           },
                           "childCount": {
                             "type": "integer"
+                          },
+                          "definedIn": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -35903,7 +36194,8 @@
                           "range",
                           "scheme",
                           "deprecated",
-                          "childCount"
+                          "childCount",
+                          "definedIn"
                         ],
                         "additionalProperties": true
                       }
@@ -36123,6 +36415,12 @@
                     },
                     "childCount": {
                       "type": "integer"
+                    },
+                    "definedIn": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "parentTerms": {
                       "type": "array",
@@ -36429,6 +36727,7 @@
                     "scheme",
                     "deprecated",
                     "childCount",
+                    "definedIn",
                     "parentTerms",
                     "children",
                     "domainTerms",

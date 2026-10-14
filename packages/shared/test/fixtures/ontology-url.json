@@ -1,0 +1,12 @@
+{
+  "hosts": [
+    { "host": "w3id.org", "allow": ["w3id.org"], "allowed": true },
+    { "host": "W3ID.org.", "allow": ["w3id.org"], "allowed": true },
+    { "host": "sub.w3id.org", "allow": ["w3id.org"], "allowed": false },
+    { "host": "sub.w3id.org", "allow": [".w3id.org"], "allowed": true },
+    { "host": "w3id.org", "allow": [".w3id.org"], "allowed": true },
+    { "host": "evilw3id.org", "allow": [".w3id.org"], "allowed": false },
+    { "host": "w3id.org", "allow": [], "allowed": false },
+    { "host": "w3id.org", "allow": [" ", "w3id.org "], "allowed": true }
+  ]
+}

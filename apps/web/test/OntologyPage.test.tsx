@@ -163,7 +163,15 @@ describe('OntologyPage', () => {
         ontologyDetail({
           versions: [
             ontologyVersion({
-              imports: [{ iri: 'https://example.org/base', resolution: 'unresolved' }],
+              imports: [
+                {
+                  iri: 'https://example.org/base',
+                  resolution: 'unresolved',
+                  ontologyId: null,
+                  version: null,
+                  reason: null,
+                },
+              ],
             }),
           ],
         }),

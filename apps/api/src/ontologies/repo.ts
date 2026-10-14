@@ -49,7 +49,7 @@ export interface TermQuery {
 }
 
 export type DeleteVersionResult =
-  | { result: 'deleted'; sha256: string; fileName: string }
+  | { result: 'deleted'; sha256: string | null; fileName: string }
   | { result: 'missing' }
   | { result: 'busy' };
 
@@ -231,6 +231,8 @@ export class MemoryOntologyRepo implements OntologyRepo {
       mediaType: input.mediaType,
       sha256: input.sha256,
       bytes: input.bytes,
+      sourceKind: 'upload',
+      sourceUrl: null,
       ontologyIri: null,
       versionIri: null,
       license: null,
@@ -334,6 +336,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
         scheme: null,
         deprecated: false,
         childCount: 0,
+        definedIn: null,
         root: false,
         ...t,
       })),
@@ -388,6 +391,8 @@ function toVersion(r: VersionRow): OntologyVersionView {
     mediaType: r.media_type,
     sha256: r.sha256,
     bytes: Number(r.bytes),
+    sourceKind: 'upload',
+    sourceUrl: null,
     ontologyIri: r.ontology_iri,
     versionIri: r.version_iri,
     license: r.license,
@@ -464,6 +469,7 @@ const toTerm = (r: TermRow): OntologyTerm => ({
   scheme: r.scheme,
   deprecated: r.deprecated,
   childCount: r.child_count,
+  definedIn: null,
 });
 
 /** `%`, `_` and `\` in a search are literal. */

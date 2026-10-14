@@ -24,7 +24,15 @@ async function seeded() {
   const repo = new MemoryOntologyRepo();
   await repo.createVersion(input());
   repo.markReady('pv', 1, {
-    stats: { triples: 9, classes: 3, properties: 1, concepts: 0, schemes: 0, shapes: 0 },
+    stats: {
+      triples: 9,
+      classes: 3,
+      properties: 1,
+      concepts: 0,
+      schemes: 0,
+      shapes: 0,
+      imported: 0,
+    },
   });
   repo.seedTerms('pv', 1, [
     { iri: `${C}Document`, kind: 'class', label: 'Document', root: true, childCount: 1 },

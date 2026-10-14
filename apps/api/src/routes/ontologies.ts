@@ -294,9 +294,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: `version ${version} of ${id} is still being imported` });
       }
       const { store, buckets } = app.deps;
-      const ext = ontologyFormat(outcome.fileName)?.ext;
+      const ext = outcome.sha256 ? ontologyFormat(outcome.fileName)?.ext : undefined;
       const keys = [
-        ...(ext ? [ontologySourceKey(id, outcome.sha256, ext)] : []),
+        ...(ext && outcome.sha256 ? [ontologySourceKey(id, outcome.sha256, ext)] : []),
         ontologyNormalizedKey(id, version),
       ];
       for (const key of keys) {
@@ -332,9 +332,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       if (!params.success) return reply.code(404).send({ error: 'version not found' });
       const { id, version } = params.data;
       const v = (await app.deps.ontologies.get(id))?.versions.find((x) => x.version === version);
-      const ext = v ? ontologyFormat(v.fileName)?.ext : undefined;
+      const ext = v?.sha256 ? ontologyFormat(v.fileName)?.ext : undefined;
       const body =
-        v && ext
+        v?.sha256 && ext
           ? await app.deps.store.get(app.deps.buckets.runs, ontologySourceKey(id, v.sha256, ext))
           : null;
       if (!v || !body) return reply.code(404).send({ error: 'version not found' });
