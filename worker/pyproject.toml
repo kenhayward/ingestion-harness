@@ -19,6 +19,7 @@ dependencies = [
   "httpx>=0.28",
   "cryptography>=44",
   "rdflib>=7.1",
+  "pyshacl>=0.40.1",
 ]
 
 [project.scripts]
