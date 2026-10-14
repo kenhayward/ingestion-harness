@@ -3,7 +3,83 @@ import type { UploadRequest } from '../src/api/client.js';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { UploadStrip } from '../src/jobs/UploadStrip.js';
+import { droppedFolder, droppedItems } from './drop-fakes.js';
 import { fakeApi, job } from './fake-api.js';
+
+describe('UploadStrip with a dropped folder', () => {
+  const pdf = (name: string) => new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+  const text = (name: string) => new File(['x'], name, { type: 'text/plain' });
+  const ready = () => screen.findByRole('option', { name: /Process Validation Protocol/ });
+  const drop = (dt: DataTransfer) =>
+    fireEvent.drop(screen.getByText('Drop PDF or Word files here'), { dataTransfer: dt });
+
+  it("lists only the folder's PDF and Word files and says how many will be processed", async () => {
+    const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    drop(
+      droppedItems([
+        droppedFolder('Invoices', [
+          pdf('a.pdf'),
+          new File(['PK'], 'b.docx'),
+          text('readme.txt'),
+          ['old', [pdf('c.pdf')]],
+        ]),
+      ]),
+    );
+    expect(
+      await screen.findByText('Invoices: 3 files to process · 1 other file left out'),
+    ).toBeInTheDocument();
+    const list = screen.getByRole('list', { name: 'Uploads' });
+    expect(within(list).queryByText('readme.txt')).toBeNull(); // not listed as skipped either
+    expect(within(list).queryByText('Invoices')).toBeNull(); // nor the folder itself
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 3 files' }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(3));
+    expect(upload.mock.calls.map((c) => c[0].file.name)).toEqual(['a.pdf', 'b.docx', 'c.pdf']);
+  });
+
+  it('says so when a folder has nothing to process', async () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
+    await ready();
+    drop(droppedItems([droppedFolder('Photos', [text('a.jpg')])]));
+    expect(
+      await screen.findByText('Photos: no PDF or Word files · 1 other file left out'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeDisabled();
+  });
+
+  it('counts each folder, alongside loose files', async () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
+    await ready();
+    drop(
+      droppedItems([
+        pdf('loose.pdf'),
+        droppedFolder('A', [pdf('a1.pdf'), pdf('a2.pdf')]),
+        droppedFolder('B', [pdf('b1.pdf')]),
+      ]),
+    );
+    expect(await screen.findByText('A: 2 files to process')).toBeInTheDocument();
+    expect(screen.getByText('B: 1 file to process')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload 4 files' })).toBeEnabled();
+  });
+
+  it('forgets the folder counts once the next selection starts', async () => {
+    const upload = vi.fn(async (req: UploadRequest) => job({ filename: req.file.name }));
+    render(<UploadStrip api={fakeApi({ upload })} onUploaded={vi.fn()} />);
+    await ready();
+    drop(droppedItems([droppedFolder('A', [pdf('a1.pdf')])]));
+    await screen.findByText('A: 1 file to process');
+    await userEvent.click(screen.getByRole('button', { name: 'Upload 1 file' }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    await userEvent.upload(screen.getByLabelText('PDF or Word files'), [pdf('next.pdf')]);
+    expect(screen.queryByText('A: 1 file to process')).toBeNull();
+  });
+
+  it('mentions folders in the drop hint', () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
+    expect(screen.getByText(/or a whole folder/)).toBeInTheDocument();
+  });
+});
 
 describe('UploadStrip', () => {
   it('disables upload until a file is chosen', async () => {

@@ -1231,6 +1231,23 @@ button.danger-fill {
     flex: 1 1 100%;
   }
 }
+/* What each dropped folder gave: "Invoices: 12 files to process · 3 other files left out". */
+.upload-folders {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ih-text-md);
+}
+.upload-folders li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ih-muted);
+}
 .upload-list {
   flex: 1 1 100%;
   margin: 0;
