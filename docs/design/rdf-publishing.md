@@ -347,9 +347,10 @@ Implemented in rollout step 4 (migration 0035):
   local-only ontology keeps mapping on local models). Bundles name the brief's versions with
   their sha256; import refuses a bundle whose versions the library lacks.
 - **Embeddings:** pgvector in our Alpine Postgres image (`deploy/docker/postgres.Dockerfile`,
-  no collation change for existing volumes); `ontology_term_embeddings` with an HNSW index per
-  model; terms embedded at the end of an import (never failing it) and by `embed` jobs queued
-  when the `embedding_model` setting changes; unchanged text is not embedded again. No default
+  no collation change for existing volumes); `ontology_term_embeddings`, searched exactly over
+  the brief's versions (no HNSW: see *Embeddings*); terms embedded at the end of an import (never failing it) and by `embed` jobs queued
+  when the `embedding_model` setting changes (the job names the model) or a mapping run finds a
+  version without vectors; unchanged text is not embedded again. No default
   embedding model: unset, retrieval is lexical.
 - **Retrieval:** `retrieval.shortlist`: `word_similarity` on labels and synonyms plus full text
   on definitions, cosine on embeddings, fused by RRF (`k = 60`); a recall fixture guards it.

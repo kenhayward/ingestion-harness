@@ -464,6 +464,22 @@ class MemoryOntologyStore:
                     return term.iri
         return None
 
+    def concept_by_label(
+        self, versions: list[tuple[str, int]], scheme: str, label: str
+    ) -> str | None:
+        wanted = label.strip().lower()
+        for version in versions:
+            parsed = self.saved.get(version)
+            for term in parsed.terms if parsed else []:
+                names = [term.label, *term.alt_labels]
+                if (
+                    term.kind == "concept"
+                    and term.scheme == scheme
+                    and any(n.strip().lower() == wanted for n in names)
+                ):
+                    return term.iri
+        return None
+
     def set_source(
         self,
         ontology_id: str,
