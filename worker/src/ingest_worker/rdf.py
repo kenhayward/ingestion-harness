@@ -20,6 +20,7 @@ from urllib.parse import quote
 from rdflib import RDF, RDFS, XSD, Graph, Literal, Namespace, URIRef
 from rdflib.term import Node
 
+from .graph_registry import EntityRecord
 from .template import OutputMapping, Template, ValueDef
 
 CT = Namespace("https://id.stocks-hayward.com/ns/ct#")
@@ -87,6 +88,22 @@ def mint_entity_iri(base: str, template_str: str, values: dict[str, Any]) -> str
     return filled if _ABSOLUTE.match(filled) else base + filled.lstrip("/")
 
 
+def entity_key(template_str: str, values: dict[str, Any]) -> list[str]:
+    """The values an IRI template names, in order, before filters: an entity's scoped key."""
+    return [
+        "" if values.get(m.group(1)) is None else str(values.get(m.group(1))).strip()
+        for m in _PLACEHOLDER.finditer(template_str)
+    ]
+
+
+@dataclass(frozen=True)
+class Rendering:
+    """A document's graph and the entities it minted (ADR 0011 safeguard 2)."""
+
+    graph: Graph
+    entities: list[EntityRecord]
+
+
 class _Renderer:
     def __init__(self, template: Template, document: dict[str, Any], ctx: GraphContext) -> None:
         self.t = template
@@ -101,6 +118,7 @@ class _Renderer:
         for prefix, ns in sorted({"ct": str(CT), **self.prefixes}.items()):
             self.g.bind(prefix, Namespace(ns), override=True, replace=True)
         self.issues: dict[tuple[str, int | None, str | None], str] = {}
+        self.entities: dict[str, EntityRecord] = {}
         self.raw: dict[tuple[str, int | None, str | None], Any] = {}
         for issue in document.get("issues", []):
             key = (issue.get("target"), issue.get("row"), issue.get("column"))
@@ -172,7 +190,10 @@ class _Renderer:
                     problems.append(f"no IRI for {item!r}")
                     continue
                 entity = URIRef(iri)
-                self.g.add((entity, RDF.type, self.expand(mapping.object.class_)))
+                kind = self.expand(mapping.object.class_)
+                key = entity_key(mapping.object.iri, {**values, "value": item})
+                self.entities.setdefault(iri, EntityRecord(iri, str(kind), key))
+                self.g.add((entity, RDF.type, kind))
                 if mapping.object.label is not False:
                     self.g.add((entity, RDFS.label, Literal(str(item))))
                 nodes.append(entity)
@@ -306,6 +327,9 @@ class _Renderer:
                 mint_entity_iri(self.base, mapping.iri, row) if mapping and mapping.iri else None
             )
             node = URIRef(minted or self.own(f"doc/{self.sha}/{self.t.id}/{table_id}/{n}"))
+            if minted and mapping and mapping.iri:
+                key = entity_key(mapping.iri, row)
+                self.entities.setdefault(minted, EntityRecord(minted, str(row_class), key))
             self.g.add((self.doc_node, link, node))
             self.g.add((node, RDF.type, row_class))
             problems: list[str] = []
@@ -326,9 +350,26 @@ class _Renderer:
             self.evidence(fact, node, step.id, step.sections, problems)
 
 
+def render(template: Template, document: dict[str, Any], ctx: GraphContext) -> Rendering:
+    """The named graph for one document under one recipe, and the entities it minted."""
+    renderer = _Renderer(template, document, ctx)
+    graph = renderer.render()
+    return Rendering(graph, [renderer.entities[k] for k in sorted(renderer.entities)])
+
+
 def render_graph(template: Template, document: dict[str, Any], ctx: GraphContext) -> Graph:
     """The named graph for one document under one recipe."""
-    return _Renderer(template, document, ctx).render()
+    return render(template, document, ctx).graph
+
+
+def with_version(graph: Graph, version: int, published_at: str) -> Graph:
+    """A copy of a published graph that states its version and when it was published."""
+    copy = Graph(identifier=graph.identifier, namespace_manager=graph.namespace_manager)
+    copy += graph
+    name = URIRef(str(graph.identifier))
+    copy.add((name, CT.graphVersion, Literal(version, datatype=XSD.integer)))
+    copy.add((name, DCTERMS.modified, Literal(published_at, datatype=XSD.dateTime)))
+    return copy
 
 
 def to_turtle(graph: Graph) -> bytes:

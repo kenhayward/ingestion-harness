@@ -278,3 +278,51 @@ BASE_FIXTURE = json.loads(
 @pytest.mark.parametrize("case", BASE_FIXTURE["effective"])
 def test_effective_base_matches_the_shared_fixture(case: dict[str, Any]) -> None:
     assert effective_base_iri(case["customerSlug"], case["baseIri"]) == case["base"]
+
+
+def test_rendering_reports_the_entities_it_minted_with_their_key_values() -> None:
+    from ingest_worker.graph_registry import EntityRecord
+    from ingest_worker.rdf import render as render_with_entities
+
+    rendering = render_with_entities(
+        Template.model_validate(TEMPLATE), document(), GraphContext(BASE, concepts)
+    )
+    assert isomorphic(rendering.graph, render())
+    # The document node is not an entity; the row without a key value mints none.
+    assert rendering.entities == [
+        EntityRecord(f"{BASE}line/AB-1", ACME + "Line", ["ab-1"]),
+        EntityRecord(f"{BASE}party/unicorn-labs-ltd", ACME + "Party", ["Ünïcorn Labs Ltd"]),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("template", "values", "key"),
+    [
+        (
+            "batch/{site|slug}/{batch|upper}",
+            {"site": "Site 1", "batch": "pv-1"},
+            ["Site 1", "pv-1"],
+        ),
+        ("party/{value}", {"value": " Acme "}, ["Acme"]),
+        ("https://x.example/{a}", {"a": 3}, ["3"]),
+    ],
+)
+def test_entity_key(template: str, values: dict[str, Any], key: list[str]) -> None:
+    from ingest_worker.rdf import entity_key
+
+    assert entity_key(template, values) == key
+
+
+def test_with_version_states_the_graph_version_on_a_copy() -> None:
+    from ingest_worker.rdf import DCTERMS, with_version
+
+    g = render()
+    versioned = with_version(g, 3, "2026-10-14T10:00:00+00:00")
+    name = URIRef(f"{BASE}graph/source/{SHA}/letter")
+    assert versioned.identifier == name
+    assert one(versioned, name, CT.graphVersion) == Literal(3, datatype=XSD.integer)
+    assert one(versioned, name, DCTERMS.modified) == Literal(
+        "2026-10-14T10:00:00+00:00", datatype=XSD.dateTime
+    )
+    assert len(versioned) == len(g) + 2
+    assert (name, CT.graphVersion, None) not in g
