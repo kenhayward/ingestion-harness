@@ -103,6 +103,15 @@ describe('TemplateSchema', () => {
       'reserved',
     ],
     [
+      'graph is reserved for the RDF output',
+      (v) => ({
+        ...v,
+        outputs: { ...v.outputs, tables: [{ ...v.outputs.tables[0]!, id: 'graph' }] },
+        pipeline: [...v.pipeline.slice(0, 2), { ...v.pipeline[2], table: 'graph' }],
+      }),
+      'reserved',
+    ],
+    [
       'bad check path',
       (v) =>
         withPipeline([...v.pipeline.slice(0, 3), { ...v.pipeline[3], values: 'results.nope' }]),

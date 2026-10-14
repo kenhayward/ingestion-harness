@@ -15,6 +15,7 @@ from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
+from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
 from .ocr import OcrSettings
@@ -110,7 +111,7 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
-            published = [] if job.test else publish_outputs(deps, result.outputs)
+            published = [] if job.test else publish_outputs(deps, result.delivered())
             if deps.target is not None and published:
                 queue.record_published(job, published, deps.target.bucket)
             queue.complete(job, result.outputs, deps.buckets.outputs)
@@ -192,6 +193,8 @@ def main() -> None:
         if llm_config.ocr and ocr_config is not None
         else None
     )
+    # The ontology library and the Linked data settings share one autocommit connection.
+    library = psycopg.connect(settings.database_url, autocommit=True)
     deps = PipelineDeps(
         store=S3ObjectStore(
             settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
@@ -217,7 +220,8 @@ def main() -> None:
             if settings.example_template.is_file()
             else None
         ),
-        ontologies=PgOntologyStore(psycopg.connect(settings.database_url, autocommit=True)),
+        ontologies=PgOntologyStore(library),
+        linked_data=PgLinkedDataSettings(library),
         ontology_max_triples=settings.ontology_max_triples,
         ontology_fetch=(
             functools.partial(

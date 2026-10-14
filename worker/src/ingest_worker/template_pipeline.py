@@ -7,17 +7,22 @@ Outputs ({templateId}/v{version}/<output>/{documentId}.<ext>):
     <check>    one CSV per check step
     issues     values that could not be normalised (kept as written)
     document   JSON with field evidence/pages, tables, checks, issues, review decision
+    graph      Turtle (.ttl), for recipes with an ontology mapping once the Linked data page
+               sets a base IRI (ADR 0011); delivered only when `delivery.formats` has rdf
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+
+from rdflib import Graph
 
 from .extract import ExtractionResult
 from .llm.base import LLMProvider
@@ -39,6 +44,7 @@ from .pipeline import (
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
+from .rdf import GraphContext, render_graph, to_turtle
 from .review import apply_edits, run_checks
 from .specs import Extraction, LoadedTemplate
 from .step_cache import StepCache
@@ -51,6 +57,9 @@ log = logging.getLogger("ingest_worker")
 
 #: Job event the API reads for the Test runs tab (TS: STEP_PROGRESS_EVENT, StepProgressSchema).
 STEP_PROGRESS = "step progress"
+
+#: Job event when a mapped recipe drafts no graph because no base IRI is set.
+GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
 
 Progress = Callable[[int, dict[str, Any] | None], None]
 
@@ -141,6 +150,7 @@ def process_template_job(
     document = {
         "document_id": job.document_id,
         "job_id": job.id,
+        "source_sha256": doc.sha256,
         "template": {"id": template.id, "version": template.version, "name": template.name},
         "extracted_at": datetime.now(UTC).isoformat(),
         "page_count": doc.total_pages,
@@ -152,11 +162,11 @@ def process_template_job(
         "review_required": bool(reasons),
         "review_reasons": reasons,
     }
-    outputs = render_document(template, document)
+    outputs = render_document(template, document, build_graph(job, deps, queue, template, document))
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons)
+    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
 
 
 def publish_template_job(
@@ -187,6 +197,10 @@ def publish_template_job(
         "edits": edits,
     }
     document["published_at"] = datetime.now(UTC).isoformat()
+    if not document.get("source_sha256"):  # drafted before graphs existed
+        document["source_sha256"] = hashlib.sha256(
+            deps.store.get(job.bucket, job.object_key)
+        ).hexdigest()
     # Keep the reviewed document next to the job's run data: the final target may be an S3 the
     # API cannot read, and references/regression need the approved values.
     deps.store.put(
@@ -198,7 +212,10 @@ def publish_template_job(
     if not deliver:
         queue.event(job.id, "info", "reviewed", {"edits": len(edits)})
         return []
-    published = publish_outputs(deps, render_document(template, document))
+    graph = build_graph(job, deps, queue, template, document)
+    formats = template.delivery_formats()
+    rendered = render_document(template, document, graph)
+    published = publish_outputs(deps, [o for o in rendered if o.format in formats])
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
 
@@ -372,6 +389,7 @@ def rerun_template_job(
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
+        source_sha256=doc.sha256,
         fields=fields,
         tables=tables,
         checks=checks,
@@ -390,11 +408,11 @@ def rerun_template_job(
             },
         ],
     )
-    outputs = render_document(template, document)
+    outputs = render_document(template, document, build_graph(job, deps, queue, template, document))
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons)
+    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
 
 
 def _save_previews(
@@ -494,8 +512,37 @@ def _csv(header: list[str], rows: list[list[Any]]) -> bytes:
     return encode_csv(buf.getvalue())
 
 
-def render_document(template: Template, document: dict[str, Any]) -> list[RenderedOutput]:
-    """Render a (draft or reviewed) document into the template's outputs."""
+def build_graph(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+) -> Graph | None:
+    """The document's graph for a recipe with an ontology mapping; None without a mapping, or
+    (with a `graph skipped` event) without a base IRI."""
+    if template.semantics is None:
+        return None
+    base = deps.linked_data.effective_base() if deps.linked_data else None
+    if base is None:
+        queue.event(job.id, "warn", GRAPH_SKIPPED)
+        return None
+    pins = [(o.id, o.version) for o in template.semantics.ontologies]
+    store = deps.ontologies
+
+    def concepts(scheme: str, label: str) -> str | None:
+        return store.concept_by_label(pins, scheme, label) if store else None
+
+    try:
+        return render_graph(template, document, GraphContext(base, concepts))
+    except ValueError as exc:
+        raise DocumentError(f"cannot render the graph: {exc}") from exc
+
+
+def render_document(
+    template: Template, document: dict[str, Any], graph: Graph | None = None
+) -> list[RenderedOutput]:
+    """Render a (draft or reviewed) document into the template's outputs (plus its graph)."""
     doc_id = document["document_id"]
     fields, tables = document["fields"], document["tables"]
 
@@ -537,4 +584,8 @@ def render_document(template: Template, document: dict[str, Any]) -> list[Render
     out.append(RenderedOutput("issues", "csv", key("issues", "csv"), body, len(issues)))
     body = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
     out.append(RenderedOutput("document", "json", key("document", "json"), body, None))
+    if graph is not None and template.semantics is not None:
+        out.append(
+            RenderedOutput("graph", "rdf", key("graph", "ttl"), to_turtle(graph), len(graph))
+        )
     return out

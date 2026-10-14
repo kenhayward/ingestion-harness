@@ -94,6 +94,7 @@ def mutate(path: str, value: Any) -> dict[str, Any]:
         (mutate("pipeline.2.table", "missing"), "unknown table"),
         (mutate("outputs.fields.2.enum", None), "enum values"),
         (mutate("outputs.tables.0.id", "fields"), "reserved"),
+        (mutate("outputs.tables.0.id", "graph"), "reserved"),
         (mutate("pipeline.0.fields", []), "fields or a table"),
     ],
 )

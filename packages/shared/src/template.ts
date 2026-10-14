@@ -20,7 +20,7 @@ export const ValueTypeSchema = z.enum(VALUE_TYPES);
 export type ValueType = z.infer<typeof ValueTypeSchema>;
 
 /** Reserved output ids (fixed outputs every template writes). */
-export const RESERVED_OUTPUT_IDS = new Set(['fields', 'document', 'issues']);
+export const RESERVED_OUTPUT_IDS = new Set(['fields', 'document', 'issues', 'graph']);
 
 /** A field (atom, one value per document) or a table column. */
 export const ValueDefSchema = z

@@ -20,7 +20,7 @@ from pydantic import Field, model_validator
 from .normalize import DateOrder, ValueType
 from .specs import Check, DocumentLayout, Extraction, Id, _Model
 
-RESERVED_OUTPUT_IDS = {"fields", "document", "issues"}
+RESERVED_OUTPUT_IDS = {"fields", "document", "issues", "graph"}
 BUILTIN_PROMPT = "builtin/extract.md.j2"
 
 

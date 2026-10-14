@@ -477,6 +477,13 @@ class OntologyStore(Protocol):
 
     def version_imports(self, ontology_id: str, version: int) -> list[dict[str, Any]]: ...
 
+    def concept_by_label(
+        self, versions: list[tuple[str, int]], scheme: str, label: str
+    ) -> str | None:
+        """The concept of `scheme` in one of `versions` whose label or alt label is `label`
+        (trimmed, any case); None if there is none."""
+        ...
+
     def create_imported(
         self,
         *,
@@ -681,6 +688,31 @@ class PgOntologyStore:
             self.save(oid, 1, parsed)
             before_commit(oid, 1)
         return oid, 1
+
+    def concept_by_label(
+        self, versions: list[tuple[str, int]], scheme: str, label: str
+    ) -> str | None:
+        if not versions:
+            return None
+        row = self._conn.execute(
+            """SELECT t.iri FROM ontology_terms t
+                 JOIN unnest(%s::text[], %s::int[]) AS p(id, v)
+                   ON t.ontology_id = p.id AND t.version = p.v
+                WHERE t.kind = 'concept' AND t.scheme = %s
+                  AND (lower(t.label) = %s
+                       OR EXISTS (SELECT 1 FROM unnest(t.alt_labels) a WHERE lower(a) = %s))
+                ORDER BY lower(t.label) = %s DESC, t.ontology_id, t.version DESC, t.iri
+                LIMIT 1""",
+            (
+                [v[0] for v in versions],
+                [v[1] for v in versions],
+                scheme,
+                wanted := label.strip().lower(),
+                wanted,
+                wanted,
+            ),
+        ).fetchone()
+        return str(row[0]) if row else None
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self._conn.execute(

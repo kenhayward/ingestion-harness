@@ -9,7 +9,11 @@ if TYPE_CHECKING:
 
 
 def output_key(
-    spec_id: str, version: int, output_id: str, document_id: str, fmt: Literal["csv", "json"]
+    spec_id: str,
+    version: int,
+    output_id: str,
+    document_id: str,
+    fmt: Literal["csv", "json", "ttl"],
 ) -> str:
     return f"{spec_id}/v{version}/{output_id}/{document_id}.{fmt}"
 
