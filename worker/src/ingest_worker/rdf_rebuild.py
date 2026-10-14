@@ -63,11 +63,19 @@ class RebuildSource(Protocol):
         """Version -> definition of each published version."""
         ...
 
+    def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
+        """Jobs of the type whose delivered outputs a retirement withdrew (ADR 0011 step 7)."""
+        ...
+
 
 @dataclass
 class MemoryRebuildSource:
     jobs: list[DeliveredJob] = field(default_factory=list)
     templates: dict[int, dict[str, Any]] = field(default_factory=dict)
+    withdrawn: list[DeliveredJob] = field(default_factory=list)
+
+    def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
+        return [j for j in self.withdrawn if j.template_id == template_id]
 
     def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
         return [j for j in self.jobs if j.template_id == template_id]
@@ -100,6 +108,19 @@ class PgRebuildSource:
         row = self._conn.execute(self._JOBS + " AND j.id = %s", (job_id,)).fetchone()
         return DeliveredJob(*row) if row else None
 
+    def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
+        rows = self._conn.execute(
+            """SELECT j.id::text, j.document_id::text, d.spec_id, d.spec_version, d.sha256,
+                      d.bucket, d.object_key
+                 FROM jobs j JOIN documents d ON d.id = j.document_id
+                WHERE d.spec_id = %s AND NOT j.test
+                  AND EXISTS (SELECT 1 FROM job_outputs o
+                               WHERE o.job_id = j.id AND o.withdrawn_at IS NOT NULL)
+                ORDER BY j.updated_at""",
+            (template_id,),
+        ).fetchall()
+        return [DeliveredJob(*r) for r in rows]
+
     def published_templates(self, template_id: str) -> dict[int, dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT version, definition FROM templates WHERE id = %s AND status = 'published'",
@@ -108,12 +129,13 @@ class PgRebuildSource:
         return {r[0]: r[1] for r in rows}
 
 
-def _claimed(job: DeliveredJob, template: Template) -> ClaimedJob:
+def claimed(job: DeliveredJob, version: int | None = None) -> ClaimedJob:
+    """The delivered job as a publish run of its type at `version` (default: its own)."""
     return ClaimedJob(
         job.job_id,
         job.document_id,
-        template.id,
-        template.version,
+        job.template_id,
+        job.template_version if version is None else version,
         job.bucket,
         job.object_key,
         None,
@@ -123,7 +145,7 @@ def _claimed(job: DeliveredJob, template: Template) -> ClaimedJob:
     )
 
 
-def _reviewed(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] | None:
+def delivered_document(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] | None:
     """The delivered document: the reviewed one, else (delivered without review) the draft."""
     raw = deps.store.get_optional(deps.buckets.runs, reviewed_document_key(job.job_id))
     if raw is None:
@@ -142,14 +164,14 @@ def _publish(
     deps: PipelineDeps, queue: JobQueue, job: DeliveredJob, template: Template
 ) -> int | None:
     """Render a delivered job's reviewed document with `template` and publish its graph."""
-    document = _reviewed(deps, job)
+    document = delivered_document(deps, job)
     if document is None:
         return None
-    claimed = _claimed(job, template)
-    graph = build_graph(claimed, deps, queue, template, document)
+    run = claimed(job, template.version)
+    graph = build_graph(run, deps, queue, template, document)
     if graph is None:
         return None
-    return publish_graph(claimed, deps, queue, template, document, graph)
+    return publish_graph(run, deps, queue, template, document, graph)
 
 
 def rebuild(deps: PipelineDeps) -> list[str]:

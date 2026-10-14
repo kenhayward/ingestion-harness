@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from .linked_data import LinkedDataSettings
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
+    from .rdf_rebuild import RebuildSource
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -145,6 +146,8 @@ class PipelineDeps:
     graph_registry: GraphRegistry | None = None
     #: The triple store (RDF_ENDPOINT; None: delivered graphs go to S3 only).
     graph_store: GraphStore | None = None
+    #: Delivered and withdrawn jobs, for `republish` (None: republish goes to review).
+    delivered_jobs: RebuildSource | None = None
 
 
 @dataclass(frozen=True)

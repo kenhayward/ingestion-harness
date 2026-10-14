@@ -94,8 +94,10 @@ class MemoryGraphRegistry:
     def publish(self, record: GraphPublish, write: Callable[[int], None]) -> int:
         with self._lock:
             key = (record.sha256, record.template_id)
-            current = self.graphs.get(key)
-            version = (current.version if current else 0) + 1
+            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
+            version = 1 + max(
+                (v.version for v in self.versions if (v.sha256, v.template_id) == key), default=0
+            )
             write(version)
             graph = PublishedGraph(
                 record.sha256,
@@ -176,8 +178,10 @@ class PgGraphRegistry:
             self._conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtext('graph:' || %s || ':' || %s))", key
             )
+            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
             row = self._conn.execute(
-                "SELECT version FROM published_graphs WHERE sha256 = %s AND template_id = %s",
+                """SELECT coalesce(max(version), 0) FROM published_graph_versions
+                    WHERE sha256 = %s AND template_id = %s""",
                 key,
             ).fetchone()
             version = (row[0] if row else 0) + 1
