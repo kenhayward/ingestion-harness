@@ -1,6 +1,6 @@
 # 0011: Publish RDF to Apache Jena Fuseki, mapped to ontologies in the recipe
 
-**Status:** proposed · 2026-10-14 · [design](../design/rdf-publishing.md)
+**Status:** accepted · 2026-10-14 · [design](../design/rdf-publishing.md)
 
 ## Context
 Content Transformation Studio (CT Studio) publishes each approved document as CSV and JSON to

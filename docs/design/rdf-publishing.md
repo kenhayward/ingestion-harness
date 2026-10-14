@@ -1,6 +1,6 @@
 # RDF publishing: ontology library, recipe mapping and Apache Jena Fuseki
 
-**Status:** proposed · 2026-10-14 · [ADR 0011](../adr/0011-rdf-publishing-and-ontologies.md)
+**Status:** accepted · 2026-10-14 · [ADR 0011](../adr/0011-rdf-publishing-and-ontologies.md)
 
 Content Transformation Studio (CT Studio) publishes approved documents as CSV and JSON to an S3
 target. This design adds a second, semantic endpoint, built from these parts:
