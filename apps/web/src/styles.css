@@ -288,6 +288,13 @@ th {
   box-shadow: var(--ih-seg-shadow);
 }
 
+/* The notifications bell (docs/design/pwa.md): on reads as the accent. */
+.notify-toggle[aria-pressed='true'] {
+  color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  border-color: var(--ih-accent);
+}
+
 /* App shell: top bar + left nav + page */
 html {
   /* Anchors and scrollIntoView land below the pinned top bar. */

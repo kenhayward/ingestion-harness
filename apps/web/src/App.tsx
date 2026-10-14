@@ -12,7 +12,9 @@ import { installPrompt as appInstallPrompt, type InstallPrompt } from './pwa/ins
 import { launchedFiles, type LaunchedFiles } from './pwa/launch.js';
 import { navigate, parseHash, useHashRoute } from './router.js';
 import { AppShell } from './shell/AppShell.js';
-import { routeTitle, sectionOf } from './shell/derive.js';
+import { useAppBadge } from './pwa/badge.js';
+import { useJobNotifications, useNotifySetting } from './pwa/notify.js';
+import { attentionCount, routeTitle, sectionOf } from './shell/derive.js';
 import { useDocumentTitle } from './shell/useDocumentTitle.js';
 import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
@@ -129,7 +131,11 @@ function SignedInApp({
     if (route.name === 'home' && route.focusUpload) setUploadFocus((n) => n + 1);
   }, [route]);
   useDocumentTitle(routeTitle(route));
-  const { jobs, error, refresh } = useJobs(api, pollMs);
+  const { jobs, error, refresh, loaded } = useJobs(api, pollMs);
+  // The installed app (docs/design/pwa.md): the taskbar badge and toasts for your own jobs.
+  useAppBadge(attentionCount(jobs));
+  const notify = useNotifySetting();
+  useJobNotifications({ jobs, loaded, me: me.label, enabled: notify.state === 'on' });
   const [query, setQuery] = useState('');
   // The search filters the current section's list: moving to another section starts afresh,
   // so a leftover query never hides rows somewhere else.
@@ -223,6 +229,7 @@ function SignedInApp({
       query={query}
       onQuery={setQuery}
       install={install}
+      notify={notify}
       onUpload={() => {
         navigate('#/');
         setPickPending(true);

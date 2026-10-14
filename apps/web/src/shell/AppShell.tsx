@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
 import { useInstallAvailable, type InstallPrompt } from '../pwa/install.js';
+import type { NotifySetting } from '../pwa/notify.js';
 import type { Route } from '../router.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
@@ -58,6 +59,40 @@ function NavLink({
       <span className="nav-label">{label}</span>
       {children}
     </a>
+  );
+}
+
+/**
+ * The notifications bell (docs/design/pwa.md): toasts when your jobs finish while the app is in
+ * the background. Refused in the browser, it says where to allow it again.
+ */
+function NotifyBell({ notify }: { notify: NotifySetting }) {
+  if (notify.state === 'unsupported') return null;
+  if (notify.state === 'blocked') {
+    return (
+      <button
+        type="button"
+        className="icon bordered"
+        aria-label="Notifications are blocked"
+        aria-disabled="true"
+        title="Notifications are blocked for this site: allow them in the browser's site permissions (the padlock in the address bar, or the app's … menu → App info)"
+      >
+        <Icon name="bellOff" size={18} />
+      </button>
+    );
+  }
+  const label = 'Notify me when my jobs finish';
+  return (
+    <button
+      type="button"
+      className="icon bordered notify-toggle"
+      aria-label={label}
+      aria-pressed={notify.state === 'on'}
+      title={notify.state === 'on' ? `${label}: on` : label}
+      onClick={() => void notify.toggle()}
+    >
+      <Icon name="bell" size={18} />
+    </button>
   );
 }
 
@@ -176,6 +211,7 @@ export function AppShell({
   query,
   onQuery,
   install,
+  notify,
   onUpload,
   onSignOut,
   children,
@@ -187,6 +223,8 @@ export function AppShell({
   onQuery: (query: string) => void;
   /** The browser's offer to install the app: Install CT Studio shows while there is one. */
   install: InstallPrompt;
+  /** Toasts for your jobs: the bell's state and toggle. */
+  notify: NotifySetting;
   onUpload: () => void;
   onSignOut: () => void;
   children: ReactNode;
@@ -260,6 +298,7 @@ export function AppShell({
               <Icon name="install" size={18} />
             </button>
           )}
+          <NotifyBell notify={notify} />
           <ThemeSwitch />
           <button type="button" className="primary" onClick={onUpload}>
             <Icon name="upload" />
