@@ -52,7 +52,12 @@ export function TemplatesPage({
   const shown = active.filter((t) => matchesQuery(query, t.id, t.name));
   const shownLegacy = legacy.filter((l) => matchesQuery(query, l.id, l.title));
   const retire = (id: string, name: string) =>
-    role === 'admin' ? () => setRetiring({ id, name }) : undefined;
+    role === 'admin'
+      ? () => {
+          setNotice(null);
+          setRetiring({ id, name });
+        }
+      : undefined;
 
   return (
     <div className="templates-page">

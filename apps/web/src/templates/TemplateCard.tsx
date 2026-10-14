@@ -123,7 +123,7 @@ export function TemplateCard({
           </>
         )}
         {onRetire && (
-          <button type="button" onClick={onRetire}>
+          <button type="button" aria-label={`Retire ${item.name}…`} onClick={onRetire}>
             Retire…
           </button>
         )}

@@ -280,7 +280,9 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
       listTemplates: vi.fn().mockResolvedValueOnce(list).mockResolvedValue(withRetired),
     });
     const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
-    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Retire Certificate of analysis…' }),
+    );
     const dialog = screen.getByRole('dialog', { name: 'Retire Certificate of analysis' });
     expect(dialog).toHaveTextContent('Nothing is deleted');
     expect(dialog).toHaveTextContent('DELETE /api/specs/coa/retirement');
@@ -305,7 +307,7 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
         .mockResolvedValue(legacySpecs.filter((s) => s.id !== 'demo')),
     });
     const demo = await screen.findByRole('article', { name: 'Demo v2' });
-    await userEvent.click(within(demo).getByRole('button', { name: 'Retire…' }));
+    await userEvent.click(within(demo).getByRole('button', { name: 'Retire Demo v2…' }));
     const dialog = screen.getByRole('dialog', { name: 'Retire Demo v2' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));
     expect(api.retireType).toHaveBeenCalledWith('demo');
@@ -315,7 +317,9 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
   it('keeps the type when the confirm is cancelled', async () => {
     const api = admin();
     const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
-    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Retire Certificate of analysis…' }),
+    );
     await userEvent.click(
       within(screen.getByRole('dialog', { name: 'Retire Certificate of analysis' })).getByRole(
         'button',
@@ -333,15 +337,34 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
       }),
     });
     const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
-    await userEvent.click(within(coa).getByRole('button', { name: 'Retire…' }));
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Retire Certificate of analysis…' }),
+    );
     const dialog = screen.getByRole('dialog', { name: 'Retire Certificate of analysis' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retire' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('admins only');
   });
 
+  it('clears the retired notice when the next Retire… opens (M7)', async () => {
+    admin({
+      listTemplates: vi.fn().mockResolvedValueOnce(list).mockResolvedValue(withRetired),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Retire Certificate of analysis…' }),
+    );
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Retire' }),
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('is retired');
+    const demo = await screen.findByRole('article', { name: 'Demo v2' });
+    await userEvent.click(within(demo).getByRole('button', { name: 'Retire Demo v2…' }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('shows no Retire… to users, on recipe or legacy cards', async () => {
     setup({ listSpecs: vi.fn(async () => legacySpecs) });
     await screen.findByRole('article', { name: 'Demo v2' });
-    expect(screen.queryByRole('button', { name: 'Retire…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Retire .*…$/ })).toBeNull();
   });
 });

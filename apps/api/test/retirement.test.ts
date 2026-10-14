@@ -65,6 +65,21 @@ describe('DELETE /api/specs/:id/retirement', () => {
     expect(await templates.retirement('letter')).toBeNull();
     expect((await app.inject(unretire('letter'))).statusCode).toBe(204);
   });
+
+  it('removes a retirement that outlived its type, and frees the id (I1)', async () => {
+    const { app, templates } = await testApp();
+    await templates.create('memo', 1, { ...letter(1), id: 'memo', name: 'Memo' }, 'draft');
+    expect((await app.inject(retire('memo'))).statusCode).toBe(200);
+    expect(await templates.deleteDraft('memo', 1)).toBe(true);
+    expect((await app.inject(unretire('memo'))).statusCode).toBe(204);
+    expect(await templates.retirement('memo')).toBeNull();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/templates',
+      payload: { id: 'memo', name: 'Memo' },
+    });
+    expect(created.statusCode).not.toBe(409);
+  });
 });
 
 describe('listings of a retired type', () => {

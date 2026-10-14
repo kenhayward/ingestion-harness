@@ -1,5 +1,5 @@
 import type { ResultSummary } from '@ih/shared';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultsPage } from '../src/results/ResultsPage.js';
@@ -30,6 +30,12 @@ const types = [
 ];
 
 describe('ResultsPage list', () => {
+  it('lists document types with retired ones included, for the filter chips (M8)', async () => {
+    const api = fakeApi();
+    render(<ResultsPage api={api} />);
+    await waitFor(() => expect(api.listSpecs).toHaveBeenCalledWith({ retired: 'include' }));
+  });
+
   it('has a header and lists published documents', async () => {
     const r = result({
       filename: 'protocol.pdf',

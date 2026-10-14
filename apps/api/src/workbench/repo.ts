@@ -229,9 +229,13 @@ export interface WorkbenchRepo {
    * proposals, stage skips, briefs, samples, the template's references, every document of the
    * type that nothing else uses and the template's draft rows with their change log (migration 0029). Files are the caller's.
    * `published` (nothing written) when any version of the template is published; null when the
-   * project is unknown. Locks the template rows before the project row, as `publishDraft` does.
+   * project is unknown. The type's retirement goes with it unless `keepRetirement` (a legacy
+   * spec file of that id still exists, so the type lives on). Locks the template rows before the project row, as `publishDraft` does.
    */
-  deleteProject(id: string): Promise<RemovedProject | 'published' | null>;
+  deleteProject(
+    id: string,
+    options?: { keepRetirement?: boolean },
+  ): Promise<RemovedProject | 'published' | null>;
   /**
    * Per project, a hash of everything the project overview reads (the project row, its jobs,
    * samples, proposals, skips, confirmations, briefs, iterations, publications, feedback, template versions and
@@ -577,7 +581,10 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     if (at >= 0) this.iterations[at] = { ...this.iterations[at]!, gateCache };
   }
 
-  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
+  async deleteProject(
+    id: string,
+    options: { keepRetirement?: boolean } = {},
+  ): Promise<RemovedProject | 'published' | null> {
     if (!this.projects.has(id)) return null;
     const versions = (await this.templates.list()).filter((t) => t.id === id);
     if (versions.some((t) => t.status === 'published')) return 'published';
@@ -668,7 +675,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
     }
     // The type is gone: a stale retirement would block reusing the id (D11).
-    this.templates.retirements.delete(id);
+    if (!options.keepRetirement) this.templates.retirements.delete(id);
     this.projects.delete(id);
     // ON DELETE CASCADE (migration 0022).
     this.listCacheRows.delete(id);
@@ -1458,7 +1465,10 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
     ]);
   }
 
-  async deleteProject(id: string): Promise<RemovedProject | 'published' | null> {
+  async deleteProject(
+    id: string,
+    options: { keepRetirement?: boolean } = {},
+  ): Promise<RemovedProject | 'published' | null> {
     const client = await this.pool.connect();
     let failed: unknown = undefined;
     try {
@@ -1543,7 +1553,9 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
         if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
       }
       // The type is gone: a stale retirement would block reusing the id (D11).
-      await client.query('DELETE FROM document_type_retirements WHERE type_id = $1', [id]);
+      if (!options.keepRetirement) {
+        await client.query('DELETE FROM document_type_retirements WHERE type_id = $1', [id]);
+      }
       await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
       // The cascade from templates would take them too; deleted explicitly as a child (TP1).
       await client.query('DELETE FROM template_changes WHERE template_id = $1', [id]);

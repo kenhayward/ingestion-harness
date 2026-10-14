@@ -692,6 +692,20 @@ describe('ProjectPage of a retired type (D7, D14, D18)', () => {
     expect(api).not.toHaveProperty('unretireType');
   });
 
+  it('opens the Recipe tab read-only from the projects own retired flag (M4)', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView({ draft: 1, retired })),
+      getProjectOverview: vi.fn(async () => projectOverview()),
+      getTemplate: vi.fn(async () => templateView({ id: 'letter', version: 1 })),
+      listTemplates: vi.fn(async () => []), // the editor's own lookup would say "active"
+    });
+    page(api, 'template');
+    await userEvent.click(await screen.findByRole('tab', { name: /^General/ }));
+    await waitFor(() => expect(api.listTemplates).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await screen.findByLabelText('Name')).toBeDisabled();
+  });
+
   it('shows no banner for an active type', async () => {
     const api = fakeApi({
       getProject: vi.fn(async () => projectView()),

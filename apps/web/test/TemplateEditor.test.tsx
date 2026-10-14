@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, type TemplateRecordView } from '../src/api/client.js';
+import { ApiError, type Api, type TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
 import { fakeApi, job, projectOverview, projectView, publication, sampleView } from './fake-api.js';
 import { RETIRED_REASON } from '../src/ui/retired.js';
@@ -1423,6 +1423,17 @@ describe('TemplateEditor of a retired type (D17: read-only)', () => {
     expect(publish).toBeDisabled();
     blocked(screen.getByRole('button', { name: 'Test run' }));
     expect(screen.queryByRole('note')).toBeNull(); // the project page shows the banner
+  });
+
+  it('is not editable until the retirement is known (Task 9 note)', async () => {
+    type Items = Awaited<ReturnType<Api['listTemplates']>>;
+    let answer: (items: Items) => void = () => {};
+    const pending = new Promise<Items>((r) => (answer = r));
+    setup(view({ ...validDefinition(), version: 2 }), { listTemplates: vi.fn(() => pending) });
+    const name = await screen.findByLabelText('Name');
+    expect(name).toBeDisabled();
+    answer([{ ...listItem(1, 2), retired: null }]);
+    await waitFor(() => expect(name).toBeEnabled());
   });
 
   it('stays editable for an active type', async () => {

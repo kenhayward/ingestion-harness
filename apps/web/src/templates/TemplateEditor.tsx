@@ -6,8 +6,8 @@ import {
   type DataPolicy,
   type JobSummary,
   type OverviewItem,
+  type Retirement,
 } from '@ih/shared';
-import type { Retirement } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { RETIRED_REASON } from '../ui/retired.js';
@@ -76,6 +76,11 @@ export interface EmbeddedEditor {
   item?: OverviewItem | null;
   /** The latest published version: "Changes since vN" and Full diff. */
   published?: number | null;
+  /**
+   * The project's retirement (D17), from the project page: read-only at once and following its
+   * reloads. Absent: the editor looks it up itself.
+   */
+  retired?: Retirement | null;
 }
 
 export function TemplateEditor({
@@ -120,7 +125,7 @@ export function TemplateEditor({
   /** Latest published version of this type, for "from published vN" (null: never published). */
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   /** The type's retirement (D17: read-only); null when active. */
-  const [retired, setRetired] = useState<Retirement | null>(null);
+  const [looked, setLooked] = useState<{ retired: Retirement | null } | null>(null);
   /** A save refused with 409 (written elsewhere meanwhile, or published): offer a reload. */
   const [conflict, setConflict] = useState(false);
   /** Counts draft writes by this editor (save, reload), so the change log reloads after each. */
@@ -146,11 +151,11 @@ export function TemplateEditor({
       (items) => {
         const item = items.find((t) => t.id === templateId);
         setPublishedVersion(item?.published ?? null);
-        setRetired(item?.retired ?? null);
+        setLooked({ retired: item?.retired ?? null });
       },
       () => {
         setPublishedVersion(null);
-        setRetired(null);
+        setLooked({ retired: null });
       },
     );
   }, [api, templateId, version]);
@@ -177,6 +182,10 @@ export function TemplateEditor({
   }, [api, templateId, isEmbedded]);
 
   const issues = useMemo(() => validateDefinition(def), [def]);
+  /** The type's retirement: the project page's when embedded, else the lookup (null: active). */
+  const retired = embedded?.retired !== undefined ? embedded.retired : (looked?.retired ?? null);
+  /** Until the retirement is known the recipe is not editable (a retired one never flashes open). */
+  const retirementKnown = embedded?.retired !== undefined || looked !== null;
 
   if (!view) {
     const body = error ? <p role="alert">{error}</p> : <p>Loading…</p>;
@@ -195,7 +204,7 @@ export function TemplateEditor({
 
   const { record } = view;
   /** A retired type's recipe is read-only, like a published version (D17). */
-  const editable = record.status === 'draft' && retired === null;
+  const editable = record.status === 'draft' && retirementKnown && retired === null;
   /** Why nothing new may run: a retired document type (null when active). */
   const blockedBy = retired ? RETIRED_REASON : null;
   const dirty = JSON.stringify(def) !== saved;

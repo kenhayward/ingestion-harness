@@ -1647,4 +1647,13 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await workbench.deleteProject(projectId)).not.toBeNull();
     expect(await templates.retirement(projectId)).toBeNull();
   });
+
+  it('keeps the retirement with keepRetirement (a legacy spec file still has the id)', async () => {
+    const projectId = await newProject();
+    await templates.create(projectId, 1, { id: projectId, version: 1, name: 'x' }, 'draft');
+    await templates.retire(projectId, 'ken');
+    expect(await workbench.deleteProject(projectId, { keepRetirement: true })).not.toBeNull();
+    expect(await templates.retirement(projectId)).not.toBeNull();
+    await templates.unretire(projectId);
+  });
 });

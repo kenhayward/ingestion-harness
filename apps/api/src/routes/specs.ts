@@ -163,11 +163,12 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const { id } = req.params;
-      if (!(await typeExists(app.deps, id))) {
-        return reply.code(404).send({ error: 'document type not found' });
-      }
+      // Try the removal first: a retirement can outlive its type (its only draft deleted, a spec
+      // file removed) and must stay removable, or the id is locked for good.
       if (await app.deps.templates.unretire(id)) {
         req.log.info({ typeId: id, by: req.auth?.label ?? null }, 'document type unretired');
+      } else if (!(await typeExists(app.deps, id))) {
+        return reply.code(404).send({ error: 'document type not found' });
       }
       return reply.code(204).send();
     },

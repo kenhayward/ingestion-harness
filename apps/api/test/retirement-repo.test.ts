@@ -30,4 +30,17 @@ describe('MemoryTemplateRepo retirements', () => {
     expect(await workbench.deleteProject('letter')).not.toBeNull();
     expect(await templates.retirement('letter')).toBeNull();
   });
+
+  it('keeps the retirement of a legacy type that still has its spec file (M1)', async () => {
+    const { app, templates } = await testApp();
+    await app.inject({
+      method: 'POST',
+      url: '/api/workbench/projects',
+      payload: { id: 'demo', name: 'Demo' },
+    });
+    await templates.retire('demo', 'ken');
+    const res = await app.inject({ method: 'DELETE', url: '/api/workbench/projects/demo' });
+    expect(res.statusCode).toBe(204);
+    expect(await templates.retirement('demo')).not.toBeNull();
+  });
 });

@@ -432,6 +432,7 @@ export function ProjectPage({
                   stages: overview?.stages ?? null,
                   item: itemOf('template'),
                   published,
+                  retired: view.retired ?? null,
                 }}
               />
             ) : (

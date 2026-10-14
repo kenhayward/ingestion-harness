@@ -1355,7 +1355,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const id = req.params.id;
-      const removed = await workbench.deleteProject(id);
+      const removed = await workbench.deleteProject(id, {
+        keepRetirement: app.deps.specs.get(id) !== undefined,
+      });
       if (!removed) return reply.code(404).send({ error: 'project not found' });
       if (removed === 'published') {
         return reply.code(409).send({
