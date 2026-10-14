@@ -1077,8 +1077,22 @@ Words: users see *ontology*, *mapping* and *graph*. The recipe key stays `semant
      versions are now always `max(published_graph_versions) + 1`.
    - **Withdrawals and republishes are not `JobSummary`s** (they are document-less). Their
      waiting and failed counts show on the Linked data panel instead of the Jobs page.
-   - **Retiring withdraws on every `PUT`,** and is idempotent: a retirement whose withdrawal
-     failed heals on the next one.
+   - **Retiring withdraws on every `PUT`,** and is idempotent. A `PUT` withdraws what was
+     delivered since the last one, such as a review approved after the retirement. It does
+     **not** repeat a withdrawal that failed: those outputs are already marked withdrawn. A
+     failed or stopped withdrawal shows on the Linked data panel (failed counts include
+     `needs_review`) for an operator to retry.
+   - **What has been delivered again is spared.** The worker's withdrawal checks under each
+     graph's lock: it never drops a graph that has a current version again, never deletes a
+     version copy whose version row exists again, and never deletes an object that a live output
+     row has. So a withdrawal that runs after a newer publish or a republish removes only what is
+     still withdrawn.
+   - **Republish runs in a set order.** A republish of a type retired again meanwhile does
+     nothing. It publishes a job's graph before recording its outputs, so a failure leaves the
+     job withdrawn and the retry finds it. It skips, with an event, a job it cannot render (a
+     legacy spec, no document); legacy spec outputs stay withdrawn.
+   - **Retirement takes no per-graph locks,** so a large type cannot exhaust them. The entity
+     sweep only touches the IRIs the removed sources named, locked first.
    - **Consumers** reach Fuseki through the host's reverse proxy at
      `FUSEKI_BIND:FUSEKI_PUBLIC_PORT`, with only `/ct/sparql` and `/ct/get` forwarded.
      `RDF_PUBLIC_URL` puts the endpoint on the panel, and `docs/consumers/sparql.md` is the

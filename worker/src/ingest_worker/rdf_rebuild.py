@@ -67,15 +67,29 @@ class RebuildSource(Protocol):
         """Jobs of the type whose delivered outputs a retirement withdrew (ADR 0011 step 7)."""
         ...
 
+    def object_live(self, bucket: str, key: str) -> bool:
+        """A delivered, not withdrawn output has this target object: a withdrawal spares it."""
+        ...
+
+    def is_retired(self, template_id: str) -> bool: ...
+
 
 @dataclass
 class MemoryRebuildSource:
     jobs: list[DeliveredJob] = field(default_factory=list)
     templates: dict[int, dict[str, Any]] = field(default_factory=dict)
     withdrawn: list[DeliveredJob] = field(default_factory=list)
+    live: set[tuple[str, str]] = field(default_factory=set)
+    retired: set[str] = field(default_factory=set)
 
     def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
         return [j for j in self.withdrawn if j.template_id == template_id]
+
+    def object_live(self, bucket: str, key: str) -> bool:
+        return (bucket, key) in self.live
+
+    def is_retired(self, template_id: str) -> bool:
+        return template_id in self.retired
 
     def delivered_jobs(self, template_id: str) -> list[DeliveredJob]:
         return [j for j in self.jobs if j.template_id == template_id]
@@ -107,6 +121,20 @@ class PgRebuildSource:
     def job(self, job_id: str) -> DeliveredJob | None:
         row = self._conn.execute(self._JOBS + " AND j.id = %s", (job_id,)).fetchone()
         return DeliveredJob(*row) if row else None
+
+    def object_live(self, bucket: str, key: str) -> bool:
+        row = self._conn.execute(
+            """SELECT 1 FROM job_outputs WHERE bucket = %s AND object_key = %s
+                  AND stage = 'published' AND withdrawn_at IS NULL LIMIT 1""",
+            (bucket, key),
+        ).fetchone()
+        return row is not None
+
+    def is_retired(self, template_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM document_type_retirements WHERE type_id = %s", (template_id,)
+        ).fetchone()
+        return row is not None
 
     def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
         rows = self._conn.execute(

@@ -101,7 +101,7 @@ export function JobCleanup({ api, onChanged }: { api: Api; onChanged: () => void
       {preview?.count === 0 && <p>{`No finished jobs older than ${days} days.`}</p>}
       {preview && preview.count > 0 && (
         <p>
-          {`${jobs(preview.count)} will be deleted (published copies are kept).`}{' '}
+          {`${jobs(preview.count)} will be deleted (what they published is withdrawn).`}{' '}
           <button type="button" className="danger" disabled={busy} onClick={() => void runDelete()}>
             Delete {jobs(preview.count)}
           </button>

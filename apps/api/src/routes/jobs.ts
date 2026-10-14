@@ -291,9 +291,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Deletes a \`succeeded\`, \`failed\`, \`needs_review\`, \`rejected\` or \`cancelled\`
           job with its history, its draft outputs and its files in the runs bucket, and the
-          uploaded PDF when no other job or Workbench sample uses it. Copies already delivered to
-          the final target are kept. Queued and running jobs must be cancelled first, and jobs
-          awaiting review decided.
+          uploaded PDF when no other job or Workbench sample uses it. What it delivered is
+          withdrawn (ADR 0011): a queued \`withdraw\` job removes its published copies from the
+          final target and, when it published the current version, its graph from the triple
+          store. Queued and running jobs must be cancelled first, and jobs awaiting review
+          decided.
         `,
         params: JobParams,
         response: {
@@ -330,6 +332,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           Bulk version of \`DELETE /api/jobs/{id}\` for finished jobs last updated before a
           cutoff (now minus \`olderThanDays\`). Regression runs are kept unless
           \`includeRegression\` is true, since scores and metrics are computed from them.
+          Like a single delete, it **withdraws what the jobs delivered**: their published
+          outputs leave the final target (the data lake) and their graphs the triple store.
 
           Run it with \`dryRun: true\` first: the response counts the jobs and returns the
           \`cutoff\`. Then delete with \`dryRun: false\`, passing that \`cutoff\` so the

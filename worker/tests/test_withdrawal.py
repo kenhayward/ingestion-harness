@@ -188,3 +188,65 @@ def test_republish_with_nothing_withdrawn(tmp_path: Path) -> None:
     queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
     run_once(queue, deps, "w1")
     assert queue.completed and not queue.published
+
+
+def test_a_withdrawal_spares_what_was_published_again_since(tmp_path: Path) -> None:
+    from ingest_worker.graph_registry import GraphPublish
+
+    deps, target = setup(tmp_path)
+    registry = deps.graph_registry
+    assert isinstance(registry, MemoryGraphRegistry)
+    source = deps.delivered_jobs
+    assert isinstance(source, MemoryRebuildSource)
+    # Since the withdrawal was queued: another job published v1 of the graph again, and a live
+    # output now has the withdrawn object's key.
+    record = GraphPublish(SHA, "letter", GRAPH, "j2", "d2", 1, BASE, 1)
+    registry.publish(record, lambda _v: None)
+    store_of(deps).graphs[GRAPH] = b"<a> <b> <c> ."
+    for key in ["pvp/letter/v1/fields/doc.csv", "pvp/" + graph_version_key(SHA, "letter", 1),
+                "pvp/" + graph_version_key(SHA, "letter", 2)]:  # fmt: skip
+        target.put("published", key, b"x", "text/plain")
+    source.live.add(("published", "pvp/letter/v1/fields/doc.csv"))
+    queue = FakeQueue(jobs=[background("withdraw", WITHDRAW)])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert GRAPH in store_of(deps).graphs  # the current graph is not dropped
+    assert set(target.objects) == {
+        ("published", "pvp/letter/v1/fields/doc.csv"),
+        ("published", "pvp/" + graph_version_key(SHA, "letter", 1)),
+    }
+
+
+def test_republish_does_nothing_for_a_type_retired_again(tmp_path: Path) -> None:
+    deps, _ = setup(tmp_path)
+    assert isinstance(deps.delivered_jobs, MemoryRebuildSource)
+    deps.delivered_jobs.retired.add("letter")
+    queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.published and not store_of(deps).graphs
+    assert any(m == "republish skipped: retired" for _, _, m in queue.events)
+
+
+def test_a_republish_whose_graph_fails_stays_withdrawn_for_the_retry(tmp_path: Path) -> None:
+    deps, _ = setup(tmp_path)
+    store_of(deps).fail = GraphStoreUnavailable("graph store answered 503")
+    queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
+    run_once(queue, deps, "w1")
+    assert queue.failed and not queue.published  # not recorded: the retry finds it again
+
+
+def test_republish_skips_a_job_it_cannot_render_and_goes_on(tmp_path: Path) -> None:
+    deps, _ = setup(tmp_path)
+    source = deps.delivered_jobs
+    assert isinstance(source, MemoryRebuildSource)
+    legacy = replace(DELIVERED, job_id="44444444-4444-4444-8444-444444444444", template_id="letter",
+                     template_version=9)  # fmt: skip
+    source.withdrawn.insert(0, legacy)
+    reviewed = deps.store.get("runs", f"{DELIVERED.job_id}/reviewed-document.json")
+    deps.store.put("runs", f"{legacy.job_id}/reviewed-document.json", reviewed, "application/json")
+    queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert [j for j, _, _ in queue.published] == [DELIVERED.job_id]
+    skipped = [d for _, _, m, d in queue.event_details if m == "republish skipped"]
+    assert skipped and skipped[0]["job"] == legacy.job_id

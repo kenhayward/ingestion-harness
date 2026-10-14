@@ -107,6 +107,7 @@ export interface RemovedJob {
 export interface WithdrawalStatus {
   queued: number;
   running: number;
+  /** Failed, or stopped for review: what they name may still be published. */
   failed: number;
 }
 

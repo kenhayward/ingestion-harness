@@ -536,7 +536,11 @@ export class MemoryRepo implements IngestionRepo {
 
   async withdrawalStatus(): Promise<WithdrawalStatus> {
     const count = (s: JobStatus) => this.backgroundJobs.filter((j) => j.status === s).length;
-    return { queued: count('queued'), running: count('running'), failed: count('failed') };
+    return {
+      queued: count('queued'),
+      running: count('running'),
+      failed: count('failed') + count('needs_review'),
+    };
   }
 
   async deleteJob(id: string): Promise<DeleteJobResult> {

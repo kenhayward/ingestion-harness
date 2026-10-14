@@ -4,11 +4,13 @@ which delivers the type's withdrawn jobs again."""
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
-from .pipeline import DocumentError, PipelineDeps, load_definition, publish_outputs
+from .graph_registry import PublishedGraph
+from .pipeline import DocumentError, PipelineDeps, Target, load_definition, publish_outputs
 from .queue import ClaimedJob, JobQueue
 from .specs import LoadedTemplate
 from .storage import graph_version_key
@@ -56,28 +58,55 @@ def _params(job: ClaimedJob, model: type[_Strict], task: str) -> Any:
 
 def run_withdraw(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> tuple[int, int]:
     """Remove the target objects, every listed version copy and each graph named. Idempotent:
-    what is already gone is no error, so a retry after a crash completes the withdrawal."""
+    what is already gone is no error, so a retry after a crash completes the withdrawal. What was
+    delivered again since the withdrawal was queued is spared: an object a live output has, a
+    version with a row, and a graph with a current version (checked under the graph's lock)."""
     params: WithdrawParams = _params(job, WithdrawParams, "withdraw")
-    target = deps.target
+    target, source, registry = deps.target, deps.delivered_jobs, deps.graph_registry
     if target is None:
         raise DocumentError("no publish target: nothing can be withdrawn")
+    objects = 0
     for o in params.objects:
+        if source is not None and source.object_live(o.bucket, o.key):
+            continue
         target.store.delete(o.bucket, o.key)
-    dropped = 0
+        objects += 1
+    dropped: list[int] = []
     for g in params.graphs:
-        for version in g.versions:
-            key = target.prefix + graph_version_key(g.sha256, g.template_id, version)
-            target.store.delete(target.bucket, key)
-        if g.graph_iri is not None and deps.graph_store is not None:
-            deps.graph_store.delete(g.graph_iri)
-            dropped += 1
-    queue.event(job.id, "info", WITHDRAWN, {"objects": len(params.objects), "graphs": dropped})
-    return len(params.objects), dropped
+        work = functools.partial(_withdraw_graph, deps, target, g, dropped)
+        if registry is None:
+            work(None, set())
+        else:
+            registry.locked(g.sha256, g.template_id, work)
+    queue.event(job.id, "info", WITHDRAWN, {"objects": objects, "graphs": sum(dropped)})
+    return objects, sum(dropped)
+
+
+def _withdraw_graph(
+    deps: PipelineDeps,
+    target: Target,
+    g: WithdrawnGraph,
+    dropped: list[int],
+    current: PublishedGraph | None,
+    versions: set[int],
+) -> None:
+    """One graph's copies, and the graph itself, sparing a version published since."""
+    for version in g.versions:
+        if version in versions:
+            continue  # published again since: its copy is the new one
+        target.store.delete(
+            target.bucket, target.prefix + graph_version_key(g.sha256, g.template_id, version)
+        )
+    if g.graph_iri is not None and current is None and deps.graph_store is not None:
+        deps.graph_store.delete(g.graph_iri)
+        dropped.append(1)
 
 
 def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
     """Deliver each withdrawn job of the type again, from its reviewed document (else its draft)
-    with its own recipe version: outputs to the target and recorded, its graph as a new version."""
+    with its own recipe version: outputs to the target, its graph as a new version, then the
+    record (a failure before it leaves the job withdrawn, so the retry finds it again). A type
+    retired again meanwhile is left withdrawn; a job that cannot be rendered is skipped."""
     from .rdf_rebuild import claimed, delivered_document
     from .template_pipeline import build_graph, publish_graph, render_document
 
@@ -85,26 +114,32 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
     source, target = deps.delivered_jobs, deps.target
     if source is None or target is None:
         raise DocumentError("republishing needs the database and a publish target")
+    if source.is_retired(params.template_id):
+        queue.event(job.id, "info", "republish skipped: retired", {"type": params.template_id})
+        return 0
     count = 0
     for withdrawn in source.withdrawn_jobs(params.template_id):
-        document = delivered_document(deps, withdrawn)
-        if document is None:
-            queue.event(job.id, "warn", "republish skipped", {"job": withdrawn.job_id})
-            continue
-        run = claimed(withdrawn)
-        loaded = load_definition(run, deps, queue)
-        if not isinstance(loaded, LoadedTemplate):
-            raise DocumentError(
-                f"{withdrawn.template_id} v{withdrawn.template_version} is no recipe"
+        try:
+            document = delivered_document(deps, withdrawn)
+            if document is None:
+                raise DocumentError("no reviewed or draft document")
+            run = claimed(withdrawn)
+            loaded = load_definition(run, deps, queue)
+            if not isinstance(loaded, LoadedTemplate):
+                raise DocumentError("not a recipe: legacy spec outputs are not re-delivered")
+            template = loaded.template
+            graph = build_graph(run, deps, queue, template, document)
+        except (DocumentError, LookupError) as exc:
+            queue.event(
+                job.id, "warn", "republish skipped", {"job": withdrawn.job_id, "reason": str(exc)}
             )
-        template = loaded.template
-        graph = build_graph(run, deps, queue, template, document)
+            continue
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
         published = publish_outputs(deps, [o for o in rendered if o.format in formats])
-        queue.record_published(run, published, target.bucket)
         if graph is not None and "rdf" in formats:
             publish_graph(run, deps, queue, template, document, graph)
+        queue.record_published(run, published, target.bucket)
         count += 1
     queue.event(job.id, "info", REPUBLISHED, {"jobs": count})
     return count

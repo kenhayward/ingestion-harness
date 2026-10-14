@@ -61,6 +61,16 @@ class GraphRegistry(Protocol):
 
     def current(self, sha256: str, template_id: str) -> PublishedGraph | None: ...
 
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        """`work(current, versions)` under the graph's lock, as a publish takes it: what a
+        withdrawal must spare (a version published since it was queued)."""
+        ...
+
     def all_current(self) -> list[PublishedGraph]: ...
 
     def entity(self, iri: str) -> tuple[str, list[str]] | None: ...
@@ -122,6 +132,17 @@ class MemoryGraphRegistry:
 
     def current(self, sha256: str, template_id: str) -> PublishedGraph | None:
         return self.graphs.get((sha256, template_id))
+
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        with self._lock:
+            key = (sha256, template_id)
+            versions = {v.version for v in self.versions if (v.sha256, v.template_id) == key}
+            work(self.graphs.get(key), versions)
 
     def all_current(self) -> list[PublishedGraph]:
         return sorted(self.graphs.values(), key=lambda g: (g.sha256, g.template_id))
@@ -238,6 +259,23 @@ class PgGraphRegistry:
             (sha256, template_id),
         ).fetchone()
         return _graph(row) if row else None
+
+    def locked(
+        self,
+        sha256: str,
+        template_id: str,
+        work: Callable[[PublishedGraph | None, set[int]], None],
+    ) -> None:
+        key = (sha256, template_id)
+        with self._conn.transaction():
+            self._conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext('graph:' || %s || ':' || %s))", key
+            )
+            rows = self._conn.execute(
+                "SELECT version FROM published_graph_versions WHERE sha256 = %s AND template_id = %s",
+                key,
+            ).fetchall()
+            work(self.current(sha256, template_id), {r[0] for r in rows})
 
     def all_current(self) -> list[PublishedGraph]:
         rows = self._conn.execute(

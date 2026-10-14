@@ -207,19 +207,27 @@ async function queueBackground(
   return rows[0]!.id;
 }
 
-/** Forget a (sha256, type) graph's current version, its entity sources and orphan entities. */
-async function forgetGraph(client: pg.PoolClient, sha256: string, templateId: string) {
-  await client.query(
-    'DELETE FROM published_entity_sources WHERE sha256 = $1 AND template_id = $2',
-    [sha256, templateId],
+/**
+ * Forget graphs' current versions and their entity sources, then the entities no source names
+ * any more: only those the removed sources named, locked first so that the sweep (a new
+ * statement, a new snapshot) sees a source a concurrent publish committed meanwhile.
+ */
+async function forgetGraphs(client: pg.PoolClient, where: string, args: unknown[]) {
+  const sources = await client.query<{ iri: string }>(
+    `DELETE FROM published_entity_sources WHERE ${where} RETURNING iri`,
+    args,
   );
-  await client.query('DELETE FROM published_graphs WHERE sha256 = $1 AND template_id = $2', [
-    sha256,
-    templateId,
-  ]);
+  await client.query(`DELETE FROM published_graphs WHERE ${where}`, args);
+  const iris = [...new Set(sources.rows.map((r) => r.iri))];
+  if (!iris.length) return;
   await client.query(
-    `DELETE FROM published_entities e
-      WHERE NOT EXISTS (SELECT 1 FROM published_entity_sources s WHERE s.iri = e.iri)`,
+    'SELECT 1 FROM published_entities WHERE iri = ANY($1) ORDER BY iri FOR UPDATE',
+    [iris],
+  );
+  await client.query(
+    `DELETE FROM published_entities e WHERE e.iri = ANY($1)
+        AND NOT EXISTS (SELECT 1 FROM published_entity_sources s WHERE s.iri = e.iri)`,
+    [iris],
   );
 }
 
@@ -268,7 +276,9 @@ async function withdrawJob(client: pg.PoolClient, jobId: string): Promise<string
   );
   const graphs: Withdrawn[] = [];
   for (const r of versions.rows) {
-    if (r.current_iri) await forgetGraph(client, r.sha256, r.template_id);
+    if (r.current_iri) {
+      await forgetGraphs(client, 'sha256 = $1 AND template_id = $2', [r.sha256, r.template_id]);
+    }
     graphs.push({
       sha256: r.sha256,
       templateId: r.template_id,
@@ -812,11 +822,8 @@ export class PgRepo implements IngestionRepo {
         RETURNING o.bucket, o.object_key AS key`,
         [typeId],
       );
-      const current = await client.query<{ sha256: string; template_id: string }>(
-        'SELECT sha256, template_id FROM published_graphs WHERE template_id = $1',
-        [typeId],
-      );
-      await lockGraphs(client, current.rows);
+      // No per-graph locks (a large type would exhaust them): a publish committed meanwhile
+      // keeps its current row, and the worker's withdrawal spares a graph that has one.
       const graphs = await client.query<{
         sha256: string;
         template_id: string;
@@ -829,7 +836,7 @@ export class PgRepo implements IngestionRepo {
            FROM published_graphs g WHERE g.template_id = $1 ORDER BY g.sha256`,
         [typeId],
       );
-      for (const g of graphs.rows) await forgetGraph(client, g.sha256, g.template_id);
+      await forgetGraphs(client, 'template_id = $1', [typeId]);
       if (!objects.rows.length && !graphs.rows.length) return null;
       return queueBackground(
         client,
@@ -863,11 +870,16 @@ export class PgRepo implements IngestionRepo {
   async withdrawalStatus(): Promise<WithdrawalStatus> {
     const { rows } = await this.pool.query<{ status: string; n: number }>(
       `SELECT status, count(*)::int AS n FROM jobs
-        WHERE task IN ('withdraw', 'republish') AND status IN ('queued', 'running', 'failed')
+        WHERE task IN ('withdraw', 'republish')
+          AND status IN ('queued', 'running', 'failed', 'needs_review')
         GROUP BY status`,
     );
     const n = (s: string) => rows.find((r) => r.status === s)?.n ?? 0;
-    return { queued: n('queued'), running: n('running'), failed: n('failed') };
+    return {
+      queued: n('queued'),
+      running: n('running'),
+      failed: n('failed') + n('needs_review'),
+    };
   }
 
   private async inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {

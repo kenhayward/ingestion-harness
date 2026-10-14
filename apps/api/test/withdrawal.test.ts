@@ -133,3 +133,39 @@ describe('retiring and unretiring a document type', () => {
     expect(repo.backgroundJobs).toEqual([]);
   });
 });
+
+describe('withdrawal status', () => {
+  it('counts withdrawals that need review with the failed ones', async () => {
+    const { repo } = await setup();
+    repo.backgroundJobs.push(
+      {
+        id: 'a',
+        task: 'withdraw',
+        priority: 0,
+        maxAttempts: 100,
+        params: {},
+        status: 'needs_review',
+        createdBy: null,
+      },
+      {
+        id: 'b',
+        task: 'republish',
+        priority: -10,
+        maxAttempts: 10,
+        params: {},
+        status: 'failed',
+        createdBy: null,
+      },
+      {
+        id: 'c',
+        task: 'withdraw',
+        priority: 0,
+        maxAttempts: 100,
+        params: {},
+        status: 'queued',
+        createdBy: null,
+      },
+    );
+    expect(await repo.withdrawalStatus()).toEqual({ queued: 1, running: 0, failed: 2 });
+  });
+});
