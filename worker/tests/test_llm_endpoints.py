@@ -324,6 +324,7 @@ class StoreHarness(Protocol):
     def add_ui_endpoint(self, cfg: ProviderConfig) -> None: ...
     def set_key(self, name: str, encrypted: str) -> None: ...
     def disable_model(self, provider: str, model_id: str) -> None: ...
+    def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None: ...
 
 
 class MemoryHarness:
@@ -353,6 +354,9 @@ class MemoryHarness:
 
     def disable_model(self, provider: str, model_id: str) -> None:
         self.store.disable_model(provider, model_id)
+
+    def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None:
+        self.store.set_output_limit(provider, model_id, limit)
 
 
 class PgHarness:
@@ -402,6 +406,12 @@ class PgHarness:
         self.conn.execute(
             "UPDATE llm_models SET enabled = false WHERE provider = %s AND model_id = %s",
             (provider, model_id),
+        )
+
+    def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None:
+        self.conn.execute(
+            "UPDATE llm_models SET max_output_tokens = %s WHERE provider = %s AND model_id = %s",
+            (limit, provider, model_id),
         )
 
     def set_key(self, name: str, encrypted: str) -> None:
@@ -658,6 +668,49 @@ def test_a_disabled_model_is_not_offered(harness: StoreHarness) -> None:
     harness.disable_model("local", "b")
     (local,) = store.load().endpoints
     assert local.models == ["a"]
+
+
+# --- a model's output limit (Models page) ---------------------------------------------------
+
+
+def test_an_offered_models_output_limit_loads_and_moves_the_version(
+    harness: StoreHarness,
+) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("local", models=["a", "b"])]))
+    before = store.version()
+    harness.set_output_limit("local", "b", 32000)
+    assert store.version() != before  # workers rebuild
+    (local,) = store.load().endpoints
+    assert local.max_output_tokens == {"b": 32000}
+    harness.uncurate("local", "b")  # only offered models run, so only theirs load
+    (local,) = store.load().endpoints
+    assert local.max_output_tokens == {}
+
+
+@pytest.mark.parametrize(
+    ("ref", "limit"),
+    [
+        ("local/b", 32000),
+        ("big", 32000),  # a model choice
+        ("draft", 32000),  # the drafting model setting
+        ("local/a", None),  # not set: the caller's default
+        ("default", None),
+    ],
+)
+def test_the_registry_gives_a_refs_output_limit(ref: str, limit: int | None) -> None:
+    seed = seeded(
+        [endpoint("local", models=["a", "b"], maxOutputTokens={"b": 32000})],
+        {"default": "local/a", "big": "local/b", "draft": "local/b"},
+    )
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    assert registry.max_output_tokens(ref) == limit
+
+
+def test_an_unknown_ref_has_no_output_limit() -> None:
+    seed = seeded([endpoint("local", models=["a"])], {"default": "local/a"})
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    assert registry.max_output_tokens("nope/x") is None
 
 
 # --- the embedding model (ADR 0011) -----------------------------------------------------------

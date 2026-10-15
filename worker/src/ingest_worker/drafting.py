@@ -16,7 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .draft_changes import apply_changes
 from .draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage, resolve_answers
-from .extract import ExtractionFailedError, ExtractionResult, run_extraction
+from .extract import (
+    ExtractionFailedError,
+    ExtractionResult,
+    OutputTruncatedError,
+    run_extraction,
+)
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
@@ -35,8 +40,25 @@ MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
 log = logging.getLogger(__name__)
 
-#: Output budget of one drafting call (a survey or proposal is far smaller than an extraction).
+#: Output budget of one drafting call when its model sets none (Models page: Max output
+#: tokens; TS DEFAULT_MAX_OUTPUT_TOKENS).
 DRAFT_MAX_TOKENS = 16_000
+
+
+def output_limit(deps: PipelineDeps, model_ref: str) -> int:
+    """A drafting or mapping call's output budget: its model's limit, else DRAFT_MAX_TOKENS."""
+    return deps.models.max_output_tokens(model_ref) or DRAFT_MAX_TOKENS
+
+
+def truncated_reason(limit: int) -> str:
+    """Why a drafting stage stopped when the model's reply hit its output limit (no model ref:
+    people other than admins read it)."""
+    return (
+        f"The drafting model's reply was cut off at its output limit ({limit:,} tokens). "
+        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "can be run again with less to propose."
+    )
+
 
 DRAFT_SYSTEM = (
     "You help configure a document ingestion harness. You read sample documents and a user's "
@@ -317,6 +339,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
         return run_mapping(job, deps, queue, params, provider, model_id, model_ref)
 
+    limit = output_limit(deps, model_ref)
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
     samples = [
         DraftSample(s.sample_id, s.filename, s.role, prepared_pages(deps, s.sha256)) for s in sent
@@ -371,10 +394,13 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 prompt=prompt,
                 schema=stage.schema,
                 max_attempts=2,
-                max_tokens=DRAFT_MAX_TOKENS,
+                max_tokens=limit,
                 system=DRAFT_SYSTEM,
                 check=check if (stage.convert or stage.check) else None,
             )
+        except OutputTruncatedError as exc:
+            _audit(deps, job, label, exc.attempts)
+            raise DocumentError(truncated_reason(limit)) from exc
         except ExtractionFailedError as exc:
             _audit(deps, job, label, exc.attempts)
             raise DocumentError(str(exc)) from exc

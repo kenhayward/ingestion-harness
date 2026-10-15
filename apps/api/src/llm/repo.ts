@@ -49,6 +49,13 @@ export interface LlmConfigRepo {
     modelIds: string[],
     by: string | null,
   ): Promise<LlmEndpointView | null>;
+  /** A model's output limit (null: the default); null if the endpoint or the model is unknown. */
+  setModelOutputLimit(
+    name: string,
+    modelId: string,
+    maxOutputTokens: number | null,
+    by: string | null,
+  ): Promise<LlmEndpointView | null>;
   /** The model choices (phase 4b), by id. */
   listChoices(): Promise<LlmChoiceView[]>;
   getChoice(id: string): Promise<LlmChoiceView | null>;
@@ -163,7 +170,13 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
   private row(provider: string, modelId: string): LlmModelView {
     const rows = this.models.get(provider) ?? new Map<string, LlmModelView>();
     this.models.set(provider, rows);
-    const row = rows.get(modelId) ?? { modelId, displayName: null, curated: false, enabled: true };
+    const row = rows.get(modelId) ?? {
+      modelId,
+      displayName: null,
+      curated: false,
+      enabled: true,
+      maxOutputTokens: null,
+    };
     rows.set(modelId, row);
     return row;
   }
@@ -224,6 +237,20 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     for (const row of this.models.get(name)?.values() ?? []) {
       row.curated = modelIds.includes(row.modelId);
     }
+    e.updatedBy = by;
+    return this.view(e);
+  }
+
+  async setModelOutputLimit(
+    name: string,
+    modelId: string,
+    maxOutputTokens: number | null,
+    by: string | null,
+  ) {
+    const e = this.endpoints.get(name);
+    const row = this.models.get(name)?.get(modelId);
+    if (!e || !row) return null;
+    row.maxOutputTokens = maxOutputTokens;
     e.updatedBy = by;
     return this.view(e);
   }
@@ -302,7 +329,8 @@ const ENDPOINT_SELECT = `
          e.api_key_env, e.api_key_enc IS NOT NULL AS key_set,
          COALESCE((SELECT json_agg(json_build_object(
                       'modelId', m.model_id, 'displayName', m.display_name,
-                      'curated', m.curated, 'enabled', m.enabled) ORDER BY m.model_id)
+                      'curated', m.curated, 'enabled', m.enabled,
+                      'maxOutputTokens', m.max_output_tokens) ORDER BY m.model_id)
                      FROM llm_models m WHERE m.provider = e.name), '[]') AS models
     FROM llm_endpoints e`;
 
@@ -438,6 +466,25 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
       client.release();
     }
     return this.getEndpoint(name);
+  }
+
+  async setModelOutputLimit(
+    name: string,
+    modelId: string,
+    maxOutputTokens: number | null,
+    by: string | null,
+  ) {
+    const { rowCount } = await this.pool.query(
+      `WITH m AS (
+         UPDATE llm_models SET max_output_tokens = $3
+          WHERE provider = $1 AND model_id = $2
+            AND EXISTS (SELECT 1 FROM llm_endpoints WHERE name = $1)
+         RETURNING provider)
+       UPDATE llm_endpoints SET updated_by = $4, updated_at = now()
+        WHERE name IN (SELECT provider FROM m)`,
+      [name, modelId, maxOutputTokens, by],
+    );
+    return rowCount ? this.getEndpoint(name) : null;
   }
 
   /** Curate these models as an admin's choice (`curated_edited_at`): .env no longer changes them. */

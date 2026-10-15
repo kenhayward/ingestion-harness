@@ -378,6 +378,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     updateLlmEndpoint: vi.fn(async () => {
       throw new Error('updateLlmEndpoint not stubbed');
     }),
+    setLlmModelSettings: vi.fn(async () => {
+      throw new Error('setLlmModelSettings not stubbed');
+    }),
     setLlmEndpointModels: vi.fn(async () => {
       throw new Error('setLlmEndpointModels not stubbed');
     }),

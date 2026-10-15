@@ -39594,13 +39594,24 @@
                             },
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "maxOutputTokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
                             "modelId",
                             "displayName",
                             "curated",
-                            "enabled"
+                            "enabled",
+                            "maxOutputTokens"
                           ],
                           "additionalProperties": true
                         }
@@ -39859,13 +39870,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40202,13 +40224,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40728,13 +40761,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40940,6 +40984,343 @@
                   ],
                   "additionalProperties": true,
                   "description": "`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / `the OCR model …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/endpoints/{name}/models/{modelId}": {
+      "patch": {
+        "operationId": "setLlmModelSettings",
+        "summary": "Set a model's output limit",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admins only.** `maxOutputTokens` is the most tokens one reply of this model may\nuse where the step does not say: the Workbench drafting stages and the mapping stage\n(16,000 when null). A reply cut off at the limit fails the stage with a message that\nnames this setting. Mainly a property of the model, so set it to what the model and\nits context window allow. A model id containing `/` is URL-encoded.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxOutputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1024,
+                        "maximum": 1000000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "maxOutputTokens"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "description": "The endpoint name (model-ref prefix)."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "modelId",
+            "required": true,
+            "description": "The model id on this endpoint."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "anthropic",
+                        "openai-chat",
+                        "openai-responses"
+                      ]
+                    },
+                    "baseUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "location": {
+                      "type": "string",
+                      "enum": [
+                        "local",
+                        "external"
+                      ]
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "apiKeyEnv": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keySet": {
+                      "type": "boolean"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "modelId": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "curated": {
+                            "type": "boolean"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "modelId",
+                          "displayName",
+                          "curated",
+                          "enabled",
+                          "maxOutputTokens"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "kind",
+                    "baseUrl",
+                    "location",
+                    "enabled",
+                    "source",
+                    "editedAt",
+                    "updatedBy",
+                    "apiKeyEnv",
+                    "keySet",
+                    "models"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The endpoint."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`endpoint not found` or `model not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`endpoint not found` or `model not found`."
                 }
               }
             }

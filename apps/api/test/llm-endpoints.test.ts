@@ -55,9 +55,27 @@ describe('LLM endpoints API', () => {
         apiKeyEnv: 'LOCAL_LLM_API_KEY',
         keySet: false,
         models: [
-          { modelId: 'llama-3', displayName: 'Llama 3', curated: false, enabled: true },
-          { modelId: 'olmocr', displayName: null, curated: true, enabled: true },
-          { modelId: 'qwen', displayName: null, curated: true, enabled: true },
+          {
+            modelId: 'llama-3',
+            displayName: 'Llama 3',
+            curated: false,
+            enabled: true,
+            maxOutputTokens: null,
+          },
+          {
+            modelId: 'olmocr',
+            displayName: null,
+            curated: true,
+            enabled: true,
+            maxOutputTokens: null,
+          },
+          {
+            modelId: 'qwen',
+            displayName: null,
+            curated: true,
+            enabled: true,
+            maxOutputTokens: null,
+          },
         ],
       },
     ]);
@@ -215,9 +233,55 @@ describe('LLM endpoints API', () => {
     expect(env.json().error).toBe('local comes from .env: disable it instead');
   });
 
+  it("sets a model's output limit, and clears it", async () => {
+    const { call } = await setup();
+    const set = await call('PATCH', '/endpoints/local/models/qwen', { maxOutputTokens: 32000 });
+    expect(set.statusCode).toBe(200);
+    const qwen = (v: { models: { modelId: string; maxOutputTokens: number | null }[] }) =>
+      v.models.find((m) => m.modelId === 'qwen')!.maxOutputTokens;
+    expect(qwen(set.json())).toBe(32000);
+    expect(qwen((await call('GET', '/endpoints')).json()[0])).toBe(32000);
+    const cleared = await call('PATCH', '/endpoints/local/models/qwen', { maxOutputTokens: null });
+    expect(qwen(cleared.json())).toBeNull();
+  });
+
+  it('takes a model id with a slash, and refuses unknown models and odd limits', async () => {
+    const { call, llm } = await setup();
+    llm.discovered('local', 'org/model', null);
+    const slash = await call(
+      'PATCH',
+      `/endpoints/local/models/${encodeURIComponent('org/model')}`,
+      {
+        maxOutputTokens: 8192,
+      },
+    );
+    expect(slash.statusCode).toBe(200);
+    expect(
+      slash.json().models.find((m: { modelId: string }) => m.modelId === 'org/model')
+        .maxOutputTokens,
+    ).toBe(8192);
+    const missing = await call('PATCH', '/endpoints/local/models/nope', { maxOutputTokens: 8192 });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toBe('model not found');
+    expect(
+      (await call('PATCH', '/endpoints/nope/models/qwen', { maxOutputTokens: 8192 })).statusCode,
+    ).toBe(404);
+    for (const maxOutputTokens of [500, 2_000_000, 1.5, '8192']) {
+      const bad = await call('PATCH', '/endpoints/local/models/qwen', { maxOutputTokens });
+      expect(bad.statusCode, String(maxOutputTokens)).toBe(400);
+    }
+  });
+
   it('is for admins only', async () => {
     const { app, userCookie } = await accessApp();
     const res = await app.inject({ url: '/api/llm/endpoints', headers: { cookie: userCookie } });
     expect(res.statusCode).toBe(403);
+    const limit = await app.inject({
+      method: 'PATCH',
+      url: '/api/llm/endpoints/local/models/qwen',
+      headers: { cookie: userCookie },
+      payload: { maxOutputTokens: 8192 },
+    });
+    expect(limit.statusCode).toBe(403);
   });
 });

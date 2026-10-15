@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
-import type { EndpointPatchBody, LlmChoicesView, LlmEndpointView, ProviderKind } from '@ih/shared';
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_OUTPUT_TOKENS,
+  MIN_OUTPUT_TOKENS,
+  type EndpointPatchBody,
+  type LlmChoicesView,
+  type LlmEndpointView,
+  type LlmModelView,
+  type ProviderKind,
+} from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
@@ -126,6 +135,67 @@ export function ModelsPage({ api, me }: { api: Api; me: Me }) {
   );
 }
 
+/** What the limit box holds: empty (the default) or a whole number of tokens in range. */
+function limitProblem(text: string): string | null {
+  if (text.trim() === '') return null;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= MIN_OUTPUT_TOKENS && n <= MAX_OUTPUT_TOKENS
+    ? null
+    : `Between ${MIN_OUTPUT_TOKENS.toLocaleString('en-GB')} and ${MAX_OUTPUT_TOKENS.toLocaleString('en-GB')} tokens, or empty for the default`;
+}
+
+/**
+ * An offered model's output limit: the most tokens one reply may use where the step does not
+ * say (Workbench drafting and mapping). Empty is the default.
+ */
+function OutputLimit({
+  model,
+  onSave,
+}: {
+  model: LlmModelView;
+  onSave: (maxOutputTokens: number | null) => void;
+}) {
+  const stored = model.maxOutputTokens === null ? '' : String(model.maxOutputTokens);
+  const [text, setText] = useState(stored);
+  useEffect(() => setText(stored), [stored]);
+  const problem = limitProblem(text);
+  const changed = text.trim() !== stored;
+  const save = () => {
+    if (problem || !changed) return;
+    onSave(text.trim() === '' ? null : Number(text));
+  };
+  return (
+    <span className="output-limit">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={MIN_OUTPUT_TOKENS}
+        max={MAX_OUTPUT_TOKENS}
+        step={1024}
+        aria-label={`Max output tokens for ${model.modelId}`}
+        placeholder={`${DEFAULT_MAX_OUTPUT_TOKENS.toLocaleString('en-GB')} (default)`}
+        value={text}
+        onChange={(ev) => setText(ev.target.value)}
+        onKeyDown={(ev) => {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            save();
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`Set the output limit of ${model.modelId}`}
+        disabled={!changed || problem !== null}
+        title={problem ?? undefined}
+        onClick={save}
+      >
+        Set
+      </button>
+    </span>
+  );
+}
+
 function EndpointCard({
   api,
   endpoint: e,
@@ -177,7 +247,13 @@ function EndpointCard({
   const dirty = [...selected].sort().join('\n') !== [...curated].sort().join('\n');
   const rows = [
     ...e.models,
-    ...added.map((modelId) => ({ modelId, displayName: null, curated: false, enabled: true })),
+    ...added.map((modelId) => ({
+      modelId,
+      displayName: null,
+      curated: false,
+      enabled: true,
+      maxOutputTokens: null,
+    })),
   ];
 
   return (
@@ -352,6 +428,14 @@ function EndpointCard({
                   <span className="tag tone-neutral"> suggested</span>
                 )}
               </label>
+              {m.curated && (
+                <OutputLimit
+                  model={m}
+                  onSave={(maxOutputTokens) =>
+                    void act(() => api.setLlmModelSettings(e.name, m.modelId, { maxOutputTokens }))
+                  }
+                />
+              )}
             </li>
           ))}
         </ul>

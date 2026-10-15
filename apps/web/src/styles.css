@@ -3281,6 +3281,23 @@ tr.confirming td {
   border: 0;
   border-top: 1px solid var(--ih-border);
 }
+/* An offered model's output limit sits under its name (Models page). */
+.endpoint-models li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.output-limit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 24px;
+}
+.output-limit input {
+  width: 10rem;
+  min-width: 0;
+}
 .endpoint-models legend {
   padding: 12px 0 8px;
   font-weight: 600;

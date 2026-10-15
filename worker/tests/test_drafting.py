@@ -154,6 +154,47 @@ def make(
     return provider, store, deps
 
 
+@pytest.mark.parametrize(("limit", "budget"), [(None, 16_000), (48_000, 48_000)])
+def test_a_drafting_reply_may_use_its_models_output_limit(
+    fixture_specs_dir: Path, limit: int | None, budget: int
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    limits = {} if limit is None else {"big": limit}
+    deps = dataclasses.replace(
+        deps,
+        models=ModelRegistry(
+            {"drafter": provider},
+            {"drafter": ProviderConfig(name="drafter", kind="openai-chat", location="local",
+                                       maxOutputTokens=limits)},  # type: ignore[arg-type]
+            {"draft": "drafter/big"},
+        ),
+    )  # fmt: skip
+    provider.responses = [SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert provider.calls[0][1].max_tokens == budget
+
+
+def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
+    fixture_specs_dir: Path,
+) -> None:
+    from ingest_worker.llm.base import CompletionResult
+
+    provider, _, deps = make(fixture_specs_dir)
+    cut = CompletionResult(text='{"notes": "32 tables', model="big", truncated=True)
+    provider.responses = [cut]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "The drafting model's reply was cut off at its output limit (16,000 tokens). "
+        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "can be run again with less to propose."
+    )
+    assert "chunkPages" not in reason
+
+
 def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [SURVEY_BODY]
