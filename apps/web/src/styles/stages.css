@@ -1022,6 +1022,12 @@ label.inline.list-select {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+.delivery-targets {
+  margin: 0 0 16px;
+}
+.delivery-targets .chips {
+  align-items: center;
+}
 .outputs-card {
   margin-bottom: 16px;
   padding: 0;

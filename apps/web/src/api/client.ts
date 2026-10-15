@@ -490,6 +490,8 @@ export interface Api {
   getProject(id: string): Promise<ProjectView>;
   /** Deletes a project whose type was never published (409 otherwise). */
   deleteProject(id: string): Promise<void>;
+  /** Starts the project again, keeping its samples and the brief's written sections. */
+  resetProject(id: string): Promise<ProjectView>;
   setDataPolicy(projectId: string, dataPolicy: DataPolicy): Promise<ProjectView>;
   /** Queue the project's drafting bundle (replaces its previous export). */
   startExport(projectId: string): Promise<ExportView>;
@@ -1035,6 +1037,7 @@ export function createHttpApi(base = '/api'): Api {
       noContent(apiFetch(`${base}/workbench/pins/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     deleteProject: (id) =>
       noContent(apiFetch(`${base}/workbench/projects/${id}`, { method: 'DELETE' })),
+    resetProject: (id) => post<ProjectView>(`${base}/workbench/projects/${id}/reset`, {}),
     startExport: (id) => post<ExportView>(`${base}/workbench/projects/${id}/export`, {}),
     listExports: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/exports`).then(json<ExportView[]>),

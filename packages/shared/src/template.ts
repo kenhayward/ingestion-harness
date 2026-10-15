@@ -393,3 +393,55 @@ export function stepModel(
 export function deliveryFormats(template: Pick<Template, 'delivery'>): DeliveryFormat[] {
   return template.delivery?.formats ?? ['csv', 'json'];
 }
+
+/**
+ * Where a recipe's outputs go, as the Workbench Outputs tab switches them: `s3` is the CSV and
+ * JSON written to the target bucket, `rdf` the graph published to the triple store.
+ */
+export const DELIVERY_TARGETS = ['s3', 'rdf'] as const;
+export type DeliveryTarget = (typeof DELIVERY_TARGETS)[number];
+
+const TARGET_FORMATS: Record<DeliveryTarget, readonly DeliveryFormat[]> = {
+  s3: ['csv', 'json'],
+  rdf: ['rdf'],
+};
+
+type LooseDefinition = Record<string, unknown>;
+
+function formatsOf(definition: LooseDefinition): DeliveryFormat[] {
+  const delivery = definition.delivery as { formats?: DeliveryFormat[] } | undefined;
+  return delivery?.formats ?? ['csv', 'json'];
+}
+
+/**
+ * Which targets a (possibly invalid) draft definition has on. RDF counts as on while the recipe
+ * has an ontology mapping it does not deliver yet, so turning it off removes that mapping.
+ */
+export function deliveryTargets(definition: LooseDefinition): Record<DeliveryTarget, boolean> {
+  const formats = formatsOf(definition);
+  return {
+    s3: formats.some((f) => TARGET_FORMATS.s3.includes(f)),
+    rdf: formats.includes('rdf') || definition.semantics !== undefined,
+  };
+}
+
+/**
+ * The definition with one target switched (pure). RDF off also deletes the ontology mapping
+ * (`semantics`); the default (CSV and JSON) is written as no `delivery` at all, as the recipe
+ * editor's General tab does. Throws rather than turn off the last target.
+ */
+export function setDeliveryTarget(
+  definition: LooseDefinition,
+  target: DeliveryTarget,
+  on: boolean,
+): LooseDefinition {
+  const targets = { ...deliveryTargets(definition), [target]: on };
+  if (!targets.s3 && !targets.rdf) throw new Error('at least one output stays on');
+  const formats = DELIVERY_FORMATS.filter((f) =>
+    f === 'rdf' ? targets.rdf : target === 's3' ? on : formatsOf(definition).includes(f),
+  );
+  const next: LooseDefinition = { ...definition };
+  delete next.delivery;
+  if (target === 'rdf' && !on) delete next.semantics;
+  return formats.join() === 'csv,json' ? next : { ...next, delivery: { formats } };
+}

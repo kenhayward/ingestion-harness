@@ -16,6 +16,8 @@ export function useDefinitions(
   enabled: boolean,
 ) {
   const [draftDef, setDraftDef] = useState<Def | null>(null);
+  /** The draft's `updatedAt` as loaded: a save sends it as `baseUpdatedAt`. */
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
   const [liveDef, setLiveDef] = useState<Def | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -36,9 +38,11 @@ export function useDefinitions(
     if (id !== latest.current) return null;
     if (d.status === 'fulfilled') {
       setDraftDef(d.value.record.definition);
+      setDraftUpdatedAt(d.value.record.updatedAt);
       setError(null);
     } else {
       setDraftDef(null);
+      setDraftUpdatedAt(null);
       setError((d.reason as Error).message);
     }
     if (l.status === 'fulfilled') {
@@ -53,6 +57,7 @@ export function useDefinitions(
 
   useEffect(() => {
     setDraftDef(null);
+    setDraftUpdatedAt(null);
     setLiveDef(null);
     setError(null);
     setLiveError(null);
@@ -60,5 +65,5 @@ export function useDefinitions(
     return supersede;
   }, [reload, supersede]);
 
-  return { draftDef, liveDef, error, liveError, reload };
+  return { draftDef, draftUpdatedAt, liveDef, error, liveError, reload };
 }

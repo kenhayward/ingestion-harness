@@ -86,10 +86,11 @@ export interface OverviewInputs {
   /** The newest revise proposal's status; null when revise never ran. */
   revise: ProposalStatus | null;
   /**
-   * The mapping stage (ADR 0011): `used` once the brief chooses a vocabulary ontology, and its
-   * state (`mappingStage`). Absent: not used.
+   * The mapping stage (ADR 0011): `used` once the brief chooses a vocabulary ontology, `rdf`
+   * whether the open draft has RDF on (`deliveryTargets`, the Outputs tab; absent: on), and its
+   * state (`mappingStage`). Not used unless both. Absent: not used.
    */
-  mapping?: { used: boolean; state: StageState };
+  mapping?: { used: boolean; rdf?: boolean; state: StageState };
   /**
    * `running`: an evaluation of the open draft (dev or holdout) is queued or running.
    * `revisedSince`: a revision was applied to the open draft after its newest evaluation (or it
@@ -173,7 +174,9 @@ export function overviewStates(inputs: OverviewInputs): OverviewEntry[] {
     outputs: drafted('outputs'),
     sections: drafted('sections'),
     steps: drafted('steps'),
-    mapping: inputs.mapping?.used ? inputs.mapping.state : 'skipped',
+    // Used only with a vocabulary pinned and RDF on.
+    mapping:
+      inputs.mapping?.used && inputs.mapping.rdf !== false ? inputs.mapping.state : 'skipped',
     references: drafted('references'),
     evaluate: evaluateState(inputs.evaluation, inputs.gate),
     revise: reviseState(inputs.revise),
@@ -514,6 +517,7 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       if (state === 'accepted') return 'Applied';
       return ctx.openFeedback > 0 ? `${ctx.openFeedback} open` : 'No feedback';
     case 'mapping':
+      if (inputs.mapping?.rdf === false) return 'Not used: RDF is off on the Outputs tab';
       if (!inputs.mapping?.used) return 'Not used: no vocabulary is pinned on Survey';
       if (state === 'stale') return "Stale — the outputs or the brief's ontologies changed";
       if (state === 'accepted') return 'Mapped';
