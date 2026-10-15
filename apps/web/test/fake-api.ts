@@ -570,6 +570,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
+    resetProject: vi.fn(async () => {
+      throw new Error('resetProject not stubbed');
+    }),
     deleteProject: vi.fn(async () => {
       throw new Error('deleteProject not stubbed');
     }),

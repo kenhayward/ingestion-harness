@@ -1,4 +1,4 @@
-import type { DataPolicy, OverviewItem } from '@ih/shared';
+import { deliveryTargets, type DataPolicy, type OverviewItem } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { GraphPreview } from '../templates/MappingEditor.js';
 import { mappingBadge, mappingNote, mappingRows } from './mapping.js';
@@ -46,7 +46,25 @@ export function MappingTab({
   onSkipped: () => void;
   onNavigate: (hash: string) => void;
 }) {
-  const loaded = useDefinitions(api, projectId, draft, published, definition === undefined && used);
+  const loaded = useDefinitions(api, projectId, draft, published, definition === undefined);
+  const shown = definition ?? loaded.draftDef ?? loaded.liveDef;
+  if (definition === undefined && hasDraft && loaded.draftDef === null && loaded.error === null) {
+    return <p>Loading…</p>;
+  }
+  // The Outputs tab's RDF switch comes first, as in the overview (`overviewItems`).
+  if (shown && !deliveryTargets(shown).rdf) {
+    return (
+      <div className="mapping-tab">
+        <p className="banner tone-skip">
+          Not used: RDF is off on the Outputs tab. Turn RDF on there to publish each document as a
+          graph, and map its outputs to ontology terms here.
+        </p>
+        <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/outputs`)}>
+          Turn RDF on in Outputs
+        </button>
+      </div>
+    );
+  }
   if (!used) {
     return (
       <div className="mapping-tab">
@@ -64,7 +82,7 @@ export function MappingTab({
       </div>
     );
   }
-  const rows = mappingRows(definition ?? loaded.draftDef ?? loaded.liveDef);
+  const rows = mappingRows(shown);
   return (
     <div className="mapping-tab">
       <StagePanel

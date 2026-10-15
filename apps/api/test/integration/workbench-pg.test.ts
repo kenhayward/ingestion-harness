@@ -1081,117 +1081,178 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     ]);
   });
 
-  it('deletes a project with every row it owns in one call, and leaves another project alone', async () => {
-    /** A project with samples, jobs of every kind, a reference, iterations and the rest. */
-    const populate = async () => {
-      const projectId = await newProject();
-      const sampleDoc = doc(projectId);
-      const prepare = await repo.createWorkbenchJob(sampleDoc, { projectId, task: 'prepare' });
-      await workbench.addSample({
-        projectId,
-        documentId: prepare.documentId,
-        role: 'dev',
-        addedForVersion: 1,
-      });
-      await workbench.saveBrief(projectId, EMPTY_BRIEF);
-      await workbench.addSkip(projectId, 'survey');
-      await workbench.addConfirm(projectId, 'outputs', new Date().toISOString());
-      const source = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
-      const reference = await repo.createReference({
-        templateId: projectId,
-        name: 'first',
-        documentId: source.documentId,
-        sourceJobId: source.id,
-        expected: { fields: {}, tables: {} },
-      });
-      const run = await repo.createWorkbenchJob(doc(projectId), {
-        projectId,
-        task: 'process',
-        referenceId: reference.id,
-      });
-      await pool.query(
-        `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
-         VALUES ($1, 'document', 'json', 'outputs', $2, 'draft')`,
-        [run.id, `${projectId}/draft.json`],
-      );
-      await pool.query(
-        `INSERT INTO step_runs (job_id, step_id, trigger, status, started_at)
-         VALUES ($1, 'head', 'process', 'succeeded', now())`,
-        [run.id],
-      );
-      await pool.query(`INSERT INTO job_events (job_id, level, message) VALUES ($1, 'info', 'x')`, [
-        run.id,
-      ]);
-      const iteration = await workbench.createIteration({
-        projectId,
-        templateVersion: 1,
-        definition: {},
-        briefVersion: 1,
-        set: 'dev',
-        model: null,
-        jobIds: [run.id],
-      });
-      const draft = await repo.createDraftJob(projectId, { stage: 'outputs' });
-      const proposal = await workbench.createProposal({
-        id: draft.id,
-        projectId,
-        stage: 'outputs',
-        briefVersion: 1,
-      });
-      const feedback = await workbench.createFeedback({
-        projectId,
-        target: 'field',
-        targetId: 'sender',
-        sampleId: null,
-        iterationId: iteration.id,
-        body: 'Use the letterhead',
-      });
-      await workbench.resolveFeedback(projectId, [feedback.id], proposal.id);
-      await workbench.recordPublication({
-        projectId,
+  /** A project with samples, jobs of every kind, a reference, iterations and the rest. */
+  const populate = async () => {
+    const projectId = await newProject();
+    const sampleDoc = doc(projectId);
+    const prepare = await repo.createWorkbenchJob(sampleDoc, { projectId, task: 'prepare' });
+    await workbench.addSample({
+      projectId,
+      documentId: prepare.documentId,
+      role: 'dev',
+      addedForVersion: 1,
+    });
+    await workbench.saveBrief(projectId, EMPTY_BRIEF);
+    await workbench.addSkip(projectId, 'survey');
+    await workbench.addConfirm(projectId, 'outputs', new Date().toISOString());
+    const source = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
+    const reference = await repo.createReference({
+      templateId: projectId,
+      name: 'first',
+      documentId: source.documentId,
+      sourceJobId: source.id,
+      expected: { fields: {}, tables: {} },
+    });
+    const run = await repo.createWorkbenchJob(doc(projectId), {
+      projectId,
+      task: 'process',
+      referenceId: reference.id,
+    });
+    await pool.query(
+      `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
+       VALUES ($1, 'document', 'json', 'outputs', $2, 'draft')`,
+      [run.id, `${projectId}/draft.json`],
+    );
+    await pool.query(
+      `INSERT INTO step_runs (job_id, step_id, trigger, status, started_at)
+       VALUES ($1, 'head', 'process', 'succeeded', now())`,
+      [run.id],
+    );
+    await pool.query(`INSERT INTO job_events (job_id, level, message) VALUES ($1, 'info', 'x')`, [
+      run.id,
+    ]);
+    const iteration = await workbench.createIteration({
+      projectId,
+      templateVersion: 1,
+      definition: {},
+      briefVersion: 1,
+      set: 'dev',
+      model: null,
+      jobIds: [run.id],
+    });
+    const draft = await repo.createDraftJob(projectId, { stage: 'outputs' });
+    const proposal = await workbench.createProposal({
+      id: draft.id,
+      projectId,
+      stage: 'outputs',
+      briefVersion: 1,
+    });
+    const feedback = await workbench.createFeedback({
+      projectId,
+      target: 'field',
+      targetId: 'sender',
+      sampleId: null,
+      iterationId: iteration.id,
+      body: 'Use the letterhead',
+    });
+    await workbench.resolveFeedback(projectId, [feedback.id], proposal.id);
+    await workbench.recordPublication({
+      projectId,
+      version: 1,
+      iterationId: iteration.id,
+      score: 1,
+      threshold: 0.9,
+      overrideReason: null,
+      publishedBy: null,
+    });
+    await repo.createSegmentJob(projectId, segmentParams);
+    await repo.createExportJob(projectId, { stage: 'export' });
+    // A Templates-page test upload of the type: a test job with no project.
+    const upload = await repo.createDocumentAndJob(doc(projectId), null, true);
+    await pool.query(
+      `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
+      [projectId],
+    );
+    await pool.query(
+      `INSERT INTO template_changes (template_id, version, source, summary)
+       VALUES ($1, 1, 'started', 'Draft v1 created')`,
+      [projectId],
+    );
+    return { projectId, sampleDoc, run, upload };
+  };
+  const counts = async (projectId: string) => {
+    const { rows } = await pool.query<Record<string, number>>(
+      `SELECT
+         (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
+         (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
+         (SELECT count(*)::int FROM workbench_briefs WHERE project_id = $1) AS briefs,
+         (SELECT count(*)::int FROM workbench_stage_skips WHERE project_id = $1) AS skips,
+         (SELECT count(*)::int FROM workbench_stage_confirms WHERE project_id = $1) AS confirms,
+         (SELECT count(*)::int FROM workbench_proposals WHERE project_id = $1) AS proposals,
+         (SELECT count(*)::int FROM workbench_iterations WHERE project_id = $1) AS iterations,
+         (SELECT count(*)::int FROM workbench_feedback WHERE project_id = $1) AS feedback,
+         (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
+         (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
+         (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
+         (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents,
+         (SELECT count(*)::int FROM template_changes WHERE template_id = $1) AS changes,
+         (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
+      [projectId],
+    );
+    return rows[0]!;
+  };
+
+  it('resets a project in one call: keeps its samples, prepare jobs and publications', async () => {
+    const target = await populate();
+    const other = await populate();
+    const before = await counts(other.projectId);
+    const removed = await workbench.resetProject(target.projectId, {
+      draft: {
         version: 1,
-        iterationId: iteration.id,
-        score: 1,
-        threshold: 0.9,
-        overrideReason: null,
-        publishedBy: null,
-      });
-      await repo.createSegmentJob(projectId, segmentParams);
-      await repo.createExportJob(projectId, { stage: 'export' });
-      // A Templates-page test upload of the type: a test job with no project.
-      const upload = await repo.createDocumentAndJob(doc(projectId), null, true);
-      await pool.query(
-        `INSERT INTO templates (id, version, status, definition) VALUES ($1, 1, 'draft', '{}')`,
-        [projectId],
-      );
-      await pool.query(
-        `INSERT INTO template_changes (template_id, version, source, summary)
-         VALUES ($1, 1, 'started', 'Draft v1 created')`,
-        [projectId],
-      );
-      return { projectId, sampleDoc, run, upload };
-    };
-    const counts = async (projectId: string) => {
-      const { rows } = await pool.query<Record<string, number>>(
-        `SELECT
-           (SELECT count(*)::int FROM workbench_projects WHERE id = $1) AS projects,
-           (SELECT count(*)::int FROM workbench_samples WHERE project_id = $1) AS samples,
-           (SELECT count(*)::int FROM workbench_briefs WHERE project_id = $1) AS briefs,
-           (SELECT count(*)::int FROM workbench_stage_skips WHERE project_id = $1) AS skips,
-           (SELECT count(*)::int FROM workbench_stage_confirms WHERE project_id = $1) AS confirms,
-           (SELECT count(*)::int FROM workbench_proposals WHERE project_id = $1) AS proposals,
-           (SELECT count(*)::int FROM workbench_iterations WHERE project_id = $1) AS iterations,
-           (SELECT count(*)::int FROM workbench_feedback WHERE project_id = $1) AS feedback,
-           (SELECT count(*)::int FROM workbench_publications WHERE project_id = $1) AS publications,
-           (SELECT count(*)::int FROM template_references WHERE template_id = $1) AS refs,
-           (SELECT count(*)::int FROM jobs WHERE project_id = $1) AS jobs,
-           (SELECT count(*)::int FROM documents WHERE spec_id = $1) AS documents,
-           (SELECT count(*)::int FROM template_changes WHERE template_id = $1) AS changes,
-           (SELECT count(*)::int FROM templates WHERE id = $1) AS templates`,
-        [projectId],
-      );
-      return rows[0]!;
-    };
+        definition: { id: target.projectId, version: 1, name: 'Reset' },
+        change: {
+          source: 'started',
+          stage: null,
+          proposalId: null,
+          summary: 'Draft v1 reset',
+          diff: [],
+          by: 'Ken',
+        },
+      },
+      brief: { ...EMPTY_BRIEF, purpose: 'Letters.' },
+    });
+    if (!removed) throw new Error('not reset');
+    // source, run, draft, segment and export jobs; not the prepare job nor the test upload.
+    expect(removed.jobs).toHaveLength(5);
+    expect(removed.jobs.map((j) => j.jobId)).not.toContain(target.upload.id);
+    expect(removed.documents).not.toContainEqual({
+      bucket: 'inbox',
+      key: target.sampleDoc.objectKey,
+    });
+    expect(await counts(target.projectId)).toMatchObject({
+      projects: 1,
+      samples: 1,
+      briefs: 1,
+      skips: 0,
+      confirms: 0,
+      proposals: 0,
+      iterations: 0,
+      feedback: 0,
+      publications: 1,
+      refs: 0,
+      jobs: 1,
+      changes: 1,
+      templates: 1,
+    });
+    const { rows } = await pool.query<{ definition: unknown; summary: string; by: string }>(
+      `SELECT t.definition, c.summary, c.created_by AS by
+         FROM templates t JOIN template_changes c ON c.template_id = t.id AND c.version = t.version
+        WHERE t.id = $1`,
+      [target.projectId],
+    );
+    expect(rows).toEqual([
+      {
+        definition: { id: target.projectId, version: 1, name: 'Reset' },
+        summary: 'Draft v1 reset',
+        by: 'Ken',
+      },
+    ]);
+    expect((await workbench.latestBrief(target.projectId))!.body.purpose).toBe('Letters.');
+    expect(await counts(other.projectId)).toEqual(before);
+    expect(await workbench.resetProject('it-nope', { draft: null, brief: null })).toBeNull();
+  });
+
+  it('deletes a project with every row it owns in one call, and leaves another project alone', async () => {
     const target = await populate();
     const other = await populate();
     const before = await counts(other.projectId);
