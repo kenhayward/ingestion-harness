@@ -263,3 +263,28 @@ def test_a_beat_neither_moves_updated_at_nor_notifies_job_watchers(
     finally:
         listener.close()
         heartbeat.close()
+
+
+def test_a_survey_queues_one_suggest_job_per_project(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    """Like the API's createSuggestJob: the project's earlier suggest job is replaced."""
+    q, _ = queue_with_queued_job
+    project = f"p{uuid.uuid4().hex[:8]}"
+    q._conn.execute("INSERT INTO workbench_projects (id, name) VALUES (%s, 'P')", (project,))
+    params = {"surveyProposalId": "s1", "candidates": [], "library": [], "pinned": [],
+              "dataPolicy": "local"}  # fmt: skip
+    try:
+        first, removed = q.queue_suggest(project, params)
+        assert removed == []
+        second, removed = q.queue_suggest(project, {**params, "surveyProposalId": "s2"})
+        assert removed == [first]
+        rows = q._conn.execute(
+            """SELECT id::text, task, status, test, priority, max_attempts, params->>'surveyProposalId'
+                 FROM jobs WHERE project_id = %s""",
+            (project,),
+        ).fetchall()
+        assert rows == [(second, "suggest", "queued", True, -5, 3, "s2")]
+    finally:
+        q._conn.execute("DELETE FROM jobs WHERE project_id = %s", (project,))
+        q._conn.execute("DELETE FROM workbench_projects WHERE id = %s", (project,))

@@ -365,3 +365,52 @@ def test_pg_semantic_best_answers_every_query_vector_in_one_pass() -> None:
     ]
     assert found[0][0].similarity == pytest.approx(1.0, abs=1e-5)
     assert found[0][0].ontology_id == "pharma-sem" and found[0][0].version == 1
+
+
+@pytest.mark.integration
+def test_pg_semantic_best_reads_each_query_vector_once() -> None:
+    """Twenty candidates against 20k terms with 1024-dimension embeddings (bge-m3): each query
+    vector is parsed once, not once per embedding it is compared with (the survey that waited
+    two minutes after the model replied)."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import time
+
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore
+
+    conn = psycopg.connect(url, autocommit=True)
+    version = ("semantic-big", 1)
+    conn.execute("DELETE FROM ontologies WHERE id = %s", (version[0],))
+    conn.execute("INSERT INTO ontologies (id, label) VALUES (%s, 'Big')", (version[0],))
+    conn.execute(
+        """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, status)
+           VALUES (%s, %s, 'big.ttl', 'text/turtle', 'ready')""",
+        version,
+    )
+    conn.execute(
+        """INSERT INTO ontology_terms (ontology_id, version, iri, kind, label)
+           SELECT %s, %s, 'https://ex.example/sem#t' || n, 'class', 'term ' || n
+             FROM generate_series(1, 20000) AS n""",
+        version,
+    )
+    conn.execute(
+        """INSERT INTO ontology_term_embeddings
+             (ontology_id, version, kind, iri, model_ref, dims, text_sha256, embedding)
+           SELECT %s, %s, 'class', 'https://ex.example/sem#t' || n, %s, 1024, 'x',
+                  array_fill(((n %% 97) + 1)::real, ARRAY[1024])::vector
+             FROM generate_series(1, 20000) AS n""",
+        (*version, MODEL),
+    )
+    pg = PgOntologyStore(conn)
+    vectors = [[float((i % 7) + 1)] * 1024 for i in range(20)]
+    try:
+        started = time.perf_counter()
+        found = pg.semantic_best([version], MODEL, vectors, [["class"]] * 20, 0.6)
+        elapsed = time.perf_counter() - started
+        assert all(len(hits) == 1 for hits in found)  # every vector points the same way
+        assert elapsed < 20.0, f"20 candidates against 20k embeddings took {elapsed:.1f}s"
+    finally:
+        conn.execute("DELETE FROM ontologies WHERE id = %s", (version[0],))
