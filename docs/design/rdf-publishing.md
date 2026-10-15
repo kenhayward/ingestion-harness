@@ -370,6 +370,31 @@ Implemented in rollout step 4 (migration 0035):
 This is a document-less job with `priority = -10` and its own task (added to the jobs task
 CHECK list, `JobSummary` excludes it like `segment`).
 
+**From a folder or a zip** (added 2026-10-15; migration 0038): `POST /api/ontologies/batch`
+(admin, multipart).
+
+- **What it takes:** the folder's files with their paths in a `paths` field, or one `.zip`.
+  Only ontology files are taken: hidden entries, `__MACOSX` and other files are left out.
+- **Limits:** at most `ONTOLOGY_MAX_FILES` (300) files, within the upload limit. A zip's
+  unpacked bytes are capped by `ONTOLOGY_MAX_BYTES`, and it may hold at most 10,000 entries.
+- **`mode: merge`:** every file becomes one version of one ontology (`source_kind = 'files'`).
+  - `source_files` lists the files.
+  - `sha256` is the sha256 of the sorted file hashes, so the same set of files is refused
+    as a duplicate.
+  - The worker parses the files into one graph.
+  - An `owl:imports` of an IRI one of the files declares is recorded as `included`, and is
+    not looked up.
+- **`mode: separate`:** each file becomes the next version of its own ontology.
+  - Ids are `<idPrefix><file name>` (`fileOntologyIds`).
+  - All the versions share **one** `ontology` job. The worker reads every member first and
+    resolves imports between members from memory, so their order doesn't matter.
+  - A member that cannot be read fails alone.
+  - A file already a version of its ontology is skipped.
+- **Every `owl:Ontology` IRI** of a version is stored (`ontology_iris`), so a later import of
+  any module of a merged version finds it.
+- **Deleting a version** keeps the source files other versions of the same ontology still use,
+  and the job other members still wait on.
+
 The worker (`worker/src/ingest_worker/ontology.py`):
 1. **Fetch** (URL imports only). Only `https` is allowed, and the host must be on
    `ONTOLOGY_FETCH_ALLOW` (comma-separated hosts; empty = no URL imports). Every redirect is
