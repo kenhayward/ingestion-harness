@@ -256,3 +256,112 @@ def test_pg_best_hits_carry_similarities() -> None:
         abs=1e-3,
     )
     assert pg.lexical_best([("pharma-best", 1)], "zzz", ["datatype_property"], 0.45) == []
+
+
+#: A ChEBI-sized version (200k terms, two synonyms each) for the suggestion lookups' cost.
+BIG = ("big-best", 1)
+BIG_TERMS = 200_000
+
+
+def _big_library(conn: Any) -> None:
+    """Seeds BIG once per database (kept between runs: seeding takes a few seconds)."""
+    seeded = conn.execute(
+        "SELECT count(*) FROM ontology_terms WHERE ontology_id = %s AND version = %s", BIG
+    ).fetchone()
+    if seeded and seeded[0] >= BIG_TERMS:
+        return
+    conn.execute("DELETE FROM ontologies WHERE id = %s", (BIG[0],))
+    conn.execute("INSERT INTO ontologies (id, label) VALUES (%s, 'Big')", (BIG[0],))
+    conn.execute(
+        """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, sha256, bytes)
+           VALUES (%s, %s, 'big.ttl', 'text/turtle', 'big', 10)""",
+        BIG,
+    )
+    conn.execute(
+        """INSERT INTO ontology_terms (ontology_id, version, iri, kind, label, alt_labels)
+           SELECT %s, %s, 'https://ex.example/big#t' || n, 'class',
+                  substr(md5(n::text), 1, 6) || ' ' || substr(md5((n * 7)::text), 1, 8),
+                  ARRAY[substr(md5((n * 3)::text), 1, 9), substr(md5((n * 5)::text), 1, 7)
+                        || ' compound']
+             FROM generate_series(1, %s) AS n""",
+        (*BIG, BIG_TERMS),
+    )
+    conn.execute(
+        """INSERT INTO ontology_terms (ontology_id, version, iri, kind, label, alt_labels)
+           VALUES (%s, %s, 'https://ex.example/big#ActiveSubstance', 'class',
+                   'active substance', ARRAY['drug substance'])""",
+        BIG,
+    )
+    conn.execute("ANALYZE ontology_terms")
+
+
+@pytest.mark.integration
+def test_pg_lexical_best_stays_fast_on_a_chebi_sized_version() -> None:
+    """Twenty candidates against 200k terms: the trigram indexes, not a scan per candidate."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import time
+
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore
+
+    conn = psycopg.connect(url, autocommit=True)
+    _big_library(conn)
+    pg = PgOntologyStore(conn)
+    queries = ["active substance", "drug substance", *(f"zz{n} unmatched words" for n in range(18))]
+    started = time.perf_counter()
+    found = [pg.lexical_best([BIG], q, ["class"], 0.45) for q in queries]
+    elapsed = time.perf_counter() - started
+    assert [h.term.iri for h in found[0]] == ["https://ex.example/big#ActiveSubstance"]
+    assert [h.term.iri for h in found[1]] == ["https://ex.example/big#ActiveSubstance"]
+    assert found[1][0].similarity == pytest.approx(1.0)
+    assert elapsed < 2.0, f"20 lookups took {elapsed:.2f}s"
+
+
+@pytest.mark.integration
+def test_pg_semantic_best_answers_every_query_vector_in_one_pass() -> None:
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore
+
+    conn = psycopg.connect(url, autocommit=True)
+    conn.execute("DELETE FROM ontologies WHERE id = 'pharma-sem'")
+    conn.execute("INSERT INTO ontologies (id, label) VALUES ('pharma-sem', 'P')")
+    conn.execute(
+        """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, sha256, bytes)
+           VALUES ('pharma-sem', 1, 'p.ttl', 'text/turtle', 'abc', 10)"""
+    )
+    pg = PgOntologyStore(conn)
+    parsed = parse_ontology((FIXTURE / "ontology.ttl").read_bytes(), "text/turtle", "o.ttl")
+    pg.save("pharma-sem", 1, parsed)
+    expiry = next(t for t in parsed.terms if t.iri.endswith("#expiryDate"))
+    batch = next(t for t in parsed.terms if t.iri.endswith("#Batch"))
+    pg.store_embeddings(
+        "pharma-sem",
+        1,
+        MODEL,
+        [
+            (expiry.kind, expiry.iri, "sha", fake_vector("expiry date")),
+            (batch.kind, batch.iri, "sha", fake_vector("batch lot")),
+        ],
+    )
+    versions = [("pharma-sem", 1)]
+    found = pg.semantic_best(
+        versions,
+        MODEL,
+        [fake_vector("expiry date"), fake_vector("batch lot"), fake_vector("batch lot")],
+        [["datatype_property"], ["class"], ["datatype_property"]],
+        0.6,
+    )
+    assert [[h.term.iri for h in hits] for hits in found] == [
+        [expiry.iri],
+        [batch.iri],
+        [],  # the class is close, but a field looks for properties here
+    ]
+    assert found[0][0].similarity == pytest.approx(1.0, abs=1e-5)
+    assert found[0][0].ontology_id == "pharma-sem" and found[0][0].version == 1

@@ -470,13 +470,26 @@ class MemoryOntologyStore:
         self,
         versions: list[tuple[str, int]],
         model_ref: str,
+        vectors: list[list[float]],
+        kinds: list[list[str]],
+        min_similarity: float,
+    ) -> list[list[TermHit]]:
+        return [
+            self._semantic_best_one(versions, model_ref, v, k, min_similarity) if v else []
+            for v, k in zip(vectors, kinds, strict=True)
+        ]
+
+    def _semantic_best_one(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
         vector: list[float],
         kinds: list[str],
         min_similarity: float,
     ) -> list[TermHit]:
         hits: list[TermHit] = []
         for version in versions:
-            best = [h for h in self.semantic([version], model_ref, vector, kinds, 1)]
+            best = self.semantic([version], model_ref, vector, kinds, 1)
             if not best:
                 continue
             stored = self.embeddings[(*version, model_ref)][(best[0].kind, best[0].iri)][1]

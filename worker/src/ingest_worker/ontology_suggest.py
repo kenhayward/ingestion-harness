@@ -170,18 +170,19 @@ def suggest_ontologies(
 
     # hits[i][version] = candidate i's best term in that version.
     hits: list[dict[tuple[str, int], _Hit]] = []
-    for i, c in enumerate(candidates):
+    for c in candidates:
         found: dict[tuple[str, int], _Hit] = {}
         text = lexical_query(c.name)
         if text:
             _merge(found, store.lexical_best(queried, text, _kinds(c), MIN_LEXICAL), "lexical")
-        if vectors is not None and model_ref is not None and vectors[i]:
-            _merge(
-                found,
-                store.semantic_best(queried, model_ref, vectors[i], _kinds(c), MIN_SEMANTIC),
-                "semantic",
-            )
         hits.append(found)
+    if vectors is not None and model_ref is not None:
+        # One pass over the library's embeddings for every candidate.
+        semantic = store.semantic_best(
+            queried, model_ref, vectors, [_kinds(c) for c in candidates], MIN_SEMANTIC
+        )
+        for found, best in zip(hits, semantic, strict=True):
+            _merge(found, best, "semantic")
 
     cover = {v: {i for i, h in enumerate(hits) if v in h} for v in queried}
     covered: set[int] = set().union(*(cover[p] for p in pins)) if pins else set()

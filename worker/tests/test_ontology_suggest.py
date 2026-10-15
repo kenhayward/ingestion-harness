@@ -82,7 +82,13 @@ def test_semantic_best_uses_cosine_similarity() -> None:
     vector = fake_vector(
         term_text(target.label, target.alt_labels, target.definition, target.parents)
     )
-    hits = s.semantic_best([("pharma", 1)], "emb/fake", vector, ["datatype_property"], 0.6)
+    far = [-x for x in vector]
+    both = s.semantic_best(
+        [("pharma", 1)], "emb/fake", [vector, far], [["datatype_property"], ["class"]], 0.6
+    )
+    # One list per query vector, in order; the second has nothing close enough.
+    assert len(both) == 2 and both[1] == []
+    hits = both[0]
     assert hits[0].term.iri.endswith("#expiryDate")
     assert hits[0].similarity == pytest.approx(1.0)
 
