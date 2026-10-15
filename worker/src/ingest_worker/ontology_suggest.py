@@ -11,13 +11,19 @@ packages/shared/src/ontology-suggestions.ts.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .llm.registry import ModelResolutionError
 from .mapping_stage import CLASS_KINDS, PROPERTY_KINDS
+from .pipeline import DocumentError, PipelineDeps, check_cancelled
+from .queue import ClaimedJob, JobQueue
+from .storage import ontology_suggestions_key
 
 if TYPE_CHECKING:
     from .ontology import OntologyStore, TermHit
@@ -236,3 +242,109 @@ def suggest_ontologies(
         "alsoMatched": [entry(v) for v in also],
         "uncovered": [names[i] for i in range(len(candidates)) if i not in covered],
     }
+
+
+def _vectors(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    candidates: list[SuggestCandidate],
+    library: list[tuple[str, int]],
+    data_policy: str,
+    stage: str,
+    notes: list[str],
+) -> tuple[list[list[float]] | None, str | None]:
+    """The candidates' embeddings and the model, or (None, None) with a note: lexical only."""
+    ref = deps.embedding_model
+    if ref is None:
+        notes.append("Retrieval was lexical only: no embedding model is set.")
+        return None, None
+    try:
+        provider, model_id = deps.models.resolve_embedding(ref)
+    except ModelResolutionError as exc:
+        notes.append(f"Retrieval was lexical only: {exc}.")
+        return None, None
+    external = deps.models.location(provider.name) == "external"
+    if external and data_policy == "local":
+        notes.append(
+            f"Retrieval was lexical only: the embedding model {ref} is external and this "
+            "project may only use local models."
+        )
+        return None, None
+    store = deps.ontologies
+    if store is None or not store.has_embeddings(library, ref):
+        notes.append(f"Retrieval was lexical only: no ontology is embedded for {ref} yet.")
+        return None, None
+    try:
+        vectors = provider.embed(model_id, [semantic_query(c) for c in candidates])
+    except Exception as exc:  # an outage costs the semantic half, never the suggestions
+        notes.append(f"Retrieval was lexical only: the embedding model failed: {exc}.")
+        return None, None
+    if external:
+        queue.event(
+            job.id,
+            "info",
+            "external model call",
+            {"stage": stage, "purpose": "embedding", "model": ref, "candidates": len(candidates)},
+        )
+    return vectors, ref
+
+
+def run_suggestions(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    *,
+    survey_proposal_id: str,
+    candidates: list[SuggestCandidate],
+    library: list[LibraryVersion],
+    pinned: list[SuggestPin],
+    data_policy: str,
+    stage: str,
+) -> dict[str, Any]:
+    """Compute and write a suggestion record (runs bucket) for this job; returns it."""
+    store = deps.ontologies
+    if store is None:
+        raise DocumentError("ontology suggestions need the ontology library")
+    if job.project_id is None:
+        raise DocumentError("ontology suggestions without a project")
+    versions = [(v.id, v.version) for v in library]
+    notes: list[str] = []
+    vectors, ref = _vectors(job, deps, queue, candidates, versions, data_policy, stage, notes)
+    body = suggest_ontologies(store, candidates, library, pinned, vectors=vectors, model_ref=ref)
+    record = SuggestionRecord.model_validate(
+        {
+            "surveyProposalId": survey_proposal_id,
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "libraryKey": library_key(versions, deps.embedding_model),
+            "notes": notes,
+            **body,
+        }
+    ).model_dump(by_alias=True)
+    check_cancelled(job, queue)
+    deps.store.put(
+        deps.buckets.runs,
+        ontology_suggestions_key(job.project_id, job.id),
+        json.dumps(record).encode(),
+        "application/json",
+    )
+    return record
+
+
+def run_suggest(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
+    """The `suggest` task: Refresh suggestions on the Survey tab."""
+    try:
+        params = SuggestParams.model_validate(job.params or {})
+    except ValidationError as exc:
+        raise DocumentError(f"invalid suggestion parameters: {exc}") from exc
+    return run_suggestions(
+        job,
+        deps,
+        queue,
+        survey_proposal_id=params.survey_proposal_id,
+        candidates=params.candidates,
+        library=params.library,
+        pinned=params.pinned,
+        data_policy=params.data_policy,
+        stage="suggest",
+    )

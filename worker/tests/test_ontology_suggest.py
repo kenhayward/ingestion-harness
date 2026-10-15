@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from ingest_worker.config import REPO_ROOT
+from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
+from ingest_worker.main import run_once
 from ingest_worker.ontology import parse_ontology, trigram_similarity
 from ingest_worker.ontology_suggest import (
     LibraryVersion,
@@ -19,8 +21,11 @@ from ingest_worker.ontology_suggest import (
     library_key,
     suggest_ontologies,
 )
+from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.queue import ClaimedJob
+from ingest_worker.storage import MemoryObjectStore, ontology_suggestions_key
 
-from .fakes import MemoryOntologyStore, fake_vector
+from .fakes import FakeProvider, FakeQueue, MemoryOntologyStore, fake_vector
 
 RECALL = Path(__file__).parent / "fixtures" / "mapping-recall" / "ontology.ttl"
 
@@ -236,3 +241,97 @@ def test_semantic_hits_count_and_say_how_they_were_found() -> None:
     assert "signatory" in units["covers"]
     vias = {e["candidate"]: e["via"] for e in units["evidence"]}
     assert vias["signatory"] == "semantic" and vias["strength"] == "both"
+
+
+LIBRARY = [
+    {"id": "domain", "version": 1, "label": "Domain", "terms": 3},
+    {"id": "units", "version": 1, "label": "Units", "terms": 3},
+]
+JOB_CANDIDATES = [
+    {"name": "active_substance", "description": "", "kind": "table"},
+    {"name": "batch_number", "description": "", "kind": "field"},
+    {"name": "expiry_date", "description": "", "kind": "field"},
+]
+
+
+def suggest_deps(
+    embedder: str | None = None,
+) -> tuple[FakeProvider, MemoryObjectStore, PipelineDeps]:
+    s, _ = library_store()
+    emb = FakeProvider("emb")
+    store = MemoryObjectStore()
+    configs = {"emb": ProviderConfig(name="emb", kind="openai-chat", location=embedder or "local")}  # type: ignore[arg-type]
+    deps = PipelineDeps(
+        store=store,
+        specs={},  # type: ignore[arg-type]
+        models=ModelRegistry({"emb": emb}, configs, {}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        ontologies=s,
+        embedding_model="emb/nomic" if embedder else None,
+    )
+    if embedder:
+        from ingest_worker.embeddings import term_text
+
+        s.store_embeddings(
+            "domain", 1, "emb/nomic",
+            [(t.kind, t.iri, "sha", fake_vector(term_text(t.label, t.alt_labels, t.definition, t.parents)))
+             for t in s.embedding_terms("domain", 1)],
+        )  # fmt: skip
+    return emb, store, deps
+
+
+def suggest_job(**params: Any) -> ClaimedJob:
+    base = {
+        "surveyProposalId": "survey-1",
+        "candidates": JOB_CANDIDATES,
+        "library": LIBRARY,
+        "pinned": [],
+        "dataPolicy": "local",
+    }
+    return ClaimedJob(
+        id="job-s", document_id="", spec_id="letter", spec_version=0, bucket="", object_key="",
+        model_override=None, attempts=1, max_attempts=3, task="suggest", test=True,
+        project_id="letter", params={**base, **params},
+    )  # fmt: skip
+
+
+def test_suggest_job_writes_the_record() -> None:
+    _, store, deps = suggest_deps()
+    queue = FakeQueue(jobs=[suggest_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    record = SuggestionRecord.model_validate(
+        json.loads(store.get("runs", ontology_suggestions_key("letter", "job-s")))
+    )
+    assert record.survey_proposal_id == "survey-1"
+    assert record.library_key == "lexical|domain@1,units@1"
+    assert [s.ontology_id for s in record.suggestions] == ["domain"]
+    assert record.notes == ["Retrieval was lexical only: no embedding model is set."]
+
+
+def test_a_local_project_never_embeds_with_an_external_model() -> None:
+    emb, store, deps = suggest_deps(embedder="external")
+    queue = FakeQueue(jobs=[suggest_job()])
+    run_once(queue, deps, "w1")
+    assert emb.embed_calls == []
+    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-s")))
+    assert any("may only use local models" in n for n in record["notes"])
+
+
+def test_an_external_project_embeds_and_logs_the_call() -> None:
+    emb, _, deps = suggest_deps(embedder="external")
+    queue = FakeQueue(jobs=[suggest_job(dataPolicy="external")])
+    run_once(queue, deps, "w1")
+    assert emb.embed_calls
+    assert any(
+        e[2] == "external model call" and e[3]["purpose"] == "embedding"
+        for e in queue.event_details
+    )
+
+
+def test_invalid_suggest_params_need_review() -> None:
+    _, _, deps = suggest_deps()
+    queue = FakeQueue(jobs=[suggest_job(extra=1)])
+    run_once(queue, deps, "w1")
+    assert queue.reviewed
