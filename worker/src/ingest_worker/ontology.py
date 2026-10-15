@@ -132,6 +132,8 @@ class ParsedOntology:
     title: str | None = None
     #: How each of `imports` was resolved (OntologyImport in packages/shared); set by the job.
     import_entries: list[dict[str, Any]] = field(default_factory=list)
+    #: Every owl:Ontology IRI the version declares (a folder merged into one has several).
+    ontology_iris: list[str] = field(default_factory=list)
 
     def stats(self) -> dict[str, int]:
         own = [t for t in self.terms if t.defined_in is None]
@@ -408,6 +410,7 @@ def index_graph(
         terms=terms,
         normalized=("\n".join(lines) + "\n").encode("utf-8"),
         title=_title(own, headers[0] if headers else None),
+        ontology_iris=[str(h) for h in headers],
     )
 
 
@@ -454,7 +457,10 @@ class DuplicateSource(Exception):
 class OntologyStore(Protocol):
     """The ontology tables the job writes (the API reads them)."""
 
-    def start(self, ontology_id: str, version: int) -> None: ...
+    def start(self, ontology_id: str, version: int) -> bool:
+        """Mark it parsing; False when it is already ready or failed (a retry skips it)."""
+        ...
+
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None: ...
     def fail(self, ontology_id: str, version: int, error: str) -> None: ...
 
@@ -556,23 +562,50 @@ class OntologyStore(Protocol):
         ...
 
 
-class OntologyJobParams(BaseModel):
-    """What the API's OntologyRepo.createVersion puts in the job's params."""
+class SourceFile(BaseModel):
+    """One uploaded file of a folder or zip import (runs bucket)."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
+    source_key: str = Field(alias="sourceKey", min_length=1)
+    file_name: str = Field(alias="fileName", min_length=1)
+    media_type: str = Field(default="", alias="mediaType")
+
+
+class BatchMember(SourceFile):
+    """One version of a folder imported as one ontology per file."""
+
     ontology_id: str = Field(alias="ontologyId", min_length=2)
     version: int = Field(gt=0)
-    #: An uploaded file in the runs bucket, or a URL the worker fetches: exactly one.
+
+
+class OntologyJobParams(BaseModel):
+    """What the API's OntologyRepo puts in the job's params: one version from an uploaded file
+    (`sourceKey`), a URL (`sourceUrl`) or a merged folder (`sources`); or, with `members` alone,
+    one version per file of a folder."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    ontology_id: str | None = Field(default=None, alias="ontologyId", min_length=2)
+    version: int | None = Field(default=None, gt=0)
     source_key: str | None = Field(default=None, alias="sourceKey", min_length=1)
     source_url: str | None = Field(default=None, alias="sourceUrl", min_length=1)
-    file_name: str = Field(alias="fileName", min_length=1)
+    sources: list[SourceFile] | None = Field(default=None, min_length=1)
+    members: list[BatchMember] | None = Field(default=None, min_length=1)
+    file_name: str | None = Field(default=None, alias="fileName", min_length=1)
     media_type: str = Field(default="", alias="mediaType")
 
     @model_validator(mode="after")
     def _one_source(self) -> OntologyJobParams:
-        if (self.source_key is None) == (self.source_url is None):
-            raise ValueError("exactly one of sourceKey and sourceUrl is required")
+        given = [x for x in (self.source_key, self.source_url, self.sources, self.members) if x]
+        if len(given) != 1:
+            raise ValueError("exactly one of sourceKey, sourceUrl, sources and members is required")
+        single = (self.ontology_id, self.version, self.file_name)
+        if self.members is not None:
+            if any(x is not None for x in single):
+                raise ValueError("members name their own ontologyId, version and fileName")
+        elif any(x is None for x in single):
+            raise ValueError("ontologyId, version and fileName are required")
         return self
 
 
@@ -605,12 +638,13 @@ class PgOntologyStore:
     def __init__(self, conn: psycopg.Connection[Any]) -> None:
         self._conn = conn
 
-    def start(self, ontology_id: str, version: int) -> None:
-        self._conn.execute(
+    def start(self, ontology_id: str, version: int) -> bool:
+        cur = self._conn.execute(
             """UPDATE ontology_versions SET status = 'parsing', error = NULL
                 WHERE ontology_id = %s AND version = %s AND status IN ('queued', 'parsing')""",
             (ontology_id, version),
         )
+        return cur.rowcount > 0
 
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         from psycopg.types.json import Jsonb
@@ -648,7 +682,7 @@ class PgOntologyStore:
             self._conn.execute(
                 """UPDATE ontology_versions
                       SET status = 'ready', error = NULL, ontology_iri = %s, version_iri = %s,
-                          license = %s, kinds = %s, stats = %s, imports = %s
+                          license = %s, kinds = %s, stats = %s, imports = %s, ontology_iris = %s
                     WHERE ontology_id = %s AND version = %s AND status <> 'ready'""",
                 (
                     parsed.ontology_iri,
@@ -657,6 +691,7 @@ class PgOntologyStore:
                     parsed.kinds,
                     Jsonb(parsed.stats()),
                     Jsonb(parsed.import_entries or [_unresolved(i, None) for i in parsed.imports]),
+                    parsed.ontology_iris,
                     ontology_id,
                     version,
                 ),
@@ -692,9 +727,10 @@ class PgOntologyStore:
         row = self._conn.execute(
             """SELECT ontology_id, version FROM ontology_versions
                 WHERE status = 'ready'
-                  AND (ontology_iri = %s OR version_iri = %s OR import_iri = %s)
+                  AND (ontology_iri = %s OR version_iri = %s OR import_iri = %s
+                       OR %s = ANY(ontology_iris))
                 ORDER BY imported_at DESC, version DESC LIMIT 1""",
-            (iri, iri, iri),
+            (iri, iri, iri, iri),
         ).fetchone()
         return (str(row[0]), int(row[1])) if row else None
 
@@ -1024,6 +1060,9 @@ class _ImportResolver:
     #: Triples the root's closure may still add (None: not accounted at this level).
     budget: int | None = None
     memo: dict[str, tuple[dict[str, Any], Closure]] = field(default_factory=dict)
+    #: A folder imported as one ontology per file: each header IRI -> (id, version, graph),
+    #: resolved before the library (its members are not saved yet).
+    batch: dict[str, tuple[str, int, Graph]] = field(default_factory=dict)
 
     def resolve_all(
         self, iris: Sequence[str], depth: int, path: frozenset[str]
@@ -1063,6 +1102,10 @@ class _ImportResolver:
         self, iri: str, depth: int, path: frozenset[str]
     ) -> tuple[dict[str, Any], Closure]:
         runs = self.deps.buckets.runs
+        if iri in self.batch:
+            oid, version, graph = self.batch[iri]
+            _, children = self.resolve_all(_imports_of(graph), depth + 1, path)
+            return _resolved(iri, "library", oid, version), [(graph, f"{oid}@{version}"), *children]
         found = self.store.find_ready(iri)
         if found is not None:
             oid, version = found
@@ -1136,6 +1179,7 @@ def _source(
 ) -> tuple[bytes, str, str]:
     """The version's bytes, media type and file name; a URL is fetched and recorded."""
     oid, version = params.ontology_id, params.version
+    assert oid is not None and version is not None and params.file_name is not None
     if params.source_url is None:
         assert params.source_key is not None  # the params validator guarantees one source
         data = deps.store.get_optional(deps.buckets.runs, params.source_key)
@@ -1166,6 +1210,110 @@ def _source(
     return fetched.data, fetched.media_type, fetched.file_name
 
 
+def _uploaded(deps: PipelineDeps, f: SourceFile) -> bytes:
+    data = deps.store.get_optional(deps.buckets.runs, f.source_key)
+    if data is None:
+        raise DocumentError(f"the uploaded file {f.file_name} is missing ({f.source_key})")
+    return data
+
+
+def read_files(deps: PipelineDeps, files: Sequence[SourceFile], *, max_triples: int) -> Graph:
+    """A folder's files merged into one graph; any file that cannot be read refuses all."""
+    merged = Graph()
+    for f in files:
+        graph = read_graph(_uploaded(deps, f), f.media_type, f.file_name, max_triples=max_triples)
+        for triple in graph:
+            merged.add(triple)
+        if len(merged) > max_triples:
+            raise DocumentError(f"ontology too large ({len(merged)} triples, limit {max_triples})")
+    return merged
+
+
+def _included(iri: str) -> dict[str, Any]:
+    return {"iri": iri, "resolution": "included", "ontologyId": None, "version": None,
+            "reason": None}  # fmt: skip
+
+
+def _index_version(
+    deps: PipelineDeps,
+    store: OntologyStore,
+    oid: str,
+    own: Graph,
+    batch: dict[str, tuple[str, int, Graph]] | None = None,
+) -> ParsedOntology:
+    """Resolve a version's imports (an IRI it declares itself is `included`) and index it."""
+    max_triples = deps.ontology_max_triples
+    headers = {str(h) for h in _header(own)[0]}
+    imports = _imports_of(own)
+    resolver = _ImportResolver(
+        deps, store, oid, budget=max_triples - len(own), batch=dict(batch or {})
+    )
+    outer, graphs = resolver.resolve_all(
+        [i for i in imports if i not in headers], 1, frozenset(headers)
+    )
+    by_iri = {e["iri"]: e for e in outer}
+    parsed = index_graph(own, imports=graphs, max_triples=max_triples)
+    parsed.import_entries = [by_iri.get(i) or _included(i) for i in imports]
+    return parsed
+
+
+def _finish(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, store: OntologyStore,
+    oid: str, version: int, parsed: ParsedOntology,
+) -> None:  # fmt: skip
+    check_cancelled(job, queue)
+    deps.store.put(
+        deps.buckets.runs,
+        ontology_normalized_key(oid, version),
+        parsed.normalized,
+        "application/n-triples",
+    )
+    store.save(oid, version, parsed)
+    embed_after_import(deps, queue, job.id, oid, version)
+    queue.event(
+        job.id,
+        "info",
+        ONTOLOGY_INDEXED,
+        {"ontologyId": oid, "version": version, "terms": len(parsed.terms),
+         "triples": parsed.triples},
+    )  # fmt: skip
+
+
+def run_ontology_batch(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, members: Sequence[BatchMember]
+) -> int:
+    """A folder imported as one ontology per file: every member is read first, so imports
+    between members resolve to each other whatever their order; a member that cannot be read or
+    indexed fails alone. A retry skips members already finished."""
+    store = deps.ontologies
+    assert store is not None
+    max_triples = deps.ontology_max_triples
+    graphs: dict[tuple[str, int], Graph] = {}
+    for m in members:
+        if not store.start(m.ontology_id, m.version):
+            continue
+        try:
+            graphs[(m.ontology_id, m.version)] = read_graph(
+                _uploaded(deps, m), m.media_type, m.file_name, max_triples=max_triples
+            )
+        except DocumentError as exc:
+            store.fail(m.ontology_id, m.version, str(exc))
+    batch = {
+        str(h): (oid, version, graph)
+        for (oid, version), graph in graphs.items()
+        for h in _header(graph)[0]
+    }
+    done = 0
+    for (oid, version), own in graphs.items():
+        try:
+            parsed = _index_version(deps, store, oid, own, batch)
+            _finish(job, deps, queue, store, oid, version, parsed)
+            done += 1
+        except DocumentError as exc:
+            store.fail(oid, version, str(exc))
+    return done
+
+
 def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ParsedOntology:
     """Read the version's file (uploaded, or fetched from its URL), resolve its owl:imports,
     keep its canonical N-Triples and index its terms with its imports'. A file that cannot be
@@ -1178,28 +1326,21 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
     store = deps.ontologies
     if store is None:
         raise DocumentError("this worker has no ontology store")
+    if params.members is not None:
+        run_ontology_batch(job, deps, queue, params.members)
+        return ParsedOntology(0, None, None, None, [], [])
     oid, version = params.ontology_id, params.version
+    assert oid is not None and version is not None  # the params validator guarantees them
     store.start(oid, version)
     try:
-        data, media_type, file_name = _source(params, deps, store)
         max_triples = deps.ontology_max_triples
-        own = read_graph(data, media_type, file_name, max_triples=max_triples)
-        headers, _, _ = _header(own)
-        resolver = _ImportResolver(deps, store, oid, budget=max_triples - len(own))
-        entries, graphs = resolver.resolve_all(
-            _imports_of(own), 1, frozenset(str(h) for h in headers)
-        )
-        parsed = index_graph(own, imports=graphs, max_triples=max_triples)
-        parsed.import_entries = entries
-        check_cancelled(job, queue)
-        deps.store.put(
-            deps.buckets.runs,
-            ontology_normalized_key(oid, version),
-            parsed.normalized,
-            "application/n-triples",
-        )
-        store.save(oid, version, parsed)
-        embed_after_import(deps, queue, job.id, oid, version)
+        if params.sources is not None:
+            own = read_files(deps, params.sources, max_triples=max_triples)
+        else:
+            data, media_type, file_name = _source(params, deps, store)
+            own = read_graph(data, media_type, file_name, max_triples=max_triples)
+        parsed = _index_version(deps, store, oid, own)
+        _finish(job, deps, queue, store, oid, version, parsed)
     except DocumentError as exc:
         store.fail(oid, version, str(exc))
         raise
@@ -1210,7 +1351,4 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
         if job.attempts >= job.max_attempts:
             store.fail(oid, version, f"{type(exc).__name__}: {exc}")
         raise
-    queue.event(
-        job.id, "info", ONTOLOGY_INDEXED, {"terms": len(parsed.terms), "triples": parsed.triples}
-    )
     return parsed
