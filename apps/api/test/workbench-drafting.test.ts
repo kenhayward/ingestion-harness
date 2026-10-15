@@ -7,6 +7,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
+import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
 import { letter, multipart, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -179,6 +180,32 @@ describe('survey stage', () => {
       brief: EMPTY_BRIEF,
       draft: letter(1),
       samples: [{ sampleId: dev.id, filename: 's1.pdf', sha256: dev.sha256, role: 'dev' }],
+    });
+  });
+
+  it('sends the ontology library and the vocabulary pins with a survey', async () => {
+    const ontologies = new MemoryOntologyRepo();
+    const { app, repo, add, start } = await project({ ontologies });
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/api/ontologies',
+      ...multipart(
+        { id: 'domain', label: 'Domain' },
+        { filename: 'd.ttl', content: Buffer.from('# d'), contentType: 'text/turtle' },
+      ),
+    });
+    expect(upload.statusCode).toBe(202);
+    ontologies.markReady('domain', 1);
+    await app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: { ontologies: [{ ontologyId: 'qudt', version: 1, role: 'vocabulary' }] },
+    });
+    await add(1);
+    const view = (await start()).json() as ProposalView;
+    expect(repo.draftJobs.get(view.id)!.params).toMatchObject({
+      library: [{ id: 'domain', version: 1, label: 'Domain', terms: 0 }],
+      pinned: [{ ontologyId: 'qudt', version: 1 }],
     });
   });
 

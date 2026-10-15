@@ -15,6 +15,7 @@ import {
   MAX_COMPARED_MODELS,
   DraftResultSchema,
   EMPTY_BRIEF,
+  vocabularyOf,
   FeedbackBodySchema,
   FeedbackItemSchema,
   GateViewSchema,
@@ -118,6 +119,7 @@ import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
 import { mappingInputs, mappingView, type MappingParams } from '../workbench/mapping.js';
+import { ontologyLibrary } from '../workbench/suggestions.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
@@ -1379,7 +1381,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
       const files = await Promise.allSettled([
         ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
-        ...['drafting', 'segmentation', 'exports', 'graphs'].map((prefix) =>
+        ...['drafting', 'segmentation', 'exports', 'graphs', 'ontology-suggestions'].map((prefix) =>
           store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
         ),
       ]);
@@ -2612,6 +2614,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!samples.length && !revision && !mapping) {
         return reply.code(409).send({ error: 'no prepared dev samples' });
       }
+      // Survey: the library to suggest ontologies from, and what the brief already pins.
+      const library = stage === 'survey' ? await ontologyLibrary(app) : [];
       const job = await app.deps.repo.createDraftJob(projectId, {
         stage,
         dataPolicy: project.dataPolicy,
@@ -2622,6 +2626,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
         ...(revision?.params ?? {}),
         ...(mapping ? { mapping } : {}),
+        ...(library.length
+          ? {
+              library,
+              pinned: vocabularyOf(brief?.body ?? EMPTY_BRIEF).map((v) => ({
+                ontologyId: v.ontologyId,
+                version: v.version,
+              })),
+            }
+          : {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
