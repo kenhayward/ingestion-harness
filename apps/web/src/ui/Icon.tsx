@@ -100,6 +100,12 @@ const PATHS = {
   chevronUp: <path d="M18 15l-6-6-6 6" />,
   chevronDown: <path d="M6 9l6 6 6-6" />,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+    </>
+  ),
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
   download: (
     <>
