@@ -514,7 +514,7 @@ function statusText(stage: OverviewStage, state: OverviewState, ctx: StatusConte
       if (state === 'accepted') return 'Applied';
       return ctx.openFeedback > 0 ? `${ctx.openFeedback} open` : 'No feedback';
     case 'mapping':
-      if (!inputs.mapping?.used) return 'Not used: the brief chooses no ontologies';
+      if (!inputs.mapping?.used) return 'Not used: no vocabulary is pinned on Survey';
       if (state === 'stale') return "Stale — the outputs or the brief's ontologies changed";
       if (state === 'accepted') return 'Mapped';
       if (state === 'pending') return 'Optional, not started';

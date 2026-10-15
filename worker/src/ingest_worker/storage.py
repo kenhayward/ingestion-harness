@@ -72,6 +72,11 @@ def graph_preview_key(project_id: str, job_id: str) -> str:
     return f"graphs/{project_id}/{job_id}.json"
 
 
+def ontology_suggestions_key(project_id: str, job_id: str) -> str:
+    """A survey's or refresh's ontology suggestions (runs bucket; TS ontologySuggestionsKey)."""
+    return f"ontology-suggestions/{project_id}/{job_id}.json"
+
+
 def segmentation_key(project_id: str, job_id: str) -> str:
     """Section-anchor preview grid of a workbench project (runs bucket, segment task)."""
     return f"segmentation/{project_id}/{job_id}.json"

@@ -3,6 +3,7 @@ import {
   draftingKey,
   exportKey,
   graphPreviewKey,
+  ontologySuggestionsKey,
   outputKey,
   preparedTextKey,
   preparedTriageKey,
@@ -79,6 +80,14 @@ describe('DELETE /api/workbench/projects/:id', () => {
     expect(repo.draftJobs.has(proposal.id)).toBe(true);
     await store.put('runs', draftingKey('letter', proposal.id), json({}), 'application/json');
     await store.put('runs', graphPreviewKey('letter', 'g1'), json({}), 'application/json');
+    await store.put('runs', ontologySuggestionsKey('letter', 'sg1'), json({}), 'application/json');
+    await repo.createSuggestJob('letter', {
+      surveyProposalId: 'p1',
+      candidates: [],
+      library: [],
+      pinned: [],
+      dataPolicy: 'local',
+    });
 
     // A verified reference and an evaluation iteration whose test run wrote a draft output.
     const source = await repo.createWorkbenchJob(
@@ -181,6 +190,8 @@ describe('DELETE /api/workbench/projects/:id', () => {
     expect(left.filter((k) => k.startsWith('runs/drafting/letter/'))).toEqual([]);
     expect(left.filter((k) => k.startsWith('runs/exports/letter/'))).toEqual([]);
     expect(left.filter((k) => k.startsWith('runs/graphs/letter/'))).toEqual([]);
+    expect(left.filter((k) => k.startsWith('runs/ontology-suggestions/letter/'))).toEqual([]);
+    expect([...repo.suggestJobs.values()].filter((j) => j.projectId === 'letter')).toEqual([]);
     expect(left.filter((k) => k.startsWith(`runs/${run.id}/`))).toEqual([]);
     expect(left).not.toContain(`outputs/${draftKey}`);
     // The prepared text is a content cache keyed by sha256: kept.

@@ -11,6 +11,7 @@ import type {
   ReviewRecord,
   SegmentDocument,
   StepRun,
+  SuggestParams,
 } from '@ih/shared';
 
 /**
@@ -219,6 +220,16 @@ export interface IngestionRepo {
     params: GraphJobParams,
   ): Promise<{ job: ProjectJob; removed: string[] }>;
   getGraphJob(projectId: string, id: string): Promise<ProjectJob | null>;
+  /**
+   * Queue an ontology suggestion refresh (task 'suggest', no document, priority
+   * SEGMENT_PRIORITY). One per project: earlier suggest jobs are deleted and returned in `removed`.
+   */
+  createSuggestJob(
+    projectId: string,
+    params: SuggestParams,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  /** The project's suggest job (there is at most one), with its params. */
+  latestSuggestJob(projectId: string): Promise<(ProjectJob & { params: SuggestParams }) | null>;
   /**
    * Queue a drafting run (document-less, task 'draft'). Unlike segment previews, earlier draft
    * jobs are kept: each one backs a proposal.

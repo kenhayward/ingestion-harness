@@ -23038,7 +23038,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23064,7 +23064,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -33156,6 +33156,656 @@
                   ],
                   "additionalProperties": true,
                   "description": "`graph preview not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/ontology-suggestions": {
+      "get": {
+        "operationId": "getOntologySuggestions",
+        "summary": "Get the ontology suggestions",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "The library ontologies suggested as vocabularies for this document type, from the\nsurvey's candidate data: each with the candidates it covers and the matching terms.\nThe record is the current survey's (the newest accepted survey, else the newest\nfinished one), refreshed or not. `stale` is `survey` when it comes from an earlier\nsurvey and `library` when the ready library or the embedding model changed since;\n`running` while a refresh is queued or running; `failed` holds a refresh's error.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The suggestions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "surveyProposalId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "candidates": {
+                              "type": "integer"
+                            },
+                            "libraryKey": {
+                              "type": "string"
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "candidate": {
+                                          "type": "string"
+                                        },
+                                        "iri": {
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string"
+                                        },
+                                        "via": {
+                                          "type": "string",
+                                          "enum": [
+                                            "lexical",
+                                            "semantic",
+                                            "both"
+                                          ]
+                                        },
+                                        "similarity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "candidate",
+                                        "iri",
+                                        "label",
+                                        "kind",
+                                        "via",
+                                        "similarity"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "pinned": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "alsoMatched": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "uncovered": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "surveyProposalId",
+                            "createdAt",
+                            "candidates",
+                            "libraryKey",
+                            "suggestions",
+                            "pinned",
+                            "alsoMatched",
+                            "uncovered",
+                            "notes"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "failed": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stale": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "library",
+                            "survey"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "running",
+                    "failed",
+                    "stale"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The suggestions."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "refreshOntologySuggestions",
+        "summary": "Refresh the ontology suggestions",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Queues a refresh of the ontology suggestions from the current survey's candidates\nagainst the library as it is now (no model call; the candidates are embedded only by a\nlocal embedding model or when the project allows external models). A project has one\nrefresh at a time: a new one replaces the old. Poll `GET`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The suggestions, with the refresh running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "surveyProposalId": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "candidates": {
+                              "type": "integer"
+                            },
+                            "libraryKey": {
+                              "type": "string"
+                            },
+                            "suggestions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "candidate": {
+                                          "type": "string"
+                                        },
+                                        "iri": {
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string"
+                                        },
+                                        "via": {
+                                          "type": "string",
+                                          "enum": [
+                                            "lexical",
+                                            "semantic",
+                                            "both"
+                                          ]
+                                        },
+                                        "similarity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "candidate",
+                                        "iri",
+                                        "label",
+                                        "kind",
+                                        "via",
+                                        "similarity"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers",
+                                  "evidence"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "pinned": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "alsoMatched": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "ontologyId": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "covers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "ontologyId",
+                                  "version",
+                                  "label",
+                                  "covers"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "uncovered": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "notes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "surveyProposalId",
+                            "createdAt",
+                            "candidates",
+                            "libraryKey",
+                            "suggestions",
+                            "pinned",
+                            "alsoMatched",
+                            "uncovered",
+                            "notes"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "failed": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stale": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "library",
+                            "survey"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "running",
+                    "failed",
+                    "stale"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The suggestions, with the refresh running."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`run the survey first`, `the ontology library has no ready versions`, or `{name} is retired: unretire it to use it again` for a retired document type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`run the survey first`, `the ontology library has no ready versions`, or `{name} is retired: unretire it to use it again` for a retired document type"
                 }
               }
             }

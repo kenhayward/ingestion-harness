@@ -1,0 +1,7 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix u: <https://ex.example/units#> .
+<https://ex.example/units> a owl:Ontology .
+u:unitOfMeasure a owl:DatatypeProperty ; rdfs:label "unit of measure" .
+u:strength a owl:DatatypeProperty ; rdfs:label "strength" .
+u:date a owl:DatatypeProperty ; rdfs:label "date" .

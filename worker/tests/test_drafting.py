@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -749,3 +750,53 @@ def test_revise_job_whose_feedback_has_no_ids_still_runs(fixture_specs_dir: Path
     assert queue.completed
     body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
     assert "answers" not in body["changes"][0]
+
+
+def test_survey_job_also_writes_ontology_suggestions(fixture_specs_dir: Path) -> None:
+    from ingest_worker.storage import ontology_suggestions_key
+
+    from .fakes import MemoryOntologyStore
+    from .test_ontology_suggest import library_store
+
+    provider, store, deps = make(fixture_specs_dir)
+    ontologies, _ = library_store()
+    deps = dataclasses.replace(deps, ontologies=ontologies)
+    body = {**SURVEY_BODY, "candidates": [
+        {"name": "active_substance", "description": "", "where": "", "kind": "table", "seenIn": {"n": 1, "of": 1}},
+        {"name": "batch_number", "description": "", "where": "", "kind": "field", "seenIn": {"n": 1, "of": 1}},
+    ]}  # fmt: skip
+    provider.responses = [body]
+    library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
+    queue = FakeQueue(jobs=[draft_job(library=library, pinned=[])])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-d")))
+    assert record["surveyProposalId"] == "job-d"
+    assert [s["ontologyId"] for s in record["suggestions"]] == ["domain"]
+    assert isinstance(ontologies, MemoryOntologyStore)
+
+
+def test_failed_suggestions_never_fail_the_survey(fixture_specs_dir: Path) -> None:
+    from .test_ontology_suggest import library_store
+
+    provider, store, deps = make(fixture_specs_dir)
+    ontologies, _ = library_store()
+    ontologies.lexical_best = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("index down"))  # type: ignore[method-assign]
+    deps = dataclasses.replace(deps, ontologies=ontologies)
+    provider.responses = [SURVEY_BODY]
+    library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
+    queue = FakeQueue(jobs=[draft_job(library=library)])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert store.get("runs", drafting_key("letter", "job-d"))
+    assert any(e[2] == "ontology suggestions failed" for e in queue.events)
+
+
+def test_survey_without_a_library_writes_no_suggestions(fixture_specs_dir: Path) -> None:
+    from ingest_worker.storage import ontology_suggestions_key
+
+    provider, store, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None

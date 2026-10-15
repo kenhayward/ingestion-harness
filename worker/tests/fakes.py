@@ -18,7 +18,13 @@ from ingest_worker.llm.base import (
 )
 from ingest_worker.llm.endpoints import Choice, Seed
 from ingest_worker.llm.registry import ProviderConfig
-from ingest_worker.ontology import DuplicateSource, ParsedOntology, Term
+from ingest_worker.ontology import (
+    DuplicateSource,
+    ParsedOntology,
+    Term,
+    TermHit,
+    trigram_similarity,
+)
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.queue import ClaimedJob
 
@@ -444,6 +450,55 @@ class MemoryOntologyStore:
                     scored.append((cosine(vector, stored[(t.kind, t.iri)][1]), t))
         scored.sort(key=lambda st: (-st[0], st[1].label))
         return [t for _, t in scored[:limit]]
+
+    def lexical_best(
+        self, versions: list[tuple[str, int]], text: str, kinds: list[str], min_similarity: float
+    ) -> list[TermHit]:
+        hits: list[TermHit] = []
+        for version in versions:
+            scored = [
+                (max(trigram_similarity(n, text) for n in [t.label, *t.alt_labels]), t)
+                for t in self._terms([version], kinds)
+            ]
+            scored = [(s, t) for s, t in scored if s >= min_similarity]
+            if scored:
+                s, t = sorted(scored, key=lambda st: (-st[0], st[1].label, st[1].iri))[0]
+                hits.append(TermHit(version[0], version[1], t, s))
+        return sorted(hits, key=lambda h: (-h.similarity, h.ontology_id, h.version))
+
+    def semantic_best(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vectors: list[list[float]],
+        kinds: list[list[str]],
+        min_similarity: float,
+    ) -> list[list[TermHit]]:
+        return [
+            self._semantic_best_one(versions, model_ref, v, k, min_similarity) if v else []
+            for v, k in zip(vectors, kinds, strict=True)
+        ]
+
+    def _semantic_best_one(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        min_similarity: float,
+    ) -> list[TermHit]:
+        hits: list[TermHit] = []
+        for version in versions:
+            best = self.semantic([version], model_ref, vector, kinds, 1)
+            if not best:
+                continue
+            stored = self.embeddings[(*version, model_ref)][(best[0].kind, best[0].iri)][1]
+            dot = sum(x * y for x, y in zip(vector, stored, strict=True))
+            norm = math.sqrt(sum(x * x for x in vector)) * math.sqrt(sum(y * y for y in stored))
+            similarity = dot / norm if norm else 0.0
+            if similarity >= min_similarity:
+                hits.append(TermHit(version[0], version[1], best[0], similarity))
+        return sorted(hits, key=lambda h: (-h.similarity, h.ontology_id, h.version))
 
     def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
         return any(self.embeddings.get((*v, model_ref)) for v in versions)

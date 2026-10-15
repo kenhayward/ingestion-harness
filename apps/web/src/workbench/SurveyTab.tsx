@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   EMPTY_BRIEF,
   candidateInBrief,
   surveyBodyOf,
   type Brief,
+  type BriefBody,
   type DataPolicy,
   type OverviewItem,
   type ProposalView,
@@ -13,6 +14,7 @@ import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
+import { SurveyOntologies } from './SurveyOntologies.js';
 import { keepDraft, loadKept, stringRecord } from '../ui/keptDraft.js';
 import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
@@ -109,6 +111,27 @@ export function SurveyTab({
     return () => clearInterval(timer);
   }, [running, pollMs, refresh]);
 
+  // One brief save at a time on this tab: answers and ontology pins both write a whole brief
+  // built from the same version, so a second save in flight would undo the first.
+  const briefLock = useRef(false);
+  const [briefBusy, setBriefBusy] = useState(false);
+  const saveBriefBody = useCallback(
+    async (next: BriefBody): Promise<Brief | null> => {
+      if (briefLock.current) return null;
+      briefLock.current = true;
+      setBriefBusy(true);
+      try {
+        const saved = await api.saveBrief(projectId, next);
+        onBriefSaved(saved);
+        return saved;
+      } finally {
+        briefLock.current = false;
+        setBriefBusy(false);
+      }
+    },
+    [api, projectId, onBriefSaved],
+  );
+
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -156,11 +179,11 @@ export function SurveyTab({
       const kept = base.answers.filter(
         (qa) => !progress.unsaved.some((u) => u.question === qa.question),
       );
-      const next = await api.saveBrief(projectId, {
+      const next = await saveBriefBody({
         ...base,
         answers: [...kept, ...progress.unsaved.filter((u) => u.answer !== '')],
       });
-      onBriefSaved(next);
+      if (!next) return;
       setTyped({});
       setMessage(`Answers saved to brief version ${next.version}`);
     });
@@ -266,7 +289,7 @@ export function SurveyTab({
                 <div className="survey-card-foot">
                   <button
                     type="button"
-                    disabled={progress.unsaved.length === 0 || busy}
+                    disabled={progress.unsaved.length === 0 || busy || briefBusy}
                     title={progress.unsaved.length === 0 ? 'Type an answer first' : undefined}
                     onClick={() => void saveAnswers()}
                   >
@@ -396,6 +419,21 @@ export function SurveyTab({
           )}
         </div>
       )}
+      <SurveyOntologies
+        api={api}
+        projectId={projectId}
+        dataPolicy={dataPolicy}
+        brief={brief}
+        onBriefSaved={onBriefSaved}
+        saveBrief={saveBriefBody}
+        briefBusy={briefBusy}
+        surveyKey={`${proposal?.id ?? ''}:${proposal?.status ?? ''}`}
+        pollMs={pollMs}
+        retired={retired}
+        hasSurvey={
+          proposal !== null && proposal?.status !== 'failed' && proposal?.status !== 'running'
+        }
+      />
     </div>
   );
 }

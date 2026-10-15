@@ -119,7 +119,7 @@ export async function mappingInputs(
   brief: BriefBody,
 ): Promise<{ params: MappingParams } | { error: string }> {
   const picks = vocabularyOf(brief);
-  if (!picks.length) return { error: 'choose ontologies in the brief first' };
+  if (!picks.length) return { error: 'pin a vocabulary ontology on the Survey tab first' };
   const versions: MappingParams['versions'] = [];
   for (const pick of picks) {
     const detail = await app.deps.ontologies.get(pick.ontologyId);

@@ -76,6 +76,11 @@ export function graphPreviewKey(projectId: string, jobId: string): string {
   return `graphs/${projectId}/${jobId}.json`;
 }
 
+/** A survey's or refresh's ontology suggestions (runs bucket, worker draft/suggest tasks). */
+export function ontologySuggestionsKey(projectId: string, jobId: string): string {
+  return `ontology-suggestions/${projectId}/${jobId}.json`;
+}
+
 /** A drafting stage's result for a workbench project (runs bucket, worker draft task). */
 export function draftingKey(projectId: string, jobId: string): string {
   return `drafting/${projectId}/${jobId}.json`;
