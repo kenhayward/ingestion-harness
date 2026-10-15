@@ -34,7 +34,23 @@ const view = (over: Partial<OntologySuggestionsView> = {}): OntologySuggestionsV
     ],
     pinned: [],
     alsoMatched: [
-      { ontologyId: 'afo', version: 1, label: 'AFO merged', covers: ['strength', 'batch'] },
+      {
+        ontologyId: 'afo',
+        version: 1,
+        label: 'AFO merged',
+        covers: ['strength', 'batch_number'],
+        adds: ['batch_number'],
+        evidence: [
+          {
+            candidate: 'batch_number',
+            iri: 'https://ex.example/afo#BatchIdentifier',
+            label: 'batch identifier',
+            kind: 'class',
+            via: 'lexical',
+            similarity: 0.48,
+          },
+        ],
+      },
     ],
     uncovered: ['batch_number'],
     notes: ['Retrieval was lexical only: no embedding model is set.'],
@@ -71,8 +87,48 @@ describe('SurveyOntologies', () => {
     expect(within(card).getByText('covers 2 of 3 candidates')).toBeInTheDocument();
     await userEvent.click(within(card).getByRole('button', { name: 'Evidence' }));
     expect(within(card).getByText(/active_substance → Substance/)).toBeInTheDocument();
-    expect(screen.getByText(/Not covered: batch_number/)).toBeInTheDocument();
+    expect(screen.getByText('Not covered by the suggestions: batch_number')).toBeInTheDocument();
     expect(screen.getByText(/lexical only/)).toBeInTheDocument();
+  });
+
+  it('lists what an also-matched ontology would add, and pins it', async () => {
+    const saved = { ...brief, version: 3 };
+    const { api } = show({ saveBrief: vi.fn(async () => saved) });
+    const row = await screen.findByRole('listitem', { name: 'AFO merged v1' });
+    expect(row).toHaveTextContent('adds 1: batch_number');
+    expect(row).toHaveTextContent('batch_number → batch identifier');
+    await userEvent.click(within(row).getByRole('button', { name: 'Pin AFO merged v1' }));
+    expect(api.saveBrief).toHaveBeenCalledWith('letter', {
+      ...brief.body,
+      ontologies: [{ ontologyId: 'afo', version: 1, role: 'vocabulary' }],
+    });
+  });
+
+  it('names the ontology that would cover what the suggestions leave out', async () => {
+    show();
+    expect(
+      await screen.findByText(
+        'batch_number: AFO merged v1 matches “batch identifier” (lexical, 0.48)',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows an also-matched ontology already pinned as pinned', async () => {
+    show(
+      {},
+      {
+        brief: {
+          ...brief,
+          body: {
+            ...EMPTY_BRIEF,
+            ontologies: [{ ontologyId: 'afo', version: 1, role: 'vocabulary' }],
+          },
+        },
+      },
+    );
+    const row = await screen.findByRole('listitem', { name: 'AFO merged v1' });
+    expect(within(row).getByText('Pinned')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Pin AFO merged v1' })).toBeNull();
   });
 
   it('pins a suggestion into the brief', async () => {

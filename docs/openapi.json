@@ -37139,6 +37139,54 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "adds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "default": []
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "candidate": {
+                                          "type": "string"
+                                        },
+                                        "iri": {
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string"
+                                        },
+                                        "via": {
+                                          "type": "string",
+                                          "enum": [
+                                            "lexical",
+                                            "semantic",
+                                            "both"
+                                          ]
+                                        },
+                                        "similarity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "candidate",
+                                        "iri",
+                                        "label",
+                                        "kind",
+                                        "via",
+                                        "similarity"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    "default": []
                                   }
                                 },
                                 "required": [
@@ -37458,6 +37506,54 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "adds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "default": []
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "candidate": {
+                                          "type": "string"
+                                        },
+                                        "iri": {
+                                          "type": "string"
+                                        },
+                                        "label": {
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "type": "string"
+                                        },
+                                        "via": {
+                                          "type": "string",
+                                          "enum": [
+                                            "lexical",
+                                            "semantic",
+                                            "both"
+                                          ]
+                                        },
+                                        "similarity": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "candidate",
+                                        "iri",
+                                        "label",
+                                        "kind",
+                                        "via",
+                                        "similarity"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    "default": []
                                   }
                                 },
                                 "required": [
