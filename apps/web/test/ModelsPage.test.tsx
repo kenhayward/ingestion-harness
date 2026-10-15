@@ -27,8 +27,14 @@ function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
     apiKeyEnv: 'LOCAL_LLM_API_KEY',
     keySet: false,
     models: [
-      { modelId: 'llama-3', displayName: 'Llama 3', curated: false, enabled: true },
-      { modelId: 'qwen', displayName: null, curated: true, enabled: true },
+      {
+        modelId: 'llama-3',
+        displayName: 'Llama 3',
+        curated: false,
+        enabled: true,
+        maxOutputTokens: null,
+      },
+      { modelId: 'qwen', displayName: null, curated: true, enabled: true, maxOutputTokens: null },
     ],
     ...over,
   };
@@ -43,6 +49,60 @@ function page(endpoints: LlmEndpointView[] = [endpoint()], overrides = {}) {
 const card = (name: string) => screen.findByRole('region', { name: `Endpoint ${name}` });
 
 describe('ModelsPage', () => {
+  it("sets an offered model's output limit, and clears it back to the default", async () => {
+    const api = page([endpoint()], {
+      setLlmModelSettings: vi.fn(async () => endpoint()),
+    });
+    const local = await card('local');
+    // Only offered models have a limit: a suggestion does not run.
+    expect(within(local).queryByRole('spinbutton', { name: /llama-3/ })).toBeNull();
+    const limit = within(local).getByRole('spinbutton', { name: 'Max output tokens for qwen' });
+    expect(limit).toHaveAttribute('placeholder', '16,000 (default)');
+    const set = within(local).getByRole('button', { name: 'Set the output limit of qwen' });
+    expect(set).toBeDisabled(); // nothing changed
+    await userEvent.type(limit, '500');
+    expect(set).toBeDisabled();
+    expect(set).toHaveAttribute(
+      'title',
+      'Between 1,024 and 1,000,000 tokens, or empty for the default',
+    );
+    await userEvent.clear(limit);
+    await userEvent.type(limit, '32000');
+    await userEvent.click(set);
+    expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
+      maxOutputTokens: 32000,
+    });
+  });
+
+  it('clears a set limit back to the default', async () => {
+    const api = page(
+      [
+        endpoint({
+          models: [
+            {
+              modelId: 'qwen',
+              displayName: null,
+              curated: true,
+              enabled: true,
+              maxOutputTokens: 48000,
+            },
+          ],
+        }),
+      ],
+      { setLlmModelSettings: vi.fn(async () => endpoint()) },
+    );
+    const local = await card('local');
+    const limit = within(local).getByRole('spinbutton', { name: 'Max output tokens for qwen' });
+    expect(limit).toHaveValue(48000);
+    await userEvent.clear(limit);
+    await userEvent.click(
+      within(local).getByRole('button', { name: 'Set the output limit of qwen' }),
+    );
+    expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
+      maxOutputTokens: null,
+    });
+  });
+
   it('shows each endpoint with where it sends data, where it came from and its key', async () => {
     page([
       endpoint(),
@@ -225,10 +285,28 @@ describe('ModelsPage: model choices and pipeline models', () => {
   const endpoints = [
     endpoint({
       models: [
-        { modelId: 'llama-3', displayName: null, curated: true, enabled: true },
-        { modelId: 'olmocr', displayName: null, curated: true, enabled: true },
-        { modelId: 'qwen', displayName: null, curated: true, enabled: true },
-        { modelId: 'suggested', displayName: null, curated: false, enabled: true },
+        {
+          modelId: 'llama-3',
+          displayName: null,
+          curated: true,
+          enabled: true,
+          maxOutputTokens: null,
+        },
+        {
+          modelId: 'olmocr',
+          displayName: null,
+          curated: true,
+          enabled: true,
+          maxOutputTokens: null,
+        },
+        { modelId: 'qwen', displayName: null, curated: true, enabled: true, maxOutputTokens: null },
+        {
+          modelId: 'suggested',
+          displayName: null,
+          curated: false,
+          enabled: true,
+          maxOutputTokens: null,
+        },
       ],
     }),
   ];

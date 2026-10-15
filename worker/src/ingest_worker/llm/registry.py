@@ -47,6 +47,9 @@ class ProviderConfig(BaseModel):
     #: Where requests go (ADR 0007 data policy). Undeclared providers count as external.
     location: Location = "external"
     options: dict[str, Any] = Field(default_factory=dict)
+    #: An admin's output limit per offered model id (Models page, migration 0043): the most
+    #: tokens one reply may use where the step does not say (drafting, mapping).
+    max_output_tokens: dict[str, int] = Field(default_factory=dict, alias="maxOutputTokens")
 
     @field_validator("models", mode="before")
     @classmethod
@@ -217,14 +220,28 @@ class ModelRegistry:
     def provider_names(self) -> list[str]:
         return list(self._providers)
 
-    def resolve(self, ref: str) -> tuple[LLMProvider, str]:
-        """Resolve an alias or "provider/model-id" to a provider and model id."""
+    def _follow(self, ref: str) -> str:
+        """The "provider/model-id" an alias (a model choice, `default`, `draft`) stands for."""
         seen: list[str] = []
         while ref in self._aliases:
             if ref in seen:
                 raise ModelResolutionError(f"alias cycle: {' -> '.join([*seen, ref])}")
             seen.append(ref)
             ref = self._aliases[ref]
+        return ref
+
+    def max_output_tokens(self, ref: str) -> int | None:
+        """The model's output limit an admin set (Models page), or None: the caller's default."""
+        try:
+            provider_name, _, model_id = self._follow(ref).partition("/")
+        except ModelResolutionError:
+            return None
+        config = self._configs.get(provider_name)
+        return config.max_output_tokens.get(model_id) if config is not None else None
+
+    def resolve(self, ref: str) -> tuple[LLMProvider, str]:
+        """Resolve an alias or "provider/model-id" to a provider and model id."""
+        ref = self._follow(ref)
         provider_name, sep, model_id = ref.partition("/")
         if not sep or not model_id:
             raise ModelResolutionError(f"unknown model alias or malformed ref {ref!r}")

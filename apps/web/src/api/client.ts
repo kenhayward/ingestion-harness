@@ -1,5 +1,6 @@
 import type {
   GraphPreviewView,
+  ModelSettingsBody,
   OntologySuggestionsView,
   ShaclReport,
   LinkedDataBody,
@@ -374,6 +375,12 @@ export interface Api {
   updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
   /** Exactly these models are offered in the pickers. */
   setLlmEndpointModels(name: string, models: string[]): Promise<LlmEndpointView>;
+  /** A model's output limit (admin; null: the default). */
+  setLlmModelSettings(
+    name: string,
+    modelId: string,
+    body: ModelSettingsBody,
+  ): Promise<LlmEndpointView>;
   deleteLlmEndpoint(name: string): Promise<void>;
   /** Asks the workers to list every endpoint's models now (suggestions appear shortly). */
   discoverLlmEndpoint(name: string): Promise<void>;
@@ -905,6 +912,12 @@ export function createHttpApi(base = '/api'): Api {
         `${base}/llm/endpoints/${encodeURIComponent(name)}/models`,
         { models },
         'PUT',
+      ),
+    setLlmModelSettings: (name, modelId, body) =>
+      post<LlmEndpointView>(
+        `${base}/llm/endpoints/${encodeURIComponent(name)}/models/${encodeURIComponent(modelId)}`,
+        body,
+        'PATCH',
       ),
     deleteLlmEndpoint: (name) =>
       noContent(

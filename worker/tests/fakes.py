@@ -76,6 +76,8 @@ class FakeProvider:
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if isinstance(response, CompletionResult):  # e.g. a truncated reply
+            return response
         text = response if isinstance(response, str) else json.dumps(response)
         return CompletionResult(text=text, model=model, input_tokens=10, output_tokens=5)
 
@@ -220,6 +222,8 @@ class MemoryLlmConfigStore:
         self.settings: dict[str, tuple[str, bool]] = {}
         #: (provider, model_id) disabled by an admin: not offered even when curated
         self.disabled: set[tuple[str, str]] = set()
+        #: (provider, model_id) -> an admin's output limit (Models page)
+        self.limits: dict[tuple[str, str], int] = {}
         self._version = 0
         if seed is not None:
             self.seed(seed)
@@ -235,6 +239,7 @@ class MemoryLlmConfigStore:
             dict(self.choices),
             dict(self.settings),
             frozenset(self.disabled),
+            dict(self.limits),
         )
 
     def seed(self, seed: Seed) -> None:
@@ -284,10 +289,15 @@ class MemoryLlmConfigStore:
                 update={
                     "optional": True,
                     "models": sorted(
-                        m
-                        for (p, m), (curated, _) in self.curated.items()
-                        if p == n and curated and (p, m) not in self.disabled
+                        offered := [
+                            m
+                            for (p, m), (curated, _) in self.curated.items()
+                            if p == n and curated and (p, m) not in self.disabled
+                        ]
                     ),
+                    "max_output_tokens": {
+                        m: self.limits[(n, m)] for m in offered if (n, m) in self.limits
+                    },
                 }
             )
             for n in sorted(self.endpoints)
@@ -333,6 +343,14 @@ class MemoryLlmConfigStore:
     def disable_model(self, provider: str, model_id: str) -> None:
         before = self._snapshot()
         self.disabled.add((provider, model_id))
+        self._changed(before)
+
+    def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None:
+        before = self._snapshot()
+        if limit is None:
+            self.limits.pop((provider, model_id), None)
+        else:
+            self.limits[(provider, model_id)] = limit
         self._changed(before)
 
     def uncurate(self, provider: str, model_id: str) -> None:
