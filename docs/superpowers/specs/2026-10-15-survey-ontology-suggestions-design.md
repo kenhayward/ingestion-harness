@@ -51,18 +51,23 @@ def suggest_ontologies(
 
 ### Queries
 
-One query per survey candidate: its `name` with underscores read as spaces, then its
-`description`. A `table` candidate looks for classes; a `field` candidate for properties and
-classes. Retrieval runs over every ready library version at once (`retrieval.shortlist`-style
-lexical + semantic), so a survey of ~20 candidates is ~20 lexical queries plus one batched
-embedding call, whatever the library size.
+One query per survey candidate. The lexical query is its `name` with underscores read as
+spaces (`active substance`); the semantic query is that name and its `description`. A `table`
+candidate looks for classes (`CLASS_KINDS`); a `field` candidate for properties and classes.
+Retrieval runs over the library's versions at once, so a survey of ~20 candidates is ~20 lexical
+queries plus one batched embedding call, whatever the library size. The library is the newest
+ready version of every ontology that is not retired.
 
 ### Absolute similarity
 
-Rank fusion scores are relative, so "covered" needs an absolute signal. `OntologyStore.lexical`
-and `OntologyStore.semantic` return each term's similarity (`Term.similarity`, 0-1: the trigram
-similarity of the best label or synonym, or `1 - cosine distance`). Both `PgOntologyStore` and
-`MemoryOntologyStore` implement it; the mapping stage ignores it.
+Rank fusion scores are relative, so "covered" needs an absolute signal. Two new store methods
+return, for each version, its best term above a threshold with its similarity (`TermHit`:
+ontology id, version, term, similarity 0-1): `OntologyStore.lexical_best` (pg_trgm
+`similarity` of the lowercased label or a synonym against the lexical query, the whole strings,
+so a generic `date` does not match `expiry date`) and `OntologyStore.semantic_best`
+(`1 - cosine distance`). `PgOntologyStore` and `MemoryOntologyStore` implement both
+(`ontology.trigram_similarity`, pg_trgm's algorithm, for the memory store); the mapping
+stage's `lexical`/`semantic` are unchanged.
 
 A candidate is **covered** by ontology O when one of O's terms (by `definedIn`, so terms an
 ontology imports count for the version that indexes them) has lexical similarity ≥
@@ -83,7 +88,8 @@ values are `MIN_LEXICAL = 0.45` and `MIN_SEMANTIC = 0.6`.
 ### The record (`SuggestionRecord`, JSON)
 
 - `surveyProposalId`, `createdAt`, `candidates` (how many were queried), `libraryKey`
-  (sha256 of the sorted ready `id@version` list plus the embedding model ref, or `lexical`).
+  (`<embedding model ref or lexical>|<sorted id@version, comma-separated>`, a plain string so
+  both sides compute it without hashing).
 - `suggestions`: in pick order, each `{ontologyId, version, label, covers: [candidate names],
   evidence: [{candidate, iri, label, kind, via: lexical|semantic|both, similarity}] (≤ 5)}`.
 - `pinned`: the brief's vocabulary pins with the candidates each covers.
@@ -136,10 +142,13 @@ Both documented (OpenAPI, conformance) and covered by the access sweep.
 
 ### Migration 0039 `ontology_suggestions`
 
-- `job_task` gains `suggest`; `jobs_document_or_project` allows a project-only `suggest` row.
+- `jobs_task_check` gains `suggest`.
 - Like `segment`, `suggest` jobs never appear as `JobSummary` (no document), are never retried or
-  cancelled through the jobs routes, are skipped by `setDataPolicy`, and are removed by
-  `deleteProject` (with `ontology-suggestions/<id>/` in the runs bucket).
+  cancelled through the jobs routes, and are removed by `deleteProject` (with
+  `ontology-suggestions/<id>/` in the runs bucket). Unlike segment and graph previews,
+  `setDataPolicy` updates them: their params carry `dataPolicy`, so a revocation reaches a
+  queued refresh.
+- `jobs_document_or_project` needs no change: a `suggest` job has its `project_id`.
 
 ### Contracts (both sides, one PR)
 
@@ -192,8 +201,10 @@ Survey card saves directly, as today).
 
 ### Overview
 
-The mapping stage's "not used" status text points to Survey ("pin a vocabulary on Survey"),
-`LIST_CACHE_VERSION` bumped if a list row's text changes.
+The mapping stage's "not used" status reads `Not used: no vocabulary is pinned on Survey`
+(`overview.ts`), the Mapping tab's empty state links to the Survey tab (*Choose ontologies on
+Survey*), and starting the mapping stage without a vocabulary is a 409 `pin a vocabulary
+ontology on the Survey tab first`. `LIST_CACHE_VERSION` is bumped (the status is in list rows).
 
 ## 4. Testing
 
