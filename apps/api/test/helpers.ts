@@ -1,6 +1,7 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
+import { MemoryProfileRepo } from '../src/profile/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
@@ -86,6 +87,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
+    profiles: new MemoryProfileRepo(),
     llm,
     ontologies,
     ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },

@@ -373,7 +373,7 @@ describe('the admin name menu', () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  it('gives users a menu with Change password and Sign out only', async () => {
+  it('gives users a menu with Profile and Sign out only; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
@@ -392,19 +392,40 @@ describe('the admin name menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((i) => i.textContent),
-    ).toEqual(['Change password', 'Sign out']);
+    ).toEqual(['Profile', 'Sign out']);
     await userEvent.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
-    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Change password' }));
-    expect(window.location.hash).toBe('#/account/password');
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Profile' }));
+    const dialog = screen.getByRole('dialog', { name: 'Profile' });
+    expect(within(dialog).getByRole('tab', { name: 'Personal details' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(window.location.hash).toBe('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('still opens the Change password page at its address', async () => {
+    window.location.hash = '#/account/password';
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
     expect(
       await screen.findByRole('heading', { name: 'Change your password' }),
     ).toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Change password · CT Studio'));
   });
 
-  it('lists Change password for admin users but not for the admin from the log', async () => {
+  it('lists Profile for admin users but not for the admin from the log', async () => {
     const menuItems = async (email: string | null) => {
       const api = fakeApi({
         me: vi.fn(async () => ({
@@ -425,8 +446,48 @@ describe('the admin name menu', () => {
       unmount();
       return names;
     };
-    expect(await menuItems('ken@example.com')).toContain('Change password');
-    expect(await menuItems(null)).not.toContain('Change password');
+    expect(await menuItems('ken@example.com')).toContain('Profile');
+    expect(await menuItems(null)).not.toContain('Profile');
+  });
+
+  it('shows the linked GitHub picture beside the name', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+        avatarUrl: 'https://avatars.example/u/7',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    expect(trigger.querySelector('img.avatar')).toHaveAttribute(
+      'src',
+      'https://avatars.example/u/7',
+    );
+    expect(trigger).not.toHaveTextContent('AN');
+  });
+
+  it('reopens Profile when GitHub sends the browser back, and re-reads who is signed in', async () => {
+    window.location.hash = '#/account/profile/github?github=linked';
+    const me = vi.fn(async () => ({
+      role: 'user' as const,
+      label: 'Ann',
+      email: 'ann@example.com',
+      mustChangePassword: false,
+      userId: 'u-test',
+    }));
+    const api = fakeApi({ me });
+    render(<App api={api} pollMs={0} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Profile' });
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('GitHub account linked.');
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(me.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
   it('lists Models in the admin nav', async () => {

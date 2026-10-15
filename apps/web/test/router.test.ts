@@ -33,6 +33,13 @@ describe('parseHash', () => {
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
     ['#/account/password', { name: 'password' }],
+    ['#/account/profile', { name: 'profile', tab: 'details' }],
+    ['#/account/profile/password', { name: 'profile', tab: 'password' }],
+    [
+      '#/account/profile/github?github=linked',
+      { name: 'profile', tab: 'details', github: 'linked' },
+    ],
+    ['#/account/profile/github?github=nonsense', { name: 'profile', tab: 'details' }],
     ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {
