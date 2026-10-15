@@ -62,7 +62,8 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
      container, `APP_PORT`);
    - SSL: request a Let's Encrypt certificate, and turn on Force SSL and HSTS;
    - turn on **Block common exploits**;
-   - Advanced: `client_max_body_size 60m; proxy_read_timeout 300s;` (uploads and long requests).
+   - Advanced: `client_max_body_size 210m; proxy_read_timeout 300s;` (uploads up to
+     `MAX_UPLOAD_MB`, at most 200 MB with the app's nginx, e.g. ChEBI lite; and long requests).
      Workbench bundle imports (`POST /api/workbench/projects/import`) are larger: up to
      `MAX_UPLOAD_MB` × 12 samples + 8 MB (608 MB at the default 50). The app's nginx allows
      650 MB on that path only; give the proxy host the same allowance, e.g. a custom location
