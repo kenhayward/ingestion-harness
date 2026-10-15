@@ -26,6 +26,8 @@ const SECTION: Record<Route['name'], Section> = {
   project: 'workbench',
   access: 'access',
   password: 'account',
+  // The way back from GitHub: Home with the Profile dialog open.
+  profile: 'home',
   models: 'models',
   'linked-data': 'linked-data',
   ontologies: 'ontologies',
@@ -90,6 +92,7 @@ const PAGE: Record<Route['name'], string> = {
   project: 'Workbench',
   access: 'Access',
   password: 'Change password',
+  profile: 'Home',
   models: 'Models',
   'linked-data': 'Linked data',
   ontologies: 'Ontologies',

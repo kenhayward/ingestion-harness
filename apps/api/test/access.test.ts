@@ -55,6 +55,8 @@ const PUBLIC = [
   'GET /api/docs/js/scalar.js',
   'GET /api/docs/openapi.json',
   'GET /api/docs/openapi.yaml',
+  // GitHub's redirect brings no session cookie: the link's state finds the user.
+  'GET /api/profile/github/callback',
   'POST /api/auth/login',
   'POST /api/auth/logout',
 ];
@@ -67,7 +69,7 @@ describe('email and password access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login, logout and the API docs', async () => {
+  it('guards every /api route except login, logout, the API docs and the GitHub callback', async () => {
     const { app } = await setup();
     const routes = routesOf(app);
     expect(routes.length).toBeGreaterThan(20);
@@ -120,6 +122,7 @@ describe('email and password access', () => {
       label: 'Admin',
       email: null,
       mustChangePassword: false,
+      avatarUrl: null,
       failedSinceLastSignIn: 0,
       lastFailedAt: null,
     });
@@ -135,6 +138,7 @@ describe('email and password access', () => {
       label: 'Admin',
       email: null,
       mustChangePassword: false,
+      avatarUrl: null,
     });
   });
 
