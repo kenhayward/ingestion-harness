@@ -86,6 +86,7 @@ export function ProjectPage({
   api,
   projectId,
   tab,
+  surveyView,
   onNavigate,
   pollMs = 3000,
   role,
@@ -93,6 +94,8 @@ export function ProjectPage({
   api: Api;
   projectId: string;
   tab: ProjectTab;
+  /** The Survey tab's own tab, from the route (`survey/ontologies`). */
+  surveyView?: string;
   onNavigate: (hash: string) => void;
   /** Poll interval for the tabs, and for the overview while anything runs. */
   pollMs?: number;
@@ -307,6 +310,7 @@ export function ProjectPage({
               onChanged={changed}
               item={itemOf('survey')}
               retired={retired}
+              view={surveyView}
             />
           )}
           {tab === 'mapping' && (

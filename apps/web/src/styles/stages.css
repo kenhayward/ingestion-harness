@@ -1990,12 +1990,6 @@ label.inline.list-select {
   gap: 16px;
   align-items: start;
 }
-.survey-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  min-width: 0;
-}
 .survey-decision {
   grid-column: 1 / -1;
   display: flex;
@@ -2132,7 +2126,7 @@ label.inline.list-select {
 .survey-anatomy h3 {
   font-weight: 600;
 }
-.survey-main > *,
+.survey-found,
 .survey-anatomy,
 .survey-card-head > * {
   min-width: 0;
@@ -3425,4 +3419,17 @@ label.inline.list-select {
   .unsaved-actions {
     margin-left: 0;
   }
+}
+
+/* Survey tabs: Findings, Questions, Candidates, Ontologies */
+.survey-tabs [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.survey-panel-ontologies .survey-ontologies {
+  margin-top: 0;
+}
+.survey-tab > .survey-decision {
+  margin-top: 16px;
 }

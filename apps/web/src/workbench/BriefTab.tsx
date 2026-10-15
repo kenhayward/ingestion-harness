@@ -377,7 +377,7 @@ export function BriefTab({
                 </p>
               )}
             </div>
-            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
+            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey/questions`)}>
               Open Survey
             </button>
           </section>
@@ -393,7 +393,7 @@ export function BriefTab({
                     )
                     .join(' · ')}`}
             </p>
-            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
+            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey/ontologies`)}>
               {body.ontologies.length === 0 ? 'Choose on Survey' : 'Change on Survey'}
             </button>
           </section>
