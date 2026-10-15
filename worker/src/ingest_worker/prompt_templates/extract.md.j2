@@ -1,7 +1,8 @@
 {% if preamble %}{{ preamble }}
 
 {% endif %}You are extracting data from a document of type "{{ document_name }}".
-Each page of the document text begins with a "[page N]" marker.
+{% if source_file is defined and source_file %}The source file is named "{{ source_file }}".
+{% endif %}Each page of the document text begins with a "[page N]" marker.
 {% if fields %}
 Task: extract these fields. For each field return:
 - value: the value as written in the document (null if absent, blank, unreadable or a placeholder)

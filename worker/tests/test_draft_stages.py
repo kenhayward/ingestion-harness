@@ -133,6 +133,30 @@ def test_steps_validate_the_whole_template_after_applying() -> None:
     assert any("unknown field" in e for e in errors) and any("not filled" in e for e in errors)
 
 
+@pytest.mark.parametrize("sections", [[], None])
+def test_an_extract_step_without_sections_says_why_it_needs_one(sections: Any) -> None:
+    """The model sent `sections: []` for outputs no section holds (a file name): the empty list
+    was dropped and the feedback said "Field required", so the retry sent the same again."""
+    draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}], "tables": []}}
+    _, errors = run(STEPS, {"notes": "", "changes": [step_item(sections=sections)]}, draft)
+    assert errors == [
+        "changes[0]: step 'head': sections is empty: an extract step reads at least one section. "
+        "For a value no section holds (a file name, a value these documents lack), fill it in "
+        "the step that reads the section it belongs with; it may come back empty."
+    ]
+    assert not any("Field required" in e for e in errors)
+
+
+def test_the_steps_prompt_says_every_extract_step_reads_a_section() -> None:
+    assert "reads at least one section" in STEPS.instructions
+    assert "may come back empty" in STEPS.instructions
+
+
+def test_the_steps_prompt_says_steps_see_the_file_name_and_page_markers() -> None:
+    assert "states the source file name" in STEPS.instructions
+    assert "[page N]" in STEPS.instructions
+
+
 def test_steps_convert_context_checks_and_preamble() -> None:
     draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []}}
     changes = [
