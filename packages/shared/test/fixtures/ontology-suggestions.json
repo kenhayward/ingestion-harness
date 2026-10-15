@@ -1,0 +1,50 @@
+{
+  "libraryKeys": [
+    { "name": "empty, lexical", "versions": [], "model": null, "key": "lexical|" },
+    {
+      "name": "sorted by id then version",
+      "versions": [
+        { "id": "qudt", "version": 2 },
+        { "id": "afo", "version": 1 },
+        { "id": "afo", "version": 3 }
+      ],
+      "model": "local/nomic",
+      "key": "local/nomic|afo@1,afo@3,qudt@2"
+    }
+  ],
+  "params": {
+    "surveyProposalId": "11111111-1111-4111-8111-111111111111",
+    "candidates": [{ "name": "active_substance", "description": "The substance", "kind": "field" }],
+    "library": [{ "id": "idmp", "version": 2, "label": "IDMP-O", "terms": 1200 }],
+    "pinned": [{ "ontologyId": "qudt", "version": 1 }],
+    "dataPolicy": "local"
+  },
+  "record": {
+    "surveyProposalId": "11111111-1111-4111-8111-111111111111",
+    "createdAt": "2026-10-15T10:00:00Z",
+    "candidates": 3,
+    "libraryKey": "lexical|idmp@2,qudt@1",
+    "suggestions": [
+      {
+        "ontologyId": "idmp",
+        "version": 2,
+        "label": "IDMP-O",
+        "covers": ["active_substance", "strength"],
+        "evidence": [
+          {
+            "candidate": "active_substance",
+            "iri": "https://ex.example/idmp#Substance",
+            "label": "Substance",
+            "kind": "class",
+            "via": "lexical",
+            "similarity": 0.588
+          }
+        ]
+      }
+    ],
+    "pinned": [{ "ontologyId": "qudt", "version": 1, "label": "QUDT", "covers": [] }],
+    "alsoMatched": [],
+    "uncovered": ["batch_number"],
+    "notes": ["Retrieval was lexical only: no embedding model is set."]
+  }
+}

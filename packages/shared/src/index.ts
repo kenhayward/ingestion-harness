@@ -17,4 +17,5 @@ export * from './brief.js';
 export * from './survey.js';
 export * from './definition-diff.js';
 export * from './ontologies.js';
+export * from './ontology-suggestions.js';
 export * from './linked-data.js';
