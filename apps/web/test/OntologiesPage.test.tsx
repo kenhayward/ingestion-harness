@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Api } from '../src/api/client.js';
 import { OntologiesPage } from '../src/ontologies/OntologiesPage.js';
 import { fakeApi, ontologySummary, ontologyVersion } from './fake-api.js';
@@ -300,5 +300,126 @@ describe('ImportOntologyDialog, from a folder or .zip', () => {
         expect.objectContaining({ mode: 'merge', id: 'idmp-o' }),
       ),
     );
+  });
+});
+
+describe('OntologiesPage layout (handoff: header row, Cards / List)', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
+
+  const two = () => [
+    ontologySummary({ description: 'Validation protocols', localOnly: true }),
+    ontologySummary({
+      id: 'qudt-org-2-1-schema-extensions-functions',
+      label: 'http://qudt.org/2.1/schema/extensions/functions',
+      tags: ['imported-by:qudt-units'],
+      latest: ontologyVersion({ status: 'failed', error: 'cannot read functions.ttl as Turtle' }),
+      versionCount: 3,
+    }),
+    ontologySummary({ id: 'empty', label: 'Empty', latest: null, versionCount: 0, tags: [] }),
+  ];
+
+  it('puts the title, search, view switch and Import in one header row', async () => {
+    page(two());
+    const header = await screen.findByRole('banner', { name: 'Ontologies' });
+    expect(
+      within(header).getByRole('heading', { level: 1, name: 'Ontologies' }),
+    ).toBeInTheDocument();
+    expect(
+      within(header).getByRole('searchbox', { name: 'Search ontologies' }),
+    ).toBeInTheDocument();
+    expect(within(header).getByRole('group', { name: 'View' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Import ontology' })).toBeInTheDocument();
+  });
+
+  it('leaves Import out for users, keeping the view switch', async () => {
+    page(two(), 'user');
+    const header = await screen.findByRole('banner', { name: 'Ontologies' });
+    expect(within(header).getByRole('group', { name: 'View' })).toBeInTheDocument();
+    expect(within(header).queryByRole('button', { name: 'Import ontology' })).toBeNull();
+  });
+
+  it('shows cards by default: an icon tile, the id under the name', async () => {
+    page(two());
+    const pv = await screen.findByRole('region', { name: 'Ontology Process validation' });
+    expect(screen.getByRole('button', { name: 'Cards' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'false');
+    const tile = pv.querySelector('.ontology-card-icon');
+    expect(tile).not.toBeNull();
+    expect(tile).toHaveAttribute('aria-hidden', 'true');
+    const name = within(pv).getByRole('link', { name: 'Process validation' });
+    const id = within(pv).getByText('pv');
+    expect(name.compareDocumentPosition(id) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(pv).getByText('Validation protocols')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('switches to a list table, remembered per browser', async () => {
+    page(two());
+    await screen.findByRole('region', { name: 'Ontology Process validation' });
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    expect(localStorage.getItem('ih.ontologyView')).toBe('list');
+    const table = screen.getByRole('table', { name: 'Ontologies' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((c) => c.textContent),
+    ).toEqual(['Ontology', 'Id', 'Format and tags', 'Version', 'Contents']);
+    expect(screen.queryByRole('region', { name: /^Ontology / })).toBeNull();
+    expect(table.querySelector('.ontology-card-icon')).toBeNull();
+    // Long values are kept whole in a title.
+    const long = within(table).getByRole('link', {
+      name: 'http://qudt.org/2.1/schema/extensions/functions',
+    });
+    expect(long).toHaveAttribute('title', 'http://qudt.org/2.1/schema/extensions/functions');
+    const row = long.closest('tr')!;
+    expect(within(row).getByText('qudt-org-2-1-schema-extensions-functions')).toHaveAttribute(
+      'title',
+      'qudt-org-2-1-schema-extensions-functions',
+    );
+    expect(within(row).getByText('3 versions')).toBeInTheDocument();
+    expect(within(row).getByText(/Import failed: cannot read functions.ttl/)).toHaveAttribute(
+      'title',
+      'Import failed: cannot read functions.ttl as Turtle',
+    );
+    const empty = within(table).getByRole('link', { name: 'Empty' }).closest('tr')!;
+    expect(within(empty).getByText('—')).toBeInTheDocument();
+    expect(within(empty).getByText('No versions')).toBeInTheDocument();
+    // A new page starts in the list; Cards forgets the choice.
+    cleanup();
+    page(two());
+    expect(await screen.findByRole('table', { name: 'Ontologies' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Cards' }));
+    expect(localStorage.getItem('ih.ontologyView')).toBeNull();
+  });
+
+  it('shows cards when storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    page(two());
+    expect(
+      await screen.findByRole('region', { name: 'Ontology Process validation' }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('table', { name: 'Ontologies' })).toBeInTheDocument();
+  });
+
+  it('filters both views the same way, and says when nothing matches', async () => {
+    page(two());
+    await screen.findByRole('region', { name: 'Ontology Process validation' });
+    const search = screen.getByRole('searchbox', { name: 'Search ontologies' });
+    await userEvent.type(search, 'qudt');
+    expect(screen.getAllByRole('region', { name: /^Ontology / })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2); // header + 1
+    await userEvent.clear(search);
+    await userEvent.type(search, 'nothing like this');
+    expect(screen.getByText('No ontology matches “nothing like this”.')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });
