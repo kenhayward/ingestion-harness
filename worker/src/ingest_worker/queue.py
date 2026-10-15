@@ -311,7 +311,8 @@ class PgJobQueue:
                 )
 
     def reap_stale(self, older_than_s: float) -> int:
-        """Re-queue jobs whose worker died mid-run."""
+        """Re-queue jobs whose worker died mid-run, whatever their attempts: a restart (a
+        redeploy) is rarely the job's fault, and `run_once` logs a job run past its limit."""
         cur = self._conn.execute(
             """UPDATE jobs SET status = 'queued', locked_by = NULL, locked_at = NULL,
                       error = 'worker lock expired', updated_at = now()

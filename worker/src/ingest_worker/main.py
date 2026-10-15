@@ -70,6 +70,14 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     if job is None:
         return False
     log.info("claimed %s job %s (attempt %d/%d)", job.task, job.id, job.attempts, job.max_attempts)
+    if job.attempts > job.max_attempts:
+        # Only the reaper does this: a job whose worker stopped (e.g. a redeploy) is re-queued
+        # whatever its attempts, so a long job is never lost to restarts.
+        log.warning(
+            "job %s is on attempt %d of %d: its worker stopped while running it and it was "
+            "re-queued",
+            job.id, job.attempts, job.max_attempts,
+        )  # fmt: skip
     try:
         if job.task == "publish":
             check_cancelled(job, queue)

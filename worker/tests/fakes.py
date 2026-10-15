@@ -571,9 +571,15 @@ class MemoryOntologyStore:
         self.status[(ontology_id, version)] = "parsing"
         return True
 
+    def ready(self, ontology_id: str, version: int) -> bool:
+        return self.status.get((ontology_id, version)) == "ready"
+
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         self.saved[(ontology_id, version)] = parsed
         self.status[(ontology_id, version)] = "ready"
+        # Like Postgres: the version's terms are replaced and their embeddings cascade with them.
+        for key in [k for k in self.embeddings if k[:2] == (ontology_id, version)]:
+            del self.embeddings[key]
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
         self.status[(ontology_id, version)] = "failed"

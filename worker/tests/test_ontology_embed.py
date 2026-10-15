@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -138,6 +139,61 @@ def test_an_import_embeds_its_terms(fixture_specs_dir: Path) -> None:
     queue = FakeQueue(jobs=[ontology_job()])
     run_once(queue, deps, "w1")
     assert ("pv", 1, "emb/nomic") in ontologies.embeddings
+
+
+def batch_job() -> ClaimedJob:
+    """A folder import of one file per version, with pv as its only member."""
+    member = {"ontologyId": "pv", "version": 1, "sourceKey": SOURCE, "fileName": "pv.ttl",
+              "mediaType": "text/turtle"}  # fmt: skip
+    return ClaimedJob(
+        "job-b", "", "", 0, "", "", None, 2, 3, task="ontology", params={"members": [member]}
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("job", [ontology_job(attempts=2), batch_job()], ids=["file", "folder"])
+def test_a_retry_after_the_terms_were_saved_keeps_their_embeddings_and_embeds_the_rest(
+    fixture_specs_dir: Path, job: ClaimedJob
+) -> None:
+    """A worker restart mid-embedding (a redeploy) re-runs the import: the version is already
+    ready, so its terms stay as they are (re-saving them deletes their embeddings) and the
+    embedding resumes where it stopped."""
+    deps, provider, ontologies = make(fixture_specs_dir)
+    saved(ontologies)
+    ontologies.status[("pv", 1)] = "ready"
+    embed_version(deps, FakeQueue(), "j", "pv", 1)
+    rows = ontologies.embeddings[("pv", 1, "emb/nomic")]
+    del rows[("class", "https://ex.org/Thing")]  # stopped before this one
+    kept = rows[("class", "https://ex.org/Batch")]
+    terms = ontologies.saved[("pv", 1)]
+    provider.embed_calls.clear()
+
+    queue = FakeQueue(jobs=[job])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    assert ontologies.saved[("pv", 1)] is terms  # not read and saved again
+    assert ontologies.status[("pv", 1)] == "ready"
+    assert [texts for _, texts in provider.embed_calls] == [["Thing"]]
+    assert rows[("class", "https://ex.org/Batch")] is kept
+    assert set(ontologies.embeddings[("pv", 1, "emb/nomic")]) == {
+        ("class", "https://ex.org/Thing"),
+        ("class", "https://ex.org/Batch"),
+    }
+
+
+def test_a_job_run_past_its_attempts_is_logged(
+    fixture_specs_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The reaper re-queues a job whose worker stopped (a redeploy) whatever its attempts, so
+    a long import can run past its limit: the log says so."""
+    deps, _, _ = make(fixture_specs_dir)
+    with caplog.at_level(logging.WARNING, logger="ingest_worker"):
+        run_once(FakeQueue(jobs=[ontology_job(attempts=4)]), deps, "w1")
+        run_once(FakeQueue(jobs=[ontology_job(attempts=3)]), deps, "w1")
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == [
+        "job job-o is on attempt 4 of 3: its worker stopped while running it and it was re-queued"
+    ]
 
 
 def embed_job(**params: Any) -> ClaimedJob:
