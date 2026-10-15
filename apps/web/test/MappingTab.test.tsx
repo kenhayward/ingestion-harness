@@ -84,11 +84,11 @@ describe('mapping helpers', () => {
 });
 
 describe('MappingTab', () => {
-  it('says the stage is not used until the brief chooses ontologies', async () => {
+  it('says the stage is not used until a vocabulary is pinned on Survey', async () => {
     const { onNavigate } = show(false);
-    expect(screen.getByText(/Not used: the brief chooses no ontologies/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Choose ontologies in the Brief' }));
-    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/brief');
+    expect(screen.getByText(/Not used: no vocabulary is pinned on Survey/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Choose ontologies on Survey' }));
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/survey');
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 

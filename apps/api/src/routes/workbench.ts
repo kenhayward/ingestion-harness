@@ -2544,7 +2544,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
               'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
-              'already running`, for mapping `choose ontologies in the brief first`, `complete the ' +
+              'already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the ' +
               'outputs stage first` or `ontology {id} v{n} is not ready`, or ' +
               RETIRED_DOC +
               '.',
@@ -2592,7 +2592,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             (o) => o.role === 'vocabulary',
           )
         ) {
-          return reply.code(409).send({ error: 'choose ontologies in the brief first' });
+          return reply
+            .code(409)
+            .send({ error: 'pin a vocabulary ontology on the Survey tab first' });
         }
         if (!outputs?.completedAt) {
           return reply.code(409).send({ error: 'complete the outputs stage first' });

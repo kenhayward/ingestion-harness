@@ -997,13 +997,13 @@ describe('the mapping stage in the overview (ADR 0011)', () => {
       'not used without ontologies in the brief',
       undefined,
       'skipped',
-      'Not used: the brief chooses no ontologies',
+      'Not used: no vocabulary is pinned on Survey',
     ],
     [
       'not used, said so',
       { used: false, state: 'pending' },
       'skipped',
-      'Not used: the brief chooses no ontologies',
+      'Not used: no vocabulary is pinned on Survey',
     ],
     [
       'optional once ontologies are chosen',

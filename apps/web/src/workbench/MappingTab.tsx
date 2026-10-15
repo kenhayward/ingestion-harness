@@ -51,11 +51,12 @@ export function MappingTab({
     return (
       <div className="mapping-tab">
         <p className="banner tone-skip">
-          Not used: the brief chooses no ontologies. Choose the customer or industry ontologies this
-          document type maps to, and the model will propose a mapping from their terms.
+          Not used: no vocabulary is pinned on Survey. Pin the customer or industry ontologies this
+          document type maps to on the Survey tab, and the model will propose a mapping from their
+          terms.
         </p>
-        <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/brief`)}>
-          Choose ontologies in the Brief
+        <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
+          Choose ontologies on Survey
         </button>
       </div>
     );

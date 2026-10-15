@@ -23038,7 +23038,7 @@
             }
           },
           "409": {
-            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23064,7 +23064,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `choose ontologies in the brief first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`finish the {stage} stage first (accept or skip it)`, `no open draft; start the next version on the Recipe tab`, `the project has no recipe version`, `add feedback before asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples to run`, `every dev sample already has a reference` or `reference runs are already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the outputs stage first` or `ontology {id} v{n} is not ready`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
