@@ -71,6 +71,8 @@ import type {
   Template,
   TemplateChange,
   SettingsBody,
+  VersionLabel,
+  VersionLabelBody,
 } from '@ih/shared';
 
 /** document.json written by the worker for template documents. */
@@ -117,7 +119,13 @@ export interface TemplateListItem {
   draft: number | null;
   /** Set when the document type is retired (hidden from new work); null when it is not. */
   retired: Retirement | null;
-  versions: { version: number; status: 'draft' | 'published'; updatedAt: string }[];
+  versions: {
+    version: number;
+    status: 'draft' | 'published';
+    updatedAt: string;
+    /** What the version is for (#144); null when unlabelled. */
+    label?: string | null;
+  }[];
   /** Card summary of the version shown (draft first). */
   summary: TemplateSummary;
 }
@@ -144,7 +152,7 @@ export interface TemplateRecordView {
     createdAt: string;
     updatedAt: string;
     publishedAt: string | null;
-  };
+  } & Partial<VersionLabel>;
   /** `severity: 'warning'` never blocks publishing (an unmapped output, ADR 0011). */
   issues: { path: string; message: string; severity?: 'warning' }[];
 }
@@ -199,6 +207,15 @@ export interface TemplateMetrics {
     avgSeconds: number | null;
   }[];
   topEdited: { target: string; edits: number }[];
+}
+
+/** One row of `GET /api/templates/:id/versions` (#144), newest first. */
+export interface TemplateVersionItem extends VersionLabel {
+  version: number;
+  status: 'draft' | 'published';
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
 }
 
 export interface VersionDiff {
@@ -455,6 +472,17 @@ export interface Api {
   ): Promise<TemplateRecordView>;
   publishTemplate(id: string, version: number): Promise<TemplateRecordView>;
   newDraft(id: string, from: number): Promise<TemplateRecordView>;
+  /** Every version of a document type, newest first, with its label and note (#144). */
+  listVersions(id: string): Promise<TemplateVersionItem[]>;
+  /** Sets a version's label and note: a field left out is kept, null clears it. */
+  setVersionLabel(id: string, version: number, body: VersionLabelBody): Promise<TemplateRecordView>;
+  /** Writes version `from` into the open draft `version` (409 when it changed since `baseUpdatedAt`). */
+  restoreVersion(
+    id: string,
+    version: number,
+    from: number,
+    baseUpdatedAt?: string,
+  ): Promise<TemplateRecordView>;
   deleteDraft(id: string, version: number): Promise<void>;
   importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
   exportUrl(id: string, version: number): string;
@@ -1234,6 +1262,15 @@ export function createHttpApi(base = '/api'): Api {
     publishTemplate: (id, version) =>
       post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
     newDraft: (id, from) => post<TemplateRecordView>(`${base}/templates/${id}/drafts`, { from }),
+    listVersions: (id) =>
+      apiFetch(`${base}/templates/${id}/versions`).then(json<TemplateVersionItem[]>),
+    setVersionLabel: (id, version, body) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}`, body, 'PATCH'),
+    restoreVersion: (id, version, from, baseUpdatedAt) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/restore`, {
+        from,
+        ...(baseUpdatedAt ? { baseUpdatedAt } : {}),
+      }),
     deleteDraft: async (id, version) => {
       const res = await apiFetch(`${base}/templates/${id}/versions/${version}`, {
         method: 'DELETE',

@@ -11290,17 +11290,28 @@
         }
       }
     },
-    "/api/templates": {
+    "/api/templates/{id}/versions": {
       "get": {
-        "operationId": "listTemplates",
-        "summary": "List document types",
+        "operationId": "listTemplateVersions",
+        "summary": "List the versions of a document type",
         "tags": [
           "Recipes"
         ],
-        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
+        "description": "Every recipe version of a database document type, newest first, with its label and\nnote and without its definition (`GET …/versions/{version}` has it).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The document types.",
+            "description": "The versions, newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11308,184 +11319,71 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": {
+                      "version": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "draft",
+                          "published"
+                        ]
+                      },
+                      "createdAt": {
                         "type": "string"
                       },
-                      "name": {
+                      "updatedAt": {
                         "type": "string"
                       },
-                      "description": {
+                      "publishedAt": {
                         "type": [
                           "string",
                           "null"
                         ]
                       },
-                      "published": {
-                        "anyOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "The latest published version."
+                        "description": "What the version is for; null when unlabelled."
                       },
-                      "draft": {
-                        "anyOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "The open draft version."
+                        "description": "A longer comment; null when there is none."
                       },
-                      "retired": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "retiredAt": {
-                                "type": "string",
-                                "description": "When an admin retired the document type."
-                              },
-                              "retiredBy": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "description": "The label of the token that retired it; null without access control."
-                              }
-                            },
-                            "required": [
-                              "retiredAt",
-                              "retiredBy"
-                            ],
-                            "additionalProperties": true
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "labelSetBy": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
+                        "description": "Who last set the label or note; null when never set or without access control."
                       },
-                      "versions": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "version": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string",
-                              "enum": [
-                                "draft",
-                                "published"
-                              ]
-                            },
-                            "updatedAt": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "version",
-                            "status",
-                            "updatedAt"
-                          ],
-                          "additionalProperties": true
-                        }
-                      },
-                      "summary": {
-                        "type": "object",
-                        "properties": {
-                          "sections": {
-                            "type": "integer"
-                          },
-                          "fields": {
-                            "type": "integer"
-                          },
-                          "tables": {
-                            "type": "integer"
-                          },
-                          "references": {
-                            "type": "integer"
-                          },
-                          "draftIssues": {
-                            "anyOf": [
-                              {
-                                "type": "integer"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "description": "The open draft's issue count."
-                          },
-                          "lastRegression": {
-                            "anyOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "version": {
-                                    "type": "integer"
-                                  },
-                                  "matched": {
-                                    "type": "integer",
-                                    "description": "References matched exactly."
-                                  },
-                                  "total": {
-                                    "type": "integer"
-                                  },
-                                  "at": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "version",
-                                  "matched",
-                                  "total",
-                                  "at"
-                                ],
-                                "additionalProperties": true
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "regressionRunning": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": [
-                          "sections",
-                          "fields",
-                          "tables",
-                          "references",
-                          "draftIssues",
-                          "lastRegression",
-                          "regressionRunning"
+                      "labelSetAt": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "additionalProperties": true,
-                        "description": "Of the version shown: the open draft, else the latest published version."
+                        "description": "When the label or note was last set."
                       }
                     },
                     "required": [
-                      "id",
-                      "name",
-                      "description",
-                      "published",
-                      "draft",
-                      "retired",
-                      "versions",
-                      "summary"
+                      "version",
+                      "status",
+                      "createdAt",
+                      "updatedAt",
+                      "publishedAt",
+                      "label",
+                      "note",
+                      "labelSetBy",
+                      "labelSetAt"
                     ],
                     "additionalProperties": true
                   },
-                  "description": "The document types."
+                  "description": "The versions, newest first."
                 }
               }
             }
@@ -11533,16 +11431,50 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
           }
         }
-      },
-      "post": {
-        "operationId": "createTemplate",
-        "summary": "Create a document type",
+      }
+    },
+    "/api/templates/{id}/versions/{version}": {
+      "patch": {
+        "operationId": "setVersionLabel",
+        "summary": "Set a version's label and note",
         "tags": [
           "Recipes"
         ],
-        "description": "Creates a document type as a v1 draft skeleton, to fill in with the editor (or\n`PUT` a definition). The skeleton is not valid yet, so `issues` lists what is\nmissing.",
+        "description": "Sets what a recipe version is for: a short `label` and a longer `note`. A field\nleft out keeps its value and `null` clears it. Drafts and published versions alike\n(published versions stay immutable: the label is not part of the definition), retired\ndocument types too. Not an edit of the draft: its `updatedAt` and change log are\nleft alone.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11550,28 +11482,61 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_-]*$",
-                    "description": "Lowercase: `[a-z][a-z0-9_-]*`."
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A short name, up to 80 characters; null clears it."
                   },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A longer comment, up to 2000 characters; null clears it."
                   }
                 },
-                "required": [
-                  "id",
-                  "name"
-                ],
                 "additionalProperties": false
               }
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
         "responses": {
-          "201": {
-            "description": "The v1 draft.",
+          "200": {
+            "description": "The version.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11609,6 +11574,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -11618,7 +11611,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -11655,13 +11652,13 @@
                     "issues"
                   ],
                   "additionalProperties": true,
-                  "description": "The v1 draft."
+                  "description": "The version."
                 }
               }
             }
           },
           "400": {
-            "description": "Zod issues for an invalid id or name.",
+            "description": "Zod issues: a blank or too long label or note, or neither sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11687,7 +11684,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid id or name."
+                  "description": "Zod issues: a blank or too long label or note, or neither sent."
                 }
               }
             }
@@ -11756,8 +11753,8 @@
               }
             }
           },
-          "409": {
-            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+          "404": {
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11783,15 +11780,13 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`recipe not found`."
                 }
               }
             }
           }
         }
-      }
-    },
-    "/api/templates/{id}/versions/{version}": {
+      },
       "get": {
         "operationId": "getTemplateVersion",
         "summary": "Get a recipe version",
@@ -11859,6 +11854,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -11868,7 +11891,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12081,6 +12108,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12090,7 +12145,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12424,6 +12483,887 @@
         }
       }
     },
+    "/api/templates/{id}/versions/{version}/restore": {
+      "post": {
+        "operationId": "restoreVersion",
+        "summary": "Replace the draft with another version",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "Writes the definition of version `from` into the open draft `version`, replacing\nit, to go back to an earlier version. Logged in the draft's change log as a\n`restore` (nothing is written when the draft already equals it). To make an earlier\nversion the latest, restore it into the draft and publish.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "description": "The version whose definition to write."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The draft `updatedAt` the user saw: a draft written since is a 409."
+                  }
+                },
+                "required": [
+                  "from"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or `a draft cannot be restored from itself`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, or `a draft cannot be restored from itself`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{id} v{version} is not an open draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt` (or it changed while restoring).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{id} v{version} is not an open draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt` (or it changed while restoring)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "summary": "List document types",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
+        "responses": {
+          "200": {
+            "description": "The document types.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "published": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The latest published version."
+                      },
+                      "draft": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The open draft version."
+                      },
+                      "retired": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "retiredAt": {
+                                "type": "string",
+                                "description": "When an admin retired the document type."
+                              },
+                              "retiredBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The label of the token that retired it; null without access control."
+                              }
+                            },
+                            "required": [
+                              "retiredAt",
+                              "retiredBy"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
+                      },
+                      "versions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "draft",
+                                "published"
+                              ]
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "What the version is for; null when unlabelled."
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "status",
+                            "updatedAt",
+                            "label"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "summary": {
+                        "type": "object",
+                        "properties": {
+                          "sections": {
+                            "type": "integer"
+                          },
+                          "fields": {
+                            "type": "integer"
+                          },
+                          "tables": {
+                            "type": "integer"
+                          },
+                          "references": {
+                            "type": "integer"
+                          },
+                          "draftIssues": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The open draft's issue count."
+                          },
+                          "lastRegression": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "matched": {
+                                    "type": "integer",
+                                    "description": "References matched exactly."
+                                  },
+                                  "total": {
+                                    "type": "integer"
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "matched",
+                                  "total",
+                                  "at"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "regressionRunning": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sections",
+                          "fields",
+                          "tables",
+                          "references",
+                          "draftIssues",
+                          "lastRegression",
+                          "regressionRunning"
+                        ],
+                        "additionalProperties": true,
+                        "description": "Of the version shown: the open draft, else the latest published version."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "description",
+                      "published",
+                      "draft",
+                      "retired",
+                      "versions",
+                      "summary"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The document types."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createTemplate",
+        "summary": "Create a document type",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "Creates a document type as a v1 draft skeleton, to fill in with the editor (or\n`PUT` a definition). The skeleton is not valid yet, so `issues` lists what is\nmissing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$",
+                    "description": "Lowercase: `[a-z][a-z0-9_-]*`."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The v1 draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The v1 draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid id or name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid id or name."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/templates/{id}/versions/{version}/publish": {
       "post": {
         "operationId": "publishTemplate",
@@ -12431,7 +13371,32 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here.",
+        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here. `label` and `note`,\nwhen given, are set on the version first (it keeps the draft's otherwise).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "A label for the version, up to 80 characters. Default: keep the draft's."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "A note for the version, up to 2000 characters. Default: keep the draft's."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -12492,6 +13457,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12501,7 +13494,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12544,15 +13541,13 @@
             }
           },
           "400": {
-            "description": "The definition is not valid: `recipe is not valid`, with `issues`.",
+            "description": "Zod issues for an invalid label or note, or the definition is not valid: `recipe is not valid`, with `issues`.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": {},
                     "issues": {
                       "type": "array",
                       "items": {
@@ -12580,12 +13575,8 @@
                       }
                     }
                   },
-                  "required": [
-                    "error",
-                    "issues"
-                  ],
                   "additionalProperties": true,
-                  "description": "The definition is not valid: `recipe is not valid`, with `issues`."
+                  "description": "Zod issues for an invalid label or note, or the definition is not valid: `recipe is not valid`, with `issues`."
                 }
               }
             }
@@ -12798,6 +13789,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12807,7 +13826,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -13204,6 +14227,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -13213,7 +14264,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -18383,7 +19438,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
+        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). `label` and `note`, when given, are set on the version\n(#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -18395,6 +19450,18 @@
                     "type": "string",
                     "minLength": 10,
                     "maxLength": 1000
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "A label for the version, up to 80 characters. Default: keep the draft's."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "A note for the version, up to 2000 characters. Default: keep the draft's."
                   }
                 },
                 "additionalProperties": false
