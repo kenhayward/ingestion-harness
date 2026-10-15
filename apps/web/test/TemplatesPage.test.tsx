@@ -65,13 +65,47 @@ describe('TemplatesPage cards', () => {
     expect(within(pvp).getByText('Draft v4')).toBeInTheDocument();
     expect(within(pvp).getByText('5 sections · 9 fields · 1 table')).toBeInTheDocument();
     expect(within(pvp).getByText('Regression: 3 of 3 references match')).toBeInTheDocument();
-    expect(within(pvp).getByRole('link', { name: 'Edit draft v4' })).toHaveAttribute(
+    expect(within(pvp).getByRole('link', { name: 'Edit draft' })).toHaveAttribute(
       'href',
       '#/templates/pvp/4',
     );
     expect(
       within(pvp).getByRole('link', { name: 'Export Process Validation Protocol YAML' }),
     ).toHaveAttribute('href', '/api/templates/pvp/versions/4/export');
+  });
+
+  it('shows the card actions as icons, explained on hover', async () => {
+    render(
+      <TemplatesPage
+        api={fakeApi({ listTemplates: vi.fn(async () => list) })}
+        onNavigate={vi.fn()}
+        role="admin"
+      />,
+    );
+    const pvp = await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    const actions = pvp.querySelector('.card-actions')!;
+    // No words in the action row: the version is on the Draft pill, the rest in tooltips.
+    expect(actions).toHaveTextContent(/^$/);
+    for (const [control, title] of [
+      [within(pvp).getByRole('link', { name: 'Edit draft' }), 'Edit draft'],
+      [within(pvp).getByRole('link', { name: 'Open in workbench' }), 'Open in workbench'],
+      [
+        within(pvp).getByText('', { selector: 'label.button' }),
+        'Test run with a PDF or Word document',
+      ],
+      [
+        within(pvp).getByRole('link', { name: 'Export Process Validation Protocol YAML' }),
+        'Export YAML',
+      ],
+      [within(pvp).getByRole('button', { name: 'Retire Process Validation Protocol…' }), 'Retire…'],
+    ] as const) {
+      expect(control).toHaveAttribute('title', title);
+    }
+    const coa = screen.getByRole('article', { name: 'Certificate of analysis' });
+    expect(within(coa).getByRole('button', { name: 'New draft from v2' })).toHaveAttribute(
+      'title',
+      'New draft from v2',
+    );
   });
 
   it('offers a new draft for a published-only type', async () => {
