@@ -3,6 +3,7 @@ import { CorrectionSchema, PROVENANCES } from './corrections.js';
 import { JobStatusSchema, type JobStatus } from './jobs.js';
 import { outputCoverage } from './template.js';
 import { SampleRoleSchema } from './workbench.js';
+import { PublishLabelSchema } from './version-labels.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
 
@@ -449,7 +450,10 @@ export const RevisePreviewSchema = z.object({
 export type RevisePreview = z.infer<typeof RevisePreviewSchema>;
 
 export const PublishBodySchema = z
-  .object({ overrideReason: z.string().trim().min(10).max(1000).optional() })
+  .object({
+    overrideReason: z.string().trim().min(10).max(1000).optional(),
+    ...PublishLabelSchema.shape,
+  })
   .strict();
 export const ThresholdBodySchema = z
   .object({ publishThreshold: z.number().min(0).max(1) })

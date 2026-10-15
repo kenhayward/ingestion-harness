@@ -28,6 +28,7 @@ import { StepCard } from './StepCard.js';
 import { TestRail } from './TestRail.js';
 import { QualityPanel } from './QualityPanel.js';
 import { UnsavedBar } from './UnsavedBar.js';
+import { VersionsPanel } from './VersionsPanel.js';
 import {
   checkPathOptions,
   getIn,
@@ -44,7 +45,8 @@ import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
 
 type Path = (string | number)[];
-type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'mapping' | 'yaml' | 'quality';
+type Tab =
+  'general' | 'sections' | 'outputs' | 'pipeline' | 'mapping' | 'yaml' | 'quality' | 'versions';
 
 /** The Templates page's order (UI handoff §5). */
 const STANDALONE_TABS: [Tab, string][] = [
@@ -55,6 +57,7 @@ const STANDALONE_TABS: [Tab, string][] = [
   ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
+  ['versions', 'Versions'],
 ];
 
 /** The Template tab's order (handoff §10): Evaluate replaces Quality. */
@@ -65,6 +68,7 @@ const EMBEDDED_TABS: [Tab, string][] = [
   ['pipeline', 'Pipeline'],
   ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
+  ['versions', 'Versions'],
 ];
 
 /** What publishing can deliver (DELIVERY_FORMATS), in that order. */
@@ -521,6 +525,29 @@ export function TemplateEditor({
 
           {tab === 'quality' && !embedded && (
             <QualityPanel api={api} templateId={templateId} version={version} retired={blockedBy} />
+          )}
+
+          {tab === 'versions' && (
+            // Outside the fieldset: published versions take labels too (#144).
+            <VersionsPanel
+              api={api}
+              templateId={templateId}
+              openVersion={version}
+              openUpdatedAt={record.status === 'draft' ? record.updatedAt : null}
+              dirty={dirty || yamlEdited}
+              retired={blockedBy}
+              refreshKey={saves}
+              onRestored={(draft) => {
+                if (draft.record.version === version) accept(draft);
+                setSaves((n) => n + 1);
+                setMessage(`Draft v${draft.record.version} replaced (not published yet).`);
+                embedded?.onChanged();
+              }}
+              onStarted={(draft) => {
+                if (embedded) return embedded.onChanged();
+                onNavigate(`#/templates/${draft.record.id}/${draft.record.version}`);
+              }}
+            />
           )}
 
           <fieldset disabled={!editable} className="editor-body">

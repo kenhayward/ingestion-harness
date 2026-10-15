@@ -1761,4 +1761,28 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await templates.retirement(projectId)).not.toBeNull();
     await templates.unretire(projectId);
   });
+  it('labels a published version through the immutability trigger, leaving updated_at alone (#144)', async () => {
+    const id = `labels-${randomUUID().slice(0, 8)}`;
+    await templates.create(id, 1, { id, version: 1 }, 'draft');
+    const published = (await templates.publish(id, 1))!;
+    const labelled = await templates.setLabel(id, 1, { label: 'First', note: 'A note' }, 'Ken');
+    expect(labelled).toMatchObject({ label: 'First', note: 'A note', labelSetBy: 'Ken' });
+    expect(labelled!.updatedAt).toBe(published.updatedAt);
+    expect(labelled!.labelSetAt).toBeTruthy();
+    // A field left out is kept; null clears.
+    expect(await templates.setLabel(id, 1, { note: null }, null)).toMatchObject({
+      label: 'First',
+      note: null,
+    });
+    expect(await templates.setLabel(id, 9, { label: 'x' }, null)).toBeNull();
+    await expect(templates.setLabel(id, 1, { label: 'x'.repeat(81) }, null)).rejects.toThrow();
+    // The definition stays immutable.
+    await expect(
+      templatesPool.query('UPDATE templates SET definition = $3 WHERE id = $1 AND version = $2', [
+        id,
+        1,
+        '{}',
+      ]),
+    ).rejects.toThrow(/published and cannot be changed/);
+  });
 });

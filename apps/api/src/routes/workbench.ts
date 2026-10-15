@@ -1545,7 +1545,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Publishes the open draft when it is valid. References and evaluation are optional: the
           publish gate is informational only, and its iteration and score (if any) are recorded
           with the publication. \`overrideReason\` is still accepted but ignored (no override is
-          needed or recorded). If the draft changes after the gate was decided, nothing is published: check the gate
+          needed or recorded). \`label\` and \`note\`, when given, are set on the version
+          (#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate
           again. Every publication is logged (\`GET …/publications\`). This is the only way to
           publish a Workbench document type. See
           [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
@@ -1588,6 +1589,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         }),
       );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      if (body.data.label !== undefined || body.data.note !== undefined) {
+        // Set on the draft first: harmless when the publish is then refused.
+        const { label, note } = body.data;
+        await templates.setLabel(projectId, draft, { label, note }, req.auth?.label ?? null);
+      }
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
       // re-check, the publish and the publication record share one transaction.
       const outcome = await workbench.publishDraft({

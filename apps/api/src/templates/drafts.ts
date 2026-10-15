@@ -40,6 +40,10 @@ export async function createNextDraft(
     next,
     pinned(source.definition, id, next),
     'draft',
-    startedChange(`Draft v${next} created from published v${source.version}`, by),
+    startedChange(
+      `Draft v${next} created from published v${source.version}` +
+        (source.label ? ` (${source.label})` : ''),
+      by,
+    ),
   );
 }
