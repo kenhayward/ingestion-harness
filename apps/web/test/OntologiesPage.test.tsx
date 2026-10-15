@@ -161,4 +161,35 @@ describe('OntologiesPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
     expect(await within(dialog).findByText(/URL imports are off/)).toBeInTheDocument();
   });
+
+  it('says why Import is disabled, on hover and in the dialog', async () => {
+    page([], 'admin', {
+      getOntologySettings: vi.fn(async () => ({ fetchHosts: ['www.dublincore.org'], maxBytes: 1 })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    const importButton = () => within(dialog).getByRole('button', { name: 'Import' });
+    expect(importButton()).toHaveAttribute('title', 'Choose an ontology file');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
+    await within(dialog).findByText('Allowed hosts: www.dublincore.org');
+    expect(importButton()).toHaveAttribute('title', "Enter the ontology's URL");
+    await userEvent.type(
+      within(dialog).getByLabelText('URL'),
+      'https://www.dublincore.org/specifications/dublin-core/dcmi-terms/dublin_core_terms.ttl',
+    );
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'DublinCore');
+    expect(importButton()).toBeEnabled();
+    await userEvent.clear(within(dialog).getByLabelText('Id'));
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'DCMI');
+    const reason =
+      'The id must be 2-63 lower-case letters, digits or hyphens, starting with a letter or digit (try dcmi)';
+    expect(importButton()).toBeDisabled();
+    expect(importButton()).toHaveAttribute('title', reason);
+    expect(importButton()).toHaveAccessibleDescription(reason);
+    expect(within(dialog).getByLabelText('Id')).toHaveAccessibleDescription(reason);
+    await userEvent.clear(within(dialog).getByLabelText('Id'));
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'dcmi');
+    expect(importButton()).toBeEnabled();
+    expect(importButton()).not.toHaveAttribute('title');
+  });
 });

@@ -13,6 +13,16 @@ import { slugify, splitTags } from './derive.js';
 
 type Source = 'file' | 'url';
 
+/** Why an id is refused (ONTOLOGY_ID_RE), with the lower-case form to try; null when valid. */
+export function ontologyIdProblem(id: string): string | null {
+  if (!id || ONTOLOGY_ID_RE.test(id)) return null;
+  const suggestion = slugify(id);
+  return (
+    'The id must be 2-63 lower-case letters, digits or hyphens, starting with a letter or digit' +
+    (ONTOLOGY_ID_RE.test(suggestion) ? ` (try ${suggestion})` : '')
+  );
+}
+
 /**
  * Import a file, or an allowlisted URL the worker fetches, as a new ontology or as the next
  * version of an existing one (same id).
@@ -29,6 +39,9 @@ export function ImportOntologyDialog({
   onImported: () => void;
 }) {
   const formId = useId();
+  const idErrorId = useId();
+  const urlErrorId = useId();
+  const reasonId = useId();
   const [source, setSource] = useState<Source>('file');
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
@@ -53,8 +66,32 @@ export function ImportOntologyDialog({
   const urlProblem = url.trim() ? ontologyUrlProblem(url.trim(), hosts) : null;
   const hasSource =
     source === 'file' ? file !== null : settings !== null && url.trim() !== '' && !urlProblem;
-  const ready =
-    hasSource && ONTOLOGY_ID_RE.test(trimmed) && (match !== undefined || label.trim() !== '');
+  const idProblem = ontologyIdProblem(trimmed);
+  // The first thing missing, said on the disabled Import button (hover) and in the dialog.
+  const blocker = (() => {
+    if (source === 'file') {
+      if (!file) return 'Choose an ontology file';
+    } else {
+      if (settings === null) return 'Loading the allowed hosts…';
+      if (off) return 'URL imports are off';
+      if (!url.trim()) return "Enter the ontology's URL";
+      if (urlProblem) return urlProblem;
+    }
+    if (match === undefined && !label.trim()) return 'Enter a name';
+    if (!trimmed) return 'Enter an id';
+    return idProblem;
+  })();
+  const ready = hasSource && blocker === null;
+  // Problems already shown beside their field describe the button there; the rest get a line.
+  const describedBy =
+    blocker === null
+      ? undefined
+      : blocker === idProblem
+        ? idErrorId
+        : blocker === urlProblem
+          ? urlErrorId
+          : reasonId;
+  const touched = file !== null || url.trim() !== '' || label.trim() !== '' || trimmed !== '';
 
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -80,7 +117,14 @@ export function ImportOntologyDialog({
       title="Import ontology"
       onClose={onClose}
       actions={
-        <button type="submit" form={formId} className="primary" disabled={busy || !ready}>
+        <button
+          type="submit"
+          form={formId}
+          className="primary"
+          disabled={busy || !ready}
+          title={blocker ?? undefined}
+          aria-describedby={describedBy}
+        >
           Import
         </button>
       }
@@ -129,7 +173,11 @@ export function ImportOntologyDialog({
             {settings !== null && !off && (
               <p className="muted">Allowed hosts: {hosts.join(', ')}</p>
             )}
-            {urlProblem && !off && <p className="field-error">{urlProblem}</p>}
+            {urlProblem && !off && (
+              <p className="field-error" id={urlErrorId}>
+                {urlProblem}
+              </p>
+            )}
           </>
         )}
         <label>
@@ -148,12 +196,19 @@ export function ImportOntologyDialog({
           <input
             className="mono"
             value={id}
+            aria-invalid={idProblem !== null}
+            aria-describedby={idProblem ? idErrorId : undefined}
             onChange={(e) => {
               setId(e.target.value);
               setIdEdited(true);
             }}
           />
         </label>
+        {idProblem && (
+          <p className="field-error" id={idErrorId}>
+            {idProblem}
+          </p>
+        )}
         {match ? (
           <p className="muted" role="status">
             Adds version {match.versionCount + 1} of {match.label}.
@@ -177,6 +232,12 @@ export function ImportOntologyDialog({
               Local only: never sent to external models
             </label>
           </>
+        )}
+        {blocker && describedBy === reasonId && touched && (
+          <p className="muted" id={reasonId}>
+            To import: {blocker.charAt(0).toLowerCase() + blocker.slice(1)}
+            {blocker.endsWith('…') ? '' : '.'}
+          </p>
         )}
         {error && <p role="alert">{error}</p>}
       </form>
