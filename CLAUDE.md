@@ -7,7 +7,7 @@ through an LLM prompt harness, and writes validated CSV/JSON to S3 (SeaweedFS).
 
 `app` (React, served by nginx) → `api` (Fastify, Node 24/TypeScript) stores the uploaded PDF in
 the SeaweedFS **inbox** bucket and inserts a `documents` row + `jobs` row in Postgres. The
-`worker` (Python 3.13) claims jobs with `SELECT … FOR UPDATE SKIP LOCKED`, extracts page text
+`worker` (Python 3.14) claims jobs with `SELECT … FOR UPDATE SKIP LOCKED`, extracts page text
 (OCR'ing image-only pages with a vision model, default olmOCR 2), segments it into sections using the document **spec**, runs one LLM call per spec extraction
 (JSON Schema-constrained, validated, retried with errors fed back), and writes CSV/JSON to the
 **outputs** bucket plus a prompt/response audit trail to the **runs** bucket. Full detail:

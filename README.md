@@ -20,7 +20,7 @@ The code, packages and images keep the project's original name, `ingestion-harne
 
 ## Quick start (local)
 
-Prerequisites: Node 24, Python 3.13 + [uv](https://docs.astral.sh/uv/), Docker.
+Prerequisites: Node 24, Python 3.14 + [uv](https://docs.astral.sh/uv/), Docker.
 
 ```bash
 npm ci
