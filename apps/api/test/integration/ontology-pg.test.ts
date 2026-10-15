@@ -119,6 +119,7 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       sha256: 'aaa',
       fileName: 'pv.ttl',
       mediaType: 'text/turtle',
+      sourceFiles: null,
     });
     expect(await repo.get('pv-pg')).toBeNull();
   });
@@ -241,5 +242,79 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       mediaType: '',
     });
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-legacy'`);
+  });
+
+  it('imports a folder merged into one version, or one version per file in one job', async () => {
+    await pool.query(`DELETE FROM ontologies WHERE id IN ('fold-m', 'fold-a', 'fold-b')`);
+    const file = (name: string, sha: string) => ({
+      sourceKey: `k/${name}`,
+      fileName: `idmp/${name}`,
+      mediaType: 'text/turtle',
+      sha256: sha,
+      bytes: 3,
+    });
+    const merged = await repo.createVersion(
+      input({
+        ontologyId: 'fold-m',
+        fileName: 'idmp',
+        mediaType: '',
+        source: {
+          kind: 'files',
+          files: [file('a.ttl', 's1'), file('b.ttl', 's2')],
+          sha256: 'm1',
+          bytes: 6,
+        },
+      }),
+    );
+    expect(merged).toMatchObject({
+      ok: true,
+      version: {
+        sourceKind: 'files',
+        sha256: 'm1',
+        sourceFiles: [
+          { fileName: 'idmp/a.ttl', sha256: 's1', bytes: 3 },
+          { fileName: 'idmp/b.ttl', sha256: 's2', bytes: 3 },
+        ],
+      },
+    });
+
+    const meta = { label: 'x', description: '', tags: [], localOnly: false };
+    const batch = await repo.createBatch(
+      [
+        { ...file('a.ttl', 'sa'), ontologyId: 'fold-a', meta },
+        { ...file('b.ttl', 'sb'), ontologyId: 'fold-b', meta },
+      ],
+      'Ken',
+    );
+    expect(batch.versions.map((v) => [v.ontologyId, v.version])).toEqual([
+      ['fold-a', 1],
+      ['fold-b', 1],
+    ]);
+    const job = await pool.query(`SELECT params FROM jobs WHERE id = $1`, [batch.jobId]);
+    expect(job.rows[0].params.members.map((m: { ontologyId: string }) => m.ontologyId)).toEqual([
+      'fold-a',
+      'fold-b',
+    ]);
+    const again = await repo.createBatch(
+      [{ ...file('a.ttl', 'sa'), ontologyId: 'fold-a', meta }],
+      'Ken',
+    );
+    expect(again).toEqual({
+      versions: [],
+      skipped: [
+        { fileName: 'idmp/a.ttl', ontologyId: 'fold-a', reason: 'already version 1 of fold-a' },
+      ],
+      jobId: null,
+    });
+
+    // Deleting one member keeps the job the other member still waits on.
+    await pool.query(`UPDATE ontology_versions SET status = 'ready' WHERE ontology_id = 'fold-a'`);
+    expect(await repo.deleteVersion('fold-a', 1)).toMatchObject({ result: 'deleted' });
+    expect((await pool.query(`SELECT 1 FROM jobs WHERE id = $1`, [batch.jobId])).rowCount).toBe(1);
+    expect((await repo.get('fold-b'))!.versions[0]!.status).toBe('queued');
+    await pool.query(`UPDATE ontology_versions SET status = 'ready' WHERE ontology_id = 'fold-b'`);
+    await repo.deleteVersion('fold-b', 1);
+    expect((await pool.query(`SELECT 1 FROM jobs WHERE id = $1`, [batch.jobId])).rowCount).toBe(0);
+    await pool.query(`DELETE FROM ontologies WHERE id IN ('fold-m', 'fold-a', 'fold-b')`);
   });
 });

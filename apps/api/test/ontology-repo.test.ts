@@ -146,6 +146,7 @@ describe('MemoryOntologyRepo', () => {
       sha256: 'aaa',
       fileName: 'pv.ttl',
       mediaType: 'text/turtle',
+      sourceFiles: null,
     });
     expect(await repo.get('pv')).toBeNull();
   });
