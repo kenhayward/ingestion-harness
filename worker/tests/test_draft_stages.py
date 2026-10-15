@@ -252,6 +252,26 @@ def test_revise_keeps_the_note_about_dropped_chunk_pages() -> None:
     assert "'head'" in body["notes"]
 
 
+def test_steps_ignore_an_unfinished_mapping_they_cannot_fix() -> None:
+    """A mapping started without a document class (MappingEditor, a partial mapping proposal)
+    is the Mapping stage's to finish: it must not fail the steps, nor hide their own errors."""
+    draft = {
+        **DRAFT,
+        "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []},
+        "semantics": {
+            "document": {"class": "", "iri": "doc/{source}"},
+            "fields": {"sender": {"property": "ex:sender"}},
+        },
+        "delivery": {"formats": ["csv", "rdf"]},
+    }
+    both = step_item(fields=["sender", "ref"])
+    _, errors = run(STEPS, {"notes": "", "changes": [both]}, draft)
+    assert errors == []
+    _, errors = run(STEPS, {"notes": "", "changes": [step_item()]}, draft)
+    assert errors and all("semantics" not in e for e in errors)
+    assert any("not filled" in e for e in errors)
+
+
 def test_removes_are_checked_against_the_draft_after_earlier_changes() -> None:
     both = [output_item(), output_item(op="removeOutput")]
     _, errors = run(OUTPUTS, {"notes": "", "changes": both})
