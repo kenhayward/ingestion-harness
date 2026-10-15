@@ -52,7 +52,7 @@ describe('sign-in gate', () => {
     expect(api.login).toHaveBeenCalledWith('ken@example.com', 'a long phrase here');
     expect(await screen.findByText('No jobs yet: upload a document to start.')).toBeInTheDocument();
     expect(
-      screen.getByRole('group', { name: 'Signed in as Ken Hayward (user)' }),
+      screen.getByRole('button', { name: 'Ken Hayward (user): account menu' }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/failed sign-ins? since your last visit/)).not.toBeInTheDocument();
   });
@@ -243,7 +243,7 @@ describe('sign-in gate', () => {
     unmount();
     const user = fakeApi({ me: vi.fn(async () => signedIn({ label: 'Ken' })) });
     render(<App api={user} pollMs={0} />);
-    await screen.findByRole('group', { name: 'Signed in as Ken (user)' });
+    await screen.findByRole('button', { name: 'Ken (user): account menu' });
     expect(screen.queryByRole('link', { name: 'Access' })).not.toBeInTheDocument();
   });
 

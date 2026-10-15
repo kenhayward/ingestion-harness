@@ -193,6 +193,18 @@ function SignedInApp({
     page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
+  } else if (route.name === 'password') {
+    page = (
+      <div className="password-page">
+        <ChangePassword
+          api={api}
+          me={me}
+          mode="account"
+          onDone={() => window.history.back()}
+          onSignOut={onSignOut}
+        />
+      </div>
+    );
   } else if (route.name === 'access') {
     page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'ontologies') {

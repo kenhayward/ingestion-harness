@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe('app shell', () => {
-  it('has a top bar with search, colour mode, Upload document and the signed-in token', async () => {
+  it('has a top bar with search, colour mode, Upload document and the signed-in user', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
@@ -27,7 +27,7 @@ describe('app shell', () => {
     expect(within(banner).getByRole('group', { name: 'Colour mode' })).toBeInTheDocument();
     expect(within(banner).getByRole('button', { name: 'Upload document' })).toBeInTheDocument();
     expect(
-      within(banner).getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
+      within(banner).getByRole('button', { name: 'Ken – laptop (user): account menu' }),
     ).toHaveTextContent('KL');
     const home = within(banner).getByRole('link', {
       name: 'CT Studio — Content Transformation Studio, home',
@@ -364,19 +364,58 @@ describe('the admin name menu', () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  it('keeps a plain chip with Sign out for users', async () => {
+  it('gives users a menu with Change password and Sign out only', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
         label: 'Ann',
-        email: null,
+        email: 'ann@example.com',
         mustChangePassword: false,
       })),
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
-    expect(within(banner).queryByRole('button', { name: /account menu/ })).toBeNull();
-    expect(within(banner).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    await userEvent.click(trigger);
+    const menu = within(banner).getByRole('menu', { name: 'Ann (user): account menu' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Change password', 'Sign out']);
+    await userEvent.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Change password' }));
+    expect(window.location.hash).toBe('#/account/password');
+    expect(
+      await screen.findByRole('heading', { name: 'Change your password' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('Change password · CT Studio'));
+  });
+
+  it('lists Change password for admin users but not for the admin from the log', async () => {
+    const menuItems = async (email: string | null) => {
+      const api = fakeApi({
+        me: vi.fn(async () => ({
+          role: 'admin' as const,
+          label: 'Ken',
+          email,
+          mustChangePassword: false,
+        })),
+      });
+      const { unmount } = render(<App api={api} pollMs={0} />);
+      const banner = await screen.findByRole('banner');
+      await userEvent.click(
+        within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
+      );
+      const items = within(within(banner).getByRole('menu')).getAllByRole('menuitem');
+      const names = items.map((i) => i.textContent);
+      unmount();
+      return names;
+    };
+    expect(await menuItems('ken@example.com')).toContain('Change password');
+    expect(await menuItems(null)).not.toContain('Change password');
   });
 
   it('lists Models in the admin nav', async () => {

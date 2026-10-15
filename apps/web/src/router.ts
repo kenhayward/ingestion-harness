@@ -24,6 +24,7 @@ export type Route =
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
   | { name: 'access' }
+  | { name: 'password' }
   | { name: 'models' }
   | { name: 'linked-data' }
   | { name: 'ontologies' }
@@ -60,6 +61,7 @@ export function parseHash(hash: string): Route {
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
+  if (hash === '#/account/password') return { name: 'password' };
   if (hash === '#/models') return { name: 'models' };
   if (hash === '#/linked-data') return { name: 'linked-data' };
   if (hash === '#/ontologies') return { name: 'ontologies' };

@@ -3865,3 +3865,9 @@ tr.confirming td {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* Change password from the account menu: the sign-in card's form, in the app. */
+.password-page {
+  max-width: 440px;
+  margin: 24px auto;
+}
