@@ -96,12 +96,16 @@ JOB = ClaimedJob("job-1", "doc-1", "demo", 1, "inbox", "demo/v1/doc-1.pdf", None
 
 @pytest.fixture
 def run(tmp_path: Path):  # type: ignore[no-untyped-def]
+    return run_job(tmp_path, JOB)
+
+
+def run_job(tmp_path: Path, job: ClaimedJob):  # type: ignore[no-untyped-def]
     directory = tmp_path / "demo" / "v1"
     directory.mkdir(parents=True)
     (directory / "template.yaml").write_text(yaml.safe_dump(TEMPLATE), encoding="utf-8")
     provider = FakeProvider("local", responses=list(RESPONSES))
     store = MemoryObjectStore()
-    store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
+    store.put("inbox", job.object_key, b"%PDF", "application/pdf")
     deps = PipelineDeps(
         store=store,
         specs=load_specs(tmp_path),
@@ -113,7 +117,7 @@ def run(tmp_path: Path):  # type: ignore[no-untyped-def]
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
     )
-    queue = FakeQueue(jobs=[JOB])
+    queue = FakeQueue(jobs=[job])
     run_once(queue, deps, "w1")
     return provider, store, queue
 
@@ -186,6 +190,20 @@ def test_prompts_carry_page_markers_definitions_and_instructions(run) -> None:  
     assert "The execution date is the date the first batch was made." in date
     assert "[page 2]" in chunk1 and "[page 3]" not in chunk1
     assert "page 2 of 2" in chunk2
+
+
+def test_every_step_prompt_names_the_source_file(tmp_path: Path) -> None:
+    """So a step can fill an output like the originating file name (no section holds it)."""
+    job = replace(JOB, filename="TV-TEC-227036_New.docx")
+    provider, _, _ = run_job(tmp_path, job)
+    prompts = [req.prompt for _, req in provider.calls]
+    assert len(prompts) == 4
+    assert all('The source file is named "TV-TEC-227036_New.docx".' in p for p in prompts)
+
+
+def test_without_a_file_name_the_prompt_does_not_mention_one(run) -> None:  # type: ignore[no-untyped-def]
+    provider, _, _ = run
+    assert not any("source file" in req.prompt for _, req in provider.calls)
 
 
 def test_mark_pages_uses_original_page_numbers() -> None:

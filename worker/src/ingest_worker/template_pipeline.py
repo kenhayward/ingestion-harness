@@ -418,6 +418,7 @@ def _run_step(
     provider, model_id = model
     context = dict(ex.prompt_context or {})
     context["step_context"] = context_values(loaded.template, step, fields, tables)
+    context["source_file"] = job.filename or None
     if extra_instructions:
         guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
         base = context.get("instructions")

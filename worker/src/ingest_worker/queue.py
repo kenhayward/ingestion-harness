@@ -46,6 +46,9 @@ class ClaimedJob:
     project_id: str | None = None
     #: Task parameters (segment: samples + candidate document block).
     params: dict[str, Any] | None = None
+    #: The document's file name as uploaded ('' without a document): every extraction prompt
+    #: names it, so a step can fill an output like the originating file name.
+    filename: str = ""
 
 
 class JobQueue(Protocol):
@@ -137,7 +140,7 @@ WITH next AS (
 SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.project_id, ''),
        COALESCE(d.spec_version, 0), COALESCE(d.bucket, ''), COALESCE(d.object_key, ''),
        c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at,
-       c.project_id, c.params
+       c.project_id, c.params, COALESCE(d.filename, '')
   FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 

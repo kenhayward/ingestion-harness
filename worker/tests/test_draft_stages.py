@@ -152,6 +152,11 @@ def test_the_steps_prompt_says_every_extract_step_reads_a_section() -> None:
     assert "may come back empty" in STEPS.instructions
 
 
+def test_the_steps_prompt_says_steps_see_the_file_name_and_page_markers() -> None:
+    assert "states the source file name" in STEPS.instructions
+    assert "[page N]" in STEPS.instructions
+
+
 def test_steps_convert_context_checks_and_preamble() -> None:
     draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []}}
     changes = [
