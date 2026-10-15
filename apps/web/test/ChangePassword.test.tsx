@@ -10,6 +10,7 @@ const KEN: Me = {
   label: 'Ken',
   email: 'ken@example.com',
   mustChangePassword: true,
+  userId: 'u-test',
 };
 
 async function fill(current: string, next: string, repeat = next) {

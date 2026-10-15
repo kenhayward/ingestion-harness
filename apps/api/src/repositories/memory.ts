@@ -12,7 +12,7 @@ import type {
   ReviewEdit,
   StepRun,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, sourceContentType } from '@ih/shared';
+import { DELETABLE_STATUSES, isMine, sourceContentType, type Creator } from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -117,7 +117,7 @@ export class MemoryRepo implements IngestionRepo {
     test = false,
     referenceId: string | null = null,
     params: Record<string, unknown> | null = null,
-    createdBy: string | null = null,
+    createdBy: Creator | null = null,
   ): Promise<JobSummary> {
     this.documents.set(doc.id, doc);
     const now = new Date().toISOString();
@@ -137,7 +137,8 @@ export class MemoryRepo implements IngestionRepo {
       test,
       referenceId,
       projectId: null,
-      createdBy,
+      createdBy: createdBy?.name ?? null,
+      createdByUser: createdBy?.userId ?? null,
       reviewReasons: null,
       reviewer: null,
       reviewNote: null,
@@ -308,10 +309,10 @@ export class MemoryRepo implements IngestionRepo {
     ).length;
   }
 
-  async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, mine }: ListJobsQuery): Promise<JobSummary[]> {
     return [...this.jobs.values()]
       .filter((j) => j.task !== 'prepare' && (!status || j.status === status))
-      .filter((j) => createdBy === undefined || j.createdBy === createdBy)
+      .filter((j) => mine === undefined || isMine(j, mine))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
       .map((j) => this.withModels(j));
@@ -758,7 +759,7 @@ export class MemoryRepo implements IngestionRepo {
     reference: Reference,
     version: number,
     params: Record<string, unknown> | null = null,
-    createdBy: string | null = null,
+    createdBy: Creator | null = null,
   ): Promise<JobSummary> {
     const source = this.documents.get(reference.documentId)!;
     const doc = { ...source, id: randomUUID(), specVersion: version };

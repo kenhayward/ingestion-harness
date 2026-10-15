@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
 import { LinkedDataPage } from './linked-data/LinkedDataPage.js';
@@ -165,7 +165,8 @@ function SignedInApp({
   // The installed app (docs/design/pwa.md): the taskbar badge and toasts for your own jobs.
   useAppBadge(attentionCount(jobs));
   const notify = useNotifySetting();
-  useJobNotifications({ jobs, loaded, me: me.label, enabled: notify.state === 'on' });
+  const creator = useMemo(() => ({ name: me.label, userId: me.userId }), [me.label, me.userId]);
+  useJobNotifications({ jobs, loaded, me: creator, enabled: notify.state === 'on' });
   const [query, setQuery] = useState('');
   // The search filters the current section's list: moving to another section starts afresh,
   // so a leftover query never hides rows somewhere else.
@@ -259,7 +260,7 @@ function SignedInApp({
     page = (
       <HomePage
         api={api}
-        me={me.label}
+        me={creator}
         jobs={jobs}
         error={error}
         refresh={refresh}

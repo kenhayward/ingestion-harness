@@ -54,6 +54,7 @@ import {
   stagesOf,
   versionsOf,
 } from './workbench.js';
+import { creatorOf } from '../access/routes.js';
 
 /**
  * Drafting bundles (Workbench phase 6): a zip of the drafting context and the dev samples, built
@@ -333,7 +334,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           filename: sample.filename,
           body,
           role: 'dev',
-          createdBy: req.auth?.label ?? null,
+          createdBy: creatorOf(req),
         });
         // Unexpected after validation.
         if ('error' in added) return failed({ filename: sample.filename, error: added.error });

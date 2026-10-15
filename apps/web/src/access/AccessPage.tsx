@@ -87,7 +87,7 @@ export function AccessPage({
   const inChip = users.filter((u) => chip === 'all' || userGroup(u) === chip);
   const shown = inChip.filter((u) => userMatches(u, query));
   const now = Date.now();
-  const self = (u: User) => u.email !== null && u.email === me.email;
+  const self = (u: User) => u.id === me.userId;
 
   return (
     <div className="access-page">

@@ -207,6 +207,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     referenceId: null,
     projectId: null,
     createdBy: null,
+    createdByUser: null,
     reviewReasons: null,
     reviewer: null,
     reviewNote: null,
@@ -240,6 +241,7 @@ export function templateView(
 
 /** The signed-in admin of fakeApi() (the name `admin` keeps the account-menu labels short). */
 export const ADMIN_ME: Me = {
+  userId: '00000000-0000-4000-8000-000000000001',
   role: 'admin',
   label: 'admin',
   email: null,

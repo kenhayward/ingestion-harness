@@ -115,6 +115,7 @@ describe('email and password access', () => {
     const { res, cookie } = await login(app, 'admin', adminPassword);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
+      userId: expect.any(String),
       role: 'admin',
       label: 'Admin',
       email: null,
@@ -129,6 +130,7 @@ describe('email and password access', () => {
     expect(header).not.toMatch(/Secure/i);
     expect((await app.inject({ url: '/api/specs', headers: { cookie } })).statusCode).toBe(200);
     expect((await app.inject({ url: '/api/auth/me', headers: { cookie } })).json()).toEqual({
+      userId: res.json().userId,
       role: 'admin',
       label: 'Admin',
       email: null,

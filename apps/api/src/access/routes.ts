@@ -1,3 +1,4 @@
+import type { Creator } from '@ih/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ErrorBody, error, md, noContent, res } from '../openapi/zod.js';
@@ -22,6 +23,10 @@ declare module 'fastify' {
 }
 
 export const SESSION_COOKIE = 'ih_session';
+
+/** Who is making the request, recorded on the jobs it queues; null without access control. */
+export const creatorOf = (req: FastifyRequest): Creator | null =>
+  req.auth ? { name: req.auth.label, userId: req.auth.userId } : null;
 
 /** What a session opened with a one-time password may call (ADR 0013). */
 const WHILE_CHANGING = new Set(['GET /api/auth/me', 'PUT /api/auth/password']);
@@ -60,6 +65,7 @@ const Role = z.enum(['admin', 'user']);
 
 /** The signed-in user, as login and me return it. */
 export const MeSchema = z.object({
+  userId: z.string().uuid().describe('The user id: what jobs record as `createdByUser`.'),
   role: Role,
   label: z.string().describe("The user's name, as recorded on the jobs and changes they make."),
   email: z.string().nullable().describe('null for the admin from the API log.'),
@@ -79,6 +85,7 @@ export const LockedBody = ErrorBody.extend({
 });
 
 const meView = (s: SessionInfo) => ({
+  userId: s.userId,
   role: s.role,
   label: s.label,
   email: s.email,

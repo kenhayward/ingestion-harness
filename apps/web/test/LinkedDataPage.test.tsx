@@ -6,7 +6,13 @@ import type { Me } from '../src/api/client.js';
 import { LinkedDataPage } from '../src/linked-data/LinkedDataPage.js';
 import { fakeApi } from './fake-api.js';
 
-const admin: Me = { role: 'admin', label: 'admin', email: null, mustChangePassword: false };
+const admin: Me = {
+  role: 'admin',
+  label: 'admin',
+  email: null,
+  mustChangePassword: false,
+  userId: 'u-test',
+};
 
 const view = (over: Partial<LinkedDataView> = {}): LinkedDataView => ({
   settings: {
@@ -57,7 +63,13 @@ function setup(initial: LinkedDataView, me: Me = admin) {
 
 describe('LinkedDataPage', () => {
   it('is for admins only', () => {
-    const api = setup(view(), { role: 'user', label: 'u', email: null, mustChangePassword: false });
+    const api = setup(view(), {
+      role: 'user',
+      label: 'u',
+      email: null,
+      mustChangePassword: false,
+      userId: 'u-test',
+    });
     expect(screen.getByText('Admins only.')).toBeTruthy();
     expect(api.getLinkedData).not.toHaveBeenCalled();
   });

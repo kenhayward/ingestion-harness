@@ -19,6 +19,7 @@ describe('app shell', () => {
         label: 'Ken – laptop',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       })),
     });
     render(<App api={api} pollMs={0} />);
@@ -42,7 +43,13 @@ describe('app shell', () => {
     'links %s sessions to the API docs in a new tab',
     async (role) => {
       const api = fakeApi({
-        me: vi.fn(async () => ({ role, label: 'Ken', email: null, mustChangePassword: false })),
+        me: vi.fn(async () => ({
+          role,
+          label: 'Ken',
+          email: null,
+          mustChangePassword: false,
+          userId: 'u-test',
+        })),
       });
       render(<App api={api} pollMs={0} />);
       const nav = await screen.findByRole('navigation', { name: 'Main' });
@@ -107,6 +114,7 @@ describe('app shell', () => {
         label: 'Ken',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       })),
       getProject: vi.fn(async () => projectView()),
     });
@@ -331,6 +339,7 @@ describe('the admin name menu', () => {
         label: 'Ken',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       })),
       logout: vi.fn(async () => {
         onSignOut();
@@ -371,6 +380,7 @@ describe('the admin name menu', () => {
         label: 'Ann',
         email: 'ann@example.com',
         mustChangePassword: false,
+        userId: 'u-test',
       })),
     });
     render(<App api={api} pollMs={0} />);
@@ -402,6 +412,7 @@ describe('the admin name menu', () => {
           label: 'Ken',
           email,
           mustChangePassword: false,
+          userId: 'u-test',
         })),
       });
       const { unmount } = render(<App api={api} pollMs={0} />);
@@ -425,6 +436,7 @@ describe('the admin name menu', () => {
         label: 'Ken',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       })),
     });
     render(<App api={api} pollMs={0} />);

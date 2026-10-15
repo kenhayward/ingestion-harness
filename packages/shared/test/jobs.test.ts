@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   JobSummarySchema,
+  isMine,
   RepublishParamsSchema,
   StepProgressSchema,
   TestRunSchema,
@@ -25,6 +26,7 @@ const summary = {
   referenceId: null,
   projectId: 'letter',
   createdBy: null,
+  createdByUser: null,
   reviewReasons: null,
   reviewer: null,
   reviewNote: null,
@@ -105,5 +107,25 @@ describe('withdraw and republish params (ADR 0011 step 7; shared with the worker
     for (const v of fixture.republish.invalid!) {
       expect(RepublishParamsSchema.safeParse(v).success).toBe(false);
     }
+  });
+});
+
+describe('isMine', () => {
+  const ken = { name: 'ken', userId: 'u-ken' };
+  it.each([
+    ['my id', { createdBy: 'ken', createdByUser: 'u-ken' }, true],
+    ['my id under an old name (renamed)', { createdBy: 'Kenneth', createdByUser: 'u-ken' }, true],
+    ['a namesake: my name, another id', { createdBy: 'ken', createdByUser: 'u-other' }, false],
+    ['an older job with my name and no id', { createdBy: 'ken', createdByUser: null }, true],
+    ['an older job with another name', { createdBy: 'ops', createdByUser: null }, false],
+    ['nobody (no access control)', { createdBy: null, createdByUser: null }, false],
+  ] as const)('%s', (_case, job, mine) => {
+    expect(isMine(job, ken)).toBe(mine);
+  });
+
+  it('a user without an id only matches older jobs by name', () => {
+    const local = { name: 'ken', userId: null };
+    expect(isMine({ createdBy: 'ken', createdByUser: 'u-ken' }, local)).toBe(false);
+    expect(isMine({ createdBy: 'ken', createdByUser: null }, local)).toBe(true);
   });
 });

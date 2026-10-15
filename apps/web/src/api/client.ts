@@ -649,6 +649,8 @@ export interface IssuedS3Key {
 
 /** Signed-in identity (GET /api/auth/me). `label` is the user's name. */
 export interface Me {
+  /** The user id: what jobs record as `createdByUser`. */
+  userId: string;
   role: 'admin' | 'user';
   label: string;
   /** null for the admin from the log. */

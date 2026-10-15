@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { JobStatus, JobSummary } from '@ih/shared';
+import { isMine, type Creator, type JobStatus, type JobSummary } from '@ih/shared';
 import { navigate } from '../router.js';
 
 /**
@@ -45,12 +45,12 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function jobNotices(
   previous: readonly JobSummary[],
   next: readonly JobSummary[],
-  me: string,
+  me: Creator,
 ): JobNotice[] {
   const before = new Map(previous.map((j) => [j.id, j.status]));
   const finished: [JobSummary, Outcome][] = [];
   for (const job of next) {
-    if (job.createdBy !== me) continue;
+    if (!isMine(job, me)) continue;
     const outcome = OUTCOME[job.status];
     const was = before.get(job.id);
     if (outcome && (was === undefined || ACTIVE.includes(was))) finished.push([job, outcome]);
@@ -104,7 +104,8 @@ export function useJobNotifications({
   jobs: readonly JobSummary[];
   /** The list has loaded at least once (before that it is empty, not "no jobs"). */
   loaded: boolean;
-  me: string;
+  /** The signed-in user; keep it stable across renders (useMemo). */
+  me: Creator;
   enabled: boolean;
 }): void {
   const previous = useRef<readonly JobSummary[] | null>(null);

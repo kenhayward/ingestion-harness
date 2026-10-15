@@ -90,6 +90,10 @@ has to stay inside the stack: no external identity provider and no email service
   users.
 - The deploy and smoke scripts sign in as `admin` with the logged token as the password. The
   smoke test leaves a disabled `Smoke test …` user with an `@example.invalid` address each run.
+- Jobs record their creator's user id as well as the name (`jobs.created_by_user`, migration
+  0040): "My jobs", Home's latest job and job notifications match the id (`isMine`), so renaming
+  a user keeps their jobs theirs and a later user given the same name never inherits them. Jobs
+  from before it have no id and still match by name.
 - `sign_in_events` holds IP addresses and user agents for 90 days, which belongs in any privacy
   notice.
 - Every guarded route documents the restricted session's `403` (`apps/api/src/openapi/zod.ts`).

@@ -9,6 +9,7 @@ import {
 } from '../templates/definitions.js';
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
+import { creatorOf } from '../access/routes.js';
 
 /**
  * POST /api/documents (multipart/form-data)
@@ -146,7 +147,7 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
         test,
         null,
         record ? draftOutputsSnapshot(record.definition) : null,
-        req.auth?.label ?? null,
+        creatorOf(req),
       );
       return reply.code(201).send(job);
     },

@@ -200,6 +200,7 @@ describe('AccessPage', () => {
       label: 'Ann',
       email: 'ann@example.com',
       mustChangePassword: false,
+      userId: ANN.id,
     };
     const annActive = { ...ANN, status: 'active' as const, lockedUntil: null, failedSignIns: 0 };
     page({ listUsers: vi.fn(async () => [ADMIN_FROM_LOG, annActive]) }, me);
@@ -285,7 +286,13 @@ describe('AccessPage', () => {
     render(
       <AccessPage
         api={fakeApi()}
-        me={{ role: 'user', label: 'Ken', email: 'ken@example.com', mustChangePassword: false }}
+        me={{
+          role: 'user',
+          label: 'Ken',
+          email: 'ken@example.com',
+          mustChangePassword: false,
+          userId: 'u-test',
+        }}
       />,
     );
     expect(screen.getByText('Admins only.')).toBeInTheDocument();

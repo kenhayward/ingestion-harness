@@ -7,6 +7,7 @@ import {
   letter,
   multipart,
   signIn,
+  signInNewUser,
   testApp,
 } from './helpers.js';
 
@@ -50,6 +51,63 @@ describe('job creator', () => {
     expect(names(await list(userCookie, '?mine=1'))).toEqual(['user-1.pdf', 'user-2.pdf']);
     expect(names(await list(adminCookie, '?mine=1'))).toEqual(['admin.pdf']);
     expect(await list(adminCookie, '?mine=1&status=failed')).toEqual([]);
+  });
+
+  it("records the user's id beside the name", async () => {
+    const { app, upload, userCookie } = await signedIn();
+    const me = (await app.inject({ url: '/api/auth/me', headers: { cookie: userCookie } })).json();
+    expect(me.userId).toMatch(/^[0-9a-f-]{36}$/);
+    const job = (await upload(userCookie)).json();
+    expect(job).toMatchObject({ createdBy: 'user', createdByUser: me.userId });
+  });
+
+  it('keeps my jobs mine after an admin renames me', async () => {
+    const { app, access, upload, list, userCookie } = await signedIn();
+    await upload(userCookie, 'before.pdf');
+    const me = (await app.inject({ url: '/api/auth/me', headers: { cookie: userCookie } })).json();
+    expect(await access.updateUser(me.userId, { name: 'Renamed' })).toMatchObject({
+      name: 'Renamed',
+    });
+    await upload(userCookie, 'after.pdf');
+    expect(names(await list(userCookie, '?mine=1'))).toEqual(['after.pdf', 'before.pdf']);
+  });
+
+  it('never gives a new user the jobs of someone who had their name', async () => {
+    const { app, access, upload, list, userCookie } = await signedIn();
+    await upload(userCookie, 'theirs.pdf');
+    const me = (await app.inject({ url: '/api/auth/me', headers: { cookie: userCookie } })).json();
+    await access.updateUser(me.userId, { name: 'Moved on' });
+    const { cookie: newcomer } = await signInNewUser(
+      app,
+      access,
+      'user',
+      'user',
+      'new@example.test',
+    );
+    expect(await list(newcomer, '?mine=1')).toEqual([]);
+  });
+
+  it('matches older jobs without an id by name', async () => {
+    const { repo, list, userCookie } = await signedIn();
+    const old = await repo.createDocumentAndJob(
+      {
+        id: '99999999-9999-4999-8999-999999999999',
+        filename: 'legacy.pdf',
+        sha256: 'x'.repeat(64),
+        sizeBytes: 10,
+        specId: 'demo',
+        specVersion: 1,
+        bucket: 'ingest-inbox',
+        objectKey: 'legacy.pdf',
+      },
+      null,
+      false,
+      null,
+      null,
+      { name: 'user', userId: null },
+    );
+    expect(old.createdByUser).toBeNull();
+    expect(names(await list(userCookie, '?mine=1'))).toEqual(['legacy.pdf']);
   });
 
   it('applies the limit to my jobs, not to every job', async () => {

@@ -694,19 +694,20 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.countUnfinishedJobsWithModel(choice)).toBe(0);
   });
 
-  it('stores who queued a job and lists only their jobs', async () => {
+  it('stores who queued a job and lists only their jobs, by user id', async () => {
     const projectId = await newProject();
-    const label = `it-user-${randomUUID().slice(0, 8)}`;
-    const mine = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, label);
-    expect(mine.createdBy).toBe(label);
+    const name = `it-user-${randomUUID().slice(0, 8)}`;
+    const me = { name, userId: randomUUID() };
+    const mine = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, me);
+    expect(mine).toMatchObject({ createdBy: name, createdByUser: me.userId });
     const sample = await repo.createWorkbenchJob(doc(projectId), {
       projectId,
       task: 'process',
-      createdBy: label,
+      createdBy: me,
     });
-    expect(sample.createdBy).toBe(label);
+    expect(sample).toMatchObject({ createdBy: name, createdByUser: me.userId });
     const other = await repo.createDocumentAndJob(doc(projectId), null);
-    expect(other.createdBy).toBeNull();
+    expect(other).toMatchObject({ createdBy: null, createdByUser: null });
     const reference = await repo.createReference({
       templateId: projectId,
       name: 'r',
@@ -714,11 +715,25 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       sourceJobId: mine.id,
       expected: { fields: {}, tables: {} },
     });
-    const regression = await repo.createRegressionJob(reference, 2, null, label);
-    expect(regression.createdBy).toBe(label);
-    const listed = await repo.listJobs({ limit: 10, createdBy: label });
-    expect(listed.map((j) => j.id).sort()).toEqual([mine.id, sample.id, regression.id].sort());
-    expect(await repo.listJobs({ limit: 10, createdBy: label, status: 'failed' })).toEqual([]);
+    const regression = await repo.createRegressionJob(reference, 2, null, me);
+    expect(regression.createdByUser).toBe(me.userId);
+    // Same name, another user: not theirs. An older job with only the name: still mine.
+    await repo.createDocumentAndJob(doc(projectId), null, false, null, null, {
+      name,
+      userId: randomUUID(),
+    });
+    const legacy = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, {
+      name,
+      userId: null,
+    });
+    const listed = await repo.listJobs({ limit: 10, mine: me });
+    expect(listed.map((j) => j.id).sort()).toEqual(
+      [mine.id, sample.id, regression.id, legacy.id].sort(),
+    );
+    // Renamed: the id still finds them, the old name's legacy row no longer does.
+    const renamed = await repo.listJobs({ limit: 10, mine: { ...me, name: `${name}-2` } });
+    expect(renamed.map((j) => j.id).sort()).toEqual([mine.id, sample.id, regression.id].sort());
+    expect(await repo.listJobs({ limit: 10, mine: me, status: 'failed' })).toEqual([]);
   });
 
   it('refreshes the outputs snapshot on retry, keeping the other params', async () => {

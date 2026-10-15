@@ -162,15 +162,16 @@ export const TEST_PASSWORD = 'a long test phrase';
 
 /**
  * Add a user, sign in with their one-time password and change it to TEST_PASSWORD (ADR 0013):
- * the cookie is a full session. Their email is `<name, lower case, dashes>@example.test`.
+ * the cookie is a full session. Their email is `<name, lower case, dashes>@example.test` unless
+ * given.
  */
 export async function signInNewUser(
   app: FastifyInstance,
   access: AccessRepo,
   name: string,
   role: 'admin' | 'user' = 'user',
+  email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
 ) {
-  const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`;
   const created = await access.createUser({ name, email, role }, null);
   if (typeof created === 'string') throw new Error(created);
   const cookie = await signIn(app, email, created.password);

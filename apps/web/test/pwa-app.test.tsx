@@ -100,6 +100,7 @@ describe('Install CT Studio', () => {
         label: 'Ken',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       })),
     });
     render(<App api={api} pollMs={0} install={install} launched={new LaunchedFiles()} />);

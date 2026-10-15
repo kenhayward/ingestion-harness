@@ -13,6 +13,7 @@ const signedIn = (me: Partial<Me> = {}, failed = 0, lastFailedAt: string | null 
   label: 'Ken Hayward',
   email: 'ken@example.com',
   mustChangePassword: false,
+  userId: 'u-test',
   ...me,
   failedSinceLastSignIn: failed,
   lastFailedAt,
@@ -256,6 +257,7 @@ describe('sign-in gate', () => {
         label: 'admin',
         email: null,
         mustChangePassword: false,
+        userId: 'u-test',
       });
     render(<App api={fakeApi({ me })} pollMs={0} />);
     expect(await screen.findByRole('alert')).toHaveTextContent("Can't reach the server");

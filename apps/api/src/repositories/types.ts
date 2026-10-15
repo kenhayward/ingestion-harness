@@ -1,6 +1,7 @@
 import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
+  Creator,
   JobStatus,
   JobSummary,
   ModelInfo,
@@ -140,15 +141,15 @@ export interface WorkbenchJobOptions {
   referenceId?: string | null;
   /** Every step runs on this alias, e.g. `draft` for reference runs. Default null. */
   modelOverride?: string | null;
-  /** Label of the access token that queued the job. Default null. */
-  createdBy?: string | null;
+  /** Who queued the job. Default null. */
+  createdBy?: Creator | null;
 }
 
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
-  /** Only jobs queued by this token label (the Jobs page's "My jobs"). */
-  createdBy?: string;
+  /** Only jobs this user queued (the Jobs page's "My jobs"; `isMine`). */
+  mine?: Creator;
 }
 
 export interface ListPublishedQuery {
@@ -189,8 +190,8 @@ export interface IngestionRepo {
     referenceId?: string | null,
     /** jobs.params, e.g. a draft test run's `{ outputs }` snapshot. Default null. */
     params?: Record<string, unknown> | null,
-    /** Label of the access token that queued the job. Default null. */
-    createdBy?: string | null,
+    /** Who queued the job. Default null. */
+    createdBy?: Creator | null,
   ): Promise<JobSummary>;
   /** A test job of a workbench project, queued behind production work. */
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
@@ -315,8 +316,8 @@ export interface IngestionRepo {
     version: number,
     /** jobs.params, e.g. a draft version's `{ outputs }` snapshot. Default null. */
     params?: Record<string, unknown> | null,
-    /** Label of the access token that queued the run. Default null. */
-    createdBy?: string | null,
+    /** Who queued the run. Default null. */
+    createdBy?: Creator | null,
   ): Promise<JobSummary>;
   /** Regression jobs of a template version, newest first. */
   /** The newest regression job per reference for a version (older runs are history). */

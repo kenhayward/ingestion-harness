@@ -77,10 +77,15 @@ export const JobSummarySchema = z.object({
   /** Workbench project the job belongs to (prepare jobs and dev test runs). */
   projectId: z.string().nullable(),
   /**
-   * Label of the access token that queued the job (migration 0023); null for older jobs and
-   * without access control. Retries keep it.
+   * Name of the user who queued the job (migration 0023), for people to read; null for older
+   * jobs and without access control. Retries keep it.
    */
   createdBy: z.string().nullable(),
+  /**
+   * Id of the user who queued the job (migration 0040): what "mine" means, since a name can
+   * change or pass to someone else. Null for jobs from before it and without access control.
+   */
+  createdByUser: z.string().nullable(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),
@@ -101,6 +106,21 @@ export const JobSummarySchema = z.object({
   finishedAt: z.string().nullable(),
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
+
+/** Who queued a job (ADR 0013): the name people read, and the user id "mine" is decided on. */
+export interface Creator {
+  name: string;
+  userId: string | null;
+}
+
+/**
+ * Whether `me` queued the job: by user id when the job has one (a name can change or pass to
+ * someone else), else by name (jobs from before migration 0040).
+ */
+export function isMine(job: Pick<JobSummary, 'createdBy' | 'createdByUser'>, me: Creator): boolean {
+  if (job.createdByUser !== null) return job.createdByUser === me.userId;
+  return job.createdBy !== null && job.createdBy === me.name;
+}
 
 /** Job event the worker writes per model call of an extraction (worker: template_pipeline.STEP_PROGRESS). */
 export const STEP_PROGRESS_EVENT = 'step progress';

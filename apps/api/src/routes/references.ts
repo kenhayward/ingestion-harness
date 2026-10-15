@@ -15,6 +15,7 @@ import { ChangeSchema, diffDefinitions } from '../regression/diff.js';
 import { computeMetrics, TemplateMetricsSchema } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
 import { draftOutputsSnapshot } from '../templates/definitions.js';
+import { creatorOf } from '../access/routes.js';
 
 const STALE = Symbol('stale');
 
@@ -270,7 +271,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
             reference,
             version,
             params,
-            req.auth?.label ?? null,
+            creatorOf(req),
           ),
         );
       }
