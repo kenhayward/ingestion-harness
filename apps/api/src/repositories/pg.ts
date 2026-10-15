@@ -15,7 +15,7 @@ import type {
   OutputFormat,
   SuggestParams,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, modelRef, sourceContentType } from '@ih/shared';
+import { DELETABLE_STATUSES, modelRef, sourceContentType, type Creator } from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -45,7 +45,7 @@ import {
 // Any query on `jobs` that does not go through JOB_SELECT must exclude `document_id IS NULL` rows.
 const JOB_SELECT = `
   SELECT j.id, j.document_id, d.filename, d.object_key, d.spec_id, d.spec_version, j.status,
-         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.created_by, j.review_reasons, j.reviewer,
+         j.model_override, j.attempts, j.error, j.task, j.test, j.reference_id, j.project_id, j.created_by, j.created_by_user, j.review_reasons, j.reviewer,
          j.review_note, j.reviewed_at, j.created_at, j.updated_at,
          j.params->>'batchId' AS batch_id, j.started_at, j.finished_at,
          array(SELECT model FROM step_runs
@@ -88,6 +88,7 @@ interface JobRow {
   reference_id: string | null;
   project_id: string | null;
   created_by: string | null;
+  created_by_user: string | null;
   review_reasons: string[] | null;
   reviewer: string | null;
   review_note: string | null;
@@ -117,6 +118,7 @@ function toSummary(r: JobRow): JobSummary {
     referenceId: r.reference_id,
     projectId: r.project_id,
     createdBy: r.created_by,
+    createdByUser: r.created_by_user,
     reviewReasons: r.review_reasons,
     reviewer: r.reviewer,
     reviewNote: r.review_note,
@@ -313,7 +315,7 @@ export class PgRepo implements IngestionRepo {
     test = false,
     referenceId: string | null = null,
     params: Record<string, unknown> | null = null,
-    createdBy: string | null = null,
+    createdBy: Creator | null = null,
   ): Promise<JobSummary> {
     return this.insertDocumentAndJob(doc, {
       modelOverride,
@@ -541,7 +543,7 @@ export class PgRepo implements IngestionRepo {
       task: 'process' | 'prepare';
       priority: number;
       params: Record<string, unknown> | null;
-      createdBy: string | null;
+      createdBy: Creator | null;
     },
   ): Promise<JobSummary> {
     const client = await this.pool.connect();
@@ -562,8 +564,8 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority, params, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        `INSERT INTO jobs (document_id, model_override, test, reference_id, project_id, task, priority, params, created_by, created_by_user)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
         [
           doc.id,
           job.modelOverride,
@@ -573,7 +575,8 @@ export class PgRepo implements IngestionRepo {
           job.task,
           job.priority,
           job.params === null ? null : JSON.stringify(job.params),
-          job.createdBy,
+          job.createdBy?.name ?? null,
+          job.createdBy?.userId ?? null,
         ],
       );
       await client.query('COMMIT');
@@ -595,12 +598,15 @@ export class PgRepo implements IngestionRepo {
     return Number(rows[0]!.n);
   }
 
-  async listJobs({ limit, status, createdBy }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, mine }: ListJobsQuery): Promise<JobSummary[]> {
+    // "Mine" (isMine): by user id, else by name for jobs from before migration 0041.
     const { rows } = await this.pool.query<JobRow>(
       `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare'
-         AND ($3::text IS NULL OR j.created_by = $3)
+         AND ($3::boolean IS NOT TRUE
+              OR (j.created_by_user IS NOT NULL AND j.created_by_user = $4::uuid)
+              OR (j.created_by_user IS NULL AND j.created_by = $5))
        ORDER BY j.created_at DESC LIMIT $2`,
-      [status ?? null, limit, createdBy ?? null],
+      [status ?? null, limit, mine !== undefined, mine?.userId ?? null, mine?.name ?? null],
     );
     return rows.map(toSummary);
   }
@@ -1195,7 +1201,7 @@ export class PgRepo implements IngestionRepo {
     reference: Reference,
     version: number,
     params: Record<string, unknown> | null = null,
-    createdBy: string | null = null,
+    createdBy: Creator | null = null,
   ): Promise<JobSummary> {
     const { rows } = await this.pool.query<{
       filename: string;

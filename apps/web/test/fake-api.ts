@@ -29,6 +29,8 @@ import { OVERVIEW_STAGES, OVERVIEW_TABS } from '@ih/shared';
 import {
   outputPath,
   type Api,
+  type Me,
+  type User,
   type CleanupRequest,
   type TemplateRecordView,
 } from '../src/api/client.js';
@@ -205,6 +207,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     referenceId: null,
     projectId: null,
     createdBy: null,
+    createdByUser: null,
     reviewReasons: null,
     reviewer: null,
     reviewNote: null,
@@ -236,6 +239,47 @@ export function templateView(
   };
 }
 
+/** The signed-in admin of fakeApi() (the name `admin` keeps the account-menu labels short). */
+export const ADMIN_ME: Me = {
+  userId: '00000000-0000-4000-8000-000000000001',
+  role: 'admin',
+  label: 'admin',
+  email: null,
+  mustChangePassword: false,
+};
+
+/** A user as GET /api/users lists them; override what the test is about. */
+export function user(fields: Partial<User> = {}): User {
+  return {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Ken Hayward',
+    email: 'ken@example.com',
+    role: 'user',
+    status: 'active',
+    createdAt: '2026-10-01T09:00:00.000Z',
+    createdBy: 'Admin',
+    lastSignInAt: null,
+    failedSignIns: 0,
+    lastFailedAt: null,
+    lockedUntil: null,
+    disabledAt: null,
+    disabledReason: null,
+    disabledBy: null,
+    oneTimeExpiresAt: null,
+    ...fields,
+  };
+}
+
+/** The admin from the log, always listed first. */
+export const ADMIN_FROM_LOG = user({
+  id: '00000000-0000-4000-8000-000000000001',
+  name: 'Admin',
+  email: null,
+  role: 'admin',
+  status: 'admin-from-log',
+  createdBy: null,
+});
+
 /** fakeApi() plus a way to simulate the session ending (a 401 mid-use). */
 export type FakeApi = Api & { expireSession(): void };
 
@@ -243,15 +287,24 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
   const listeners = new Set<() => void>();
   return {
     expireSession: () => listeners.forEach((l) => l()),
-    me: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
-    login: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
+    me: vi.fn(async () => ADMIN_ME),
+    login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),
-    listTokens: vi.fn(async () => []),
-    createToken: vi.fn(async () => {
-      throw new Error('createToken not stubbed');
+    changePassword: vi.fn(async () => undefined),
+    listUsers: vi.fn(async () => [ADMIN_FROM_LOG]),
+    addUser: vi.fn(async () => {
+      throw new Error('addUser not stubbed');
     }),
-    revokeToken: vi.fn(async () => undefined),
-    deleteToken: vi.fn(async () => undefined),
+    updateUser: vi.fn(async () => {
+      throw new Error('updateUser not stubbed');
+    }),
+    setUserEnabled: vi.fn(async () => {
+      throw new Error('setUserEnabled not stubbed');
+    }),
+    reissuePassword: vi.fn(async () => {
+      throw new Error('reissuePassword not stubbed');
+    }),
+    listSignIns: vi.fn(async () => []),
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
     listOntologies: vi.fn(async () => []),

@@ -67,12 +67,12 @@ if ((Get-Status '/api/specs' $anon) -ne 401) { throw 'smoke test failed: /api/sp
 Write-Host 'ok   /api/specs without a session -> 401'
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 Invoke-WebRequest -UseBasicParsing "$base/api/auth/login" -Method Post -WebSession $session `
-  -ContentType 'application/json' -Body (@{ token = $adminToken } | ConvertTo-Json) | Out-Null
-foreach ($path in '/api/specs', '/api/models', '/api/results', '/api/auth/tokens') {
+  -ContentType 'application/json' -Body (@{ login = 'admin'; password = $adminToken } | ConvertTo-Json) | Out-Null
+foreach ($path in '/api/specs', '/api/models', '/api/results', '/api/users') {
   if ((Get-Status $path $session) -ne 200) { throw "smoke test failed: $path" }
   Write-Host "ok   $path"
 }
 Write-Host "==> deployed $ImageTag"
 Invoke-Compose ps
 Write-Host "==> ADMIN TOKEN (valid until the API restarts): $adminToken"
-Write-Host "    Sign in with it, then issue user tokens under Access (ADR 0006)."
+Write-Host "    Sign in as admin with it as the password, then add users under Access (ADR 0013)."

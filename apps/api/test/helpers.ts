@@ -1,5 +1,6 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
-import { MemoryAccessRepo } from '../src/access/repo.js';
+import type { FastifyInstance } from 'fastify';
+import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
@@ -142,26 +143,59 @@ export function seedModelChoices(ctx: { repo: MemoryRepo; llm: MemoryLlmConfigRe
   }));
 }
 
-/** An app with token access on (so the auth routes exist), signed-in cookies for both roles. */
+/** The session cookie a sign-in response set, as a `cookie` header value. */
+export const sessionCookie = (res: { headers: Record<string, unknown> }) =>
+  `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1] ?? ''}`;
+
+/** Sign in through the route; returns the cookie header (empty session when refused). */
+export async function signIn(app: FastifyInstance, login: string, password: string) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { login, password },
+  });
+  return sessionCookie(res);
+}
+
+/** The password `signInNewUser` gives every user it makes. */
+export const TEST_PASSWORD = 'a long test phrase';
+
+/**
+ * Add a user, sign in with their one-time password and change it to TEST_PASSWORD (ADR 0013):
+ * the cookie is a full session. Their email is `<name, lower case, dashes>@example.test` unless
+ * given.
+ */
+export async function signInNewUser(
+  app: FastifyInstance,
+  access: AccessRepo,
+  name: string,
+  role: 'admin' | 'user' = 'user',
+  email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
+) {
+  const created = await access.createUser({ name, email, role }, null);
+  if (typeof created === 'string') throw new Error(created);
+  const cookie = await signIn(app, email, created.password);
+  const changed = await app.inject({
+    method: 'PUT',
+    url: '/api/auth/password',
+    headers: { cookie },
+    payload: { currentPassword: created.password, newPassword: TEST_PASSWORD },
+  });
+  if (changed.statusCode !== 204) throw new Error(`password change: ${changed.body}`);
+  return { cookie, user: created.user, email };
+}
+
+/** An app with access control on (so the auth routes exist), signed-in cookies for both roles. */
 export async function accessApp(overrides: Partial<AppDeps> = {}) {
   const access = new MemoryAccessRepo();
   const ctx = await testApp({ access, ...overrides });
-  const signIn = async (token: string) => {
-    const res = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/auth/login',
-      payload: { token },
-    });
-    return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1]}`;
-  };
-  const adminToken = await access.rotateAdminToken();
-  const userToken = (await access.createToken('user', null)).token;
+  const adminPassword = await access.rotateAdminPassword();
   return {
     ...ctx,
     access,
-    adminToken,
-    adminCookie: await signIn(adminToken),
-    userCookie: await signIn(userToken),
+    adminPassword,
+    adminCookie: await signIn(ctx.app, 'admin', adminPassword),
+    userCookie: (await signInNewUser(ctx.app, access, 'user')).cookie,
   };
 }
 

@@ -140,7 +140,7 @@ Tags, gathered with `x-tagGroups` (Scalar shows these as sidebar sections):
 | **Pipeline** | Documents · Jobs · Review & steps · Results |
 | **Configuration** | Specs · Templates · References & regression · Models |
 | **Workbench** | Projects & data policy · Samples & brief · Drafting stages & proposals · Test runs · Evaluation, iterations & comparisons · Feedback & revise · Holdout & publish gate · Bundles |
-| **Administration** | Auth & sessions · Access tokens · Data-lake S3 keys · Health |
+| **Administration** | Auth & sessions · Users · Data-lake S3 keys · Health |
 
 Each tag has a description of a paragraph or two: the concepts behind the area (for example, what
 a Workbench project, a dev or holdout sample and an iteration are), with a link to the relevant

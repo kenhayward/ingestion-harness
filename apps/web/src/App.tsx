@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
 import { LinkedDataPage } from './linked-data/LinkedDataPage.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { OntologyPage } from './ontologies/OntologyPage.js';
 import { AccessPage } from './access/AccessPage.js';
+import { ChangePassword } from './access/ChangePassword.js';
+import { FailedSignInsNotice, type FailedSignIns } from './access/FailedSignInsNotice.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { JobsPage } from './jobs/JobsPage.js';
@@ -25,7 +27,10 @@ import { TemplatesPage } from './templates/TemplatesPage.js';
 import { ProjectPage } from './workbench/ProjectPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 
-/** Sign-in gate (ADR 0006): the app renders only for a valid session. */
+/**
+ * Sign-in gate (ADR 0013): the app renders only for a valid session, and a session opened with a
+ * one-time password gets the password change first.
+ */
 export function App({
   api,
   pollMs = 3000,
@@ -41,6 +46,8 @@ export function App({
 }) {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [ended, setEnded] = useState(false);
+  /** Failed sign-ins the last sign-in cleared (D9): shown once, never stored. */
+  const [failed, setFailed] = useState<FailedSignIns | null>(null);
   /** The session check failed for another reason (API restarting, proxy error): not "signed out". */
   const [unreachable, setUnreachable] = useState<string | null>(null);
 
@@ -83,11 +90,29 @@ export function App({
       <SignIn
         api={api}
         ended={ended}
-        onSignedIn={(signedIn) => {
+        onSignedIn={({ failedSinceLastSignIn, lastFailedAt, ...signedIn }) => {
           setEnded(false);
+          setFailed(
+            failedSinceLastSignIn > 0 ? { count: failedSinceLastSignIn, lastFailedAt } : null,
+          );
           setMe(signedIn);
         }}
       />
+    );
+  }
+  const signOut = () => {
+    setFailed(null);
+    void api.logout().finally(() => setMe(null));
+  };
+  const notice = failed && (
+    <FailedSignInsNotice failed={failed} onDismiss={() => setFailed(null)} />
+  );
+  if (me.mustChangePassword) {
+    return (
+      <AuthLayout title="Choose your password">
+        {notice}
+        <ChangePassword api={api} me={me} mode="first" onDone={check} onSignOut={signOut} />
+      </AuthLayout>
     );
   }
   return (
@@ -97,9 +122,8 @@ export function App({
       me={me}
       launched={launched}
       install={install}
-      onSignOut={() => {
-        void api.logout().finally(() => setMe(null));
-      }}
+      notice={notice}
+      onSignOut={signOut}
     />
   );
 }
@@ -110,6 +134,7 @@ function SignedInApp({
   me,
   launched,
   install,
+  notice,
   onSignOut,
 }: {
   api: Api;
@@ -117,6 +142,8 @@ function SignedInApp({
   me: Me;
   launched: LaunchedFiles;
   install: InstallPrompt;
+  /** Shown above every page until dismissed (the failed sign-ins notice). */
+  notice: ReactNode;
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
@@ -138,7 +165,8 @@ function SignedInApp({
   // The installed app (docs/design/pwa.md): the taskbar badge and toasts for your own jobs.
   useAppBadge(attentionCount(jobs));
   const notify = useNotifySetting();
-  useJobNotifications({ jobs, loaded, me: me.label, enabled: notify.state === 'on' });
+  const creator = useMemo(() => ({ name: me.label, userId: me.userId }), [me.label, me.userId]);
+  useJobNotifications({ jobs, loaded, me: creator, enabled: notify.state === 'on' });
   const [query, setQuery] = useState('');
   // The search filters the current section's list: moving to another section starts afresh,
   // so a leftover query never hides rows somewhere else.
@@ -166,6 +194,18 @@ function SignedInApp({
     page = <ResultsPage api={api} query={query} />;
   } else if (route.name === 'result') {
     page = <ResultDetailView key={route.jobId} api={api} jobId={route.jobId} />;
+  } else if (route.name === 'password') {
+    page = (
+      <div className="password-page">
+        <ChangePassword
+          api={api}
+          me={me}
+          mode="account"
+          onDone={() => window.history.back()}
+          onSignOut={onSignOut}
+        />
+      </div>
+    );
   } else if (route.name === 'access') {
     page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'ontologies') {
@@ -220,7 +260,7 @@ function SignedInApp({
     page = (
       <HomePage
         api={api}
-        me={me.label}
+        me={creator}
         jobs={jobs}
         error={error}
         refresh={refresh}
@@ -247,6 +287,7 @@ function SignedInApp({
       }}
       onSignOut={onSignOut}
     >
+      {notice}
       {page}
     </AppShell>
   );

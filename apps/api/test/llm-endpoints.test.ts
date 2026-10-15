@@ -160,7 +160,7 @@ describe('LLM endpoints API', () => {
       payload: { location: 'external' },
       headers: { cookie: adminCookie },
     });
-    expect(res.json()).toMatchObject({ location: 'external', updatedBy: 'admin' });
+    expect(res.json()).toMatchObject({ location: 'external', updatedBy: 'Admin' });
   });
 
   it('refuses to disable an endpoint or drop a model a choice or a pipeline setting uses', async () => {

@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { fakeApi, job, projectView } from './fake-api.js';
+import { fakeApi, job, projectView, user } from './fake-api.js';
 
 const SEARCH = 'Search jobs, results and document types';
 
@@ -12,9 +12,15 @@ afterEach(() => {
 });
 
 describe('app shell', () => {
-  it('has a top bar with search, colour mode, Upload document and the signed-in token', async () => {
+  it('has a top bar with search, colour mode, Upload document and the signed-in user', async () => {
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'user' as const, label: 'Ken – laptop', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ken – laptop',
+        email: null,
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
@@ -22,7 +28,7 @@ describe('app shell', () => {
     expect(within(banner).getByRole('group', { name: 'Colour mode' })).toBeInTheDocument();
     expect(within(banner).getByRole('button', { name: 'Upload document' })).toBeInTheDocument();
     expect(
-      within(banner).getByRole('group', { name: 'Signed in as Ken – laptop (user)' }),
+      within(banner).getByRole('button', { name: 'Ken – laptop (user): account menu' }),
     ).toHaveTextContent('KL');
     const home = within(banner).getByRole('link', {
       name: 'CT Studio — Content Transformation Studio, home',
@@ -36,7 +42,15 @@ describe('app shell', () => {
   it.each(['user', 'admin'] as const)(
     'links %s sessions to the API docs in a new tab',
     async (role) => {
-      const api = fakeApi({ me: vi.fn(async () => ({ role, label: 'Ken', expiresAt: null })) });
+      const api = fakeApi({
+        me: vi.fn(async () => ({
+          role,
+          label: 'Ken',
+          email: null,
+          mustChangePassword: false,
+          userId: 'u-test',
+        })),
+      });
       render(<App api={api} pollMs={0} />);
       const nav = await screen.findByRole('navigation', { name: 'Main' });
       const link = within(nav).getByRole('link', { name: 'API docs (opens in a new tab)' });
@@ -95,7 +109,13 @@ describe('app shell', () => {
   it('collapses the main nav to labelled icons on a project page only', async () => {
     window.location.hash = '#/workbench/letter';
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'admin' as const,
+        label: 'Ken',
+        email: null,
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
       getProject: vi.fn(async () => projectView()),
     });
     render(<App api={api} pollMs={0} />);
@@ -138,18 +158,6 @@ describe('app shell', () => {
     await userEvent.keyboard('{Escape}');
     expect(search).toHaveValue('');
   });
-});
-
-const token = (id: string, label: string) => ({
-  id,
-  label,
-  role: 'user' as const,
-  createdAt: '2026-10-01T00:00:00Z',
-  expiresAt: null,
-  revokedAt: null,
-  lastUsedAt: null,
-  issuedBy: null,
-  status: 'active' as const,
 });
 
 const template = (id: string, name: string) => ({
@@ -226,16 +234,20 @@ describe('search', () => {
     expect(screen.getByText('No document types match “invoice zzz”.')).toBeInTheDocument();
   });
 
-  it('filters access tokens by label', async () => {
+  it('filters users by name or email', async () => {
     window.location.hash = '#/access';
     const api = fakeApi({
-      listTokens: vi.fn(async () => [token('1', 'Ken – laptop'), token('2', 'Ops station')]),
+      listUsers: vi.fn(async () => [
+        user({ id: '1', name: 'Ken Hayward', email: 'ken@example.com' }),
+        user({ id: '2', name: 'Ops station', email: 'ops@example.com' }),
+      ]),
     });
     render(<App api={api} pollMs={0} />);
-    await screen.findByText('Ops station');
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'ken');
-    expect(screen.getByText('Ken – laptop')).toBeInTheDocument();
-    expect(screen.queryByText('Ops station')).not.toBeInTheDocument();
+    const users = within(await screen.findByRole('table', { name: 'Users' }));
+    await users.findByText('Ops station');
+    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'ken@');
+    expect(users.getByText('Ken Hayward')).toBeInTheDocument();
+    expect(users.queryByText('Ops station')).not.toBeInTheDocument();
   });
 
   it('sends the search to the server as the results file name filter', async () => {
@@ -294,7 +306,7 @@ describe('search scope', () => {
     const search = await screen.findByRole('searchbox', { name: SEARCH });
     await userEvent.type(search, 'invoice');
     window.location.hash = '#/access';
-    await screen.findByRole('table', { name: 'Access tokens' });
+    await screen.findByRole('table', { name: 'Users' });
     expect(search).toHaveValue('');
   });
 
@@ -308,13 +320,13 @@ describe('search scope', () => {
     expect(search).toHaveValue('invoice');
   });
 
-  it('says when no tokens match', async () => {
+  it('says when no users match', async () => {
     window.location.hash = '#/access';
-    const api = fakeApi({ listTokens: vi.fn(async () => [token('1', 'Ken – laptop')]) });
+    const api = fakeApi({ listUsers: vi.fn(async () => [user({ name: 'Ken Hayward' })]) });
     render(<App api={api} pollMs={0} />);
-    await screen.findByText('Ken – laptop');
+    await within(await screen.findByRole('table', { name: 'Users' })).findByText('Ken Hayward');
     await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'zzz');
-    expect(screen.getByText('No tokens match “zzz”.')).toBeInTheDocument();
+    expect(screen.getByText('No users match “zzz”.')).toBeInTheDocument();
   });
 });
 
@@ -322,7 +334,13 @@ describe('the admin name menu', () => {
   it('opens Models, Access and Sign out from the name of an admin', async () => {
     const onSignOut = vi.fn();
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'admin' as const,
+        label: 'Ken',
+        email: null,
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
       logout: vi.fn(async () => {
         onSignOut();
       }),
@@ -355,19 +373,71 @@ describe('the admin name menu', () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  it('keeps a plain chip with Sign out for users', async () => {
+  it('gives users a menu with Change password and Sign out only', async () => {
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'user' as const, label: 'Ann', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
-    expect(within(banner).queryByRole('button', { name: /account menu/ })).toBeNull();
-    expect(within(banner).getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    await userEvent.click(trigger);
+    const menu = within(banner).getByRole('menu', { name: 'Ann (user): account menu' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Change password', 'Sign out']);
+    await userEvent.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Change password' }));
+    expect(window.location.hash).toBe('#/account/password');
+    expect(
+      await screen.findByRole('heading', { name: 'Change your password' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('Change password · CT Studio'));
+  });
+
+  it('lists Change password for admin users but not for the admin from the log', async () => {
+    const menuItems = async (email: string | null) => {
+      const api = fakeApi({
+        me: vi.fn(async () => ({
+          role: 'admin' as const,
+          label: 'Ken',
+          email,
+          mustChangePassword: false,
+          userId: 'u-test',
+        })),
+      });
+      const { unmount } = render(<App api={api} pollMs={0} />);
+      const banner = await screen.findByRole('banner');
+      await userEvent.click(
+        within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
+      );
+      const items = within(within(banner).getByRole('menu')).getAllByRole('menuitem');
+      const names = items.map((i) => i.textContent);
+      unmount();
+      return names;
+    };
+    expect(await menuItems('ken@example.com')).toContain('Change password');
+    expect(await menuItems(null)).not.toContain('Change password');
   });
 
   it('lists Models in the admin nav', async () => {
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'admin' as const,
+        label: 'Ken',
+        email: null,
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
     });
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });

@@ -82,12 +82,13 @@ export const TAGS = {
     context) and import one as a new project.
   `,
   'Auth & sessions': md`
-    Sign in with an access token to get a session cookie (\`ih_session\`). Every \`/api\` route
-    needs the session except sign-in, sign-out and these docs. See
-    [ADR 0006](${REPO}/docs/adr/0006-token-access.md).`,
-  'Access tokens': md`
-    Admins issue and revoke the access tokens people sign in with. The admin token itself
-    rotates on every API start and is printed in the API log.
+    Sign in with an email address and a password to get a session cookie (\`ih_session\`).
+    Every \`/api\` route needs the session except sign-in, sign-out and these docs. See
+    [ADR 0013](${REPO}/docs/adr/0013-email-password-users.md).`,
+  Users: md`
+    Admins add people with a name, an email address and a one-time password, and can edit,
+    disable, unlock or reissue them, and read recent sign-ins. The admin from the API log signs
+    in as \`admin\` with the token the API prints on every start.
   `,
   'Data-lake S3 keys': md`
     Read-only S3 credentials for data-lake consumers of the publish bucket. Secrets are shown
@@ -130,7 +131,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   },
   {
     name: 'Administration',
-    tags: ['Auth & sessions', 'Access tokens', 'Data-lake S3 keys', 'Linked data', 'Health'],
+    tags: ['Auth & sessions', 'Users', 'Data-lake S3 keys', 'Linked data', 'Health'],
   },
 ];
 
@@ -141,10 +142,13 @@ const DESCRIPTION = md`
   ## Signing in
 
   Every \`/api\` route needs a session except \`POST /api/auth/login\`, \`POST /api/auth/logout\`
-  and these docs. Sign in with an access token; the response sets the \`ih_session\` cookie, which
-  the browser sends with every request. Signed out, a guarded route answers \`401\`
-  \`{ "error": "sign in required" }\`. "Try it" in these docs uses your session when you are
-  signed in to the app in the same browser.
+  and these docs. Sign in with your email address and password; the response sets the
+  \`ih_session\` cookie, which the browser sends with every request. Signed out, a guarded route
+  answers \`401\` \`{ "error": "sign in required" }\`. A session opened with a one-time password
+  can only read \`GET /api/auth/me\` and change the password (\`PUT /api/auth/password\`); every
+  other guarded route answers \`403\` \`{ "error": "change your one-time password first" }\`.
+  "Try it" in these docs uses your session when you are signed in to the app in the same
+  browser.
 
   A request that changes something (\`POST\`, \`PUT\`, \`PATCH\`, \`DELETE\`) and that the
   browser marks as sent from another site's page (\`Sec-Fetch-Site: cross-site\`) is refused
@@ -158,8 +162,8 @@ const DESCRIPTION = md`
 
   ## Admin routes
 
-  Routes marked **Admin token required** (\`x-admin: true\`) answer \`403\`
-  \`{ "error": "admins only" }\` to a session opened with a user token.
+  Routes marked **Admins only** (\`x-admin: true\`) answer \`403\`
+  \`{ "error": "admins only" }\` to a user who is not an admin.
 `;
 
 export const OPENAPI = {

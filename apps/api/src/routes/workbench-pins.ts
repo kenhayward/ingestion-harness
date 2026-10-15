@@ -7,10 +7,10 @@ const PinParams = z.object({
   projectId: z.string().describe('The project id: the id of its document type.'),
 });
 
-/** Who the pins belong to: the signed-in token (`local` when access control is off). */
-const ownerOf = (req: { auth?: { tokenId: string } | null }) => req.auth?.tokenId ?? 'local';
+/** Who the pins belong to: the signed-in user (`local` when access control is off). */
+const ownerOf = (req: { auth?: { userId: string } | null }) => req.auth?.userId ?? 'local';
 
-/** Per-token pins on the Workbench project list (handoff W3). */
+/** Per-user pins on the Workbench project list (handoff W3). */
 export const workbenchPinsRoutes: FastifyPluginAsync = async (app) => {
   app.get(
     '/workbench/pins',
@@ -20,8 +20,8 @@ export const workbenchPinsRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listProjectPins',
         summary: 'List the pinned projects',
         description: md`
-          The ids of the projects the signed-in token has pinned, most recently pinned first.
-          Pins belong to the token, so each token sees its own. A deleted project is dropped.
+          The ids of the projects the signed-in user has pinned, most recently pinned first.
+          Pins belong to the user, so each user sees their own. A deleted project is dropped.
         `,
         response: { 200: res('The pinned project ids.', z.array(z.string())) },
       },
@@ -37,7 +37,7 @@ export const workbenchPinsRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'pinProject',
         summary: 'Pin a project',
         description: md`
-          Pins the project for the signed-in token. Pinning an already pinned project changes
+          Pins the project for the signed-in user. Pinning an already pinned project changes
           nothing: it keeps its original place in the order.
         `,
         params: PinParams,
@@ -59,7 +59,7 @@ export const workbenchPinsRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'unpinProject',
         summary: 'Unpin a project',
         description: md`
-          Removes the project from the signed-in token's pins. Unpinning a project that is not
+          Removes the project from the signed-in user's pins. Unpinning a project that is not
           pinned (or does not exist) is not an error.
         `,
         params: PinParams,

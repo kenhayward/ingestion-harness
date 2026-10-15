@@ -132,7 +132,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'importOntology',
           'Import an ontology file',
           md`
-            **Admin token required.** Stores the file and queues its import as the next
+            **Admins only.** Stores the file and queues its import as the next
             version of the ontology \`id\` (a new ontology needs \`label\`). The worker parses
             it (Turtle, RDF/XML, JSON-LD, N-Triples or N3, judged by the file name) and indexes
             its classes, properties, SKOS concepts and SHACL shapes; the version's \`status\`
@@ -231,7 +231,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'importOntologyBatch',
           'Import a folder or zip of ontology files',
           md`
-            **Admin token required.** Every ontology file (${ONTOLOGY_ACCEPT}) of a folder, sent
+            **Admins only.** Every ontology file (${ONTOLOGY_ACCEPT}) of a folder, sent
             as one \`file\` part each, or of one \`.zip\` part (hidden entries and others are
             left out), imported in one go, at most ${ONTOLOGY_MAX_FILES} files within the upload
             limit. Fields come before the files:
@@ -494,7 +494,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'updateOntology',
           'Edit an ontology',
           md`
-            **Admin token required.** Changes the name, description, tags or the _Local only_
+            **Admins only.** Changes the name, description, tags or the _Local only_
             flag, or retires the ontology (\`retired: true\`): a retired ontology is hidden
             from the library, and everything that pins it keeps working.
           `,
@@ -530,7 +530,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'deleteOntologyVersion',
           'Delete an ontology version',
           md`
-            **Admin token required.** Deletes a version that is \`ready\` or \`failed\`, with
+            **Admins only.** Deletes a version that is \`ready\` or \`failed\`, with
             its indexed terms and files; deleting the last version deletes the ontology. A
             version still being imported cannot be deleted.
           `,
@@ -725,7 +725,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'importOntologyFromUrl',
           'Import an ontology from a URL',
           md`
-            **Admin token required.** Queues the import of an ontology the worker fetches from
+            **Admins only.** Queues the import of an ontology the worker fetches from
             \`url\` as the next version of \`id\` (a new ontology needs \`label\`). Only
             \`https\` URLs on hosts in \`ONTOLOGY_FETCH_ALLOW\` are accepted; the worker
             checks each redirect again, refuses private addresses and caps the size. The

@@ -188,6 +188,36 @@ const PATHS = {
       <path d="M9 11V8a3 3 0 0 1 6 0v3" />
     </>
   ),
+  unlock: (
+    <>
+      <rect x="6" y="11" width="12" height="9" rx="2" />
+      <path d="M9 11V8a3 3 0 0 1 5.8-1" />
+    </>
+  ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
+    </>
+  ),
+  userOff: (
+    <>
+      <circle cx="10" cy="8" r="4" />
+      <path d="M3 20a7 7 0 0 1 11-5.7M16 16l5 5M21 16l-5 5" />
+    </>
+  ),
+  userCheck: (
+    <>
+      <circle cx="10" cy="8" r="4" />
+      <path d="M3 20a7 7 0 0 1 11-5.7M15.5 18.5l2 2 4-4.5" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+      <path d="M3 4v4h4M12 8v4l3 2" />
+    </>
+  ),
   chip: (
     <>
       <rect x="7" y="7" width="10" height="10" rx="1.5" />

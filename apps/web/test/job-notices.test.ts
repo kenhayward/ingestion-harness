@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { jobNotices } from '../src/pwa/notify.js';
 import { job } from './fake-api.js';
 
-const ME = 'ken';
+const ME = { name: 'ken', userId: 'u-ken' };
 const mine = (id: string, status: JobStatus, more: Partial<JobSummary> = {}) =>
-  job({ id, status, createdBy: ME, filename: `${id}.pdf`, ...more });
+  job({ id, status, createdBy: ME.name, createdByUser: ME.userId, filename: `${id}.pdf`, ...more });
 
 describe('jobNotices (toasts for your jobs, docs/design/pwa.md)', () => {
   it.each<[string, JobStatus, JobStatus, Partial<JobSummary>, object | null]>([
@@ -61,6 +61,22 @@ describe('jobNotices (toasts for your jobs, docs/design/pwa.md)', () => {
   it('ignores other people’s jobs', () => {
     const theirs = (status: JobStatus) => job({ id: 'b', status, createdBy: 'ops' });
     expect(jobNotices([theirs('running')], [theirs('awaiting_review')], ME)).toEqual([]);
+  });
+
+  it('ignores a job by someone else who has (or had) my name', () => {
+    const namesake = (status: JobStatus) =>
+      job({ id: 'd', status, createdBy: 'ken', createdByUser: 'u-other' });
+    expect(jobNotices([namesake('running')], [namesake('succeeded')], ME)).toEqual([]);
+  });
+
+  it('still announces my jobs after I am renamed (by id)', () => {
+    const renamed = { ...ME, name: 'Kenneth' };
+    expect(jobNotices([mine('a', 'running')], [mine('a', 'succeeded')], renamed)).toHaveLength(1);
+  });
+
+  it('announces older jobs without an id by name', () => {
+    const legacy = (status: JobStatus) => job({ id: 'e', status, createdBy: 'ken' });
+    expect(jobNotices([legacy('running')], [legacy('succeeded')], ME)).toHaveLength(1);
   });
 
   it('ignores jobs nobody is recorded as queuing (no access control)', () => {

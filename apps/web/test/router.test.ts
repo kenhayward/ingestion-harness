@@ -28,6 +28,7 @@ describe('parseHash', () => {
     ['', { name: 'home' }],
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
+    ['#/account/password', { name: 'password' }],
     ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {

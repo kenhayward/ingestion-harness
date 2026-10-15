@@ -114,6 +114,7 @@ import {
   type ChangeStage,
   mappingKeepUpTo,
   ontologySelectionChangedAt,
+  type Creator,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
@@ -144,6 +145,7 @@ import {
   type ProposalRecord,
   type SampleRecord,
 } from '../workbench/repo.js';
+import { creatorOf } from '../access/routes.js';
 
 export const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
@@ -456,8 +458,8 @@ export async function addSampleFile(
     filename: string;
     body: Buffer;
     role: SampleRole;
-    /** Label of the access token adding the sample: its prepare job's creator. */
-    createdBy: string | null;
+    /** Who adds the sample: its prepare job's creator. */
+    createdBy: Creator | null;
   },
 ): Promise<{ view: SampleView } | { code: 409 | 415 | 422; error: string }> {
   const { workbench, templates } = app.deps;
@@ -1115,7 +1117,7 @@ async function startIteration(
           },
           referenceId: row.reference!.id,
           modelOverride: model,
-          createdBy: req.auth?.label ?? null,
+          createdBy: creatorOf(req),
         },
       ),
     ),
@@ -1652,7 +1654,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         filename: file.filename,
         body,
         role: role.data,
-        createdBy: req.auth?.label ?? null,
+        createdBy: creatorOf(req),
       });
       if ('error' in added) return reply.code(added.code).send({ error: added.error });
       return reply.code(201).send(added.view);
@@ -1970,7 +1972,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               ...draftOutputsSnapshot(definition),
             },
             modelOverride: model,
-            createdBy: req.auth?.label ?? null,
+            createdBy: creatorOf(req),
           }),
         ),
       );
@@ -2136,7 +2138,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'setDataPolicy',
         summary: "Set a project's data policy",
         description: md`
-          **Admin token required.** \`local\`: the project's documents and sample text may only
+          **Admins only.** \`local\`: the project's documents and sample text may only
           go to models on providers marked \`location: local\`. \`external\`: external
           providers are allowed too. Switching to \`local\` also makes every existing job of the
           project local-only, so queued jobs, retries and step re-runs cannot go external after
@@ -2172,7 +2174,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /** References stage: run the draft model on every ready dev sample that has no reference. */
-  async function startReferences(projectId: string, createdBy: string | null, reply: FastifyReply) {
+  async function startReferences(
+    projectId: string,
+    createdBy: Creator | null,
+    reply: FastifyReply,
+  ) {
     const project = await workbench.getProject(projectId);
     if (!project) return reply.code(404).send({ error: 'project not found' });
     const blocking = firstIncomplete(await stagesOf(app, projectId));
@@ -2554,7 +2560,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       if (req.params.stage === 'references')
-        return startReferences(req.params.id, req.auth?.label ?? null, reply);
+        return startReferences(req.params.id, creatorOf(req), reply);
       const params = StageParams.safeParse(req.params);
       if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
         return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
@@ -2830,7 +2836,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               params: referenceRunParams(project.dataPolicy, definition),
               // The template's own models: drafting never sees holdout, so no draft model.
               modelOverride: null,
-              createdBy: req.auth?.label ?? null,
+              createdBy: creatorOf(req),
             },
           ),
         ),
@@ -2908,7 +2914,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         task: 'process',
         params: referenceRunParams(project.dataPolicy, definition),
         modelOverride: set === 'dev' ? 'draft' : null,
-        createdBy: req.auth?.label ?? null,
+        createdBy: creatorOf(req),
       });
       req.log.info({ projectId, sampleId: sid, set }, 'sample reference run');
       return reply.code(201).send({ jobs: [job] });

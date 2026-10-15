@@ -49,20 +49,25 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 
 ## Remote access (NGINX Proxy Manager)
 
-The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/adr/0006-token-access.md)).
+The app needs a sign-in everywhere, LAN included ([ADR 0013](../docs/adr/0013-email-password-users.md)).
 
 1. **Admin token:** after each deploy, `deploy.sh` / `deploy.ps1` print it. You can also get it
    any time with `deploy/scripts/admin-token.sh --env-file deploy/.env -f deploy/docker-compose.yml`
-   or `docker compose logs api | grep "ADMIN TOKEN"`. It changes on every API restart.
-2. **Sign in and issue tokens:** sign in with the admin token, open **Access**, and issue a user
-   token per person or device, with a label and an expiry. A new token is shown once. Revoke a
-   token to end its sessions immediately.
+   or `docker compose logs api | grep "ADMIN TOKEN"`. It changes on every API restart. It is the
+   password of the user `admin`.
+2. **Sign in and add users:** sign in as `admin` with the admin token, open **Access**, and add
+   each person with their name and email address. They get a one-time password (shown once,
+   valid 7 days) and choose their own password at first sign-in. Disable a user to end their
+   sessions at once. Ten wrong passwords in a row lock an account for 15 minutes (longer after
+   each further failure), and twenty disable it until an admin enables it. The post-deploy smoke
+   test adds a disabled `Smoke test …` user with an `@example.invalid` address on every run.
 3. **NGINX Proxy Manager:**
    - add a proxy host for your domain, forwarding to `http://<docker-host>:8081` (the `app`
      container, `APP_PORT`);
    - SSL: request a Let's Encrypt certificate, and turn on Force SSL and HSTS;
    - turn on **Block common exploits**;
-   - Advanced: `client_max_body_size 60m; proxy_read_timeout 300s;` (uploads and long requests).
+   - Advanced: `client_max_body_size 210m; proxy_read_timeout 300s;` (uploads up to
+     `MAX_UPLOAD_MB`, at most 200 MB with the app's nginx, e.g. ChEBI lite; and long requests).
      Workbench bundle imports (`POST /api/workbench/projects/import`) are larger: up to
      `MAX_UPLOAD_MB` × 12 samples + 8 MB (608 MB at the default 50). The app's nginx allows
      650 MB on that path only; give the proxy host the same allowance, e.g. a custom location

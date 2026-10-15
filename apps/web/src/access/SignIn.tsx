@@ -1,17 +1,32 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import type { Api, Me } from '../api/client.js';
+import type { Api, SignedIn } from '../api/client.js';
 import { API_DOCS } from '../shell/AppShell.js';
 import { pageTitle } from '../shell/derive.js';
 import { useDocumentTitle } from '../shell/useDocumentTitle.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
+import { lockedText } from './passwords.js';
 
+/** What the sign-in answer's refusal means, in words for the person signing in. */
 function message(err: unknown): string {
-  const status = (err as { status?: number }).status;
-  if (status === 401) return 'That token is invalid or has expired.';
+  const {
+    status,
+    body,
+    message: text,
+  } = err as {
+    status?: number;
+    body?: { lockedUntil?: unknown };
+    message?: string;
+  };
+  if (status === 401) return 'The email address or password is wrong.';
+  if (status === 403 && text?.includes('expired')) {
+    return 'This one-time password has expired. Ask an admin for a new one.';
+  }
+  if (status === 403) return 'This account is disabled. Ask an admin.';
+  if (status === 429 && typeof body?.lockedUntil === 'string') return lockedText(body.lockedUntil);
   if (status === 429) return 'Too many attempts. Try again in a few minutes.';
-  return `Sign-in failed: ${(err as Error).message}`;
+  return `Sign-in failed: ${text ?? 'unknown error'}`;
 }
 
 /** Full-screen layout outside the app shell: sign in, loading, server unreachable. */
@@ -41,19 +56,21 @@ export function AuthLayout({
   );
 }
 
-/** Token entry screen (ADR 0006): a valid token opens a session cookie. */
+/** Email and password sign-in (ADR 0013): a right password opens a session cookie. */
 export function SignIn({
   api,
   ended,
   onSignedIn,
 }: {
   api: Api;
-  /** The previous session ended (expired, revoked or the admin token rotated). */
+  /** The previous session ended (expired, disabled or the admin password rotated). */
   ended: boolean;
-  onSignedIn: (me: Me) => void;
+  onSignedIn: (me: SignedIn) => void;
 }) {
-  const fieldId = useId();
-  const [token, setToken] = useState('');
+  const emailId = useId();
+  const passwordId = useId();
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
   const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,13 +80,18 @@ export function SignIn({
     setBusy(true);
     setError(null);
     try {
-      onSignedIn(await api.login(token.trim()));
+      onSignedIn(await api.login(login.trim(), password));
     } catch (err) {
       setError(message(err));
     } finally {
       setBusy(false);
     }
   }
+
+  const edit = (set: (v: string) => void) => (value: string) => {
+    set(value);
+    setError(null);
+  };
 
   return (
     <AuthLayout title="Sign in">
@@ -80,33 +102,47 @@ export function SignIn({
             <span>
               <strong>Your session has ended</strong>
               <span>
-                It expired, was revoked, or the admin token rotated. Sign in again to continue.
+                It expired, an admin disabled the account, or the admin password rotated. Sign in
+                again to continue.
               </span>
             </span>
           </div>
         )}
         <div className="token-field">
-          <label htmlFor={fieldId}>Access token</label>
+          <label htmlFor={emailId}>Email address</label>
+          <span className={error ? 'token-input plain invalid' : 'token-input plain'}>
+            <Icon name="mail" size={18} />
+            <input
+              id={emailId}
+              type="text"
+              inputMode="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoFocus
+              spellCheck={false}
+              aria-invalid={error !== null}
+              value={login}
+              onChange={(e) => edit(setLogin)(e.target.value)}
+            />
+          </span>
+        </div>
+        <div className="token-field">
+          <label htmlFor={passwordId}>Password</label>
           <span className={error ? 'token-input invalid' : 'token-input'}>
             <Icon name="key" size={18} />
             <input
-              id={fieldId}
+              id={passwordId}
               type={shown ? 'text' : 'password'}
-              autoComplete="off"
-              autoFocus
+              autoComplete="current-password"
               spellCheck={false}
-              placeholder="Paste your token"
               aria-invalid={error !== null}
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value);
-                setError(null);
-              }}
+              value={password}
+              onChange={(e) => edit(setPassword)(e.target.value)}
             />
             <button
               type="button"
               className="icon"
-              aria-label={shown ? 'Hide token' : 'Show token'}
+              aria-label={shown ? 'Hide password' : 'Show password'}
               aria-pressed={shown}
               onClick={() => setShown((s) => !s)}
             >
@@ -120,14 +156,21 @@ export function SignIn({
             {error}
           </p>
         )}
-        <button type="submit" className="primary block" disabled={busy || !token.trim()}>
+        <button
+          type="submit"
+          className="primary block"
+          disabled={busy || !login.trim() || !password}
+        >
           Sign in
         </button>
       </form>
       <p className="auth-hint">
-        Ask an administrator for an access token.
+        New here? An admin adds you and gives you a one-time password.
         <br />
-        Administrators: the admin token is printed in the API log on each restart.
+        <span>
+          Admins: sign in as <code>admin</code> with the token printed in the API log on each
+          restart.
+        </span>
         <br />
         <a href={API_DOCS} target="_blank" rel="noopener">
           API docs<span className="visually-hidden"> (opens in a new tab)</span>

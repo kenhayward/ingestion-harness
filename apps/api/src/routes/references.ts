@@ -15,6 +15,7 @@ import { ChangeSchema, diffDefinitions } from '../regression/diff.js';
 import { computeMetrics, TemplateMetricsSchema } from '../metrics.js';
 import { ReferenceConflictError } from '../repositories/types.js';
 import { draftOutputsSnapshot } from '../templates/definitions.js';
+import { creatorOf } from '../access/routes.js';
 
 const STALE = Symbol('stale');
 
@@ -266,12 +267,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
       const jobs = [];
       for (const reference of references) {
         jobs.push(
-          await app.deps.repo.createRegressionJob(
-            reference,
-            version,
-            params,
-            req.auth?.label ?? null,
-          ),
+          await app.deps.repo.createRegressionJob(reference, version, params, creatorOf(req)),
         );
       }
       return reply.code(201).send({ jobs });

@@ -295,23 +295,29 @@ export interface OntologyTermQuery {
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
-  /** Exchange an access token for a session cookie. Rejects with an ApiError (401/429). */
-  login(token: string): Promise<Me>;
+  /**
+   * Sign in with an email address (or `admin`) and a password; sets the session cookie. Rejects
+   * with an ApiError: 401, 403 (disabled, expired one-time password) or 429 (a locked account
+   * carries `body.lockedUntil`; a client over the per-IP limit does not).
+   */
+  login(login: string, password: string): Promise<SignedIn>;
   logout(): Promise<void>;
+  /** Change the signed-in user's password (the first sign-in step with a one-time password). */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
-  listTokens(): Promise<AccessToken[]>;
-  /**
-   * A new token: the plaintext `token` is only ever returned here. Admin tokens must expire
-   * (the API refuses `null`).
-   */
-  createToken(
-    label: string,
-    expiresInDays: number | null,
-    role: AccessToken['role'],
-  ): Promise<{ token: string; record: AccessToken }>;
-  revokeToken(id: string): Promise<void>;
-  deleteToken(id: string): Promise<void>;
+  listUsers(): Promise<User[]>;
+  /** A new user: the one-time `password` is only ever returned here and by reissuePassword. */
+  addUser(user: { name: string; email: string; role: User['role'] }): Promise<WithPassword>;
+  updateUser(
+    id: string,
+    patch: Partial<{ name: string; email: string; role: User['role'] }>,
+  ): Promise<User>;
+  /** Enable (or unlock) and disable. Disabling signs the user out everywhere. */
+  setUserEnabled(id: string, enabled: boolean): Promise<User>;
+  reissuePassword(id: string): Promise<WithPassword>;
+  /** Recent sign-ins, newest first (admins). */
+  listSignIns(opts?: { userId?: string; limit?: number }): Promise<SignInEvent[]>;
   /** Read-only S3 keys for the data lake (ADR 0008). Rejects with a 404 ApiError when off. */
   listS3Keys(): Promise<S3KeysOverview>;
   /** A new consumer and key: `secretAccessKey` is only ever returned here and by rotate. */
@@ -560,18 +566,54 @@ export interface Api {
   getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
 }
 
-/** An access token as listed to admins (never the token itself). */
-export interface AccessToken {
+/** A user as listed to admins (ADR 0013; never a password). */
+export interface User {
   id: string;
-  label: string;
+  name: string;
+  /** null only for the admin from the log, who signs in as `admin`. */
+  email: string | null;
   role: 'admin' | 'user';
+  /** `locked` = temporarily, until `lockedUntil`. */
+  status: 'admin-from-log' | 'active' | 'must-change' | 'locked' | 'disabled';
   createdAt: string;
-  expiresAt: string | null;
-  revokedAt: string | null;
-  lastUsedAt: string | null;
-  /** The label of the session that issued it; null for the admin token from the log. */
-  issuedBy: string | null;
-  status: 'active' | 'expired' | 'revoked' | 'current-admin';
+  createdBy: string | null;
+  lastSignInAt: string | null;
+  /** Consecutive failed sign-ins since the last success. */
+  failedSignIns: number;
+  lastFailedAt: string | null;
+  lockedUntil: string | null;
+  disabledAt: string | null;
+  disabledReason: 'admin' | 'failed-sign-ins' | null;
+  disabledBy: string | null;
+  oneTimeExpiresAt: string | null;
+}
+
+/** A user and their one-time password, shown once. */
+export interface WithPassword {
+  user: User;
+  password: string;
+}
+
+/** One sign-in attempt or password change (GET /api/sign-ins). */
+export interface SignInEvent {
+  id: string;
+  at: string;
+  /** null for an email that matches nobody. */
+  userId: string | null;
+  name: string | null;
+  result:
+    | 'ok'
+    | 'wrong-password'
+    | 'unknown-login'
+    | 'locked'
+    | 'disabled'
+    | 'expired-one-time'
+    | 'password-changed'
+    | 'password-change-refused';
+  failures: number | null;
+  lockedUntil: string | null;
+  ip: string;
+  userAgent: string | null;
 }
 
 /** An S3 access key as listed to admins (never its secret). */
@@ -608,21 +650,33 @@ export interface IssuedS3Key {
   endpoint: string | null;
 }
 
-/** Signed-in identity (GET /api/auth/me). */
+/** Signed-in identity (GET /api/auth/me). `label` is the user's name. */
 export interface Me {
+  /** The user id: what jobs record as `createdByUser`. */
+  userId: string;
   role: 'admin' | 'user';
   label: string;
-  expiresAt: string | null;
+  /** null for the admin from the log. */
+  email: string | null;
+  /** Signed in with a one-time password: only the password change works until it is done. */
+  mustChangePassword: boolean;
+}
+
+/** The sign-in answer: Me plus the failed attempts it cleared (tell the person). */
+export interface SignedIn extends Me {
+  failedSinceLastSignIn: number;
+  lastFailedAt: string | null;
 }
 
 const unauthorizedListeners = new Set<() => void>();
 
-/** 401s that mean "not signed in yet / wrong token", not "your session ended". */
+/** 401s that mean "not signed in yet / wrong password", not "your session ended". */
 const SIGN_IN_CALLS = ['/auth/login', '/auth/me'];
 
 /**
- * fetch for API calls: a 401 from any other call (token management included) means the session
- * ended (expired, revoked, admin token rotated), so listeners can send the user back to sign-in.
+ * fetch for API calls: a 401 from any other call (user management included) means the session
+ * ended (expired, disabled, admin password rotated), so listeners can send the user back to
+ * sign-in.
  */
 const apiFetch: typeof fetch = async (input, init) => {
   const res = await fetch(input, init);
@@ -633,11 +687,12 @@ const apiFetch: typeof fetch = async (input, init) => {
   return res;
 };
 
-/** An API error carrying its HTTP status (e.g. 401, 429 on sign-in). */
+/** An API error carrying its HTTP status (e.g. 401, 429 on sign-in) and its JSON body. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly body: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -649,7 +704,16 @@ export class ApiError extends Error {
  * "[object Object]"; anything else falls back to the status.
  */
 async function errorMessage(res: Response): Promise<string> {
-  const body: { error?: unknown } = await res.json().catch(() => ({}));
+  return messageOf(res, await res.json().catch(() => ({})));
+}
+
+/** A rejected response as an ApiError, keeping its body (e.g. a lock's `lockedUntil`). */
+async function apiError(res: Response): Promise<ApiError> {
+  const body: Record<string, unknown> = await res.json().catch(() => ({}));
+  return new ApiError(messageOf(res, body), res.status, body);
+}
+
+function messageOf(res: Response, body: { error?: unknown }): string {
   const { error } = body;
   if (typeof error === 'string' && error) return error;
   if (Array.isArray(error)) {
@@ -666,14 +730,14 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  if (!res.ok) throw await apiError(res);
   return res.json() as Promise<T>;
 }
 
 /** For 204 responses: throws the API error like json() does. */
 async function noContent(response: Promise<Response>): Promise<void> {
   const res = await response;
-  if (!res.ok) throw new ApiError(await errorMessage(res), res.status);
+  if (!res.ok) throw await apiError(res);
 }
 
 function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
@@ -690,22 +754,37 @@ export function createHttpApi(base = '/api'): Api {
       const res = await apiFetch(`${base}/auth/me`);
       return res.status === 401 ? null : json<Me>(res);
     },
-    login: (token) => post<Me>(`${base}/auth/login`, { token }),
+    login: (login, password) => post<SignedIn>(`${base}/auth/login`, { login, password }),
     logout: async () => {
       await apiFetch(`${base}/auth/logout`, { method: 'POST' });
     },
-    listTokens: () => apiFetch(`${base}/auth/tokens`).then(json<AccessToken[]>),
-    createToken: (label, expiresInDays, role) =>
-      post<{ token: string; record: AccessToken }>(`${base}/auth/tokens`, {
-        label,
-        expiresInDays,
-        role,
-      }),
-    revokeToken: async (id) => {
-      await noContent(apiFetch(`${base}/auth/tokens/${id}/revoke`, { method: 'POST' }));
+    changePassword: async (currentPassword, newPassword) => {
+      await noContent(
+        apiFetch(`${base}/auth/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword }),
+        }),
+      );
     },
-    deleteToken: async (id) => {
-      await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
+    listUsers: () => apiFetch(`${base}/users`).then(json<User[]>),
+    addUser: (user) => post<WithPassword>(`${base}/users`, user),
+    updateUser: (id, patch) =>
+      post<User>(`${base}/users/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    setUserEnabled: (id, enabled) =>
+      apiFetch(`${base}/users/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, {
+        method: 'POST',
+      }).then(json<User>),
+    reissuePassword: (id) =>
+      apiFetch(`${base}/users/${encodeURIComponent(id)}/one-time-password`, {
+        method: 'POST',
+      }).then(json<WithPassword>),
+    listSignIns: (opts = {}) => {
+      const q = new URLSearchParams();
+      if (opts.userId) q.set('userId', opts.userId);
+      if (opts.limit) q.set('limit', String(opts.limit));
+      const qs = q.toString();
+      return apiFetch(`${base}/sign-ins${qs ? `?${qs}` : ''}`).then(json<SignInEvent[]>);
     },
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
     listOntologies: (opts = {}) =>

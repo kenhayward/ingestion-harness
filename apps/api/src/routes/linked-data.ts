@@ -54,7 +54,7 @@ export async function linkedDataRoutes(app: FastifyInstance): Promise<void> {
           'getLinkedDataSettings',
           'Linked data settings',
           md`
-            **Admin token required.** The deployment's customer, the base IRI its RDF is minted
+            **Admins only.** The deployment's customer, the base IRI its RDF is minted
             under (the customer's own, else \`https://id.stocks-hayward.com/<customer>/\`), how
             many RDF outputs were published, and the history of base changes.
           `,
@@ -75,7 +75,7 @@ export async function linkedDataRoutes(app: FastifyInstance): Promise<void> {
           'saveLinkedDataSettings',
           'Save the linked data settings',
           md`
-            **Admin token required.** Sets the customer and, optionally, their own base IRI
+            **Admins only.** Sets the customer and, optionally, their own base IRI
             (https, ending in \`/\`, a host name). IRIs are identities: once RDF was published,
             changing the effective base needs \`confirm\` equal to the new base, applies to new
             publishes only, and is recorded in the history.
