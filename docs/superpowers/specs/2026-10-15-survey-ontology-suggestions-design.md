@@ -129,9 +129,12 @@ embedding call writes the `external model call` job event (`stage: 'survey'` or 
 
 - `GET /api/workbench/projects/:id/ontology-suggestions` → `OntologySuggestionsView`:
   `{record: SuggestionRecord | null, running: boolean, failed: string | null, stale: 'library' |
-  'survey' | null}`. The record is the newest one among the project's succeeded survey draft jobs
-  and `suggest` jobs. `stale` is `survey` when a newer survey proposal (ready or accepted) exists
-  than `record.surveyProposalId`, else `library` when the current `libraryKey` differs. 404 for an
+  'survey' | null}`. The record is a finished refresh of the current survey, else the
+  current survey job's own record, else an older refresh. The current survey is the newest
+  accepted one, else the newest finished, unrejected one: an accepted survey stays current over
+  a newer undecided one, so Refresh, which uses it, can clear the flag. `stale` is `survey` when
+  the record comes from another survey than the current one, else `library` when the current
+  `libraryKey` differs. 404 for an
   unknown project.
 - `POST /api/workbench/projects/:id/ontology-suggestions` → 202 `OntologySuggestionsView`. Uses
   the newest accepted survey proposal, else the newest ready one; 409 `run the survey first` when
@@ -233,3 +236,13 @@ Suggestions and the mapping stage both use vocabularies only through the term in
 work, never a whole-graph load. The only per-job whole-graph loads are SHACL shapes pins
 (`shacl.load_graphs`). This supports raising the import limits for vocabularies
 (`ONTOLOGY_MAX_TRIPLES`, upload size) while keeping shapes ontologies small, decided separately.
+
+## As built (final review)
+
+- Lexical lookups are prefiltered by the trigram indexes (`%` on labels, `<%` on
+  `ih_alt_labels_text(alt_labels)`, an index added by migration 0039) under per-transaction
+  thresholds; `semantic_best` takes every candidate vector at once and reads the embeddings in
+  one pass. On a 200k-term version, 20 lexical lookups take well under 2 s (a Pg test holds it).
+- The Survey tab saves one brief change at a time (answers, Pin, the picker, guidance share one
+  lock), reads the suggestions again when the survey finishes or is decided, and keeps unsaved
+  mapping guidance in `ih.ontologyGuidance.<project>`.
