@@ -62,6 +62,18 @@ function offer(target: EventTarget) {
   return event;
 }
 
+/**
+ * Offers install and waits for the top bar to show it. The shell subscribes to the offer in an
+ * effect, which can run after its header is already on screen (the signed-in shell commits from
+ * the session check, outside act): an offer made in between reaches the shell only once it has
+ * subscribed, so reading the button straight away is a race that load can lose.
+ */
+async function offerShown(target: EventTarget, banner: HTMLElement) {
+  const event = offer(target);
+  await within(banner).findByRole('button', { name: 'Install CT Studio' });
+  return event;
+}
+
 describe('Install CT Studio', () => {
   it('appears in the top bar only while the browser offers install', async () => {
     const target = new EventTarget();
@@ -70,7 +82,7 @@ describe('Install CT Studio', () => {
     const banner = await screen.findByRole('banner');
     expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull();
 
-    const event = offer(target);
+    const event = await offerShown(target, banner);
     await userEvent.click(within(banner).getByRole('button', { name: 'Install CT Studio' }));
     expect(event.prompt).toHaveBeenCalled();
     await waitFor(() =>
@@ -83,8 +95,7 @@ describe('Install CT Studio', () => {
     const install = new InstallPrompt(target);
     render(<App api={fakeApi()} pollMs={0} install={install} launched={new LaunchedFiles()} />);
     const banner = await screen.findByRole('banner');
-    offer(target);
-    expect(within(banner).getByRole('button', { name: 'Install CT Studio' })).toBeInTheDocument();
+    await offerShown(target, banner);
     act(() => {
       target.dispatchEvent(new Event('appinstalled'));
     });
@@ -105,7 +116,7 @@ describe('Install CT Studio', () => {
     });
     render(<App api={api} pollMs={0} install={install} launched={new LaunchedFiles()} />);
     const banner = await screen.findByRole('banner');
-    const event = offer(target);
+    const event = await offerShown(target, banner);
     await userEvent.click(
       within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
     );
