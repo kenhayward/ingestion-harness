@@ -107,7 +107,9 @@ describe('SurveyOntologies', () => {
   it('names the ontology that would cover what the suggestions leave out', async () => {
     show();
     expect(
-      await screen.findByText('batch_number: AFO merged v1 matches “batch identifier” (lexical, 0.48)'),
+      await screen.findByText(
+        'batch_number: AFO merged v1 matches “batch identifier” (lexical, 0.48)',
+      ),
     ).toBeInTheDocument();
   });
 
