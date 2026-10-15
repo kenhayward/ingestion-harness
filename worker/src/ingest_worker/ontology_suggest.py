@@ -181,8 +181,8 @@ def suggest_ontologies(
         semantic = store.semantic_best(
             queried, model_ref, vectors, [_kinds(c) for c in candidates], MIN_SEMANTIC
         )
-        for found, best in zip(hits, semantic, strict=True):
-            _merge(found, best, "semantic")
+        for found, matches in zip(hits, semantic, strict=True):
+            _merge(found, matches, "semantic")
 
     cover = {v: {i for i, h in enumerate(hits) if v in h} for v in queried}
     covered: set[int] = set().union(*(cover[p] for p in pins)) if pins else set()
