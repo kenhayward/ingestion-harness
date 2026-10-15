@@ -2433,11 +2433,22 @@ a.pill {
 }
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: auto;
 }
-.card-actions > .primary {
-  flex: 1;
+/* Icon-only actions (titles explain them): equal squares that fit any card width. */
+.card-actions > .icon.bordered {
+  width: var(--ih-control-h);
+  min-height: var(--ih-control-h);
+  padding: 0;
+  border-color: var(--ih-border-strong);
+  color: var(--ih-text);
+}
+.card-actions > .icon.bordered.primary {
+  border-color: var(--ih-accent);
+  background: var(--ih-accent);
+  color: var(--ih-accent-text);
 }
 label.button {
   display: inline-flex;

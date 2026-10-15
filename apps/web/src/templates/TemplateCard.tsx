@@ -78,28 +78,45 @@ export function TemplateCard({
       </div>
       <p className="shape-line muted">{shapeLine(item.summary)}</p>
       <p className={`quality quality-${quality.tone}`}>{quality.text}</p>
+      {/* Icon-only actions, named by aria-label and explained by title (the version is on the pills). */}
       <div className="card-actions">
         {item.draft !== null ? (
-          <a className="button primary" href={`#/templates/${item.id}/${item.draft}`}>
-            Edit draft v{item.draft}
+          <a
+            className="button icon bordered primary"
+            href={`#/templates/${item.id}/${item.draft}`}
+            aria-label="Edit draft"
+            title="Edit draft"
+          >
+            <Icon name="pencil" />
           </a>
         ) : item.published !== null ? (
           <button
             type="button"
-            className="primary"
+            className="icon bordered primary"
             disabled={busy}
+            aria-label={`New draft from v${item.published}`}
+            title={`New draft from v${item.published}`}
             onClick={() => void newDraft(item.published!)}
           >
-            New draft from v{item.published}
+            <Icon name="plus" />
           </button>
         ) : null}
-        <a className="button" href={`#/workbench/${item.id}`}>
-          Open in workbench
+        <a
+          className="button icon bordered"
+          href={`#/workbench/${item.id}`}
+          aria-label="Open in workbench"
+          title="Open in workbench"
+        >
+          <Icon name="workbench" />
         </a>
         {shown !== null && (
           <>
-            <label className="button" htmlFor={fileId}>
-              Test run
+            <label
+              className="button icon bordered"
+              htmlFor={fileId}
+              title="Test run with a PDF or Word document"
+            >
+              <Icon name="play" />
             </label>
             <input
               id={fileId}
@@ -123,8 +140,14 @@ export function TemplateCard({
           </>
         )}
         {onRetire && (
-          <button type="button" aria-label={`Retire ${item.name}…`} onClick={onRetire}>
-            Retire…
+          <button
+            type="button"
+            className="icon bordered"
+            aria-label={`Retire ${item.name}…`}
+            title="Retire…"
+            onClick={onRetire}
+          >
+            <Icon name="archive" />
           </button>
         )}
       </div>
