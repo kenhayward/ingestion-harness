@@ -149,6 +149,8 @@ export interface WorkbenchRepo {
   getProject(id: string): Promise<WorkbenchProject | null>;
   /** Throws WorkbenchConflictError when the id is taken. */
   createProject(id: string, name: string): Promise<WorkbenchProject>;
+  /** Sets the project's display name; false for an unknown project. */
+  renameProject(id: string, name: string): Promise<boolean>;
   addSample(sample: NewSample): Promise<SampleRecord>;
   /** Oldest first. */
   listSamples(projectId: string): Promise<SampleRecord[]>;
@@ -299,6 +301,13 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   /** Strictly increasing ISO times (the MemoryRepo's clock): stage states compare them. */
   private now(): string {
     return this.jobs.now();
+  }
+
+  async renameProject(id: string, name: string) {
+    const project = this.projects.get(id);
+    if (!project) return false;
+    this.projects.set(id, { ...project, name });
+    return true;
   }
 
   async createProject(id: string, name: string) {
@@ -1179,6 +1188,14 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId],
     );
     return rows.map(toPublication);
+  }
+
+  async renameProject(id: string, name: string) {
+    const { rowCount } = await this.pool.query(
+      'UPDATE workbench_projects SET name = $2 WHERE id = $1',
+      [id, name],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   async createProject(id: string, name: string) {

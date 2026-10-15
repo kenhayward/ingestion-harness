@@ -455,6 +455,8 @@ export interface Api {
   ): Promise<TemplateRecordView>;
   publishTemplate(id: string, version: number): Promise<TemplateRecordView>;
   newDraft(id: string, from: number): Promise<TemplateRecordView>;
+  /** Renames the type in its open draft (started when none is) and its Workbench project. */
+  renameTemplate(id: string, name: string): Promise<TemplateRecordView>;
   deleteDraft(id: string, version: number): Promise<void>;
   importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
   exportUrl(id: string, version: number): string;
@@ -1234,6 +1236,8 @@ export function createHttpApi(base = '/api'): Api {
     publishTemplate: (id, version) =>
       post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
     newDraft: (id, from) => post<TemplateRecordView>(`${base}/templates/${id}/drafts`, { from }),
+    renameTemplate: (id, name) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/name`, { name }, 'PUT'),
     deleteDraft: async (id, version) => {
       const res = await apiFetch(`${base}/templates/${id}/versions/${version}`, {
         method: 'DELETE',

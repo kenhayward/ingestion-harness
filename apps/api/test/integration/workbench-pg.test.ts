@@ -79,6 +79,13 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     return id;
   };
 
+  it('renames a project, and says so only for one that exists', async () => {
+    const projectId = await newProject();
+    expect(await workbench.renameProject(projectId, 'Renamed')).toBe(true);
+    expect((await workbench.getProject(projectId))!.name).toBe('Renamed');
+    expect(await workbench.renameProject('it-nope', 'Renamed')).toBe(false);
+  });
+
   it('lists brief versions oldest first and reads one', async () => {
     const projectId = await newProject();
     expect(await workbench.listBriefs(projectId)).toEqual([]);

@@ -495,6 +495,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     ),
     publishTemplate: vi.fn(async () => templateView({ id: 'x', version: 1 }, 'published')),
     newDraft: vi.fn(async () => templateView({ id: 'x', version: 2 })),
+    renameTemplate: vi.fn(async (id: string, name: string) =>
+      templateView({ id, version: 2, name }),
+    ),
     deleteDraft: vi.fn(async () => undefined),
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
