@@ -111,6 +111,36 @@ describe('http api: sign-in and users', () => {
   });
 });
 
+describe('http api: profile', () => {
+  it('calls the profile routes and links GitHub by navigation', async () => {
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : respond(200, {}),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    const details = { name: 'Ken', jobTitle: null, company: 'Acme', linkedin: 'ken-h' };
+    await api.getProfile();
+    await api.updateProfile(details);
+    await api.listGitHubRepos();
+    await api.setGitHubRepo('ken/recipes');
+    await api.unlinkGitHub();
+    expect(
+      (fetch.mock.calls as unknown as [string, RequestInit | undefined][]).map(([url, init]) => ({
+        url,
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      })),
+    ).toEqual([
+      { url: '/api/profile', method: 'GET', body: undefined },
+      { url: '/api/profile', method: 'PUT', body: details },
+      { url: '/api/profile/github/repos', method: 'GET', body: undefined },
+      { url: '/api/profile/github/repo', method: 'PUT', body: { repo: 'ken/recipes' } },
+      { url: '/api/profile/github', method: 'DELETE', body: undefined },
+    ]);
+    expect(api.gitHubConnectUrl()).toBe('/api/profile/github/connect');
+  });
+});
+
 describe('http api: URLs', () => {
   it('links the uploaded PDF of a job', () => {
     expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');
