@@ -69,7 +69,7 @@ jobs:
           cp deploy/.env.example deploy/.env.ci
           sed -i "s/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}/" deploy/.env.ci
           sed -i "s/^IMAGE_PREFIX=.*/IMAGE_PREFIX=${IMAGE_PREFIX}/" deploy/.env.ci
-          sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/" deploy/.env.ci
+          sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/; s/^FUSEKI_PUBLIC_PORT=.*/FUSEKI_PUBLIC_PORT=0/" deploy/.env.ci
       - name: Build images
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
       - name: Start stack
@@ -79,6 +79,7 @@ jobs:
           compose run --rm init-buckets
           compose run --rm migrate
           compose up -d api worker app
+          echo "COMPOSE_FUSEKI=$(compose ps -q fuseki)" >> "$GITHUB_ENV"
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
           echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"
       - name: Smoke test
@@ -86,6 +87,22 @@ jobs:
           ADMIN_TOKEN="$(deploy/scripts/admin-token.sh --env-file deploy/.env.ci -f deploy/docker-compose.yml)"
           echo "::add-mask::$ADMIN_TOKEN"
           BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" deploy/scripts/smoke-test.sh
+      - name: Triple store smoke test
+        run: |
+          compose() { docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml "$@"; }
+          test -n "$COMPOSE_FUSEKI" || { echo "fuseki did not start (COMPOSE_PROFILES=rdf)"; exit 1; }
+          # The worker reaches Fuseki on the internal network as ct-writer: PUT, then DELETE.
+          compose exec -T worker python - <<'EOF'
+          import os
+          from ingest_worker.graph_store import graph_store_from_env
+          store = graph_store_from_env(os.environ)
+          assert store is not None, "RDF_ENDPOINT is not set"
+          graph = "https://smoke.example/graph"
+          store.put(graph, b"<https://smoke.example/s> <https://smoke.example/p> 1 .", "text/turtle")
+          assert store.delete(graph)
+          print("ok   triple store: PUT and DELETE as ct-writer")
+          EOF
+          compose exec -T fuseki /opt/fuseki/admin.sh backup
       - name: Logs on failure
         if: failure()
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml logs --tail=200

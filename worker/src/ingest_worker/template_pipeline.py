@@ -7,19 +7,28 @@ Outputs ({templateId}/v{version}/<output>/{documentId}.<ext>):
     <check>    one CSV per check step
     issues     values that could not be normalised (kept as written)
     document   JSON with field evidence/pages, tables, checks, issues, review decision
+    graph      Turtle (.ttl), for recipes with an ontology mapping once the Linked data page
+               sets a base IRI (ADR 0011); delivered only when `delivery.formats` has rdf
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import psycopg
+from rdflib import Graph
+
 from .extract import ExtractionResult
+from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
+from .graph_store import GraphStore
 from .llm.base import LLMProvider
 from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
@@ -39,10 +48,19 @@ from .pipeline import (
     run_step_extraction,
 )
 from .queue import ClaimedJob, JobQueue
+from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
 from .review import apply_edits, run_checks
+from .shacl import load_graphs, outputs_by_property
 from .specs import Extraction, LoadedTemplate
 from .step_cache import StepCache
-from .storage import output_key, page_preview_key, reviewed_document_key
+from .storage import (
+    graph_version_key,
+    ontology_normalized_key,
+    output_key,
+    page_preview_key,
+    reviewed_document_key,
+    shacl_report_key,
+)
 from .template import CheckStep, ExtractStep, Template, compile_step
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
@@ -51,6 +69,41 @@ log = logging.getLogger("ingest_worker")
 
 #: Job event the API reads for the Test runs tab (TS: STEP_PROGRESS_EVENT, StepProgressSchema).
 STEP_PROGRESS = "step progress"
+
+#: Job event when a mapped recipe drafts no graph because no base IRI is set.
+GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
+#: Job event when a graph that is not delivered could not be rendered (CSV/JSON still are).
+GRAPH_FAILED = "graph failed"
+#: Job event when a delivered graph was published (`{graph, version, triples, endpoint}`;
+#: TS: GRAPH_PUBLISHED_EVENT).
+GRAPH_PUBLISHED = "graph published"
+#: Job event when the document's graph violates the recipe's shapes.
+GRAPH_VIOLATES = "graph violates shapes"
+
+
+#: Job event when a publish is sent back to review because its graph violates the shapes.
+PUBLISH_REFUSED = "publish refused: graph violates shapes"
+
+
+class ShapesViolated(Exception):
+    """A publish that delivers RDF whose graph violates the recipe's shapes: back to review."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__("; ".join(reasons))
+        self.reasons = reasons
+
+
+@dataclass(frozen=True)
+class RenderedGraph:
+    """A document's graph, already serialised: a graph that cannot be written never gets here."""
+
+    turtle: bytes
+    triples: int
+    graph: Graph
+    #: The base IRI it was minted under (read once per job).
+    base: str = ""
+    entities: tuple[EntityRecord, ...] = ()
+
 
 Progress = Callable[[int, dict[str, Any] | None], None]
 
@@ -141,6 +194,7 @@ def process_template_job(
     document = {
         "document_id": job.document_id,
         "job_id": job.id,
+        "source_sha256": doc.sha256,
         "template": {"id": template.id, "version": template.version, "name": template.name},
         "extracted_at": datetime.now(UTC).isoformat(),
         "page_count": doc.total_pages,
@@ -152,11 +206,23 @@ def process_template_job(
         "review_required": bool(reasons),
         "review_reasons": reasons,
     }
-    outputs = render_document(template, document)
+    graph = build_graph(job, deps, queue, template, document)
+    report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        add_report(report, issues, reasons)
+        document.update(review_required=bool(reasons), review_reasons=reasons)
+    outputs = render_document(template, document, graph)
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons)
+    formats: list[str] = list(template.delivery_formats())
+    delivered_graph = graph
+    deliver_graph = (
+        (lambda: publish_graph(job, deps, queue, template, document, delivered_graph))
+        if delivered_graph is not None and "rdf" in formats
+        else None
+    )
+    return ProcessResult(outputs, reasons, formats, deliver_graph)
 
 
 def publish_template_job(
@@ -166,6 +232,7 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
+    on_published: Callable[[list[RenderedOutput]], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
     the runs bucket and, when `deliver`, publish it to the final target. Approved test runs
@@ -198,9 +265,109 @@ def publish_template_job(
     if not deliver:
         queue.event(job.id, "info", "reviewed", {"edits": len(edits)})
         return []
-    published = publish_outputs(deps, render_document(template, document))
+    if template.semantics is not None and not document.get("source_sha256"):
+        # Drafted before graphs existed: only a graph needs the source's hash.
+        document["source_sha256"] = hashlib.sha256(
+            deps.store.get(job.bucket, job.object_key)
+        ).hexdigest()
+    graph = build_graph(job, deps, queue, template, document)
+    formats = template.delivery_formats()
+    # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
+    if "rdf" in formats:
+        report = shacl_check(job, deps, queue, template, graph)
+    else:
+        # The graph is not delivered: its report is advisory, and missing shapes never block.
+        try:
+            report = shacl_check(job, deps, queue, template, graph)
+        except DocumentError:
+            report = None
+    if report is not None and report.violations() and "rdf" in formats:
+        raise ShapesViolated([v.reason() for v in report.violations()])
+    rendered = render_document(template, document, graph)
+    published = publish_outputs(deps, [o for o in rendered if o.format in formats])
+    if on_published is not None:
+        on_published(published)  # recorded before the graph: a store failure keeps the record
+    if graph is not None and "rdf" in formats:
+        publish_graph(job, deps, queue, template, document, graph)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+def publish_graph(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+    rendered: RenderedGraph,
+) -> int | None:
+    """Publish a delivered graph as the next version of its (file, document type) graph: the
+    versioned copy in the target, the pinned ontologies' TBox graphs not loaded yet under this
+    base, and the store's PUT, then the version and its entities (one transaction, holding the
+    graph's lock). None when nothing is delivered (no target or no registry)."""
+    registry, target, store = deps.graph_registry, deps.target, deps.graph_store
+    if registry is None or target is None:
+        return None
+    sha = str(document["source_sha256"])
+    record = GraphPublish(
+        sha256=sha,
+        template_id=template.id,
+        graph_iri=str(rendered.graph.identifier),
+        job_id=job.id,
+        document_id=job.document_id,
+        template_version=template.version,
+        base_iri=rendered.base,
+        triples=rendered.triples,
+        entities=list(rendered.entities),
+    )
+    published_at = datetime.now(UTC).isoformat()
+
+    def write(version: int) -> None:
+        body = to_turtle(with_version(rendered.graph, version, published_at))
+        key = target.prefix + graph_version_key(sha, template.id, version)
+        target.store.put(target.bucket, key, body, "text/turtle")
+        if store is not None:
+            load_tbox(deps, store, registry, template, rendered.base)
+            store.put(record.graph_iri, body, "text/turtle")
+
+    version = registry.publish(record, write)
+    queue.event(
+        job.id,
+        "info",
+        GRAPH_PUBLISHED,
+        {
+            "graph": record.graph_iri,
+            "version": version,
+            "triples": record.triples,
+            "endpoint": store is not None,
+        },
+    )
+    return version
+
+
+def load_tbox(
+    deps: PipelineDeps,
+    store: GraphStore,
+    registry: GraphRegistry,
+    template: Template,
+    base: str,
+) -> None:
+    """Load each pinned ontology and shapes version not yet in the store under this base, as
+    its own graph `{base}graph/ontology/{id}/{version}`."""
+    semantics = template.semantics
+    if semantics is None:
+        return
+    for pin in {(p.id, p.version) for p in [*semantics.ontologies, *semantics.shapes]}:
+        if registry.ontology_loaded(pin[0], pin[1], base):
+            continue
+        data = deps.store.get_optional(deps.buckets.runs, ontology_normalized_key(*pin))
+        if data is None:
+            raise DocumentError(
+                f"{pin[0]} v{pin[1]} is not available: import it again in the library"
+            )
+        graph_iri = f"{base}graph/ontology/{pin[0]}/{pin[1]}"
+        store.put(graph_iri, data, "application/n-triples")
+        registry.record_ontology(pin[0], pin[1], base, graph_iri)
 
 
 def context_values(
@@ -367,11 +534,13 @@ def rerun_template_job(
         trigger="rerun",
         extra_instructions=params.get("instructions"),
     )
-    issues = [i for i in document.get("issues", []) if i.get("step") != step.id]
+    # The SHACL issues are the previous graph's: validated again below.
+    issues = [i for i in document.get("issues", []) if i.get("step") not in (step.id, "shacl")]
     _normalise_step(template, step, result.data, fields, tables, issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
+        source_sha256=doc.sha256,
         fields=fields,
         tables=tables,
         checks=checks,
@@ -390,11 +559,16 @@ def rerun_template_job(
             },
         ],
     )
-    outputs = render_document(template, document)
+    graph = build_graph(job, deps, queue, template, document)
+    report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        add_report(report, issues, reasons)
+        document.update(issues=issues, review_reasons=reasons)
+    outputs = render_document(template, document, graph)
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons)
+    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
 
 
 def _save_previews(
@@ -494,8 +668,96 @@ def _csv(header: list[str], rows: list[list[Any]]) -> bytes:
     return encode_csv(buf.getvalue())
 
 
-def render_document(template: Template, document: dict[str, Any]) -> list[RenderedOutput]:
-    """Render a (draft or reviewed) document into the template's outputs."""
+def build_graph(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+) -> RenderedGraph | None:
+    """The document's graph for a recipe with an ontology mapping; None without a mapping, or
+    (with a `graph skipped` event) without a base IRI.
+
+    The graph never costs the other outputs: when RDF is not delivered, a graph that cannot be
+    rendered is a `graph failed` event and no graph. When it is delivered, that failure, and a
+    recipe delivering only RDF while no base is set, go to review."""
+    if template.semantics is None:
+        return None
+    formats = template.delivery_formats()
+    base = deps.linked_data.effective_base() if deps.linked_data else None
+    if base is None:
+        if formats == ["rdf"]:
+            raise DocumentError(f"RDF is the only delivered format and the {GRAPH_SKIPPED}")
+        queue.event(job.id, "warn", GRAPH_SKIPPED)
+        return None
+    pins = [(o.id, o.version) for o in template.semantics.ontologies]
+    store = deps.ontologies
+
+    def concepts(scheme: str, label: str) -> str | None:
+        return store.concept_by_label(pins, scheme, label) if store else None
+
+    try:
+        rendering = render(template, document, GraphContext(base, concepts))
+        graph = rendering.graph
+        turtle = to_turtle(graph)
+    except psycopg.Error:
+        raise  # the ontology library is unreachable: retried like any outage
+    except Exception as exc:  # rdflib refuses IRIs it cannot write with a plain Exception
+        if "rdf" in formats:
+            raise DocumentError(f"cannot render the graph: {exc}") from exc
+        queue.event(job.id, "warn", GRAPH_FAILED, {"error": str(exc)})
+        return None
+    return RenderedGraph(turtle, len(graph), graph, base, tuple(rendering.entities))
+
+
+def shacl_check(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    graph: RenderedGraph | None,
+) -> ShaclReport | None:
+    """Validate the document's graph against the recipe's shapes and keep the report (runs
+    bucket); None without shapes or without a graph. Missing shapes are a DocumentError."""
+    semantics = template.semantics
+    if graph is None or semantics is None or not semantics.shapes:
+        return None
+    shapes = load_graphs(deps, [(p.id, p.version) for p in semantics.shapes])
+    ontologies = load_graphs(deps, [(p.id, p.version) for p in semantics.ontologies])
+    report = validate(graph.graph, shapes, ontologies, outputs_by_property(template))
+    deps.store.put(
+        deps.buckets.runs,
+        shacl_report_key(job.id),
+        json.dumps(report.to_json()).encode(),
+        "application/json",
+    )
+    violations = report.violations()
+    if violations:
+        queue.event(job.id, "warn", GRAPH_VIOLATES, {"violations": len(violations)})
+    return report
+
+
+def add_report(report: ShaclReport, issues: list[dict[str, Any]], reasons: list[str]) -> None:
+    """Violations become review reasons; warnings and infos, issues (step `shacl`)."""
+    reasons.extend(v.reason() for v in report.violations() if v.reason() not in reasons)
+    issues.extend(
+        {
+            "step": "shacl",
+            "target": r.output,
+            "row": None,
+            "column": None,
+            "raw": r.value or None,
+            "message": f"{r.severity}: {r.message}",
+        }
+        for r in report.results
+        if r.severity != "Violation"
+    )
+
+
+def render_document(
+    template: Template, document: dict[str, Any], graph: RenderedGraph | None = None
+) -> list[RenderedOutput]:
+    """Render a (draft or reviewed) document into the template's outputs (plus its graph)."""
     doc_id = document["document_id"]
     fields, tables = document["fields"], document["tables"]
 
@@ -537,4 +799,6 @@ def render_document(template: Template, document: dict[str, Any]) -> list[Render
     out.append(RenderedOutput("issues", "csv", key("issues", "csv"), body, len(issues)))
     body = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
     out.append(RenderedOutput("document", "json", key("document", "json"), body, None))
+    if graph is not None and template.semantics is not None:
+        out.append(RenderedOutput("graph", "rdf", key("graph", "ttl"), graph.turtle, graph.triples))
     return out

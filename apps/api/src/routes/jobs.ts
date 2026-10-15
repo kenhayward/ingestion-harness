@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
+  GRAPH_PUBLISHED_EVENT,
   JobDetailSchema,
   JobStatusSchema,
   JobSummarySchema,
@@ -8,11 +9,15 @@ import {
   QueueSummarySchema,
   sourceContentType,
   type JobSummary,
+  outputContentType,
+  outputExtension,
+  ShaclReportSchema,
+  shaclReportKey,
 } from '@ih/shared';
 import { z } from 'zod';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import { removeJobFiles } from '../jobs/delete.js';
-import { jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
+import { jobGraph, jobProgress, PROGRESS_EVENTS, stageTimes } from '../jobs/progress.js';
 import { queueSummary } from '../jobs/queue-summary.js';
 import {
   draftOutputsSnapshot,
@@ -21,6 +26,7 @@ import {
 } from '../templates/definitions.js';
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { storeFor } from '../storage/stage.js';
+import { creatorOf } from '../access/routes.js';
 
 const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50).describe('At most 500.'),
@@ -87,8 +93,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         summary: 'List jobs',
         description: md`
           The newest jobs first, optionally of one status, and with \`mine=1\` only those queued
-          by the signed-in token (\`createdBy\`, the token's label: a token issued again under
-          the same name sees the same jobs). Lists the jobs of uploaded documents (production,
+          by the signed-in user: by user id (\`createdByUser\`), so a rename keeps them; jobs
+          from before ids were recorded match by name (\`createdBy\`). Lists the jobs of uploaded documents (production,
           test and regression runs); the Workbench's preparation, preview, drafting and export
           jobs are not listed.
         `,
@@ -105,8 +111,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       const { mine, ...rest } = query.data;
       if (mine !== '1') return app.deps.repo.listJobs(rest);
       // Without access control nobody is signed in, so nothing is "mine".
-      if (!req.auth) return [];
-      return app.deps.repo.listJobs({ ...rest, createdBy: req.auth.label });
+      const me = creatorOf(req);
+      if (!me) return [];
+      return app.deps.repo.listJobs({ ...rest, mine: me });
     },
   );
 
@@ -143,7 +150,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           Download one with \`GET /api/jobs/{id}/outputs/{outputId}\`. While an extraction
           runs, \`progress\` says where it is (as \`GET /api/jobs/{id}/events\` sends it);
           \`stageTimes\` says when this attempt finished reading the document and found its
-          sections.
+          sections. \`graph\` is the newest graph the job published (ADR 0011): its IRI,
+          version and triples, and whether it reached the triple store.
         `,
         params: JobParams,
         response: { 200: res('The job.', JobDetailSchema), 404: NOT_FOUND },
@@ -155,8 +163,16 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       }
       const job = await app.deps.repo.getJob(req.params.id);
       if (!job) return reply.code(404).send({ error: 'not found' });
-      const events = await app.deps.repo.latestEvents([job.id], PROGRESS_EVENTS);
-      return { ...job, progress: jobProgress(job, events), stageTimes: stageTimes(job, events) };
+      const events = await app.deps.repo.latestEvents(
+        [job.id],
+        [...PROGRESS_EVENTS, GRAPH_PUBLISHED_EVENT],
+      );
+      return {
+        ...job,
+        progress: jobProgress(job, events),
+        stageTimes: stageTimes(job, events),
+        graph: jobGraph(events),
+      };
     },
   );
 
@@ -277,9 +293,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Deletes a \`succeeded\`, \`failed\`, \`needs_review\`, \`rejected\` or \`cancelled\`
           job with its history, its draft outputs and its files in the runs bucket, and the
-          uploaded PDF when no other job or Workbench sample uses it. Copies already delivered to
-          the final target are kept. Queued and running jobs must be cancelled first, and jobs
-          awaiting review decided.
+          uploaded PDF when no other job or Workbench sample uses it. What it delivered is
+          withdrawn (ADR 0011): a queued \`withdraw\` job removes its published copies from the
+          final target and, when it published the current version, its graph from the triple
+          store. Queued and running jobs must be cancelled first, and jobs awaiting review
+          decided.
         `,
         params: JobParams,
         response: {
@@ -316,6 +334,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           Bulk version of \`DELETE /api/jobs/{id}\` for finished jobs last updated before a
           cutoff (now minus \`olderThanDays\`). Regression runs are kept unless
           \`includeRegression\` is true, since scores and metrics are computed from them.
+          Like a single delete, it **withdraws what the jobs delivered**: their published
+          outputs leave the final target (the data lake) and their graphs the triple store.
 
           Run it with \`dryRun: true\` first: the response counts the jobs and returns the
           \`cutoff\`. Then delete with \`dryRun: false\`, passing that \`cutoff\` so the
@@ -362,6 +382,39 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
+  app.get<{ Params: { id: string } }>(
+    '/jobs/:id/shacl-report',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'getShaclReport',
+        summary: "Get a job's SHACL report",
+        description: md`
+          The SHACL report of the job's document graph (ADR 0011): written when its recipe pins
+          shapes and a graph was rendered, at processing and again at publishing. Violations
+          are review reasons and refuse a publish that delivers RDF; warnings and infos are
+          issues. Each result names the output (\`field\`, \`table.column\`) its path publishes.
+        `,
+        params: z.object({ id: z.string().uuid().describe('The job id.') }),
+        response: {
+          200: res('The report.', ShaclReportSchema),
+          404: error('`no SHACL report for this job`, or `not found`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!UUID.safeParse(req.params.id).success)
+        return reply.code(404).send({ error: 'not found' });
+      if (!(await app.deps.repo.getJob(req.params.id))) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const raw = await app.deps.store.get(app.deps.buckets.runs, shaclReportKey(req.params.id));
+      const report = raw ? ShaclReportSchema.safeParse(JSON.parse(raw.toString('utf8'))) : null;
+      if (!report?.success) return reply.code(404).send({ error: 'no SHACL report for this job' });
+      return report.data;
+    },
+  );
+
   app.get<{
     Params: { id: string; outputId: string };
     Querystring: { stage?: string; inline?: string };
@@ -387,7 +440,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           inline: z.enum(['1']).optional(),
         }),
         response: {
-          200: binary('The output file.', 'text/csv', 'application/json'),
+          200: binary('The output file.', 'text/csv', 'application/json', 'text/turtle'),
           400: error('`stage must be draft or published`.'),
           404: error(
             '`not found`, `output not found`, or the object is missing from storage or the target.',
@@ -422,13 +475,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: `${where === 'target' ? 'target ' : ''}storage unavailable` });
       }
       if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
-      const filename = output.key.split('/').pop() ?? `${output.outputId}.${output.format}`;
+      const filename =
+        output.key.split('/').pop() ?? `${output.outputId}.${outputExtension(output.format)}`;
       return (
         reply
-          .header(
-            'content-type',
-            output.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json',
-          )
+          .header('content-type', outputContentType(output.format))
           .header(
             'content-disposition',
             `${inline === '1' ? 'inline' : 'attachment'}; filename="${filename}"`,

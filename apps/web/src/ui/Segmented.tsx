@@ -8,11 +8,16 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  disabled = false,
+  title,
 }: {
   label: string;
   options: readonly SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Every option off (e.g. a role you may not change), with `title` saying why. */
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <div role="group" aria-label={label} className="segmented">
@@ -21,6 +26,8 @@ export function Segmented<T extends string>({
           key={o.value}
           type="button"
           aria-pressed={o.value === value}
+          disabled={disabled}
+          title={title}
           onClick={() => onChange(o.value)}
         >
           {o.icon && <Icon name={o.icon} />}

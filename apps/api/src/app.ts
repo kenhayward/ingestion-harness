@@ -8,6 +8,8 @@ import { registerOpenApi } from './openapi/plugin.js';
 import { jobLiveRoutes } from './routes/job-live.js';
 import type { S3KeyService } from './s3keys/service.js';
 import type { LlmConfigRepo } from './llm/repo.js';
+import type { OntologyRepo } from './ontologies/repo.js';
+import type { LinkedDataRepo } from './linked-data/repo.js';
 import type { SecretsKeys } from './llm/secrets.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
@@ -26,9 +28,13 @@ import { resultRoutes } from './routes/results.js';
 import { workbenchRoutes } from './routes/workbench.js';
 import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
 import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
+import { workbenchGraphRoutes } from './routes/workbench-graph.js';
+import { workbenchSuggestionRoutes } from './routes/workbench-suggestions.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
 import { llmRoutes } from './routes/llm.js';
+import { ontologyRoutes } from './routes/ontologies.js';
+import { linkedDataRoutes } from './routes/linked-data.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -48,6 +54,12 @@ export interface AppDeps {
   s3Keys: S3KeyService | null;
   /** LLM endpoints and curated models (ADR 0010), for the Models page. */
   llm: LlmConfigRepo;
+  /** The ontology library (ADR 0011): imported versions and their indexed terms. */
+  ontologies: OntologyRepo;
+  /** Who may be fetched by URL (ONTOLOGY_FETCH_ALLOW; empty: URL imports are off). */
+  ontologyFetch: { hosts: string[]; maxBytes: number };
+  /** The customer and the base IRI RDF is minted under (ADR 0011). */
+  linkedData: LinkedDataRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
@@ -59,6 +71,8 @@ export interface AppDeps {
    * is then SameSite=None; Secure; Partitioned. null/absent: SameSite=Strict, no framing.
    */
   frameAncestors?: string | null;
+  /** `RDF_PUBLIC_URL`: where consumers query the triple store (shown on the Linked data page). */
+  rdfPublicUrl?: string | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;
   logger?: boolean | { level: string };
@@ -102,9 +116,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchRoutes, { prefix: '/api' });
   await app.register(workbenchBundleRoutes, { prefix: '/api' });
   await app.register(workbenchOverviewRoutes, { prefix: '/api' });
+  await app.register(workbenchGraphRoutes, { prefix: '/api' });
+  await app.register(workbenchSuggestionRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
   await app.register(llmRoutes, { prefix: '/api' });
+  await app.register(ontologyRoutes, { prefix: '/api' });
+  await app.register(linkedDataRoutes, { prefix: '/api' });
 
   return app;
 }

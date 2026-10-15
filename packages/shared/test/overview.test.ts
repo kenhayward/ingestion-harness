@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_FACTS,
+  OPTIONAL_STAGES,
   OVERVIEW_STAGES,
   OVERVIEW_TABS,
   ProjectOverviewSchema,
@@ -75,6 +76,8 @@ describe('briefSaved', () => {
       variants: '',
       rules: '',
       answers: [],
+      ontologies: [],
+      ontologyGuidance: '',
       ...body,
     },
   });
@@ -128,7 +131,7 @@ describe('overviewStates', () => {
     });
     expect(
       overviewStates(i)
-        .slice(2, 7)
+        .filter((e) => ['survey', 'outputs', 'sections', 'steps', 'references'].includes(e.stage))
         .map((e) => e.state),
     ).toEqual(['skipped', 'stale', 'proposed', 'running', 'pending']);
   });
@@ -166,8 +169,8 @@ describe('overviewStates', () => {
 
 describe('phaseOf', () => {
   it.each([
-    ['published, no draft', inputs({ draft: null }), { phase: 'published', done: 10 }],
-    ['brief missing', inputs({ briefSaved: false }), { phase: 'prepare', done: 6 }],
+    ['published, no draft', inputs({ draft: null }), { phase: 'published', done: 11 }],
+    ['brief missing', inputs({ briefSaved: false }), { phase: 'prepare', done: 7 }],
     [
       'steps proposed',
       inputs({
@@ -178,7 +181,7 @@ describe('phaseOf', () => {
           steps: 'proposed',
         }),
       }),
-      { phase: 'draft', done: 5 },
+      { phase: 'draft', done: 6 },
     ],
     [
       'skipped counts as done',
@@ -190,7 +193,7 @@ describe('phaseOf', () => {
           steps: 'accepted',
         }),
       }),
-      { phase: 'verify', done: 6 },
+      { phase: 'verify', done: 7 },
     ],
     [
       'revise never run does not hold the phase',
@@ -198,7 +201,7 @@ describe('phaseOf', () => {
         evaluation: { running: false },
         gate: gate({ iterationId: 'it1', score: 0.95, passes: true }),
       }),
-      { phase: 'verify', done: 8 },
+      { phase: 'verify', done: 9 },
     ],
   ] as const)('%s', (_, i, expected) => {
     expect(phaseOf(overviewStates(i), i.draft)).toEqual(expected);
@@ -302,6 +305,16 @@ describe('nextAction', () => {
       'nothing evaluated yet: evaluation is optional',
       inputs(),
       { kind: 'publish', stage: 'publish', label: 'Publish v2' },
+    ],
+    [
+      'a revision applied since the last evaluation: evaluate it on dev',
+      inputs({ revise: 'accepted', evaluation: { running: false, revisedSince: true } }),
+      { kind: 'continue', stage: 'evaluate', label: 'Evaluate v2 on dev' },
+    ],
+    [
+      'an evaluation of the revision running beats evaluating it again',
+      inputs({ revise: 'accepted', evaluation: { running: true, revisedSince: true } }),
+      { kind: 'running', stage: 'evaluate', label: 'Evaluate running' },
     ],
     [
       'no references yet: references are optional',
@@ -749,6 +762,15 @@ describe('overviewNext', () => {
       },
     ],
     [
+      'suggests evaluating a revision before publishing',
+      inputs({ revise: 'partially_accepted', evaluation: { running: false, revisedSince: true } }),
+      {
+        stage: 'evaluate',
+        title: 'Next: evaluate v2 on dev',
+        reason: 'A revision was applied since the last evaluation: see whether it helped.',
+      },
+    ],
+    [
       'falls back to a running stage',
       inputs({
         stages: drafted({
@@ -966,5 +988,66 @@ describe('boxMetrics', () => {
       { label: 'Runs', value: '6', at: null },
       { label: 'Awaiting review', value: '1', at: null },
     ]);
+  });
+});
+
+describe('the mapping stage in the overview (ADR 0011)', () => {
+  it.each<[string, OverviewInputs['mapping'], string, string]>([
+    [
+      'not used without ontologies in the brief',
+      undefined,
+      'skipped',
+      'Not used: no vocabulary is pinned on Survey',
+    ],
+    [
+      'not used, said so',
+      { used: false, state: 'pending' },
+      'skipped',
+      'Not used: no vocabulary is pinned on Survey',
+    ],
+    [
+      'optional once ontologies are chosen',
+      { used: true, state: 'pending' },
+      'pending',
+      'Optional, not started',
+    ],
+    ['a proposal to decide', { used: true, state: 'proposed' }, 'proposed', 'Needs your decision'],
+    ['mapped', { used: true, state: 'accepted' }, 'accepted', 'Mapped'],
+    [
+      'stale',
+      { used: true, state: 'stale' },
+      'stale',
+      "Stale — the outputs or the brief's ontologies changed",
+    ],
+  ])('%s', (_name, mapping, state, status) => {
+    const i = inputs({ mapping });
+    expect(stateOf(i, 'mapping')).toBe(state);
+    const item = overviewItems({
+      inputs: i,
+      briefVersion: 1,
+      runs: { total: 0, unfinished: 0, awaitingReview: 0 },
+      openFeedback: 0,
+      facts: { ...EMPTY_FACTS, mapping: { mapped: 3, outputs: 5, ontologies: 2 } },
+    }).find((e) => e.stage === 'mapping')!;
+    expect(item.status).toBe(status);
+    expect(item.metrics.map((m) => `${m.label} ${m.value}`)).toEqual([
+      'Mapped outputs 3 / 5',
+      'Ontologies 2',
+    ]);
+  });
+
+  it('is optional: never the next step and never holding the phase', () => {
+    const i = inputs({ mapping: { used: true, state: 'pending' } });
+    expect(nextAction(i)?.stage).not.toBe('mapping');
+    expect(OPTIONAL_STAGES).toContain('mapping');
+  });
+
+  it('asks for a refresh when stale', () => {
+    const i = inputs({ mapping: { used: true, state: 'stale' } });
+    expect(nextAction(i)).toMatchObject({
+      kind: 'refresh',
+      stage: 'mapping',
+      label: 'Refresh Mapping',
+    });
   });
 });

@@ -1,5 +1,10 @@
 import { vi } from 'vitest';
 import type {
+  OntologyDetail,
+  OntologySummary,
+  OntologyTerm,
+  OntologyVersionView,
+  TermDetail,
   FeedbackItem,
   GateView,
   PublishGateView,
@@ -24,6 +29,8 @@ import { OVERVIEW_STAGES, OVERVIEW_TABS } from '@ih/shared';
 import {
   outputPath,
   type Api,
+  type Me,
+  type User,
   type CleanupRequest,
   type TemplateRecordView,
 } from '../src/api/client.js';
@@ -200,6 +207,7 @@ export function job(overrides: Partial<JobSummary> = {}): JobSummary {
     referenceId: null,
     projectId: null,
     createdBy: null,
+    createdByUser: null,
     reviewReasons: null,
     reviewer: null,
     reviewNote: null,
@@ -231,6 +239,47 @@ export function templateView(
   };
 }
 
+/** The signed-in admin of fakeApi() (the name `admin` keeps the account-menu labels short). */
+export const ADMIN_ME: Me = {
+  userId: '00000000-0000-4000-8000-000000000001',
+  role: 'admin',
+  label: 'admin',
+  email: null,
+  mustChangePassword: false,
+};
+
+/** A user as GET /api/users lists them; override what the test is about. */
+export function user(fields: Partial<User> = {}): User {
+  return {
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Ken Hayward',
+    email: 'ken@example.com',
+    role: 'user',
+    status: 'active',
+    createdAt: '2026-10-01T09:00:00.000Z',
+    createdBy: 'Admin',
+    lastSignInAt: null,
+    failedSignIns: 0,
+    lastFailedAt: null,
+    lockedUntil: null,
+    disabledAt: null,
+    disabledReason: null,
+    disabledBy: null,
+    oneTimeExpiresAt: null,
+    ...fields,
+  };
+}
+
+/** The admin from the log, always listed first. */
+export const ADMIN_FROM_LOG = user({
+  id: '00000000-0000-4000-8000-000000000001',
+  name: 'Admin',
+  email: null,
+  role: 'admin',
+  status: 'admin-from-log',
+  createdBy: null,
+});
+
 /** fakeApi() plus a way to simulate the session ending (a 401 mid-use). */
 export type FakeApi = Api & { expireSession(): void };
 
@@ -238,17 +287,91 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
   const listeners = new Set<() => void>();
   return {
     expireSession: () => listeners.forEach((l) => l()),
-    me: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
-    login: vi.fn(async () => ({ role: 'admin' as const, label: 'admin', expiresAt: null })),
+    me: vi.fn(async () => ADMIN_ME),
+    login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),
-    listTokens: vi.fn(async () => []),
-    createToken: vi.fn(async () => {
-      throw new Error('createToken not stubbed');
+    changePassword: vi.fn(async () => undefined),
+    listUsers: vi.fn(async () => [ADMIN_FROM_LOG]),
+    addUser: vi.fn(async () => {
+      throw new Error('addUser not stubbed');
     }),
-    revokeToken: vi.fn(async () => undefined),
-    deleteToken: vi.fn(async () => undefined),
+    updateUser: vi.fn(async () => {
+      throw new Error('updateUser not stubbed');
+    }),
+    setUserEnabled: vi.fn(async () => {
+      throw new Error('setUserEnabled not stubbed');
+    }),
+    reissuePassword: vi.fn(async () => {
+      throw new Error('reissuePassword not stubbed');
+    }),
+    listSignIns: vi.fn(async () => []),
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
+    listOntologies: vi.fn(async () => []),
+    getLinkedData: vi.fn(async () => ({
+      settings: {
+        customerName: '',
+        customerSlug: null,
+        baseIri: null,
+        updatedBy: null,
+        updatedAt: null,
+      },
+      effectiveBase: null,
+      rdfPublished: 0,
+      graphs: { published: 0, lastPublishedAt: null, endpoint: null },
+      endpoint: null,
+      withdrawals: { queued: 0, running: 0, failed: 0 },
+      history: [],
+    })),
+    saveLinkedData: vi.fn(async () => {
+      throw new Error('saveLinkedData not faked');
+    }),
+    getEffectiveBase: vi.fn(async () => null),
+    startGraphPreview: vi.fn(async () => {
+      throw new Error('startGraphPreview not faked');
+    }),
+    getOntologySuggestions: vi.fn(async () => ({
+      record: null,
+      running: false,
+      failed: null,
+      stale: null,
+    })),
+    refreshOntologySuggestions: vi.fn(async () => {
+      throw new Error('refreshOntologySuggestions not faked');
+    }),
+    getGraphPreview: vi.fn(async () => {
+      throw new Error('getGraphPreview not faked');
+    }),
+    getOntology: vi.fn(async () => {
+      throw new Error('getOntology not stubbed');
+    }),
+    importOntology: vi.fn(async () => {
+      throw new Error('importOntology not stubbed');
+    }),
+    importOntologyBatch: vi.fn(async () => {
+      throw new Error('importOntologyBatch not stubbed');
+    }),
+    updateOntology: vi.fn(async () => {
+      throw new Error('updateOntology not stubbed');
+    }),
+    deleteOntologyVersion: vi.fn(async () => {
+      throw new Error('deleteOntologyVersion not stubbed');
+    }),
+    listOntologyTerms: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 100 })),
+    importOntologyFromUrl: vi.fn(async () => {
+      throw new Error('importOntologyFromUrl not stubbed');
+    }),
+    getOntologySettings: vi.fn(async () => ({
+      fetchHosts: ['w3id.org'],
+      maxBytes: 104857600,
+      maxUploadBytes: 52428800,
+    })),
+    getNeighbourhood: vi.fn(async () => {
+      throw new Error('getNeighbourhood not stubbed');
+    }),
+    getOntologyTerm: vi.fn(async () => {
+      throw new Error('getOntologyTerm not stubbed');
+    }),
     createLlmEndpoint: vi.fn(async () => {
       throw new Error('createLlmEndpoint not stubbed');
     }),
@@ -262,7 +385,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     discoverLlmEndpoint: vi.fn(async () => undefined),
     listModelChoices: vi.fn(async () => ({
       choices: [],
-      settings: { defaultChoice: null, draftingModel: null, ocrModel: null },
+      settings: { defaultChoice: null, draftingModel: null, ocrModel: null, embeddingModel: null },
     })),
     createModelChoice: vi.fn(async () => {
       throw new Error('createModelChoice not stubbed');
@@ -310,6 +433,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     upload: vi.fn(async () => job()),
     outputUrl: (jobId, outputId, opts) => outputPath('/api', jobId, outputId, opts),
     getOutputText: vi.fn(async () => ''),
+    getShaclReport: vi.fn(async () => null),
     listResults: vi.fn(async () => []),
     getResult: vi.fn(async () => {
       throw new Error('getResult not stubbed');
@@ -557,6 +681,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     'accepted',
     'accepted',
     'proposed',
+    'skipped',
     'pending',
     'pending',
     'pending',
@@ -725,4 +850,91 @@ export function reviseProposal(overrides: Partial<ProposalView> = {}): ProposalV
     },
     ...overrides,
   });
+}
+
+export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyVersionView {
+  return {
+    ontologyId: 'pv',
+    version: 1,
+    status: 'ready',
+    fileName: 'pv.ttl',
+    mediaType: 'text/turtle',
+    sha256: 'abc',
+    bytes: 120,
+    sourceKind: 'upload',
+    sourceUrl: null,
+    sourceFiles: null,
+    ontologyIri: 'https://example.org/pv',
+    versionIri: null,
+    license: null,
+    kinds: ['owl'],
+    stats: {
+      triples: 40,
+      classes: 3,
+      properties: 2,
+      concepts: 0,
+      schemes: 0,
+      shapes: 0,
+      imported: 0,
+    },
+    imports: [],
+    error: null,
+    importedBy: 'Ken',
+    importedAt: '2026-10-14T10:00:00.000Z',
+    ...o,
+  };
+}
+
+export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySummary {
+  return {
+    id: 'pv',
+    label: 'Process validation',
+    description: '',
+    tags: ['industry:pharma'],
+    localOnly: false,
+    retiredAt: null,
+    createdBy: 'Ken',
+    createdAt: '2026-10-14T10:00:00.000Z',
+    latest: ontologyVersion(),
+    versionCount: 1,
+    ...o,
+  };
+}
+
+export function ontologyDetail(o: Partial<OntologyDetail> = {}): OntologyDetail {
+  return { ...ontologySummary(), versions: [ontologyVersion()], ...o };
+}
+
+export function ontologyTerm(o: Partial<OntologyTerm> = {}): OntologyTerm {
+  return {
+    iri: 'https://example.org/pv#Document',
+    kind: 'class',
+    label: 'Document',
+    altLabels: [],
+    definition: '',
+    parents: [],
+    domain: [],
+    range: [],
+    scheme: null,
+    deprecated: false,
+    childCount: 0,
+    definedIn: null,
+    ...o,
+  };
+}
+
+export function termDetail(o: Partial<TermDetail> = {}): TermDetail {
+  return {
+    ...ontologyTerm(),
+    parentTerms: [],
+    children: [],
+    domainTerms: [],
+    rangeTerms: [],
+    schemeTerm: null,
+    asDomain: [],
+    asRange: [],
+    concepts: [],
+    shapes: [],
+    ...o,
+  };
 }

@@ -25,7 +25,11 @@ x-db-env: &db-env
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # postgres:17-alpine with pgvector (ADR 0011: ontology term embeddings).
+    build:
+      context: ..
+      dockerfile: deploy/docker/postgres.Dockerfile
+    image: ingestion-postgres:17-pgvector-0.8.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ingest}
@@ -70,6 +74,34 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  fuseki:
+    # The triple store (ADR 0011 step 6): Apache Jena Fuseki, TDB2 on the fuseki-data volume.
+    # Opt-in: COMPOSE_PROFILES=rdf with RDF_ENDPOINT, RDF_WRITER_PASSWORD and RDF_READER_PASSWORD
+    # in deploy/.env (without them the worker writes graphs to S3 only). The worker writes over
+    # the internal network `rdf`; consumers read through the host's reverse proxy, which forwards
+    # only /ct/sparql and /ct/get to FUSEKI_PUBLIC_PORT (bound to localhost by default; ADR 0011
+    # step 7). Backups, compaction and the proxy: deploy/README.md.
+    profiles: [rdf]
+    image: ${IMAGE_PREFIX:-ingestion-harness}/fuseki:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/fuseki.Dockerfile
+    restart: unless-stopped
+    environment:
+      RDF_WRITER_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+      RDF_READER_PASSWORD: ${RDF_READER_PASSWORD:-}
+      JAVA_OPTIONS: ${FUSEKI_JAVA_OPTIONS:--Xmx2g}
+    volumes:
+      - fuseki-data:/fuseki
+    networks: [default, rdf]
+    ports:
+      - ${FUSEKI_BIND:-127.0.0.1}:${FUSEKI_PUBLIC_PORT:-3030}:3030
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3030/$$/ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   converter:
     # Word (.docx) to PDF for the worker (docs/design/word-documents.md, ADR 0009): Gotenberg's
@@ -123,6 +155,12 @@ services:
       <<: [*db-env, *s3-env]
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
+      ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
+      LINKED_DATA_CUSTOMER: ${LINKED_DATA_CUSTOMER:-}
+      LINKED_DATA_BASE_IRI: ${LINKED_DATA_BASE_IRI:-}
+      # Where consumers query the triple store (the proxy); shown on the Linked data page.
+      RDF_PUBLIC_URL: ${RDF_PUBLIC_URL:-}
       # Proxies whose X-Forwarded-* the API trusts (empty = private networks; ADR 0006).
       TRUST_PROXY: ${TRUST_PROXY:-}
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
@@ -159,6 +197,7 @@ services:
       OCR_BASE_URL: ${OCR_BASE_URL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
       DRAFT_MODEL: ${DRAFT_MODEL:-local/qwen3.8-27b-mtp}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       # Seeded into the database on start (ADR 0010); an admin's edit there wins.
       DEFAULT_MODEL: ${DEFAULT_MODEL:-}
       FAST_MODEL: ${FAST_MODEL:-}
@@ -174,13 +213,22 @@ services:
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
       # Word (.docx) conversion; empty disables it (Word documents then need review).
       CONVERTER_URL: ${CONVERTER_URL-http://converter:3000}
-    networks: [default, converter]
+      ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
+      ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
+      ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
+      # The triple store (ADR 0011 step 6); empty: delivered graphs go to S3 only.
+      RDF_ENDPOINT: ${RDF_ENDPOINT:-}
+      RDF_DATASET: ${RDF_DATASET:-ct}
+      RDF_USER: ct-writer
+      RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+    networks: [default, converter, rdf]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
       converter: { condition: service_healthy }
+      fuseki: { condition: service_healthy, required: false }
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     stop_grace_period: 2m # let an in-flight extraction finish
@@ -207,7 +255,11 @@ networks:
   # Only the worker and the converter: no route out of it (ADR 0009).
   converter:
     internal: true
+  # Only the worker and Fuseki (ADR 0011).
+  rdf:
+    internal: true
 
 volumes:
+  fuseki-data:
   postgres-data:
   seaweedfs-data:

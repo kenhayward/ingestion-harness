@@ -7,7 +7,7 @@ const respond = (status: number, body: unknown = {}) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('http api: ended sessions', () => {
-  it('reports a 401 from any call, including token management', async () => {
+  it('reports a 401 from any call, including user management', async () => {
     const api = createHttpApi('/api');
     const ended = vi.fn();
     const off = api.onUnauthorized(ended);
@@ -16,7 +16,7 @@ describe('http api: ended sessions', () => {
       vi.fn(async () => respond(401, { error: 'sign in required' })),
     );
     await expect(api.listJobs()).rejects.toThrow('sign in required');
-    await expect(api.listTokens()).rejects.toThrow('sign in required');
+    await expect(api.listUsers()).rejects.toThrow('sign in required');
     expect(ended).toHaveBeenCalledTimes(2);
     off();
   });
@@ -27,27 +27,87 @@ describe('http api: ended sessions', () => {
     const off = api.onUnauthorized(ended);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => respond(401, { error: 'invalid or expired token' })),
+      vi.fn(async () => respond(401, { error: 'invalid email or password' })),
     );
     expect(await api.me()).toBeNull();
-    await expect(api.login('ih_x')).rejects.toMatchObject({ status: 401 });
+    await expect(api.login('ken@example.com', 'x')).rejects.toMatchObject({ status: 401 });
     expect(ended).not.toHaveBeenCalled();
     off();
   });
 });
 
-describe('http api: access tokens', () => {
-  it('sends the role of a new token', async () => {
-    const fetch = vi.fn(async () => respond(200, { token: 'ih_x', record: {} }));
+describe('http api: sign-in and users', () => {
+  const calls = (fetch: ReturnType<typeof vi.fn>) =>
+    (fetch.mock.calls as unknown as [string, RequestInit | undefined][]).map(([url, init]) => ({
+      url,
+      method: init?.method ?? 'GET',
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    }));
+
+  it('signs in with a login and a password', async () => {
+    const fetch = vi.fn(async () => respond(200, { role: 'user', label: 'Ken' }));
     vi.stubGlobal('fetch', fetch);
-    await createHttpApi('/api').createToken('Ops laptop', 90, 'admin');
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/auth/tokens');
-    expect(JSON.parse(String(init.body))).toEqual({
-      label: 'Ops laptop',
-      expiresInDays: 90,
-      role: 'admin',
+    await createHttpApi('/api').login('ken@example.com', 'a long phrase');
+    expect(calls(fetch)).toEqual([
+      {
+        url: '/api/auth/login',
+        method: 'POST',
+        body: { login: 'ken@example.com', password: 'a long phrase' },
+      },
+    ]);
+  });
+
+  it("keeps a locked account's lockedUntil on the error", async () => {
+    const until = '2026-10-15T10:42:00.000Z';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(429, { error: 'too many failed sign-ins', lockedUntil: until })),
+    );
+    await expect(createHttpApi('/api').login('a@b.c', 'x')).rejects.toMatchObject({
+      status: 429,
+      body: { lockedUntil: until },
     });
+  });
+
+  it('changes the password with PUT /api/auth/password', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    await createHttpApi('/api').changePassword('abcd-efgh-jkmn-pqrs', 'my long new phrase');
+    expect(calls(fetch)).toEqual([
+      {
+        url: '/api/auth/password',
+        method: 'PUT',
+        body: { currentPassword: 'abcd-efgh-jkmn-pqrs', newPassword: 'my long new phrase' },
+      },
+    ]);
+  });
+
+  it('calls the user routes', async () => {
+    const fetch = vi.fn(async () => respond(200, {}));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listUsers();
+    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'user' });
+    await api.updateUser('u1', { email: 'k@x.com' });
+    await api.setUserEnabled('u1', false);
+    await api.setUserEnabled('u1', true);
+    await api.reissuePassword('u1');
+    await api.listSignIns({ userId: 'u1', limit: 200 });
+    await api.listSignIns();
+    expect(calls(fetch)).toEqual([
+      { url: '/api/users', method: 'GET', body: undefined },
+      {
+        url: '/api/users',
+        method: 'POST',
+        body: { name: 'Ken', email: 'ken@example.com', role: 'user' },
+      },
+      { url: '/api/users/u1', method: 'PATCH', body: { email: 'k@x.com' } },
+      { url: '/api/users/u1/disable', method: 'POST', body: undefined },
+      { url: '/api/users/u1/enable', method: 'POST', body: undefined },
+      { url: '/api/users/u1/one-time-password', method: 'POST', body: undefined },
+      { url: '/api/sign-ins?userId=u1&limit=200', method: 'GET', body: undefined },
+      { url: '/api/sign-ins', method: 'GET', body: undefined },
+    ]);
   });
 });
 
@@ -70,6 +130,57 @@ describe('http api: workbench', () => {
     expect(url).toBe('/api/workbench/projects/import');
     expect(init.method).toBe('POST');
     expect([...(init.body as FormData).keys()]).toEqual(['id', 'name', 'bundle']);
+  });
+
+  it('imports an ontology folder: fields, then the paths, then one part per file', async () => {
+    const fetchMock = vi.fn(async () => respond(202, { versions: [], skipped: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const core = new File(['x'], 'core.ttl');
+    const prod = new File(['y'], 'prod.ttl');
+    await createHttpApi('/api').importOntologyBatch(
+      [
+        { file: core, path: 'idmp/core.ttl' },
+        { file: prod, path: 'idmp/sub/prod.ttl' },
+      ],
+      { mode: 'separate', idPrefix: 'idmp-', tags: ['industry:pharma'], localOnly: true },
+    );
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/ontologies/batch');
+    const form = init.body as FormData;
+    expect([...form.keys()]).toEqual([
+      'mode',
+      'idPrefix',
+      'tags',
+      'localOnly',
+      'paths',
+      'file',
+      'file',
+    ]);
+    expect(form.get('paths')).toBe('["idmp/core.ttl","idmp/sub/prod.ttl"]');
+    expect(form.get('tags')).toBe('industry:pharma');
+  });
+
+  it("explains a proxy 413 on an ontology folder import, keeping the API's own message", async () => {
+    const html = '<html><body><h1>413 Request Entity Too Large</h1></body></html>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(html, { status: 413, headers: { 'content-type': 'text/html' } }),
+      ),
+    );
+    const files = [{ file: new File(['x'], 'a.ttl'), path: 'a/a.ttl' }];
+    const fields = { mode: 'merge' as const, id: 'afo', label: 'AFO' };
+    await expect(createHttpApi('/api').importOntologyBatch(files, fields)).rejects.toMatchObject({
+      message: 'the files are over the upload limit of the proxy in front of CT Studio',
+      status: 413,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(413, { error: 'the files are over the upload limit' })),
+    );
+    await expect(createHttpApi('/api').importOntologyBatch(files, fields)).rejects.toThrow(
+      'the files are over the upload limit',
+    );
   });
 
   it("explains a proxy 413 on import, and keeps the API's own 413 message", async () => {
@@ -720,5 +831,119 @@ describe('http api: retired document types', () => {
     ]);
     // Unretiring is API-only (D14): the web client has no call for it.
     expect('unretireType' in api).toBe(false);
+  });
+});
+
+describe('http api: ontologies', () => {
+  it('posts a URL import as JSON and reads the settings and neighbourhoods', async () => {
+    const fetchMock = vi.fn(
+      async (_u: string, _i?: RequestInit) => new Response('{}', { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    await api.importOntologyFromUrl({ id: 'pv', label: 'PV', url: 'https://w3id.org/pv' });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/ontologies/from-url');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual({
+      id: 'pv',
+      label: 'PV',
+      url: 'https://w3id.org/pv',
+    });
+    await api.getOntologySettings();
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/ontology-settings');
+    await api.getNeighbourhood('pv', 2, 'https://x.org/#A', 2);
+    expect(fetchMock.mock.calls[2]![0]).toBe(
+      `/api/ontologies/pv/versions/2/neighbourhood?iri=${encodeURIComponent('https://x.org/#A')}&depth=2`,
+    );
+  });
+
+  it('sends ontology fields before the file', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ontologyId: 'pv', version: 1 }), { status: 202 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['x'], 'pv.ttl');
+    await createHttpApi('/api').importOntology(file, {
+      id: 'pv',
+      label: 'PV',
+      tags: ['a', 'b'],
+      localOnly: true,
+    });
+    const form = fetchMock.mock.calls[0]![1]!.body as FormData;
+    expect([...form.keys()]).toEqual(['id', 'label', 'tags', 'localOnly', 'file']);
+    expect(form.get('tags')).toBe('a,b');
+  });
+
+  it('builds term queries', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 100 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await createHttpApi('/api').listOntologyTerms('pv', 2, { group: 'classes', root: true });
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      '/api/ontologies/pv/versions/2/terms?group=classes&root=1',
+    );
+  });
+});
+
+describe('http api: error messages', () => {
+  /** Zod issues, as routes send them for a body that fails validation. */
+  const issues = [
+    { code: 'invalid_string', path: ['id'], message: 'lowercase id: [a-z][a-z0-9_-]*' },
+    { code: 'unrecognized_keys', path: [], message: 'Unrecognized key(s): "x"' },
+  ];
+
+  it.each([
+    ['json', (api: ReturnType<typeof createHttpApi>) => api.createProject('Bad Id')],
+    ['204', (api: ReturnType<typeof createHttpApi>) => api.deleteProject('Bad Id')],
+    ['delete job', (api: ReturnType<typeof createHttpApi>) => api.deleteJob('j')],
+    [
+      'output text',
+      (api: ReturnType<typeof createHttpApi>) => api.getOutputText('j', 'o', 'draft'),
+    ],
+  ])('reads validation issues as text, never [object Object] (%s)', async (_, call) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(400, { error: issues })),
+    );
+    await expect(call(createHttpApi('/api'))).rejects.toThrow(
+      'id: lowercase id: [a-z][a-z0-9_-]*; Unrecognized key(s): "x"',
+    );
+  });
+
+  it('keeps a plain message, and falls back to the status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          respond(409, { error: 'a workbench project for letter already exists' }),
+        )
+        .mockResolvedValueOnce(respond(500, { error: { unexpected: true } }))
+        .mockResolvedValueOnce(new Response('oops', { status: 502, statusText: 'Bad Gateway' })),
+    );
+    const api = createHttpApi('/api');
+    await expect(api.createProject('letter')).rejects.toThrow(
+      'a workbench project for letter already exists',
+    );
+    await expect(api.createProject('letter')).rejects.toThrow('500');
+    await expect(api.createProject('letter')).rejects.toThrow('502 Bad Gateway');
+  });
+});
+
+describe('http api: ontology suggestions', () => {
+  it('reads and refreshes the suggestions of a project', async () => {
+    const view = { record: null, running: false, failed: null, stale: null };
+    const fetch = vi.fn(async () => respond(200, view));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    expect(await api.getOntologySuggestions('letter')).toEqual(view);
+    await api.refreshOntologySuggestions('letter');
+    const calls = fetch.mock.calls as unknown as [string, RequestInit | undefined][];
+    expect(calls[0]![0]).toBe('/api/workbench/projects/letter/ontology-suggestions');
+    expect(calls[0]![1]?.method ?? 'GET').toBe('GET');
+    expect(calls[1]![0]).toBe('/api/workbench/projects/letter/ontology-suggestions');
+    expect(calls[1]![1]?.method).toBe('POST');
   });
 });

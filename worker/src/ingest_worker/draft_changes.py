@@ -30,6 +30,60 @@ def _drop(items: list[dict[str, Any]], item_id: Any) -> list[dict[str, Any]]:
     return [x for x in items if x.get("id") != item_id]
 
 
+def _empty_semantics() -> dict[str, Any]:
+    """A new mapping with no document class yet (validation then asks for one)."""
+    return {
+        "ontologies": [],
+        "shapes": [],
+        "prefixes": {},
+        "document": {"class": "", "iri": "doc/{source}"},
+        "fields": {},
+        "tables": {},
+        "local": [],
+    }
+
+
+def _apply_mapping(semantics: dict[str, Any], change: dict[str, Any]) -> None:
+    """The mapping stage's ops (ADR 0011), on the recipe's `semantics` in place."""
+    op = change["op"]
+    if op == "setDocumentMapping":
+        semantics["document"] = change["document"]
+        semantics["ontologies"] = change["ontologies"]
+        semantics["prefixes"] = {**_obj(semantics.get("prefixes")), **change["prefixes"]}
+    elif op == "putFieldMapping":
+        semantics["fields"] = {**_obj(semantics.get("fields")), change["field"]: change["mapping"]}
+    elif op == "putTableMapping":
+        semantics["tables"] = {**_obj(semantics.get("tables")), change["table"]: change["mapping"]}
+    elif op == "removeMapping":
+        table, _, column = change["id"].partition(".")
+        tables = _obj(semantics.get("tables"))
+        if column:
+            if table in tables:
+                columns = _obj(_obj(tables[table]).get("columns"))
+                columns.pop(column, None)
+                semantics["tables"] = {**tables, table: {**_obj(tables[table]), "columns": columns}}
+        else:
+            fields = _obj(semantics.get("fields"))
+            fields.pop(change["id"], None)
+            tables.pop(change["id"], None)
+            semantics["fields"], semantics["tables"] = fields, tables
+    elif op == "putLocalTerm":
+        local = _list(semantics.get("local"))
+        term = change["term"]
+        for i, existing in enumerate(local):
+            if existing.get("iri") == term["iri"]:
+                local[i] = term
+                break
+        else:
+            local.append(term)
+        semantics["local"] = local
+
+
+MAPPING_OPS = frozenset(
+    {"setDocumentMapping", "putFieldMapping", "putTableMapping", "removeMapping", "putLocalTerm"}
+)
+
+
 def apply_changes(definition: Definition, changes: list[dict[str, Any]]) -> Definition:
     out = copy.deepcopy(definition)
     outputs = _obj(out.get("outputs"))
@@ -38,9 +92,14 @@ def apply_changes(definition: Definition, changes: list[dict[str, Any]]) -> Defi
     sections = _list(document.get("sections"))
     pipeline = _list(out.get("pipeline"))
     preamble = out.get("preamble")
+    semantics: dict[str, Any] | None = _obj(out["semantics"]) if out.get("semantics") else None
     for change in copy.deepcopy(changes):
         op = change.get("op")
-        if op == "putField":
+        if op in MAPPING_OPS:
+            if semantics is None:
+                semantics = _empty_semantics()
+            _apply_mapping(semantics, change)
+        elif op == "putField":
             fields = _put(fields, change["field"])
             tables = _drop(tables, change["field"]["id"])
         elif op == "putTable":
@@ -72,4 +131,6 @@ def apply_changes(definition: Definition, changes: list[dict[str, Any]]) -> Defi
         out["preamble"] = preamble
     else:
         out.pop("preamble", None)
+    if semantics is not None:
+        out["semantics"] = semantics
     return out

@@ -88,6 +88,7 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       'outputs',
       'sections',
       'steps',
+      'mapping',
       'references',
       'evaluate',
       'revise',
@@ -474,6 +475,49 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       state: 'warn',
       status: '1 awaiting review',
     });
+  });
+
+  it('suggests evaluating a revision on dev until an evaluation of the draft follows it', async () => {
+    const p = await project();
+    await p.addSample(1, true);
+    // Brief written and drafting stages done: verification is all that is left.
+    await p.app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: { purpose: 'Letters to customers' },
+    });
+    for (const stage of ['survey', 'outputs', 'sections', 'steps']) {
+      const skip = await p.app.inject({
+        method: 'POST',
+        url: `/api/workbench/projects/letter/stages/${stage}/skip`,
+      });
+      expect(skip.statusCode).toBeLessThan(300);
+    }
+    expect((await p.overview()).next).toMatchObject({ stage: 'publish' });
+    const job = await p.repo.createDraftJob('letter', {});
+    p.repo.draftJobs.set(job.id, { ...p.repo.draftJobs.get(job.id)!, status: 'succeeded' });
+    const proposal = await p.workbench.createProposal({
+      id: job.id,
+      projectId: 'letter',
+      stage: 'revise',
+      briefVersion: null,
+    });
+    await p.workbench.decideProposal('letter', proposal.id, 'accepted', [0]);
+    expect((await p.overview()).next).toMatchObject({
+      stage: 'evaluate',
+      title: 'Next: evaluate v1 on dev',
+    });
+
+    await p.workbench.createIteration({
+      projectId: 'letter',
+      templateVersion: 1,
+      definition: (await p.templates.get('letter', 1))!.definition,
+      briefVersion: null,
+      set: 'dev',
+      model: null,
+      jobIds: [],
+    });
+    expect((await p.overview()).next).toMatchObject({ stage: 'publish' });
   });
 
   it('ignores a revise accepted before the latest publication', async () => {

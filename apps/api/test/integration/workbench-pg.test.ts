@@ -3,7 +3,7 @@
  *
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies
  * db/migrations and writes rows (under random project ids). Example:
- *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
+ *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-pg
  *   docker rm -f ih-test-pg
@@ -372,6 +372,31 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(q.feedbackIds).toBeNull();
   });
 
+  it('stores the mapping stage, embed jobs and term embeddings (migration 0035)', async () => {
+    const projectId = await newProject();
+    const job = await repo.createDraftJob(projectId, {});
+    await workbench.createProposal({
+      id: job.id,
+      projectId,
+      stage: 'mapping' as never,
+      briefVersion: null,
+    });
+    await workbench.addSkip(projectId, 'mapping' as never);
+    await workbench.addConfirm(projectId, 'mapping' as never, new Date().toISOString());
+    expect((await workbench.listConfirms(projectId)).map((c) => c.stage)).toContain('mapping');
+    await pool.query(
+      `INSERT INTO jobs (task, priority, max_attempts, params) VALUES ('embed', -10, 3, '{}')`,
+    );
+    await pool.query(
+      `INSERT INTO llm_settings (name, value) VALUES ('embedding_model', 'local/embed')
+       ON CONFLICT (name) DO UPDATE SET value = excluded.value`,
+    );
+    const { rows } = await pool.query(`SELECT '[1,0]'::vector <=> '[0,1]'::vector AS d`);
+    expect(Number(rows[0].d)).toBeCloseTo(1);
+    await pool.query(`DELETE FROM llm_settings WHERE name = 'embedding_model'`);
+    await pool.query(`DELETE FROM jobs WHERE task = 'embed'`);
+  });
+
   it('reports feedback resolved by a revision that lands just before its delete', async () => {
     const projectId = await newProject();
     const item = await workbench.createFeedback({
@@ -454,6 +479,8 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     const run = await repo.createWorkbenchJob(doc(projectId), { projectId, task: 'process' });
     const draft = await repo.createDraftJob(projectId, { stage: 'survey', ...external });
     const segment = await repo.createSegmentJob(projectId, segmentParams);
+    const graphParams = { samples: [], definition: { id: projectId } };
+    const graph = await repo.createGraphJob(projectId, graphParams);
     await workbench.setDataPolicy(other, 'external', null);
     const elsewhere = await repo.createDraftJob(other, { stage: 'survey', ...external });
 
@@ -465,6 +492,8 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await paramsOf(draft.id)).toEqual({ stage: 'survey', dataPolicy: 'local' });
     // Segment previews keep their strictly validated params; other projects are untouched.
     expect(await paramsOf(segment.job.id)).toEqual(segmentParams);
+    // Graph previews call no model: their strict params stay as created.
+    expect(await paramsOf(graph.job.id)).toEqual(graphParams);
     expect(await paramsOf(elsewhere.id)).toEqual({ stage: 'survey', ...external });
 
     await workbench.setDataPolicy(projectId, 'external', 'admin');
@@ -665,19 +694,20 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.countUnfinishedJobsWithModel(choice)).toBe(0);
   });
 
-  it('stores who queued a job and lists only their jobs', async () => {
+  it('stores who queued a job and lists only their jobs, by user id', async () => {
     const projectId = await newProject();
-    const label = `it-user-${randomUUID().slice(0, 8)}`;
-    const mine = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, label);
-    expect(mine.createdBy).toBe(label);
+    const name = `it-user-${randomUUID().slice(0, 8)}`;
+    const me = { name, userId: randomUUID() };
+    const mine = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, me);
+    expect(mine).toMatchObject({ createdBy: name, createdByUser: me.userId });
     const sample = await repo.createWorkbenchJob(doc(projectId), {
       projectId,
       task: 'process',
-      createdBy: label,
+      createdBy: me,
     });
-    expect(sample.createdBy).toBe(label);
+    expect(sample).toMatchObject({ createdBy: name, createdByUser: me.userId });
     const other = await repo.createDocumentAndJob(doc(projectId), null);
-    expect(other.createdBy).toBeNull();
+    expect(other).toMatchObject({ createdBy: null, createdByUser: null });
     const reference = await repo.createReference({
       templateId: projectId,
       name: 'r',
@@ -685,11 +715,25 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       sourceJobId: mine.id,
       expected: { fields: {}, tables: {} },
     });
-    const regression = await repo.createRegressionJob(reference, 2, null, label);
-    expect(regression.createdBy).toBe(label);
-    const listed = await repo.listJobs({ limit: 10, createdBy: label });
-    expect(listed.map((j) => j.id).sort()).toEqual([mine.id, sample.id, regression.id].sort());
-    expect(await repo.listJobs({ limit: 10, createdBy: label, status: 'failed' })).toEqual([]);
+    const regression = await repo.createRegressionJob(reference, 2, null, me);
+    expect(regression.createdByUser).toBe(me.userId);
+    // Same name, another user: not theirs. An older job with only the name: still mine.
+    await repo.createDocumentAndJob(doc(projectId), null, false, null, null, {
+      name,
+      userId: randomUUID(),
+    });
+    const legacy = await repo.createDocumentAndJob(doc(projectId), null, false, null, null, {
+      name,
+      userId: null,
+    });
+    const listed = await repo.listJobs({ limit: 10, mine: me });
+    expect(listed.map((j) => j.id).sort()).toEqual(
+      [mine.id, sample.id, regression.id, legacy.id].sort(),
+    );
+    // Renamed: the id still finds them, the old name's legacy row no longer does.
+    const renamed = await repo.listJobs({ limit: 10, mine: { ...me, name: `${name}-2` } });
+    expect(renamed.map((j) => j.id).sort()).toEqual([mine.id, sample.id, regression.id].sort());
+    expect(await repo.listJobs({ limit: 10, mine: me, status: 'failed' })).toEqual([]);
   });
 
   it('refreshes the outputs snapshot on retry, keeping the other params', async () => {

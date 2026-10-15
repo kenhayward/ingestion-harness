@@ -288,6 +288,13 @@ th {
   box-shadow: var(--ih-seg-shadow);
 }
 
+/* The notifications bell (docs/design/pwa.md): on reads as the accent. */
+.notify-toggle[aria-pressed='true'] {
+  color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  border-color: var(--ih-accent);
+}
+
 /* App shell: top bar + left nav + page */
 html {
   /* Anchors and scrollIntoView land below the pinned top bar. */
@@ -476,6 +483,28 @@ html {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+/* Beside the page, the nav is the window's height under the top bar and stays put while the page
+   scrolls (API docs stays bottom left); a nav taller than the window scrolls on its own. Narrower
+   than that it wraps above the page and scrolls away with it, as before. The full nav (220px)
+   sits beside a 640px page from about 861px; the collapsed one (68px) from 709px. */
+@media (min-width: 900px) {
+  .side-nav {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
+}
+@media (min-width: 720px) {
+  .side-nav.compact {
+    position: sticky;
+    top: var(--ih-topbar-h);
+    align-self: flex-start;
+    height: calc(100vh - var(--ih-topbar-h));
+    overflow-y: auto;
+  }
+}
 /* Pinned to the bottom of the nav. */
 .side-nav a.nav-foot {
   margin-top: auto;
@@ -625,6 +654,20 @@ html {
 .token-input button.icon {
   height: 100%;
   width: var(--ih-touch);
+}
+/* Email addresses read better in the text face; passwords stay monospaced. */
+.token-input.plain input:not([type='checkbox']) {
+  font-family: inherit;
+}
+.auth-card h2 {
+  margin: 0;
+}
+.failed-sign-ins {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.failed-sign-ins > span {
+  flex: 1;
 }
 .field-error {
   display: flex;
@@ -1230,6 +1273,23 @@ button.danger-fill {
   .upload-strip > button.primary {
     flex: 1 1 100%;
   }
+}
+/* What each dropped folder gave: "Invoices: 12 files to process · 3 other files left out". */
+.upload-folders {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ih-text-md);
+}
+.upload-folders li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ih-muted);
 }
 .upload-list {
   flex: 1 1 100%;
@@ -2444,6 +2504,71 @@ a.button.icon.bordered {
   justify-content: flex-end;
   gap: 8px;
 }
+/* A dialog with an icon or description (New project): header row, body, footer strip. The
+   body scrolls, so the strip reaches the rounded edges. */
+.dialog.dialog-rich {
+  width: min(480px, 100%);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 24px 20px;
+}
+.dialog-icon {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.dialog-rich h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.dialog-description {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.dialog-rich .dialog-body {
+  padding: 4px 24px 24px;
+  overflow: auto;
+}
+.dialog-rich .dialog-actions {
+  flex-wrap: wrap;
+  padding: 14px 24px;
+  border-top: 1px solid var(--ih-border-soft);
+  background: var(--ih-surface2);
+}
+.dialog-rich .dialog-actions button {
+  min-height: 40px;
+}
+.dialog-rich .dialog-actions button.primary:disabled {
+  border-color: var(--ih-border);
+  background: var(--ih-surface);
+  color: var(--ih-muted);
+  opacity: 1;
+}
+@media (max-width: 480px) {
+  .dialog-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .dialog-icon .icon {
+    width: 28px;
+    height: 28px;
+  }
+}
 
 .segmentation-grid .anchor-errors {
   background: var(--ih-alert-bg);
@@ -3312,4 +3437,509 @@ tr.confirming td {
     grid-template-columns: 1fr;
     gap: 0.25rem;
   }
+}
+
+/* Ontologies (ADR 0011) */
+.ontologies-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ih-space-4);
+}
+.ontologies-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-bottom: 4px;
+}
+.ontologies-title {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.ontologies-title h1 {
+  margin: 0;
+}
+.ontologies-title p {
+  margin: 4px 0 0;
+}
+.ontologies-header .ontologies-search {
+  flex: 0 1 440px;
+  min-width: 240px;
+  max-width: none;
+  height: 40px;
+  background: var(--ih-surface);
+}
+.ontologies-actions {
+  flex: 1 1 260px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+.ontologies-actions .segmented button {
+  min-height: 34px;
+}
+/* auto-fill: a single result keeps a card's width instead of spanning the page. */
+.ontology-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 16px;
+}
+.ontology-card {
+  padding: 18px 20px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+.ontology-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.ontology-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ontology-card-body > p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.ontology-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ontology-card-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ontology-card-head h2 a,
+.ontology-table a {
+  color: var(--ih-accent-soft-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ontology-card-head h2 a:hover,
+.ontology-table a:hover {
+  text-decoration: underline;
+}
+.ontology-card-head .mono {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ontology-card .ontology-version {
+  border-top: 1px solid var(--ih-border-soft);
+  padding-top: 10px;
+}
+/* List view: one line per ontology; narrow screens scroll sideways instead of squashing. */
+.ontology-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.ontology-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.ontology-table th:nth-child(1) {
+  width: 24%;
+}
+.ontology-table th:nth-child(2) {
+  width: 18%;
+}
+.ontology-table th:nth-child(3) {
+  width: 18%;
+}
+.ontology-table th:nth-child(4) {
+  width: 17%;
+}
+.ontology-table th:nth-child(5) {
+  width: 23%;
+}
+.ontology-table th:nth-child(6) {
+  width: 132px;
+}
+.ontology-table th {
+  padding: 11px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ih-muted);
+  border-bottom: 1px solid var(--ih-border);
+}
+.ontology-table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--ih-border-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.ontology-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ontology-table tbody tr:hover {
+  background: var(--ih-sel-row);
+}
+/* Name, id and contents: one line each, cut with an ellipsis (the full value is the title). */
+.ontology-table td:is(:nth-child(1), :nth-child(2), :nth-child(5)) > * {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ontology-table td .mono {
+  font-size: 12px;
+}
+.ontology-table .pills {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.ontology-version {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ontology-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ih-space-3);
+}
+.ontology-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+}
+.ontology-meta dt {
+  color: var(--ih-muted);
+}
+.ontology-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ontology-imports ul {
+  margin: 6px 0 0;
+}
+.term-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ih-space-3);
+}
+.term-browser-bar {
+  display: flex;
+  gap: var(--ih-space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.term-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--ih-space-4);
+}
+@media (max-width: 760px) {
+  .term-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.term-list,
+.term-detail-pane {
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  padding: 8px;
+  min-width: 0;
+  max-height: 70vh;
+  overflow: auto;
+}
+.term-tree,
+.term-results,
+.term-refs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: var(--ih-radius-sm);
+  cursor: pointer;
+}
+.tree-row:hover {
+  background: var(--ih-surface2);
+}
+.tree-row.selected {
+  background: var(--ih-sel-row);
+}
+.tree-row:focus-visible {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: -2px;
+}
+.tree-toggle {
+  width: 22px;
+  height: 22px;
+}
+.tree-leaf {
+  display: inline-block;
+  width: 22px;
+}
+.tree-more {
+  padding: 3px 6px;
+  font-size: var(--ih-text-sm);
+}
+.term-results button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.term-results button[aria-pressed='true'] {
+  background: var(--ih-sel-row);
+}
+.term-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+.term-detail-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.term-detail-head h2 {
+  margin: 0;
+}
+.term-iri {
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.term-refs h3 {
+  font-size: var(--ih-text-sm);
+  margin: 8px 0 4px;
+  color: var(--ih-muted);
+}
+.term-refs li {
+  overflow-wrap: anywhere;
+}
+.term-graph-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+.term-graph {
+  height: 420px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface);
+}
+.term-graph-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--ih-text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.term-graph-links li {
+  overflow-wrap: anywhere;
+}
+
+/* Recipe Mapping tab (ADR 0011) */
+.mapping-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mapping-editor section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mapping-row,
+.mapping-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+}
+.mapping-table .mapping-row {
+  margin-left: 12px;
+}
+.term-input,
+.pin-form,
+.prefix-row,
+.local-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.term-input label,
+.prefix-row label,
+.local-row label {
+  flex: 1 1 200px;
+}
+.term-hits {
+  list-style: none;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.term-hits button {
+  width: 100%;
+  text-align: left;
+}
+.turtle {
+  max-height: 420px;
+  overflow: auto;
+  font-family: var(--ih-font-mono);
+  white-space: pre;
+}
+.formats label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 16px;
+}
+
+/* Linked data page */
+.linked-data-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+}
+.linked-data-page code {
+  overflow-wrap: anywhere;
+}
+.field-error {
+  color: var(--ih-danger-fg);
+}
+.field-warning {
+  color: var(--ih-warn-fg);
+}
+
+/* A list row's Download, Edit… and Delete… (the detail page's actions, as icons). */
+.ontology-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.ontology-row-actions .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--ih-radius-sm);
+}
+.ontology-row-actions .icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Change password from the account menu: the sign-in card's form, in the app. */
+.password-page {
+  max-width: 440px;
+  margin: 24px auto;
+}
+
+/* Survey tab: ontology suggestions and the moved picker (ADR 0011 follow-up). */
+.survey-ontologies {
+  display: grid;
+  gap: var(--ih-space-3);
+  margin-top: var(--ih-space-4);
+}
+.survey-ontologies > button {
+  justify-self: start;
+}
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ih-space-3);
+}
+.suggestion-card {
+  display: grid;
+  gap: var(--ih-space-2);
+  align-content: start;
+  padding: var(--ih-space-3);
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface2);
+}
+.suggestion-card h4 {
+  margin: 0;
+}
+.suggestion-card p {
+  margin: 0;
+}
+.suggestion-card > button {
+  justify-self: start;
+}
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ih-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.suggestion-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface);
+  font-family: var(--ih-font-mono, monospace);
+  font-size: var(--ih-text-sm, 12px);
+}
+.suggestion-evidence {
+  margin: 0;
+  padding-left: var(--ih-space-4);
+}
+.brief-ontology-summary {
+  display: grid;
+  gap: var(--ih-space-2);
+  justify-items: start;
+}
+.also-matched ul {
+  display: grid;
+  gap: var(--ih-space-2);
+  margin: var(--ih-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.also-matched li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ih-space-2);
 }

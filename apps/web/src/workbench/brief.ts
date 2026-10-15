@@ -1,5 +1,7 @@
 import {
   BRIEF_SECTIONS,
+  BriefBodySchema,
+  briefDiff,
   type BriefBody,
   type BriefSection,
   type BriefVersionView,
@@ -8,9 +10,10 @@ import {
 } from '@ih/shared';
 import { relativeTime } from '../jobs/derive.js';
 import { parseCsv } from '../results/csv.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { formatBytes, plural } from './samples.js';
 
-export type TextSection = Exclude<BriefSection, 'answers'>;
+export type TextSection = Exclude<BriefSection, 'answers' | 'ontologies'>;
 
 export const BRIEF_LABEL: Record<BriefSection, string> = {
   purpose: 'Purpose',
@@ -20,6 +23,7 @@ export const BRIEF_LABEL: Record<BriefSection, string> = {
   variants: 'Variants',
   rules: 'Rules',
   answers: 'Survey answers',
+  ontologies: 'Ontologies',
 };
 
 export const BRIEF_HINT: Record<TextSection, string> = {
@@ -31,7 +35,9 @@ export const BRIEF_HINT: Record<TextSection, string> = {
   rules: 'For example: placeholders are null; use the executed copy; dates are DMY.',
 };
 
-export const TEXT_SECTIONS = BRIEF_SECTIONS.filter((s): s is TextSection => s !== 'answers');
+export const TEXT_SECTIONS = BRIEF_SECTIONS.filter(
+  (s): s is TextSection => s !== 'answers' && s !== 'ontologies',
+);
 
 /** "Saved as v3 · 2 days ago · 1 field changed since" (handoff §2). */
 export function briefStatus(version: number, createdAt: string, changed: number, now: number) {
@@ -92,4 +98,55 @@ export function exportStatusText(e: ExportView): string {
   if (e.status === 'queued' || e.status === 'running') return `Export ${e.status}…`;
   if (e.status === 'cancelled') return 'Export cancelled';
   return `Export failed${e.error ? `: ${e.error}` : ''}`;
+}
+
+/**
+ * Unsaved Brief edits, kept per project in this browser (ui/keptDraft.ts) so leaving the tab
+ * loses nothing. Only the sections that were edited are kept, with the version they were made
+ * on: restored, they go on top of whatever is saved by then, so a newer version's other sections
+ * are never undone.
+ */
+export type BriefDraft = { base: number | null; changes: Partial<BriefBody> };
+
+const draftKey = (projectId: string) => `ih.briefDraft.${projectId}`;
+const briefChanges = (value: unknown): Partial<BriefBody> | null => {
+  const changes = BriefBodySchema.partial().safeParse(value);
+  if (!changes.success) return null;
+  // Ontologies are chosen on the Survey tab and saved at once: a kept draft (from a build that
+  // edited them here) must never put old picks back.
+  const rest: Partial<BriefBody> = { ...changes.data };
+  delete rest.ontologies;
+  delete rest.ontologyGuidance;
+  return rest;
+};
+
+export function loadBriefDraft(projectId: string): BriefDraft | null {
+  const kept = loadKept(draftKey(projectId), briefChanges);
+  if (!kept || typeof kept.base === 'string') return null;
+  return { base: kept.base, changes: kept.value };
+}
+
+/** Remembers `body`'s edits against `saved`, or forgets them when there are none. */
+export function keepBriefDraft(
+  projectId: string,
+  base: number | null,
+  saved: BriefBody,
+  body: BriefBody,
+): void {
+  const changed = briefDiff(saved, body).map((d) => d.section);
+  keepDraft(
+    draftKey(projectId),
+    changed.length
+      ? { base, value: Object.fromEntries(changed.map((s) => [s, body[s]])) as Partial<BriefBody> }
+      : null,
+  );
+}
+
+/** What the Brief tab says above edits it put back (`from`: their version; `now`: the saved one). */
+export function restoredNote(from: number | null, now: number | null): string {
+  if (from === now) {
+    return 'Restored your unsaved changes from your last visit: save them as a new version, or discard them.';
+  }
+  const made = from === null ? 'made before the first version' : `made on v${from}`;
+  return `Restored your unsaved changes, ${made}. The brief is now v${now}: check them before saving.`;
 }

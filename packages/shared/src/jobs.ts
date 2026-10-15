@@ -57,9 +57,19 @@ export const JobSummarySchema = z.object({
    * rerun: one step again; prepare: workbench sample text + OCR only; segment: workbench
    * anchor preview over a project's prepared samples (no document; ADR 0007);
    * draft: workbench drafting stage (no document); export: workbench drafting bundle (no
-   * document, migration 0019).
+   * document, migration 0019); ontology: parse and index an imported ontology version (no
+   * document, migration 0032; never a JobSummary).
    */
-  task: z.enum(['process', 'publish', 'rerun', 'prepare', 'segment', 'draft', 'export']),
+  task: z.enum([
+    'process',
+    'publish',
+    'rerun',
+    'prepare',
+    'segment',
+    'draft',
+    'export',
+    'ontology',
+  ]),
   /** Test run of a (draft) template: reviewable, never published. */
   test: z.boolean(),
   /** Regression run: the reference document this test job re-runs. */
@@ -67,10 +77,15 @@ export const JobSummarySchema = z.object({
   /** Workbench project the job belongs to (prepare jobs and dev test runs). */
   projectId: z.string().nullable(),
   /**
-   * Label of the access token that queued the job (migration 0023); null for older jobs and
-   * without access control. Retries keep it.
+   * Name of the user who queued the job (migration 0023), for people to read; null for older
+   * jobs and without access control. Retries keep it.
    */
   createdBy: z.string().nullable(),
+  /**
+   * Id of the user who queued the job (migration 0041): what "mine" means, since a name can
+   * change or pass to someone else. Null for jobs from before it and without access control.
+   */
+  createdByUser: z.string().nullable(),
   reviewReasons: z.array(z.string()).nullable(),
   reviewer: z.string().nullable(),
   reviewNote: z.string().nullable(),
@@ -92,6 +107,21 @@ export const JobSummarySchema = z.object({
 });
 export type JobSummary = z.infer<typeof JobSummarySchema>;
 
+/** Who queued a job (ADR 0013): the name people read, and the user id "mine" is decided on. */
+export interface Creator {
+  name: string;
+  userId: string | null;
+}
+
+/**
+ * Whether `me` queued the job: by user id when the job has one (a name can change or pass to
+ * someone else), else by name (jobs from before migration 0041).
+ */
+export function isMine(job: Pick<JobSummary, 'createdBy' | 'createdByUser'>, me: Creator): boolean {
+  if (job.createdByUser !== null) return job.createdByUser === me.userId;
+  return job.createdBy !== null && job.createdBy === me.name;
+}
+
 /** Job event the worker writes per model call of an extraction (worker: template_pipeline.STEP_PROGRESS). */
 export const STEP_PROGRESS_EVENT = 'step progress';
 
@@ -103,6 +133,55 @@ export const PREPARE_PROGRESS_EVENT = 'prepare progress';
 
 /** Job event the worker writes once a document is split into sections (worker: pipeline.SEGMENTED). */
 export const SEGMENTED_EVENT = 'segmented';
+
+/**
+ * Job event when a publish delivered its document's graph (ADR 0011 step 6; worker
+ * `template_pipeline.GRAPH_PUBLISHED`): the graph's IRI, its new version, its triples and whether
+ * it went to the triple store (`endpoint`; false: S3 only, no `RDF_ENDPOINT`).
+ */
+export const GRAPH_PUBLISHED_EVENT = 'graph published';
+export const GraphPublishedSchema = z.object({
+  graph: z.string(),
+  version: z.number().int().positive(),
+  triples: z.number().int().nonnegative(),
+  endpoint: z.boolean(),
+});
+
+/**
+ * A `withdraw` job's params (ADR 0011 step 7; worker `withdrawal.WithdrawParams`): what a job
+ * deletion or a retirement removes from the target and the triple store. `objects` are target
+ * keys as recorded; each graph's version copies (`graphs/{sha256}/{type}/v{n}.ttl`) go, and the
+ * graph itself when `graphIri` is set (the current version's job was deleted, or the type retired).
+ */
+export const WithdrawParamsSchema = z
+  .object({
+    objects: z.array(z.object({ bucket: z.string().min(1), key: z.string().min(1) }).strict()),
+    graphs: z.array(
+      z
+        .object({
+          sha256: z.string().min(1),
+          templateId: z.string().min(1),
+          graphIri: z.string().min(1).nullable(),
+          versions: z.array(z.number().int().positive()),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type WithdrawParams = z.infer<typeof WithdrawParamsSchema>;
+
+/** A `republish` job's params: unretiring re-delivers the type's withdrawn outputs. */
+export const RepublishParamsSchema = z.object({ templateId: z.string().min(1) }).strict();
+
+/** `JobDetail.graph`: the newest graph this job published. */
+export const JobGraphSchema = z.object({
+  iri: z.string(),
+  version: z.number().int(),
+  triples: z.number().int(),
+  endpoint: z.boolean(),
+  publishedAt: z.string(),
+});
+export type JobGraph = z.infer<typeof JobGraphSchema>;
 
 /** Where a document read is: the text layer read, or `page` of `of` OCR pages done. */
 export const PrepareProgressSchema = z.object({
@@ -145,11 +224,49 @@ export const QueueSummarySchema = z.object({
 });
 export type QueueSummary = z.infer<typeof QueueSummarySchema>;
 
+/**
+ * A document graph's SHACL report (ADR 0011 step 5; worker `rdf.ShaclReport.to_json`). Only
+ * violations block (review reasons, a refused publish); warnings and infos become issues.
+ */
+export const ShaclResultSchema = z.object({
+  severity: z.enum(['Violation', 'Warning', 'Info']),
+  /** The node shape whose constraint failed. */
+  shape: z.string(),
+  focus: z.string(),
+  path: z.string(),
+  /** The output the path publishes (`field`, `table`, `table.column`), else the path IRI. */
+  output: z.string(),
+  message: z.string(),
+  value: z.string(),
+});
+export type ShaclResult = z.infer<typeof ShaclResultSchema>;
+export const ShaclReportSchema = z.object({
+  conforms: z.boolean(),
+  results: z.array(ShaclResultSchema),
+});
+export type ShaclReport = z.infer<typeof ShaclReportSchema>;
+
+/** What an output is written as; `rdf` is the document's graph in Turtle (ADR 0011). */
+export const OUTPUT_FORMATS = ['csv', 'json', 'rdf'] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+
+/** The file extension of an output format. */
+export const outputExtension = (format: OutputFormat): string =>
+  format === 'rdf' ? 'ttl' : format;
+
+/** The content type an output is served with. */
+export const outputContentType = (format: OutputFormat): string =>
+  format === 'csv'
+    ? 'text/csv; charset=utf-8'
+    : format === 'rdf'
+      ? 'text/turtle; charset=utf-8'
+      : 'application/json';
+
 export const JobOutputSchema = z.object({
   outputId: z.string(),
   /** draft: outputs bucket (pre-review); published: final target. */
   stage: z.enum(['draft', 'published']),
-  format: z.enum(['csv', 'json']),
+  format: z.enum(OUTPUT_FORMATS),
   bucket: z.string(),
   key: z.string(),
   rowCount: z.number().int().nullable(),
@@ -180,6 +297,8 @@ export type StageTimes = z.infer<typeof StageTimesSchema>;
 
 export const JobDetailSchema = JobSummarySchema.extend({
   outputs: z.array(JobOutputSchema),
+  /** `GET /api/jobs/:id` only: the newest graph this job published (ADR 0011), else null. */
+  graph: JobGraphSchema.nullable().optional(),
   /** `GET /api/jobs/:id` only: a running extraction's progress (null otherwise or before any). */
   progress: JobProgressSchema.nullable().optional(),
   /** `GET /api/jobs/:id` only: when this attempt finished reading and segmenting. */

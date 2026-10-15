@@ -137,3 +137,27 @@ describe('issueText', () => {
     expect(issueText({ path: '', message: 'duplicate step id "a"' })).toBe('duplicate step id "a"');
   });
 });
+
+describe('mapping checks (ADR 0011)', () => {
+  it.each<[string, SubTab]>([
+    ['semantics.fields.sender.property: acme:x is not in the pinned ontologies', 'mapping'],
+    ['semantics: rdf delivery needs an ontology mapping', 'mapping'],
+    ['delivery: csv is listed twice', 'general'],
+  ])('routes %s to %s', (issue, sub) => {
+    expect(issueSubTab(issue)).toBe(sub);
+  });
+
+  it('shows server warnings as warnings, on the Mapping sub-tab', () => {
+    const checks = run({
+      definition: { outputs: { fields: [], tables: [] }, pipeline: [] },
+      serverWarnings: ['semantics.fields.sender: sender is not mapped'],
+    });
+    expect(checks).toContainEqual({
+      tone: 'warn',
+      text: 'semantics.fields.sender: sender is not mapped',
+      link: { label: 'Open Mapping', subTab: 'mapping' },
+      subTabs: ['mapping'],
+    });
+    expect(attentionTabs(checks).has('mapping')).toBe(true);
+  });
+});

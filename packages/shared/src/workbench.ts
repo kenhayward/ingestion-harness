@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { RetirementSchema } from './retirement.js';
 import { CopySelectionSchema, SectionSchema } from './spec.js';
-import { JobStatusSchema, PrepareProgressSchema } from './jobs.js';
+import { JobStatusSchema, PrepareProgressSchema, ShaclReportSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
 export const SAMPLE_ROLES = ['dev', 'holdout'] as const;
@@ -15,6 +15,16 @@ export const DATA_POLICIES = ['local', 'external'] as const;
 export const DataPolicySchema = z.enum(DATA_POLICIES);
 export type DataPolicy = z.infer<typeof DataPolicySchema>;
 
+/** An ontology the brief chooses (ADR 0011): a vocabulary to map to, or SHACL shapes. */
+export const BriefOntologySchema = z
+  .object({
+    ontologyId: z.string().min(1),
+    version: z.number().int().positive(),
+    role: z.enum(['vocabulary', 'shapes']),
+  })
+  .strict();
+export type BriefOntology = z.infer<typeof BriefOntologySchema>;
+
 export const BriefBodySchema = z
   .object({
     purpose: z.string().default(''),
@@ -25,6 +35,10 @@ export const BriefBodySchema = z
     rules: z.string().default(''),
     /** Survey questions and the user's answers (drafting stage `survey`). */
     answers: z.array(z.object({ question: z.string(), answer: z.string() }).strict()).default([]),
+    /** The ontologies this document type maps to (vocabulary) or is checked against (shapes). */
+    ontologies: z.array(BriefOntologySchema).max(20).default([]),
+    /** Free text sent to the mapping stage. */
+    ontologyGuidance: z.string().default(''),
   })
   .strict();
 export type BriefBody = z.infer<typeof BriefBodySchema>;
@@ -37,6 +51,8 @@ export const EMPTY_BRIEF: BriefBody = {
   variants: '',
   rules: '',
   answers: [],
+  ontologies: [],
+  ontologyGuidance: '',
 };
 
 export const BriefSchema = z.object({
@@ -220,6 +236,38 @@ export const SegmentationViewSchema = z.object({
 });
 export type SegmentationView = z.infer<typeof SegmentationViewSchema>;
 
+/** Graph previews (ADR 0011): the open draft's mapping over finished dev test runs. */
+export const GraphPreviewBodySchema = z
+  .object({
+    /** Ready dev samples with a finished test run (default: every one). */
+    sampleIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+  })
+  .strict();
+
+/** Written by the worker's graph task (runs bucket, graphPreviewKey). */
+export const GraphPreviewResultSchema = z.object({
+  samples: z.array(
+    z.object({
+      sampleId: z.string(),
+      fileName: z.string(),
+      turtle: z.string(),
+      triples: z.number().int(),
+      /** The SHACL report when the recipe pins shapes (step 5); null otherwise. */
+      report: ShaclReportSchema.nullable().default(null),
+    }),
+  ),
+});
+export type GraphPreviewResult = z.infer<typeof GraphPreviewResultSchema>;
+
+export const GraphPreviewViewSchema = z.object({
+  jobId: z.string().uuid(),
+  status: JobStatusSchema,
+  error: z.string().nullable(),
+  /** Present once the job succeeded. */
+  result: GraphPreviewResultSchema.nullable(),
+});
+export type GraphPreviewView = z.infer<typeof GraphPreviewViewSchema>;
+
 export const DRAFT_STAGES = [
   'survey',
   'outputs',
@@ -227,6 +275,7 @@ export const DRAFT_STAGES = [
   'steps',
   'references',
   'revise',
+  'mapping',
 ] as const;
 export type DraftStage = (typeof DRAFT_STAGES)[number];
 /** Stages that can be run in this release (3b); `references` comes with phase 4. */
@@ -236,6 +285,7 @@ export const AVAILABLE_STAGES: readonly DraftStage[] = [
   'sections',
   'steps',
   'revise',
+  'mapping',
 ];
 
 /** In how many of the samples the model was shown it saw a candidate (handoff SV2). */

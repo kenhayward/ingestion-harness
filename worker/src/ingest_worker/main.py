@@ -1,21 +1,32 @@
 from __future__ import annotations
 
+import functools
 import logging
+import os
 import signal
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
 
+import httpx
 import psycopg
 
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
+from .embeddings import run_embed
+from .graph_preview import run_graph_preview
+from .graph_registry import PgGraphRegistry
+from .graph_store import graph_store_from_env
+from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
 from .ocr import OcrSettings
+from .ontology import PgOntologyStore, run_ontology_import
+from .ontology_fetch import FetchPolicy, fetch_rdf
+from .ontology_suggest import run_suggest
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -30,9 +41,16 @@ from .pipeline import (
     publish_outputs,
 )
 from .queue import ClaimedJob, JobQueue, PgJobQueue
+from .rdf_rebuild import PgRebuildSource
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
-from .template_pipeline import publish_template_job, rerun_template_job
+from .template_pipeline import (
+    PUBLISH_REFUSED,
+    ShapesViolated,
+    publish_template_job,
+    rerun_template_job,
+)
+from .withdrawal import run_republish, run_withdraw
 from .workbench import prepare_sample, run_segment
 
 log = logging.getLogger("ingest_worker")
@@ -45,7 +63,8 @@ FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save a
 
 
 def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
-    """Claim and run one job (process, publish, rerun, prepare, segment, draft or export).
+    """Claim and run one job (process, publish, rerun, prepare, segment, draft, export or
+    ontology).
     Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
@@ -54,9 +73,19 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
     try:
         if job.task == "publish":
             check_cancelled(job, queue)
-            published = publish_job(job, deps, queue)
-            if deps.target is not None and not job.test:  # approved test runs are not delivered
-                queue.record_published(job, published, deps.target.bucket)
+
+            def record(outputs: list[RenderedOutput]) -> None:
+                if deps.target is not None and not job.test:  # approved test runs: not delivered
+                    queue.record_published(job, outputs, deps.target.bucket)
+
+            try:
+                published = publish_job(job, deps, queue, record)
+            except ShapesViolated as refused:
+                # Nothing was delivered: the reviewer fixes the values and approves again.
+                queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
+                queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
+                log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
+                return True
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s published %d outputs", job.id, len(published))
             return True
@@ -90,6 +119,36 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
             return True
+        if job.task == "graph":
+            preview = run_graph_preview(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
+            return True
+        if job.task == "suggest":
+            suggested = run_suggest(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s suggested %d ontologies", job.id, len(suggested["suggestions"]))
+            return True
+        if job.task == "embed":
+            embedded = run_embed(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s embedded %d terms", job.id, embedded)
+            return True
+        if job.task == "withdraw":
+            withdrawn = run_withdraw(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s withdrew %d objects, %d graphs", job.id, *withdrawn)
+            return True
+        if job.task == "republish":
+            count = run_republish(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s re-delivered %d jobs", job.id, count)
+            return True
+        if job.task == "ontology":
+            parsed = run_ontology_import(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s indexed %d ontology terms", job.id, len(parsed.terms))
+            return True
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
         check_cancelled(job, queue)
@@ -100,9 +159,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
-            published = [] if job.test else publish_outputs(deps, result.outputs)
+            published = [] if job.test else publish_outputs(deps, result.delivered())
             if deps.target is not None and published:
                 queue.record_published(job, published, deps.target.bucket)
+                if result.deliver_graph is not None:
+                    result.deliver_graph()
             queue.complete(job, result.outputs, deps.buckets.outputs)
             log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
     except JobCancelled:
@@ -130,13 +191,20 @@ def _quietly(job: ClaimedJob, write: Callable[[], None]) -> None:
         log.exception("could not record the outcome of job %s (deleted?)", job.id)
 
 
-def publish_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[RenderedOutput]:
+def publish_job(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    on_published: Callable[[list[RenderedOutput]], None] | None = None,
+) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to the target."""
     loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only documents run by a recipe go through review/publish")
-    return publish_template_job(job, deps, queue, loaded, deliver=not job.test)
+    return publish_template_job(
+        job, deps, queue, loaded, deliver=not job.test, on_published=on_published
+    )
 
 
 def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
@@ -145,6 +213,7 @@ def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
     if not live.refresh():
         return False
     deps.models = live.registry
+    deps.embedding_model = live.embedding_model
     if deps.ocr is not None and live.ocr_model:
         deps.ocr = replace(deps.ocr, model=live.ocr_model)
     return True
@@ -182,6 +251,8 @@ def main() -> None:
         if llm_config.ocr and ocr_config is not None
         else None
     )
+    # The ontology library and the Linked data settings share one autocommit connection.
+    library = psycopg.connect(settings.database_url, autocommit=True)
     deps = PipelineDeps(
         store=S3ObjectStore(
             settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
@@ -205,6 +276,23 @@ def main() -> None:
         example_template=(
             settings.example_template.read_text(encoding="utf-8")
             if settings.example_template.is_file()
+            else None
+        ),
+        ontologies=PgOntologyStore(library),
+        linked_data=PgLinkedDataSettings(library),
+        embedding_model=live.embedding_model,
+        # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
+        graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
+        graph_store=graph_store_from_env(os.environ),
+        delivered_jobs=PgRebuildSource(library),
+        ontology_max_triples=settings.ontology_max_triples,
+        ontology_fetch=(
+            functools.partial(
+                fetch_rdf,
+                policy=FetchPolicy(settings.ontology_fetch_allow, settings.ontology_max_bytes),
+                client=httpx.Client(),
+            )
+            if settings.ontology_fetch_allow
             else None
         ),
     )

@@ -125,6 +125,8 @@ const projectView = {
       variants: '',
       rules: '',
       answers: [],
+      ontologies: [],
+      ontologyGuidance: '',
     },
     createdAt: '2026-10-13T09:00:00.000Z',
   },

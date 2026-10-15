@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ProjectOverview, ProjectView } from '@ih/shared';
+import { EMPTY_BRIEF, vocabularyOf, type ProjectOverview, type ProjectView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import type { ProjectTab } from '../router.js';
 import { TemplateEditor } from '../templates/TemplateEditor.js';
@@ -17,6 +17,7 @@ import { ReviseTab } from './ReviseTab.js';
 import { RunsTab } from './RunsTab.js';
 import { SamplesTab } from './SamplesTab.js';
 import { SectionsTab } from './SectionsTab.js';
+import { MappingTab } from './MappingTab.js';
 import { StagePanel } from './StagePanel.js';
 import { SurveyTab } from './SurveyTab.js';
 import { TabHeader } from './TabHeader.js';
@@ -28,6 +29,7 @@ const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
   outputs: 'Outputs',
   sections: 'Section anchors',
   steps: 'Extraction steps',
+  mapping: 'Ontology mapping',
   references: 'References',
   evaluate: 'Evaluate',
   revise: 'Revise',
@@ -305,6 +307,24 @@ export function ProjectPage({
               onChanged={changed}
               item={itemOf('survey')}
               retired={retired}
+            />
+          )}
+          {tab === 'mapping' && (
+            <MappingTab
+              api={api}
+              projectId={project.id}
+              used={vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length > 0}
+              dataPolicy={project.dataPolicy}
+              hasDraft={draft !== null}
+              draft={draft}
+              published={published}
+              briefVersion={view.brief?.version ?? null}
+              pollMs={pollMs}
+              item={itemOf('mapping')}
+              retired={retired}
+              onApplied={changed}
+              onSkipped={changed}
+              onNavigate={onNavigate}
             />
           )}
           {(tab === 'outputs' || tab === 'steps') && (

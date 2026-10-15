@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
 import { useInstallAvailable, type InstallPrompt } from '../pwa/install.js';
+import type { NotifySetting } from '../pwa/notify.js';
 import type { Route } from '../router.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
@@ -61,13 +62,48 @@ function NavLink({
   );
 }
 
+/**
+ * The notifications bell (docs/design/pwa.md): toasts when your jobs finish while the app is in
+ * the background. Refused in the browser, it says where to allow it again.
+ */
+function NotifyBell({ notify }: { notify: NotifySetting }) {
+  if (notify.state === 'unsupported') return null;
+  if (notify.state === 'blocked') {
+    return (
+      <button
+        type="button"
+        className="icon bordered"
+        aria-label="Notifications are blocked"
+        aria-disabled="true"
+        title="Notifications are blocked for this site: allow them in the browser's site permissions (the padlock in the address bar, or the app's … menu → App info)"
+      >
+        <Icon name="bellOff" size={18} />
+      </button>
+    );
+  }
+  const label = 'Notify me when my jobs finish';
+  return (
+    <button
+      type="button"
+      className="icon bordered notify-toggle"
+      aria-label={label}
+      aria-pressed={notify.state === 'on'}
+      title={notify.state === 'on' ? `${label}: on` : label}
+      onClick={() => void notify.toggle()}
+    >
+      <Icon name="bell" size={18} />
+    </button>
+  );
+}
+
 /** What Install CT Studio is called everywhere (docs/design/pwa.md). */
 const INSTALL_LABEL = 'Install CT Studio';
 
 /**
- * An admin's name opens the account menu (Models, Access, Install CT Studio while the browser
- * offers it, Sign out; ADR 0010). It closes on Escape (focus back on the name), a click outside,
- * or a choice.
+ * The signed-in name opens the account menu: for admins Models, Linked data and Access (ADR
+ * 0010); Install CT Studio while the browser offers it (admins); Change password for everyone
+ * with a password of their own (not the admin from the log, ADR 0013); Sign out. It closes on
+ * Escape (focus back on the name), a click outside, or a choice.
  */
 function AccountMenu({
   me,
@@ -83,6 +119,7 @@ function AccountMenu({
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const name = `${me.label} (${me.role}): account menu`;
+  const admin = me.role === 'admin';
 
   useEffect(() => {
     if (!open) return;
@@ -130,15 +167,29 @@ function AccountMenu({
       </button>
       {open && (
         <div role="menu" aria-label={name} className="menu-popover">
-          <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
-            <Icon name="chip" />
-            Models
-          </a>
-          <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
-            <Icon name="key" />
-            Access
-          </a>
-          {onInstall && (
+          {admin && (
+            <>
+              <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
+                <Icon name="chip" />
+                Models
+              </a>
+              <a role="menuitem" href="#/linked-data" onClick={() => setOpen(false)}>
+                <Icon name="link" />
+                Linked data
+              </a>
+              <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
+                <Icon name="key" />
+                Access
+              </a>
+            </>
+          )}
+          {me.email !== null && (
+            <a role="menuitem" href="#/account/password" onClick={() => setOpen(false)}>
+              <Icon name="lock" />
+              Change password
+            </a>
+          )}
+          {admin && onInstall && (
             <button
               type="button"
               role="menuitem"
@@ -176,6 +227,7 @@ export function AppShell({
   query,
   onQuery,
   install,
+  notify,
   onUpload,
   onSignOut,
   children,
@@ -187,6 +239,8 @@ export function AppShell({
   onQuery: (query: string) => void;
   /** The browser's offer to install the app: Install CT Studio shows while there is one. */
   install: InstallPrompt;
+  /** Toasts for your jobs: the bell's state and toggle. */
+  notify: NotifySetting;
   onUpload: () => void;
   onSignOut: () => void;
   children: ReactNode;
@@ -260,37 +314,13 @@ export function AppShell({
               <Icon name="install" size={18} />
             </button>
           )}
+          <NotifyBell notify={notify} />
           <ThemeSwitch />
           <button type="button" className="primary" onClick={onUpload}>
             <Icon name="upload" />
             Upload document
           </button>
-          {me.role === 'admin' ? (
-            <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
-          ) : (
-            <div
-              className="user-chip"
-              role="group"
-              aria-label={`Signed in as ${me.label} (${me.role})`}
-            >
-              <span className="avatar" aria-hidden="true">
-                {initials(me.label)}
-              </span>
-              <span className="who" aria-hidden="true">
-                <span>{me.label}</span>
-                <small>{me.role}</small>
-              </span>
-              <button
-                type="button"
-                className="icon"
-                aria-label="Sign out"
-                title="Sign out"
-                onClick={onSignOut}
-              >
-                <Icon name="signOut" size={18} />
-              </button>
-            </div>
-          )}
+          <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
         </div>
       </header>
       <div className="app-body">
@@ -343,6 +373,13 @@ export function AppShell({
             compact={compact}
           />
           <NavLink
+            href="#/ontologies"
+            icon="graph"
+            label="Ontologies"
+            current={section === 'ontologies'}
+            compact={compact}
+          />
+          <NavLink
             href="#/workbench"
             icon="workbench"
             label="Workbench"
@@ -357,6 +394,13 @@ export function AppShell({
                 icon="chip"
                 label="Models"
                 current={section === 'models'}
+                compact={compact}
+              />
+              <NavLink
+                href="#/linked-data"
+                icon="link"
+                label="Linked data"
+                current={section === 'linked-data'}
                 compact={compact}
               />
               <NavLink

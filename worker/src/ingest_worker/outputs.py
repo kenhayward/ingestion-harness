@@ -24,13 +24,15 @@ def encode_csv(text: str) -> bytes:
 
 
 def content_type(fmt: str) -> str:
+    if fmt == "rdf":
+        return "text/turtle"
     return CSV_CONTENT_TYPE if fmt == "csv" else "application/json"
 
 
 @dataclass(frozen=True)
 class RenderedOutput:
     output_id: str
-    format: Literal["csv", "json"]
+    format: Literal["csv", "json", "rdf"]
     key: str
     body: bytes
     row_count: int | None

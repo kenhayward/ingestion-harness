@@ -16,9 +16,16 @@ import { TAB_ICON } from './ProjectRail.js';
 export interface MapBox {
   tab: OverviewTab;
   number: string | null;
-  col: 0 | 1 | 2 | 3;
+  col: 0 | 1 | 2 | 3 | 4;
   row: 0 | 1 | 2;
 }
+
+/** The draft row holds five boxes (survey to steps, then the optional mapping): narrower ones. */
+const DRAFT_ROW = { x: (col: number) => 20 + 202 * col, w: 176 };
+const boxStyle = (b: MapBox): CSSProperties =>
+  b.row === 1
+    ? { left: DRAFT_ROW.x(b.col), top: BOX_TOP[b.row], width: DRAFT_ROW.w }
+    : { left: 20 + 260 * b.col, top: BOX_TOP[b.row] };
 
 const GRID: Omit<MapBox, 'number'>[] = [
   { tab: 'samples', col: 0, row: 0 },
@@ -29,13 +36,14 @@ const GRID: Omit<MapBox, 'number'>[] = [
   { tab: 'outputs', col: 1, row: 1 },
   { tab: 'sections', col: 2, row: 1 },
   { tab: 'steps', col: 3, row: 1 },
+  { tab: 'mapping', col: 4, row: 1 },
   { tab: 'references', col: 0, row: 2 },
   { tab: 'evaluate', col: 1, row: 2 },
   { tab: 'revise', col: 2, row: 2 },
   { tab: 'publish', col: 3, row: 2 },
 ];
 
-/** The twelve map boxes on the handoff's 4×3 grid; the ten stages are numbered 01–10. */
+/** The map's boxes (the handoff's 4×3 grid, five in the draft row); stages are numbered. */
 export const MAP_BOXES: MapBox[] = GRID.map((b) => {
   const i = (OVERVIEW_STAGES as readonly string[]).indexOf(b.tab);
   return { ...b, number: i >= 0 ? String(i + 1).padStart(2, '0') : null };
@@ -44,23 +52,24 @@ export const MAP_BOXES: MapBox[] = GRID.map((b) => {
 const PANELS = [
   { title: 'Prepare', range: 'stages 1–2', x: 8, y: 8, w: 484 },
   { title: 'Edit and test by hand', range: 'any time', x: 528, y: 8, w: 484 },
-  { title: 'Draft with the model', range: 'stages 3–6', x: 8, y: 208, w: 1004 },
-  { title: 'Verify and publish', range: 'stages 7–10', x: 8, y: 408, w: 1004 },
+  { title: 'Draft with the model', range: 'stages 3–7', x: 8, y: 208, w: 1004 },
+  { title: 'Verify and publish', range: 'stages 8–11', x: 8, y: 408, w: 1004 },
 ];
 
 const FLOW = [
   'M220 106H278', // Samples → Brief
   'M740 106H798', // Template → Test runs
-  'M220 306H278', // Survey → Outputs
-  'M480 306H538', // Outputs → Sections
-  'M740 306H798', // Sections → Steps
+  'M196 306H220', // Survey → Outputs
+  'M398 306H422', // Outputs → Sections
+  'M600 306H624', // Sections → Steps
   'M220 506H278', // References → Evaluate
   'M480 506H538', // Evaluate → Revise
-  'M380 168V206H190V242', // Brief → Survey
-  'M900 368V404H190V442', // Steps → References
+  'M380 168V206H108V242', // Brief → Survey
+  'M714 368V404H120V442', // Steps → References
   'M380 568V606H900V570', // Evaluate → Publish
 ];
-const SIDE = ['M640 168V242', 'M640 444V370']; // Template → Sections, Revise → Sections
+// Template → Sections, Revise → Sections, Steps → Mapping (optional)
+const SIDE = ['M640 168V206H512V242', 'M640 444V406H512V370', 'M802 306H826'];
 
 const BOX_TOP = [44, 244, 444];
 
@@ -241,7 +250,7 @@ export function OverviewMap({
             projectId={projectId}
             overview={overview}
             now={now}
-            style={{ left: 20 + 260 * b.col, top: BOX_TOP[b.row] }}
+            style={boxStyle(b)}
           />
         ))}
       </div>
@@ -251,7 +260,7 @@ export function OverviewMap({
 
 const STACK_GROUPS: { title: string; tabs: OverviewTab[] }[] = [
   { title: 'Prepare', tabs: ['samples', 'brief'] },
-  { title: 'Draft with the model', tabs: ['survey', 'outputs', 'sections', 'steps'] },
+  { title: 'Draft with the model', tabs: ['survey', 'outputs', 'sections', 'steps', 'mapping'] },
   { title: 'Verify and publish', tabs: ['references', 'evaluate', 'revise', 'publish'] },
   { title: 'Edit and test by hand', tabs: ['template', 'runs'] },
 ];

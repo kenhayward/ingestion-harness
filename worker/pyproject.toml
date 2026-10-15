@@ -18,6 +18,8 @@ dependencies = [
   "pillow>=11.0",
   "httpx>=0.28",
   "cryptography>=44",
+  "rdflib>=7.1",
+  "pyshacl>=0.40.1",
 ]
 
 [project.scripts]
@@ -45,6 +47,8 @@ packages = ["src/ingest_worker"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -m 'not integration'"
 markers = ["integration: needs Postgres + SeaweedFS (deploy/docker-compose.yml)"]
+# rdflib's own JSON-LD parser still builds a ConjunctiveGraph internally.
+filterwarnings = ["ignore:ConjunctiveGraph is deprecated:DeprecationWarning:rdflib"]
 
 [tool.ruff]
 line-length = 100

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { GRAPH_PUBLISHED_EVENT, shaclReportKey } from '@ih/shared';
 import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 import { DOCX_MIME } from '../src/uploads.js';
 import { docx } from './docx-fixtures.js';
@@ -64,6 +65,31 @@ describe('jobs API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(res.body).toBe('a,b\n1,2\n');
+  });
+
+  it('downloads a graph as Turtle', async () => {
+    const { app, repo, store, job } = await seedJob();
+    repo.outputs.set(job.id, [
+      {
+        outputId: 'graph',
+        stage: 'draft',
+        format: 'rdf',
+        bucket: 'outputs',
+        key: 'demo/v2/graph/x.ttl',
+        rowCount: 4,
+      },
+    ]);
+    await store.put(
+      'outputs',
+      'demo/v2/graph/x.ttl',
+      Buffer.from('<a> <b> <c> .\n'),
+      'text/turtle',
+    );
+
+    const res = await app.inject(`/api/jobs/${job.id}/outputs/graph`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/turtle; charset=utf-8');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="x.ttl"');
   });
 });
 
@@ -539,5 +565,70 @@ describe('GET /api/jobs/:id/document', () => {
     expect(unknown.statusCode).toBe(404);
     store.objects.clear();
     expect((await app.inject({ url: `/api/jobs/${job.id}/document` })).statusCode).toBe(404);
+  });
+});
+
+describe('the SHACL report of a job (ADR 0011 step 5)', () => {
+  it('returns the stored report, and 404 without one', async () => {
+    const { app, store, job } = await seedJob();
+    const url = `/api/jobs/${job.id}/shacl-report`;
+    const missing = await app.inject(url);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: 'no SHACL report for this job' });
+    const report = {
+      conforms: false,
+      results: [
+        {
+          severity: 'Violation',
+          shape: 'https://acme.example/def/LetterShape',
+          focus: 'https://data.acme.example/doc/ab',
+          path: 'https://acme.example/def/sentBy',
+          output: 'sender',
+          message: 'a letter names its sender',
+          value: '',
+        },
+      ],
+    };
+    await store.put(
+      'runs',
+      shaclReportKey(job.id),
+      Buffer.from(JSON.stringify(report)),
+      'application/json',
+    );
+    const res = await app.inject(url);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(report);
+    expect(
+      (await app.inject('/api/jobs/00000000-0000-4000-8000-000000000000/shacl-report')).statusCode,
+    ).toBe(404);
+  });
+});
+
+describe('the graph a job published (ADR 0011 step 6)', () => {
+  it('is null until a graph published event, then the newest one', async () => {
+    const { app, repo, job } = await seedJob();
+    expect((await app.inject(`/api/jobs/${job.id}`)).json().graph).toBeNull();
+    const iri = 'https://data.acme.example/graph/source/ab/demo';
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, {
+      graph: iri,
+      version: 1,
+      triples: 40,
+      endpoint: false,
+    });
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, {
+      graph: iri,
+      version: 2,
+      triples: 42,
+      endpoint: true,
+    });
+    const graph = (await app.inject(`/api/jobs/${job.id}`)).json().graph;
+    expect(graph).toMatchObject({ iri, version: 2, triples: 42, endpoint: true });
+    expect(typeof graph.publishedAt).toBe('string');
+  });
+
+  it('reads a malformed event as none', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.addEvent(job.id, 'info', GRAPH_PUBLISHED_EVENT, { graph: 3 });
+    expect((await app.inject(`/api/jobs/${job.id}`)).json().graph).toBeNull();
   });
 });

@@ -8,7 +8,7 @@ import {
 } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
-import { EXPIRY_OPTIONS, expiresSoon, expiryDays, expiryText, type Expiry } from './derive.js';
+import { EXPIRY_OPTIONS, expiresSoon, expiryDays, expiryText, type Expiry } from './expiry.js';
 
 type Grace = '1' | '7' | '30';
 

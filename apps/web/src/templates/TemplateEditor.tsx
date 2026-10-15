@@ -4,12 +4,14 @@ import {
   describeDefinitionChange,
   VALUE_TYPES,
   type DataPolicy,
+  type DeliveryFormat,
   type JobSummary,
   type OverviewItem,
   type Retirement,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { RETIRED_REASON } from '../ui/retired.js';
 import { RetiredBanner } from '../ui/RetiredBanner.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
@@ -38,10 +40,11 @@ import {
 import { choiceName } from '../jobs/derive.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
+import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
 
 type Path = (string | number)[];
-type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'yaml' | 'quality';
+type Tab = 'general' | 'sections' | 'outputs' | 'pipeline' | 'mapping' | 'yaml' | 'quality';
 
 /** The Templates page's order (UI handoff §5). */
 const STANDALONE_TABS: [Tab, string][] = [
@@ -49,6 +52,7 @@ const STANDALONE_TABS: [Tab, string][] = [
   ['sections', 'Sections'],
   ['pipeline', 'Pipeline'],
   ['outputs', 'Outputs'],
+  ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
   ['quality', 'Quality'],
 ];
@@ -59,8 +63,25 @@ const EMBEDDED_TABS: [Tab, string][] = [
   ['sections', 'Sections'],
   ['outputs', 'Outputs'],
   ['pipeline', 'Pipeline'],
+  ['mapping', 'Mapping'],
   ['yaml', 'YAML'],
 ];
+
+/** What publishing can deliver (DELIVERY_FORMATS), in that order. */
+const FORMATS: [DeliveryFormat, string][] = [
+  ['csv', 'CSV'],
+  ['json', 'JSON'],
+  ['rdf', 'RDF (Turtle)'],
+];
+
+/** Kept recipe edits (`ih.recipeDraft.<id>.<version>`): the definition, and unapplied YAML. */
+function keptRecipe(value: unknown): { def: Definition; yaml?: string } | null {
+  if (!value || typeof value !== 'object') return null;
+  const { def, yaml } = value as { def?: unknown; yaml?: unknown };
+  if (!def || typeof def !== 'object' || Array.isArray(def)) return null;
+  if (yaml !== undefined && typeof yaml !== 'string') return null;
+  return { def: def as Definition, ...(yaml !== undefined ? { yaml } : {}) };
+}
 
 /** Set when hosted by the Workbench's Template tab (handoff §10). */
 export interface EmbeddedEditor {
@@ -107,6 +128,8 @@ export function TemplateEditor({
   embedded?: EmbeddedEditor;
 }) {
   const [view, setView] = useState<TemplateRecordView | null>(null);
+  /** Unsaved edits of this draft, kept in this browser (ui/keptDraft.ts). */
+  const draftKey = `ih.recipeDraft.${templateId}.${version}`;
   const [def, setDef] = useState<Definition>({});
   const [saved, setSaved] = useState('');
   const [tab, setTab] = useState<Tab>(embedded ? 'pipeline' : 'general');
@@ -114,6 +137,15 @@ export function TemplateEditor({
   /** The table configured below the Tables list (clamped to the list). */
   const [tableIndex, setTableIndex] = useState(0);
   const [yamlText, setYamlText] = useState('');
+  /** YAML typed but not applied: kept when the sub-tab changes, and when leaving the page. */
+  const [yamlEdited, setYamlEdited] = useState(false);
+  /**
+   * The draft's `updatedAt` the edits started from: a save sends it, so edits restored from an
+   * earlier visit are refused (409) when the draft was saved again meanwhile, never overwrite it.
+   */
+  const [editBase, setEditBase] = useState<string | null>(null);
+  /** Edits put back from an earlier visit; `stale` when the draft was saved again since. */
+  const [restored, setRestored] = useState<{ stale: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const models = useModelChoices(api);
@@ -143,10 +175,33 @@ export function TemplateEditor({
     setDef(v.record.definition);
     setReplaced((r) => r + 1);
     setSaved(JSON.stringify(v.record.definition));
+    setEditBase(v.record.updatedAt);
+    setYamlEdited(false);
+    setRestored(null);
+  };
+  /** Puts back the edits left unsaved on an earlier visit to this draft. */
+  const restore = (v: TemplateRecordView) => {
+    if (v.record.status !== 'draft') return;
+    const kept = loadKept(draftKey, keptRecipe);
+    if (!kept) return;
+    setDef(kept.value.def);
+    setReplaced((r) => r + 1);
+    setEditBase(typeof kept.base === 'string' ? kept.base : null);
+    if (kept.value.yaml !== undefined) {
+      setYamlText(kept.value.yaml);
+      setYamlEdited(true);
+    }
+    setRestored({ stale: kept.base !== v.record.updatedAt });
   };
 
   useEffect(() => {
-    api.getTemplate(templateId, version).then(accept, (err: Error) => setError(err.message));
+    api.getTemplate(templateId, version).then(
+      (v) => {
+        accept(v);
+        restore(v);
+      },
+      (err: Error) => setError(err.message),
+    );
     api.listTemplates().then(
       (items) => {
         const item = items.find((t) => t.id === templateId);
@@ -158,6 +213,8 @@ export function TemplateEditor({
         setLooked({ retired: null });
       },
     );
+    // accept and restore only set state; restore's key is made of templateId and version.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, templateId, version]);
 
   /** The open step on the Recipe tab's Pipeline (clamped to the list when rendered). */
@@ -180,6 +237,26 @@ export function TemplateEditor({
       live = false;
     };
   }, [api, templateId, isEmbedded]);
+
+  // Keep unsaved edits (and unapplied YAML) of a draft in this browser while there are any.
+  const draftOpen = view?.record.status === 'draft';
+  const defJson = JSON.stringify(def);
+  useEffect(() => {
+    if (!draftOpen) return;
+    const changed = defJson !== saved;
+    keepDraft(
+      draftKey,
+      changed || yamlEdited
+        ? {
+            base: editBase,
+            value: {
+              def: JSON.parse(defJson) as Definition,
+              ...(yamlEdited ? { yaml: yamlText } : {}),
+            },
+          }
+        : null,
+    );
+  }, [draftKey, draftOpen, defJson, saved, yamlEdited, yamlText, editBase]);
 
   const issues = useMemo(() => validateDefinition(def), [def]);
   /** The type's retirement: the project page's when embedded, else the lookup (null: active). */
@@ -226,7 +303,7 @@ export function TemplateEditor({
     setError(null);
     setConflict(false);
     try {
-      accept(await api.saveTemplate(templateId, version, def, record.updatedAt || undefined));
+      accept(await api.saveTemplate(templateId, version, def, editBase || undefined));
       setMessage('Draft saved.');
       setSaves((n) => n + 1);
       embedded?.onSaved?.();
@@ -248,6 +325,9 @@ export function TemplateEditor({
   const discard = () => {
     setDef(savedDef);
     setReplaced((r) => r + 1);
+    setEditBase(record.updatedAt);
+    setYamlEdited(false);
+    setRestored(null);
     if (tab === 'yaml') setYamlText(toYaml(savedDef, { lineWidth: 100 }));
     setMessage(null);
     setError(null);
@@ -277,7 +357,7 @@ export function TemplateEditor({
       onNavigate('#/templates');
     });
   const openTab = (t: Tab) => {
-    if (t === 'yaml') setYamlText(toYaml(def, { lineWidth: 100 }));
+    if (t === 'yaml' && !yamlEdited) setYamlText(toYaml(def, { lineWidth: 100 }));
     setTab(t);
   };
   const applyYaml = () => {
@@ -286,6 +366,7 @@ export function TemplateEditor({
       if (!parsed || typeof parsed !== 'object') throw new Error('YAML must be a mapping');
       setDef({ ...(parsed as Definition), id: templateId, version });
       setReplaced((r) => r + 1);
+      setYamlEdited(false);
       setMessage('YAML applied (not saved yet).');
     } catch (err) {
       setError(`YAML: ${(err as Error).message}`);
@@ -314,7 +395,12 @@ export function TemplateEditor({
         projectId: templateId,
         definition: def,
         issues,
-        serverIssues: dirty ? [] : view.issues.map(issueText),
+        serverIssues: dirty
+          ? []
+          : view.issues.filter((i) => i.severity !== 'warning').map(issueText),
+        serverWarnings: dirty
+          ? []
+          : view.issues.filter((i) => i.severity === 'warning').map(issueText),
         stages: embedded.stages ?? null,
       })
     : [];
@@ -366,6 +452,14 @@ export function TemplateEditor({
         />
       )}
       {!embedded && retired && <RetiredBanner retirement={retired} typeId={templateId} />}
+      {restored && (dirty || yamlEdited) && (
+        <p role="status" className="kept-note">
+          <Icon name="info" size={14} />
+          {restored.stale
+            ? 'Restored your unsaved changes from your last visit, but the draft was saved again since: saving them will be refused. Note what you need, then reload the draft.'
+            : 'Restored your unsaved changes from your last visit.'}
+        </p>
+      )}
       {message && <p role="status">{message}</p>}
       {error && (
         <p role="alert">
@@ -500,6 +594,36 @@ export function TemplateEditor({
                       )
                     }
                   />
+                  <fieldset className="formats">
+                    <legend>Delivered formats</legend>
+                    {FORMATS.map(([format, label]) => {
+                      const formats: DeliveryFormat[] = def.delivery?.formats ?? ['csv', 'json'];
+                      const on = formats.includes(format);
+                      const noMapping = format === 'rdf' && !def.semantics && !on;
+                      return (
+                        <label key={format}>
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            disabled={noMapping || (on && formats.length === 1)}
+                            onChange={() => {
+                              const next = FORMATS.map(([f]) => f).filter((f) =>
+                                f === format ? !on : formats.includes(f),
+                              );
+                              const isDefault = next.join() === 'csv,json';
+                              update(['delivery'], isDefault ? undefined : { formats: next });
+                            }}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                    {!def.semantics && (
+                      <p className="muted">
+                        Add an ontology mapping on the Mapping tab to deliver RDF.
+                      </p>
+                    )}
+                  </fieldset>
                 </div>
                 {stageLink('revise', 'Revise proposes a new preamble from your feedback')}
               </>
@@ -548,6 +672,16 @@ export function TemplateEditor({
                 />
                 {stageLink('sections', 'Ask the model in Sections')}
               </>
+            )}
+
+            {tab === 'mapping' && (
+              <MappingEditor
+                api={api}
+                definition={def}
+                semantics={def.semantics}
+                onChange={(next) => update(['semantics'], next)}
+                preview={embedded ? { projectId: templateId, dirty } : undefined}
+              />
             )}
 
             {tab === 'outputs' && (
@@ -624,7 +758,10 @@ export function TemplateEditor({
                 <YamlEditor
                   label="Recipe YAML"
                   value={yamlText}
-                  onChange={setYamlText}
+                  onChange={(text) => {
+                    setYamlText(text);
+                    setYamlEdited(true);
+                  }}
                   readOnly={!editable}
                 />
                 <button type="button" onClick={applyYaml}>

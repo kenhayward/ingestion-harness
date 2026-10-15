@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { JobSummarySchema, StepProgressSchema, TestRunSchema } from '../src/index.js';
+import {
+  JobSummarySchema,
+  isMine,
+  RepublishParamsSchema,
+  StepProgressSchema,
+  TestRunSchema,
+  WithdrawParamsSchema,
+} from '../src/index.js';
 
 const summary = {
   id: '6f1c2c1e-0000-4000-8000-000000000001',
@@ -19,6 +26,7 @@ const summary = {
   referenceId: null,
   projectId: 'letter',
   createdBy: null,
+  createdByUser: null,
   reviewReasons: null,
   reviewer: null,
   reviewNote: null,
@@ -81,5 +89,43 @@ describe('step progress (TR3)', () => {
     };
     expect(TestRunSchema.parse(run).progress).toEqual(fixture.templateRun[2]);
     expect(TestRunSchema.safeParse({ ...run, progress: null }).success).toBe(true);
+  });
+});
+
+describe('withdraw and republish params (ADR 0011 step 7; shared with the worker)', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('./fixtures/withdraw-params.json', import.meta.url), 'utf8'),
+  ) as Record<string, unknown[]> & { republish: Record<string, unknown[]> };
+  it.each(fixture.valid!.map((v) => [v]))('accepts %j', (params) => {
+    expect(WithdrawParamsSchema.parse(params)).toEqual(params);
+  });
+  it.each(fixture.invalid!.map((v) => [v]))('refuses %j', (params) => {
+    expect(WithdrawParamsSchema.safeParse(params).success).toBe(false);
+  });
+  it('republish names the type', () => {
+    for (const v of fixture.republish.valid!) expect(RepublishParamsSchema.parse(v)).toEqual(v);
+    for (const v of fixture.republish.invalid!) {
+      expect(RepublishParamsSchema.safeParse(v).success).toBe(false);
+    }
+  });
+});
+
+describe('isMine', () => {
+  const ken = { name: 'ken', userId: 'u-ken' };
+  it.each([
+    ['my id', { createdBy: 'ken', createdByUser: 'u-ken' }, true],
+    ['my id under an old name (renamed)', { createdBy: 'Kenneth', createdByUser: 'u-ken' }, true],
+    ['a namesake: my name, another id', { createdBy: 'ken', createdByUser: 'u-other' }, false],
+    ['an older job with my name and no id', { createdBy: 'ken', createdByUser: null }, true],
+    ['an older job with another name', { createdBy: 'ops', createdByUser: null }, false],
+    ['nobody (no access control)', { createdBy: null, createdByUser: null }, false],
+  ] as const)('%s', (_case, job, mine) => {
+    expect(isMine(job, ken)).toBe(mine);
+  });
+
+  it('a user without an id only matches older jobs by name', () => {
+    const local = { name: 'ken', userId: null };
+    expect(isMine({ createdBy: 'ken', createdByUser: 'u-ken' }, local)).toBe(false);
+    expect(isMine({ createdBy: 'ken', createdByUser: null }, local)).toBe(true);
   });
 });

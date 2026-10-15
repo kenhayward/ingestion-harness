@@ -7,6 +7,7 @@ are refused here even though the API never sends them."""
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -18,13 +19,23 @@ from .draft_stages import OUTPUTS, REVISE, SECTIONS, STEPS, Stage, resolve_answe
 from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
-from .pipeline import DocumentError, PipelineDeps, check_cancelled, enforce_data_policy
+from .mapping_stage import MAPPING as MAPPING_STAGE
+from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, run_suggestions
+from .pipeline import (
+    DocumentError,
+    JobCancelled,
+    PipelineDeps,
+    check_cancelled,
+    enforce_data_policy,
+)
 from .queue import ClaimedJob, JobQueue
 from .storage import drafting_key, prepared_text_key, run_key
 from .workbench import SegmentDocument, segment_with_timeout
 
 MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
+log = logging.getLogger(__name__)
+
 #: Output budget of one drafting call (a survey or proposal is far smaller than an extraction).
 DRAFT_MAX_TOKENS = 16_000
 
@@ -126,9 +137,11 @@ def clamp_seen_in(body: dict[str, Any], samples: int) -> dict[str, Any]:
     return {**body, "candidates": candidates}
 
 
-STAGES: dict[str, Stage] = {s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS, REVISE)}
+STAGES: dict[str, Stage] = {
+    s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS, REVISE, MAPPING_STAGE)
+}
 #: Stages that propose changes to the current draft (so they need it).
-CHANGE_STAGE_IDS = {"outputs", "sections", "steps", "revise"}
+CHANGE_STAGE_IDS = {"outputs", "sections", "steps", "revise", "mapping"}
 
 _BRIEF_LABELS = [
     ("purpose", "Purpose"),
@@ -250,6 +263,12 @@ class DraftParams(BaseModel):
     failures: list[dict[str, Any]] = Field(default_factory=list)
     feedback_ids: list[str] = Field(default_factory=list, alias="feedbackIds")
     failures_from: FailuresFrom | None = Field(default=None, alias="failuresFrom")
+    #: The mapping stage (ADR 0011): the brief's vocabulary, its guidance, observed values.
+    mapping: dict[str, Any] | None = None
+    #: Survey (ontology suggestions): the library's newest ready versions and the brief's
+    #: vocabulary pins; empty: no suggestions.
+    library: list[LibraryVersion] = Field(default_factory=list)
+    pinned: list[SuggestPin] = Field(default_factory=list)
 
 
 def prepared_pages(deps: PipelineDeps, sha256: str) -> list[str]:
@@ -294,6 +313,10 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         raise DocumentError(f"drafting model: {exc}") from exc
     enforce_data_policy(job, deps, provider, ref)
     model_ref = f"{provider.name}/{model_id}"
+    if stage.id == "mapping":
+        from .mapping_stage import run_mapping
+
+        return run_mapping(job, deps, queue, params, provider, model_id, model_ref)
 
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
     samples = [
@@ -368,6 +391,24 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         body = resolve_answers(body, labels)
     if stage.id == "survey":
         body = clamp_seen_in(body, len(samples))
+        if params.library:  # the ontology library's suggestions (advisory)
+            try:
+                run_suggestions(
+                    job,
+                    deps,
+                    queue,
+                    survey_proposal_id=job.id,
+                    candidates=[SuggestCandidate.model_validate(c) for c in body["candidates"]],
+                    library=params.library,
+                    pinned=params.pinned,
+                    data_policy=params.data_policy,
+                    stage="survey",
+                )
+            except JobCancelled:
+                raise
+            except Exception as exc:  # advisory: the survey stands without suggestions
+                log.warning("job %s: ontology suggestions failed: %s", job.id, exc)
+                queue.event(job.id, "warn", "ontology suggestions failed", {"error": str(exc)})
     if stage.id == "sections":
         grid, misses = anchor_check(samples, draft, body)
         if misses:

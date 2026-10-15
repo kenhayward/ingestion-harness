@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BriefVersionView, ExportView, SurveyBody } from '@ih/shared';
 import {
+  restoredNote,
   briefStatus,
   compareOf,
   csvPreview,
@@ -129,5 +130,32 @@ describe('exportStatusText', () => {
     ['cancelled', { status: 'cancelled' }, 'Export cancelled'],
   ])('%s', (_name, o, text) => {
     expect(exportStatusText(exp(o))).toBe(text);
+  });
+});
+
+describe('restoredNote', () => {
+  it.each([
+    [
+      2,
+      2,
+      'Restored your unsaved changes from your last visit: save them as a new version, or discard them.',
+    ],
+    [
+      2,
+      3,
+      'Restored your unsaved changes, made on v2. The brief is now v3: check them before saving.',
+    ],
+    [
+      null,
+      1,
+      'Restored your unsaved changes, made before the first version. The brief is now v1: check them before saving.',
+    ],
+    [
+      null,
+      null,
+      'Restored your unsaved changes from your last visit: save them as a new version, or discard them.',
+    ],
+  ])('edits made on %s, saved now %s', (from, now, note) => {
+    expect(restoredNote(from, now)).toBe(note);
   });
 });

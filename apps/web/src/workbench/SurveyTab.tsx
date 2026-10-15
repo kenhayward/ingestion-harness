@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   EMPTY_BRIEF,
   candidateInBrief,
   surveyBodyOf,
   type Brief,
+  type BriefBody,
   type DataPolicy,
   type OverviewItem,
   type ProposalView,
@@ -13,6 +14,8 @@ import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
+import { SurveyOntologies } from './SurveyOntologies.js';
+import { keepDraft, loadKept, stringRecord } from '../ui/keptDraft.js';
 import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { StaleBanner } from './StaleBanner.js';
@@ -88,9 +91,18 @@ export function SurveyTab({
   }, [refresh]);
 
   const proposalId = proposal?.id;
-  useEffect(() => {
-    setTyped({});
-  }, [proposalId]);
+  /** Answers typed for this proposal but not saved, kept in this browser (ui/keptDraft.ts). */
+  const answersKey = proposalId ? `ih.surveyAnswers.${projectId}.${proposalId}` : null;
+  const [restored, setRestored] = useState(false);
+  // Another proposal's questions: start from its kept answers, if any (set while rendering, so
+  // the boxes never show empty first).
+  const [typedFor, setTypedFor] = useState<string | null>(null);
+  if (answersKey !== typedFor) {
+    setTypedFor(answersKey);
+    const kept = answersKey ? loadKept(answersKey, stringRecord) : null;
+    setTyped(kept?.value ?? {});
+    setRestored(kept !== null);
+  }
 
   const running = proposal?.status === 'running';
   useEffect(() => {
@@ -98,6 +110,27 @@ export function SurveyTab({
     const timer = setInterval(() => void refresh(), pollMs);
     return () => clearInterval(timer);
   }, [running, pollMs, refresh]);
+
+  // One brief save at a time on this tab: answers and ontology pins both write a whole brief
+  // built from the same version, so a second save in flight would undo the first.
+  const briefLock = useRef(false);
+  const [briefBusy, setBriefBusy] = useState(false);
+  const saveBriefBody = useCallback(
+    async (next: BriefBody): Promise<Brief | null> => {
+      if (briefLock.current) return null;
+      briefLock.current = true;
+      setBriefBusy(true);
+      try {
+        const saved = await api.saveBrief(projectId, next);
+        onBriefSaved(saved);
+        return saved;
+      } finally {
+        briefLock.current = false;
+        setBriefBusy(false);
+      }
+    },
+    [api, projectId, onBriefSaved],
+  );
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -117,6 +150,10 @@ export function SurveyTab({
   const saved = brief?.body.answers ?? [];
   const progress = body ? answerProgress(body.questions, saved, typed) : null;
   const unsavedAnswers = (progress?.unsaved.length ?? 0) > 0;
+  useEffect(() => {
+    if (!answersKey) return;
+    keepDraft(answersKey, unsavedAnswers ? { base: brief?.version ?? null, value: typed } : null);
+  }, [answersKey, unsavedAnswers, typed, brief?.version]);
   const banner = skipBanner(stages, proposal ?? null);
   const savedAnswer = (q: string) => saved.find((a) => a.question === q)?.answer ?? '';
 
@@ -142,11 +179,11 @@ export function SurveyTab({
       const kept = base.answers.filter(
         (qa) => !progress.unsaved.some((u) => u.question === qa.question),
       );
-      const next = await api.saveBrief(projectId, {
+      const next = await saveBriefBody({
         ...base,
         answers: [...kept, ...progress.unsaved.filter((u) => u.answer !== '')],
       });
-      onBriefSaved(next);
+      if (!next) return;
       setTyped({});
       setMessage(`Answers saved to brief version ${next.version}`);
     });
@@ -192,6 +229,12 @@ export function SurveyTab({
       {running && <p className="muted">Surveying the dev samples…</p>}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
+      {restored && unsavedAnswers && (
+        <p role="status" className="kept-note">
+          <Icon name="info" size={14} />
+          Restored your unsaved answers from your last visit.
+        </p>
+      )}
       {message && <p role="status">{message}</p>}
       {banner && <StaleBanner tone="skip">{skipBannerText(banner)}</StaleBanner>}
       {proposal?.status === 'accepted' && (
@@ -246,7 +289,7 @@ export function SurveyTab({
                 <div className="survey-card-foot">
                   <button
                     type="button"
-                    disabled={progress.unsaved.length === 0 || busy}
+                    disabled={progress.unsaved.length === 0 || busy || briefBusy}
                     title={progress.unsaved.length === 0 ? 'Type an answer first' : undefined}
                     onClick={() => void saveAnswers()}
                   >
@@ -376,6 +419,21 @@ export function SurveyTab({
           )}
         </div>
       )}
+      <SurveyOntologies
+        api={api}
+        projectId={projectId}
+        dataPolicy={dataPolicy}
+        brief={brief}
+        onBriefSaved={onBriefSaved}
+        saveBrief={saveBriefBody}
+        briefBusy={briefBusy}
+        surveyKey={`${proposal?.id ?? ''}:${proposal?.status ?? ''}`}
+        pollMs={pollMs}
+        retired={retired}
+        hasSurvey={
+          proposal !== null && proposal?.status !== 'failed' && proposal?.status !== 'running'
+        }
+      />
     </div>
   );
 }

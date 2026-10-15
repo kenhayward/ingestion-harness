@@ -122,6 +122,9 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
           work for it is refused with a 409 \`{name} is retired: unretire it to use it again\`:
           uploads, retries, test and regression runs, new drafts, publishing, imports and the
           Workbench actions that queue jobs. Retiring a retired type keeps its first retirement.
+          What the type delivered is withdrawn (ADR 0011): its jobs' published outputs are removed
+          from the target and its graphs from the triple store, by a queued \`withdraw\` job; the
+          jobs, their drafts and reviewed documents stay.
         `,
         params: TypeParams,
         response: {
@@ -139,6 +142,9 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
       const by = req.auth?.label ?? null;
       const { retirement, created } = await app.deps.templates.retire(id, by);
       if (created) req.log.info({ typeId: id, by }, 'document type retired');
+      // Every time, not only the first: anything delivered since is withdrawn too (idempotent).
+      const withdrawJobId = await app.deps.repo.withdrawType(id, by);
+      if (withdrawJobId) req.log.info({ typeId: id, withdrawJobId }, 'withdrawal queued');
       return { id, retired: retirement };
     },
   );
@@ -156,6 +162,7 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
           Makes a retired document type available again for uploads and new work. This route is
           the only way to unretire a type: the web app has no Unretire button (retiring is also on
           the Document types page). A type that is not retired is left as it is (still a 204).
+          What its retirement withdrew is delivered again by a queued \`republish\` job.
         `,
         params: TypeParams,
         response: { 204: noContent('Unretired.'), 403: ADMINS_ONLY, 404: TYPE_NOT_FOUND },
@@ -166,7 +173,10 @@ export const specRoutes: FastifyPluginAsync = async (app) => {
       // Try the removal first: a retirement can outlive its type (its only draft deleted, a spec
       // file removed) and must stay removable, or the id is locked for good.
       if (await app.deps.templates.unretire(id)) {
-        req.log.info({ typeId: id, by: req.auth?.label ?? null }, 'document type unretired');
+        const by = req.auth?.label ?? null;
+        req.log.info({ typeId: id, by }, 'document type unretired');
+        const republishJobId = await app.deps.repo.republishType(id, by);
+        if (republishJobId) req.log.info({ typeId: id, republishJobId }, 'republish queued');
       } else if (!(await typeExists(app.deps, id))) {
         return reply.code(404).send({ error: 'document type not found' });
       }

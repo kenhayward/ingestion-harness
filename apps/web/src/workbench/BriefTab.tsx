@@ -21,7 +21,10 @@ import {
   briefStatus,
   compareOf,
   csvPreview,
+  keepBriefDraft,
+  loadBriefDraft,
   openQuestions,
+  restoredNote,
   versionChangeText,
   type TextSection,
 } from './brief.js';
@@ -165,7 +168,16 @@ export function BriefTab({
   aside?: ReactNode;
 }) {
   const saved = brief?.body ?? EMPTY_BRIEF;
-  const [body, setBody] = useState<BriefBody>(saved);
+  const base = brief?.version ?? null;
+  /** Edits left unsaved on an earlier visit, put back on top of what is saved now. */
+  const [restored] = useState(() => {
+    const draft = loadBriefDraft(projectId);
+    if (!draft) return null;
+    const body = { ...saved, ...draft.changes };
+    return briefDiff(saved, body).length ? { base: draft.base, body } : null;
+  });
+  const [body, setBody] = useState<BriefBody>(restored?.body ?? saved);
+  useEffect(() => keepBriefDraft(projectId, base, saved, body), [projectId, base, saved, body]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -289,6 +301,12 @@ export function BriefTab({
           ) : undefined
         }
       />
+      {restored && changed.length > 0 && (
+        <p role="status" className="kept-note">
+          <Icon name="info" size={14} />
+          {restoredNote(restored.base, base)}
+        </p>
+      )}
       <nav aria-label="Brief sections" className="brief-nav">
         {TEXT_SECTIONS.map((s) => {
           const filled = body[s].trim() !== '';
@@ -361,6 +379,22 @@ export function BriefTab({
             </div>
             <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
               Open Survey
+            </button>
+          </section>
+          <section className="card brief-ontology-summary" aria-label="Ontologies">
+            <h3>Ontologies</h3>
+            <p className="muted">
+              {body.ontologies.length === 0
+                ? 'No ontologies pinned.'
+                : `${body.ontologies.length} ${body.ontologies.length === 1 ? 'ontology' : 'ontologies'} pinned: ${body.ontologies
+                    .map(
+                      (o) =>
+                        `${o.ontologyId} v${o.version}${o.role === 'shapes' ? ' (shapes)' : ''}`,
+                    )
+                    .join(' · ')}`}
+            </p>
+            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
+              {body.ontologies.length === 0 ? 'Choose on Survey' : 'Change on Survey'}
             </button>
           </section>
         </form>

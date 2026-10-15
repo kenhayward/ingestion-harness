@@ -6,7 +6,13 @@ import { ApiError } from '../src/api/client.js';
 import { ModelsPage } from '../src/models/ModelsPage.js';
 import { fakeApi } from './fake-api.js';
 
-const admin = { role: 'admin' as const, label: 'Ken', expiresAt: null };
+const admin = {
+  role: 'admin' as const,
+  label: 'Ken',
+  email: null,
+  mustChangePassword: false,
+  userId: 'u-test',
+};
 
 function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
   return {
@@ -170,7 +176,18 @@ describe('ModelsPage', () => {
   });
 
   it('is for admins only', () => {
-    render(<ModelsPage api={fakeApi()} me={{ role: 'user', label: 'Ann', expiresAt: null }} />);
+    render(
+      <ModelsPage
+        api={fakeApi()}
+        me={{
+          role: 'user',
+          label: 'Ann',
+          email: null,
+          mustChangePassword: false,
+          userId: 'u-test',
+        }}
+      />,
+    );
     expect(screen.getByText('Admins only.')).toBeInTheDocument();
   });
 });
@@ -197,7 +214,12 @@ describe('ModelsPage: model choices and pipeline models', () => {
         updatedBy: 'Ken',
       },
     ],
-    settings: { defaultChoice: 'main', draftingModel: 'local/qwen', ocrModel: 'local/olmocr' },
+    settings: {
+      defaultChoice: 'main',
+      draftingModel: 'local/qwen',
+      ocrModel: 'local/olmocr',
+      embeddingModel: null,
+    },
     ...over,
   });
   const endpoints = [
@@ -303,6 +325,12 @@ describe('ModelsPage: model choices and pipeline models', () => {
       'local/llama-3',
     );
     expect(setLlmSettings).toHaveBeenLastCalledWith({ draftingModel: 'local/llama-3' });
+    const embedding = within(pipeline).getByRole('combobox', { name: 'Embedding model' });
+    expect(embedding).toHaveValue('');
+    await userEvent.selectOptions(embedding, 'local/qwen');
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: 'local/qwen' });
+    await userEvent.selectOptions(embedding, '');
+    expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: null });
   });
 
   it('asks the workers to discover an endpoint now', async () => {

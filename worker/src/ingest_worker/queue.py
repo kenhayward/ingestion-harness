@@ -186,7 +186,8 @@ class PgJobQueue:
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (job_id, output_id, stage) DO UPDATE
                      SET bucket = EXCLUDED.bucket, object_key = EXCLUDED.object_key,
-                         row_count = EXCLUDED.row_count, created_at = now()""",
+                         row_count = EXCLUDED.row_count, created_at = now(),
+                         withdrawn_at = NULL""",
                 (job.id, o.output_id, stage, o.format, bucket, o.key, o.row_count),
             )
 

@@ -12,7 +12,17 @@ const PATHS = {
       <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
     </>
   ),
+  graph: (
+    <>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="18" cy="8" r="2.5" />
+      <circle cx="9" cy="18" r="2.5" />
+      <path d="M8.4 6.4l7.1 1.2M6.9 8.4l1.5 7.2M16.5 10.1l-5.9 6" />
+    </>
+  ),
   moon: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />,
+  grid: <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />,
+  list: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
   monitor: (
     <>
       <rect x="3" y="4" width="18" height="12" rx="2" />
@@ -81,6 +91,9 @@ const PATHS = {
   chevronLeft: <path d="M15 18l-6-6 6-6" />,
   chevronRight: <path d="M9 18l6-6-6-6" />,
   check: <path d="M5 12l5 5 9-10" />,
+  link: (
+    <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+  ),
   pencil: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
   flag: <path d="M5 21V4h11l-2 4 2 4H5" />,
   plus: <path d="M12 5v14M5 12h14" />,
@@ -92,6 +105,24 @@ const PATHS = {
     <>
       <path d="M12 4v12M7 11l5 5 5-5" />
       <path d="M4 20h16" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0" />
+    </>
+  ),
+  bellOff: (
+    <>
+      <path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z" />
+      <path d="M10 21a2 2 0 0 0 4 0M3 3l18 18" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
     </>
   ),
   install: (
@@ -157,6 +188,36 @@ const PATHS = {
       <path d="M9 11V8a3 3 0 0 1 6 0v3" />
     </>
   ),
+  unlock: (
+    <>
+      <rect x="6" y="11" width="12" height="9" rx="2" />
+      <path d="M9 11V8a3 3 0 0 1 5.8-1" />
+    </>
+  ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
+    </>
+  ),
+  userOff: (
+    <>
+      <circle cx="10" cy="8" r="4" />
+      <path d="M3 20a7 7 0 0 1 11-5.7M16 16l5 5M21 16l-5 5" />
+    </>
+  ),
+  userCheck: (
+    <>
+      <circle cx="10" cy="8" r="4" />
+      <path d="M3 20a7 7 0 0 1 11-5.7M15.5 18.5l2 2 4-4.5" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+      <path d="M3 4v4h4M12 8v4l3 2" />
+    </>
+  ),
   chip: (
     <>
       <rect x="7" y="7" width="10" height="10" rx="1.5" />
@@ -168,7 +229,16 @@ const PATHS = {
 export type IconName = keyof typeof PATHS;
 
 /** Inline stroke icon; always decorative (the control around it carries the accessible name). */
-export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
+export function Icon({
+  name,
+  size = 16,
+  strokeWidth = 2,
+}: {
+  name: IconName;
+  size?: number;
+  /** Thinner for large icons (the New project tile draws the bench at 36 px with 1.6). */
+  strokeWidth?: number;
+}) {
   return (
     <svg
       aria-hidden="true"
@@ -178,7 +248,7 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
     >

@@ -49,20 +49,25 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 
 ## Remote access (NGINX Proxy Manager)
 
-The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/adr/0006-token-access.md)).
+The app needs a sign-in everywhere, LAN included ([ADR 0013](../docs/adr/0013-email-password-users.md)).
 
 1. **Admin token:** after each deploy, `deploy.sh` / `deploy.ps1` print it. You can also get it
    any time with `deploy/scripts/admin-token.sh --env-file deploy/.env -f deploy/docker-compose.yml`
-   or `docker compose logs api | grep "ADMIN TOKEN"`. It changes on every API restart.
-2. **Sign in and issue tokens:** sign in with the admin token, open **Access**, and issue a user
-   token per person or device, with a label and an expiry. A new token is shown once. Revoke a
-   token to end its sessions immediately.
+   or `docker compose logs api | grep "ADMIN TOKEN"`. It changes on every API restart. It is the
+   password of the user `admin`.
+2. **Sign in and add users:** sign in as `admin` with the admin token, open **Access**, and add
+   each person with their name and email address. They get a one-time password (shown once,
+   valid 7 days) and choose their own password at first sign-in. Disable a user to end their
+   sessions at once. Ten wrong passwords in a row lock an account for 15 minutes (longer after
+   each further failure), and twenty disable it until an admin enables it. The post-deploy smoke
+   test adds a disabled `Smoke test …` user with an `@example.invalid` address on every run.
 3. **NGINX Proxy Manager:**
    - add a proxy host for your domain, forwarding to `http://<docker-host>:8081` (the `app`
      container, `APP_PORT`);
    - SSL: request a Let's Encrypt certificate, and turn on Force SSL and HSTS;
    - turn on **Block common exploits**;
-   - Advanced: `client_max_body_size 60m; proxy_read_timeout 300s;` (uploads and long requests).
+   - Advanced: `client_max_body_size 210m; proxy_read_timeout 300s;` (uploads up to
+     `MAX_UPLOAD_MB`, at most 200 MB with the app's nginx, e.g. ChEBI lite; and long requests).
      Workbench bundle imports (`POST /api/workbench/projects/import`) are larger: up to
      `MAX_UPLOAD_MB` × 12 samples + 8 MB (608 MB at the default 50). The app's nginx allows
      650 MB on that path only; give the proxy host the same allowance, e.g. a custom location
@@ -81,7 +86,11 @@ The app needs an **access token** everywhere, LAN included ([ADR 0006](../docs/a
      `Content-Security-Policy: frame-ancestors` blocks the frame again. Sign-in inside the frame
      needs HTTPS (the session cookie becomes `SameSite=None; Secure; Partitioned`). If the frame
      still stays blank, the browser console names the refused ancestor: every site in the frame
-     chain must be listed.
+     chain must be listed. Register `https://<host>/widget.html` as the widget, not the app's root:
+     a 3DEXPERIENCE "Run your app" widget copies the page it is given onto its own site, where the
+     app's own page would call `/api` on 3DEXPERIENCE and name assets the next deploy removes
+     (blank widget, 404s for `/assets/index-….js` in the app's log). `widget.html` only frames
+     the app, so it runs on its own origin and survives deploys.
 4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds
    on `127.0.0.1` (the defaults). Postgres and the API container are never published.
 5. **Trusted proxies:** the API trusts `X-Forwarded-*` only from private networks, which is where
@@ -130,6 +139,69 @@ SeaweedFS (`TARGET_S3_ENDPOINT` empty).
    (1, 7 or 30 days). Update the lake, then revoke the old key early if you like.
    **Revoke** stops a key within seconds; deleting the consumer removes its SeaweedFS user.
    The API deletes expired keys every minute.
+
+## Triple store (Fuseki)
+
+Delivered graphs (recipes that deliver `rdf`, ADR 0011) go to Apache Jena Fuseki when the `rdf`
+profile is on: `COMPOSE_PROFILES=rdf`, `RDF_ENDPOINT=http://fuseki:3030`, and the two users'
+passwords `RDF_WRITER_PASSWORD` (the worker) and `RDF_READER_PASSWORD` (consumers) in the env
+file. Without them nothing changes: graphs still go to S3, and the Linked data page says so.
+Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
+
+- **Dataset:** `ct`, TDB2 on the `fuseki-data` volume, every named graph in the default graph.
+  The worker writes over the internal network `rdf`.
+- **Consumers** query as the shared read-only user `ct-reader` through NGINX Proxy Manager
+  ([consumer guide](../docs/consumers/sparql.md)). Fuseki is published on
+  `FUSEKI_BIND:FUSEKI_PUBLIC_PORT` (`127.0.0.1:3030` by default) for the proxy only:
+  - add a proxy host (e.g. `sparql.acme.example`, Let's Encrypt, Force SSL) forwarding to
+    `http://<docker-host>:3030`;
+  - forward **only** the read services. In the host's Advanced box:
+
+    ```nginx
+    location = /ct/sparql { proxy_pass http://<docker-host>:3030; }
+    location = /ct/get    { proxy_pass http://<docker-host>:3030; }
+    location / { return 404; }
+    ```
+
+    so `/ct/data` (writes) and `/$/` (admin) are never reachable from outside;
+  - set `RDF_PUBLIC_URL=https://sparql.acme.example/` so the Linked data page shows consumers'
+    endpoint. Give consumers the `RDF_READER_PASSWORD` out of band; changing it needs
+    `deploy/scripts/compose.sh up -d fuseki`.
+- **Withdrawals:** deleting a delivered job, or retiring its document type, queues a `withdraw`
+  job that removes the published S3 objects and the graphs; unretiring queues a `republish`.
+  The Linked data page counts those waiting and failed (failures retry up to 100 times; see the
+  worker logs).
+- **Backups:** nightly, from the deploy host's cron. Each one is an N-Quads dump in the volume
+  (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host with the other backups.
+
+  ```bash
+  15 2 * * * cd /opt/ingestion-harness && deploy/scripts/compose.sh exec -T fuseki /opt/fuseki/admin.sh backup
+  ```
+- **Compaction:** weekly, because replacing graphs leaves garbage in TDB2.
+
+  ```bash
+  45 2 * * 0 cd /opt/ingestion-harness && deploy/scripts/compose.sh exec -T fuseki /opt/fuseki/admin.sh compact
+  ```
+- **Rebuild** an empty or lost dataset from what was delivered: every ontology graph from its
+  normalised file and every current document graph from its versioned copy in the target
+  (`graphs/<sha256>/<type>/v<n>.ttl`). Nothing is re-rendered.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild
+  ```
+- **Backfill** a document type whose mapping was added after documents were delivered: their
+  reviewed documents are rendered with the type's newest published recipe that maps to
+  ontologies.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild --backfill <type>
+  ```
+- **Re-mint** after changing the base IRI on the Linked data page: every graph is re-rendered
+  under the new base as its next version, and the graph under the old base is dropped.
+
+  ```bash
+  deploy/scripts/compose.sh exec worker python -m ingest_worker.rdf_rebuild --remint
+  ```
 
 ## Troubleshooting: builds fail with `connecting to 127.0.0.1:8888 … actively refused`
 

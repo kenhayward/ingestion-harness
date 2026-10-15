@@ -77,6 +77,17 @@ class _OpenAIBase:
         #: Extraction temperature (None = server default). 0 makes local models deterministic.
         self._temperature = temperature
 
+    def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """Embeddings in input order (`/v1/embeddings`; LM Studio, vLLM and OpenAI serve it)."""
+        if not texts:
+            return []
+        try:
+            response = self._client.embeddings.create(model=model, input=texts)
+        except Exception as exc:
+            raise _wrap_errors(exc) from exc
+        ordered = sorted(response.data, key=lambda d: d.index)
+        return [[float(x) for x in d.embedding] for d in ordered]
+
     def list_models(self) -> list[ModelDescriptor]:
         return [
             ModelDescriptor(self.name, self.kind, m.id, None)

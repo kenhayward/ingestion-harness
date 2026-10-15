@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   applyChanges,
   changeBodyOf,
@@ -34,6 +34,10 @@ const KEEP: Record<ChangeStage, { label: string; text: string }> = {
     text: 'Check the steps below, then keep them as they are or propose again.',
   },
   revise: { label: 'Keep', text: '' }, // revise is never stale (not in STAGE_ORDER)
+  mapping: {
+    label: 'Keep this mapping',
+    text: "The outputs or the brief's ontologies changed since this mapping: check it below, then keep it or ask for a new one.",
+  },
 };
 
 const DESCRIPTION: Record<ChangeStage, string | undefined> = {
@@ -44,6 +48,8 @@ const DESCRIPTION: Record<ChangeStage, string | undefined> = {
   steps:
     'Each step sends some sections of the text to a model and fills some outputs; check steps compare values.',
   revise: undefined,
+  mapping:
+    "Which ontology term each output becomes in the document's graph. The model chooses from terms the brief's ontologies offer; you choose which to apply.",
 };
 
 const PROPOSE: Record<ChangeStage, string> = {
@@ -51,6 +57,7 @@ const PROPOSE: Record<ChangeStage, string> = {
   sections: 'Propose section anchors',
   steps: 'Propose extraction steps',
   revise: 'Propose a revision',
+  mapping: 'Propose a mapping',
 };
 
 export const POLICY_NOTE: Record<DataPolicy, string> = {
@@ -74,7 +81,12 @@ const NEXT: Record<ChangeStage, { tab: string; label: string; text: string }> = 
   steps: {
     tab: 'runs',
     label: 'Run on dev samples',
-    text: 'Run the steps on the dev samples to refresh the per-step figures, then verify references.',
+    text: "Run the steps on the dev samples to refresh the per-step figures. Test runs aren't scored: Evaluate on dev scores the draft against your verified references.",
+  },
+  mapping: {
+    tab: 'mapping',
+    label: 'Preview the graph',
+    text: 'Preview the graph of a dev sample to check the mapping on real values.',
   },
   revise: {
     tab: 'evaluate',
@@ -103,6 +115,8 @@ export function StagePanel({
   title,
   item = null,
   now = Date.now(),
+  changeNote,
+  changeBadge,
 }: {
   api: Api;
   projectId: string;
@@ -132,6 +146,10 @@ export function StagePanel({
   title?: string;
   item?: OverviewItem | null;
   now?: number;
+  /** A line under each change (the mapping stage: values seen, alternatives). */
+  changeNote?: (c: DraftChange) => string | null;
+  /** A tag beside each change (the mapping stage: the model's confidence). */
+  changeBadge?: (c: DraftChange, index: number) => ReactNode;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -332,7 +350,8 @@ export function StagePanel({
         busy={busy}
         applyBlockedReason={blockedReason}
         now={now}
-        note={anchorLine}
+        note={changeNote ?? anchorLine}
+        badge={changeBadge}
         next={nextStep}
       />
     ) : null;

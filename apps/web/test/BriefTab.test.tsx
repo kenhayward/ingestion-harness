@@ -250,3 +250,140 @@ describe('BriefTab', () => {
     expect(screen.getByText('bundle here')).toBeInTheDocument();
   });
 });
+
+describe('BriefTab keeps unsaved edits (per project, in this browser)', () => {
+  const RESTORED = /Restored your unsaved changes/;
+
+  it('brings them back after leaving the tab, marked as unsaved', async () => {
+    const first = show(fakeApi(), brief(2, { purpose: 'Invoices' }));
+    await userEvent.type(screen.getByLabelText('Glossary'), 'PO = purchase order');
+    first.unmount(); // another tab or page
+
+    show(fakeApi(), brief(2, { purpose: 'Invoices' }));
+    expect(screen.getByLabelText('Glossary')).toHaveValue('PO = purchase order');
+    const header = screen.getByRole('heading', { level: 2, name: 'Brief' }).closest('header')!;
+    expect(header).toHaveTextContent('Unsaved changes');
+    expect(screen.getByRole('status')).toHaveTextContent(RESTORED);
+  });
+
+  it('keeps nothing once they are saved', async () => {
+    const saved = brief(3, { purpose: 'Invoices', glossary: 'PO' });
+    const api = fakeApi({ saveBrief: vi.fn(async () => saved) });
+    const first = show(api, brief(2, { purpose: 'Invoices' }));
+    await userEvent.type(screen.getByLabelText('Glossary'), 'PO');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as v3' }));
+    await screen.findByText('Saved as v3');
+    first.unmount();
+
+    show(fakeApi(), saved);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('keeps nothing once they are discarded or typed back to the saved text', async () => {
+    const first = show(fakeApi(), brief(2));
+    await userEvent.type(screen.getByLabelText('Rules'), 'DMY');
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.type(screen.getByLabelText('Glossary'), 'x');
+    await userEvent.clear(screen.getByLabelText('Glossary'));
+    first.unmount();
+
+    show(fakeApi(), brief(2));
+    expect(screen.getByLabelText('Rules')).toHaveValue('');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('says when the brief was saved again since the edits began', async () => {
+    const first = show(fakeApi(), brief(2, { purpose: 'Invoices' }));
+    await userEvent.type(screen.getByLabelText('Rules'), 'DMY');
+    first.unmount();
+
+    show(fakeApi(), brief(3, { purpose: 'Invoices and credit notes' }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Restored your unsaved changes, made on v2. The brief is now v3: check them before saving.',
+    );
+    // Only what was edited comes back; the newer version's purpose is kept.
+    expect(screen.getByLabelText('Purpose')).toHaveValue('Invoices and credit notes');
+    expect(screen.getByLabelText('Rules')).toHaveValue('DMY');
+  });
+
+  it('keeps each project’s edits apart', async () => {
+    const first = show(fakeApi(), brief(2));
+    await userEvent.type(screen.getByLabelText('Rules'), 'DMY');
+    first.unmount();
+    render(
+      <BriefTab
+        api={fakeApi()}
+        projectId="memo"
+        brief={{ ...brief(1), projectId: 'memo' }}
+        item={item}
+        onSaved={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Rules')).toHaveValue('');
+  });
+
+  it('ignores a stored draft it cannot read', () => {
+    localStorage.setItem('ih.briefDraft.letter', '{not json');
+    show(fakeApi(), brief(2, { rules: 'DMY' }));
+    expect(screen.getByLabelText('Rules')).toHaveValue('DMY');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('BriefTab ontologies (ADR 0011): a summary, chosen on Survey', () => {
+  it('summarises the pinned ontologies and links to Survey', async () => {
+    const onNavigate = vi.fn();
+    show(
+      fakeApi(),
+      brief(2, {
+        ontologies: [
+          { ontologyId: 'idmp', version: 2, role: 'vocabulary' },
+          { ontologyId: 'shp', version: 1, role: 'shapes' },
+        ],
+      }),
+      { onNavigate },
+    );
+    const section = screen.getByRole('region', { name: 'Ontologies' });
+    expect(section).toHaveTextContent('2 ontologies pinned: idmp v2 · shp v1 (shapes)');
+    expect(screen.queryByRole('button', { name: 'Add ontology' })).toBeNull();
+    await userEvent.click(within(section).getByRole('button', { name: 'Change on Survey' }));
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey');
+  });
+
+  it('says when none is pinned', () => {
+    show(fakeApi(), brief(2));
+    const section = screen.getByRole('region', { name: 'Ontologies' });
+    expect(section).toHaveTextContent('No ontologies pinned.');
+    expect(within(section).getByRole('button', { name: 'Choose on Survey' })).toBeTruthy();
+  });
+
+  it('never restores ontology picks from a kept brief draft', async () => {
+    // As an older build kept them: the ontologies section among the edited ones.
+    localStorage.setItem(
+      'ih.briefDraft.letter',
+      JSON.stringify({
+        base: 2,
+        value: {
+          rules: 'DMY',
+          ontologies: [{ ontologyId: 'old', version: 1, role: 'vocabulary' }],
+          ontologyGuidance: 'old guidance',
+        },
+      }),
+    );
+    const saveBrief = vi.fn(async (_id: string, body: BriefBody) => brief(3, body));
+    const saved = brief(2, {
+      ontologies: [{ ontologyId: 'idmp', version: 2, role: 'vocabulary' }],
+    });
+    show(fakeApi({ saveBrief } as Partial<Api>), saved);
+    expect(screen.getByLabelText('Rules')).toHaveValue('DMY');
+    expect(screen.getByRole('region', { name: 'Ontologies' })).toHaveTextContent('idmp v2');
+    await userEvent.click(screen.getByRole('button', { name: 'Save as v3' }));
+    expect(saveBrief.mock.calls[0]![1]).toMatchObject({
+      rules: 'DMY',
+      ontologies: [{ ontologyId: 'idmp', version: 2, role: 'vocabulary' }],
+      ontologyGuidance: '',
+    });
+  });
+});

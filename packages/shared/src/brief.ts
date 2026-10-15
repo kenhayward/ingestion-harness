@@ -17,6 +17,7 @@ export const BRIEF_SECTIONS = [
   'variants',
   'rules',
   'answers',
+  'ontologies',
 ] as const;
 export type BriefSection = (typeof BRIEF_SECTIONS)[number];
 
@@ -26,17 +27,57 @@ export interface BriefSectionDiff {
   after: string;
 }
 
-/** A section as text: the survey answers one `question: answer` per line. */
+/**
+ * A section as text: the survey answers one `question: answer` per line; the ontologies one
+ * pick per line, then their guidance.
+ */
 export function briefSectionText(body: BriefBody, section: BriefSection): string {
-  return section === 'answers'
-    ? body.answers.map((a) => `${a.question}: ${a.answer}`).join('\n')
-    : body[section];
+  if (section === 'answers')
+    return body.answers.map((a) => `${a.question}: ${a.answer}`).join('\n');
+  if (section === 'ontologies') {
+    const picks = (body.ontologies ?? []).map((o) => `${o.ontologyId} v${o.version} (${o.role})`);
+    const guidance = (body.ontologyGuidance ?? '').trim();
+    return [...picks, ...(guidance ? [`Guidance: ${guidance}`] : [])].join('\n');
+  }
+  return body[section];
 }
 
 const same = (a: BriefBody, b: BriefBody, section: BriefSection) =>
   section === 'answers'
     ? JSON.stringify(a.answers) === JSON.stringify(b.answers)
-    : a[section] === b[section];
+    : section === 'ontologies'
+      ? JSON.stringify([a.ontologies ?? [], a.ontologyGuidance ?? '']) ===
+        JSON.stringify([b.ontologies ?? [], b.ontologyGuidance ?? ''])
+      : a[section] === b[section];
+
+/** The vocabulary ontologies the brief chooses, sorted (shapes are for validation only). */
+export function vocabularyOf(body: BriefBody): { ontologyId: string; version: number }[] {
+  return (body.ontologies ?? [])
+    .filter((o) => o.role === 'vocabulary')
+    .map(({ ontologyId, version }) => ({ ontologyId, version }))
+    .sort((x, y) => x.ontologyId.localeCompare(y.ontologyId) || x.version - y.version);
+}
+
+/**
+ * When the brief's vocabulary picks or guidance last changed (a version whose selection differs
+ * from the one before; the first version against none); null while it never chose any.
+ */
+export function ontologySelectionChangedAt(briefs: readonly Brief[]): string | null {
+  const none = ontologySelectionKey(EMPTY_BRIEF);
+  let previous = none;
+  let at: string | null = null;
+  for (const b of [...briefs].sort((x, y) => x.version - y.version)) {
+    const key = ontologySelectionKey(b.body);
+    if (key !== previous) at = b.createdAt;
+    previous = key;
+  }
+  return at;
+}
+
+/** What the mapping stage depends on in the brief: its vocabulary picks and guidance. */
+export function ontologySelectionKey(body: BriefBody): string {
+  return JSON.stringify([vocabularyOf(body), (body.ontologyGuidance ?? '').trim()]);
+}
 
 /**
  * The sections that differ between two versions of a brief, in `BRIEF_SECTIONS` order.

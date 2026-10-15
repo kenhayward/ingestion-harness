@@ -1,6 +1,7 @@
 import type { MetricsData } from '../metrics.js';
 import type {
   JobDetail,
+  Creator,
   JobStatus,
   JobSummary,
   ModelInfo,
@@ -11,6 +12,7 @@ import type {
   ReviewRecord,
   SegmentDocument,
   StepRun,
+  SuggestParams,
 } from '@ih/shared';
 
 /**
@@ -32,6 +34,21 @@ export interface SegmentJob {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** jobs.params of a graph preview (worker: graph_preview.GraphPreviewParams). */
+export interface GraphJobParams {
+  samples: {
+    sampleId: string;
+    /** The sample's newest succeeded or awaiting-review test run. */
+    jobId: string;
+    fileName: string;
+    sha256: string;
+    /** That run's draft `document.json` in the outputs bucket. */
+    documentKey: string;
+  }[];
+  /** The open draft, whose `semantics` the preview renders. */
+  definition: Record<string, unknown>;
 }
 
 /** A document-less project job (segment previews, drafting runs, bundle exports). */
@@ -81,7 +98,24 @@ export interface RemovedJob {
   draftObjects: StoredObject[];
   /** The inbox PDF, when no remaining document row or reference needs it. */
   inboxObject: StoredObject | null;
+  /**
+   * The `withdraw` job queued for what the job delivered (ADR 0011 step 7), else null. Absent
+   * for a Workbench project's jobs: test runs, never delivered.
+   */
+  withdrawJobId?: string | null;
 }
+
+/** Background jobs of the linked data (ADR 0011 step 7): withdrawals and republishes. */
+export interface WithdrawalStatus {
+  queued: number;
+  running: number;
+  /** Failed, or stopped for review: what they name may still be published. */
+  failed: number;
+}
+
+/** `withdraw` and `republish` jobs: priority, attempts (a withdrawal retries until it succeeds). */
+export const WITHDRAW_JOB = { priority: 0, maxAttempts: 100 } as const;
+export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
 
 export type DeleteJobResult =
   | { result: 'deleted'; removed: RemovedJob }
@@ -108,15 +142,15 @@ export interface WorkbenchJobOptions {
   referenceId?: string | null;
   /** Every step runs on this alias, e.g. `draft` for reference runs. Default null. */
   modelOverride?: string | null;
-  /** Label of the access token that queued the job. Default null. */
-  createdBy?: string | null;
+  /** Who queued the job. Default null. */
+  createdBy?: Creator | null;
 }
 
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
-  /** Only jobs queued by this token label (the Jobs page's "My jobs"). */
-  createdBy?: string;
+  /** Only jobs this user queued (the Jobs page's "My jobs"; `isMine`). */
+  mine?: Creator;
 }
 
 export interface ListPublishedQuery {
@@ -157,8 +191,8 @@ export interface IngestionRepo {
     referenceId?: string | null,
     /** jobs.params, e.g. a draft test run's `{ outputs }` snapshot. Default null. */
     params?: Record<string, unknown> | null,
-    /** Label of the access token that queued the job. Default null. */
-    createdBy?: string | null,
+    /** Who queued the job. Default null. */
+    createdBy?: Creator | null,
   ): Promise<JobSummary>;
   /** A test job of a workbench project, queued behind production work. */
   createWorkbenchJob(doc: NewDocument, opts: WorkbenchJobOptions): Promise<JobSummary>;
@@ -178,6 +212,25 @@ export interface IngestionRepo {
     params: SegmentJobParams,
   ): Promise<{ job: SegmentJob; removed: string[] }>;
   getSegmentJob(projectId: string, id: string): Promise<SegmentJob | null>;
+  /**
+   * Queue a graph preview (task 'graph', no document, priority SEGMENT_PRIORITY). Like segment
+   * previews, earlier graph jobs of the project are deleted first and returned in `removed`.
+   */
+  createGraphJob(
+    projectId: string,
+    params: GraphJobParams,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  getGraphJob(projectId: string, id: string): Promise<ProjectJob | null>;
+  /**
+   * Queue an ontology suggestion refresh (task 'suggest', no document, priority
+   * SEGMENT_PRIORITY). One per project: earlier suggest jobs are deleted and returned in `removed`.
+   */
+  createSuggestJob(
+    projectId: string,
+    params: SuggestParams,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  /** The project's suggest job (there is at most one), with its params. */
+  latestSuggestJob(projectId: string): Promise<(ProjectJob & { params: SuggestParams }) | null>;
   /**
    * Queue a drafting run (document-less, task 'draft'). Unlike segment previews, earlier draft
    * jobs are kept: each one backs a proposal.
@@ -227,8 +280,21 @@ export interface IngestionRepo {
   retryJob(id: string, opts?: RetryOptions): Promise<JobSummary | null>;
   /** queued/running -> cancelled (+ event). Null if unknown or not cancellable. */
   cancelJob(id: string): Promise<JobSummary | null>;
-  /** Delete a finished job (+ its document unless still needed). Storage is the caller's job. */
+  /**
+   * Delete a finished job (+ its document unless still needed). Storage is the caller's job,
+   * except what the job delivered: a `withdraw` job is queued for its published target objects
+   * and graph versions, in the same transaction (ADR 0011 step 7).
+   */
   deleteJob(id: string): Promise<DeleteJobResult>;
+  /**
+   * Retiring a type withdraws what it delivered: its jobs' published outputs are marked
+   * withdrawn, its current graphs are forgotten, and one `withdraw` job is queued (null when
+   * nothing was left to withdraw).
+   */
+  withdrawType(typeId: string, by: string | null): Promise<string | null>;
+  /** Unretiring re-delivers the type's withdrawn outputs: a `republish` job, or null. */
+  republishType(typeId: string, by: string | null): Promise<string | null>;
+  withdrawalStatus(): Promise<WithdrawalStatus>;
   /**
    * Ids of finished jobs whose updated_at is before `cutoffIso`, oldest first. Regression runs
    * (reference_id set) feed regression scores and metrics, so they're left out unless asked.
@@ -261,8 +327,8 @@ export interface IngestionRepo {
     version: number,
     /** jobs.params, e.g. a draft version's `{ outputs }` snapshot. Default null. */
     params?: Record<string, unknown> | null,
-    /** Label of the access token that queued the run. Default null. */
-    createdBy?: string | null,
+    /** Who queued the run. Default null. */
+    createdBy?: Creator | null,
   ): Promise<JobSummary>;
   /** Regression jobs of a template version, newest first. */
   /** The newest regression job per reference for a version (older runs are history). */

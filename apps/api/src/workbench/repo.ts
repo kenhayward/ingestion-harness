@@ -602,7 +602,13 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
       repo.jobs.delete(job.id);
     }
-    for (const map of [repo.draftJobs, repo.exportJobs, repo.segmentJobs]) {
+    for (const map of [
+      repo.draftJobs,
+      repo.exportJobs,
+      repo.segmentJobs,
+      repo.graphJobs,
+      repo.suggestJobs,
+    ]) {
       for (const job of [...map.values()].filter((j) => j.projectId === id)) {
         removed.push({ jobId: job.id, draftObjects: [], inboxObject: null });
         map.delete(job.id);
@@ -693,6 +699,8 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       ...repo.draftJobs.values(),
       ...repo.exportJobs.values(),
       ...repo.segmentJobs.values(),
+      ...repo.graphJobs.values(),
+      ...repo.suggestJobs.values(),
     ];
     return (await this.listProjects()).map((project) => {
       const id = project.id;
@@ -1270,11 +1278,11 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       );
       if (rows[0] && policy === 'local') {
         // Revocation reaches jobs already created (retries and step re-runs reuse their row).
-        // Never the reverse. Segment previews are skipped: no model call, and their params are
-        // validated strictly by the worker (SegmentParams, extra="forbid").
+        // Never the reverse. Segment and graph previews are skipped: no model call, and their params are
+        // validated strictly by the worker (SegmentParams, GraphPreviewParams; extra="forbid").
         await client.query(
           `UPDATE jobs SET params = jsonb_set(COALESCE(params, '{}'::jsonb), '{dataPolicy}', '"local"')
-            WHERE project_id = $1 AND task <> 'segment'`,
+            WHERE project_id = $1 AND task NOT IN ('segment', 'graph')`,
           [id],
         );
       }

@@ -9,6 +9,7 @@
 | `worker` | Python 3.13, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
 | `postgres` | Postgres 17 | `documents`, `jobs` (queue), `job_events`, `job_outputs`, `llm_models`. |
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`. |
+| `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the worker writes ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
 
 ## Job lifecycle
@@ -136,15 +137,22 @@ Phase 5a adds holdout evaluation and the publish gate (migration 0016: `workbenc
 
 Phase 5b pins Workbench references to a recipe version (migration 0018: `template_version`, `copied_from`, `verified_outputs`, `superseded_at` on `template_references`). Opening the next draft copies the previous version's references forward (`carryReferencesForward`, on every reference read, idempotent); `outputChanges` (`packages/shared/src/references.ts`) marks a reference outdated when its verified outputs changed in type, enum values, fields, tables or columns, and an outdated reference counts as unverified in the references stage, evaluation, the holdout gate and regression (`versionReferences`) until it is re-verified. Every test run of a draft (reference runs, dev test runs, evaluations, comparisons, regression runs of a draft and test uploads on the Document types page) snapshots the draft's outputs in `params.outputs`, and retrying one refreshes the snapshot to the current draft's outputs (a step re-run keeps it); a saved reference is verified against that snapshot (else the published version's outputs, or the draft's when it has not changed since the run; otherwise 409). Re-verifying or deleting a pinned reference supersedes it rather than deleting it, so older iterations keep their comparisons and deleted copies are not carried back. References of other document types stay unpinned and apply to every version; pre-5b Workbench references stay unpinned too, with `verified_outputs` backfilled from their source job's version so outputs changes still mark them outdated.
 
+Publishing to the triple store (ADR 0011 step 6, migration 0036): when an approved document's recipe delivers `rdf`, the publish task writes the CSV/JSON/Turtle to the target as before and then publishes the graph as the next version of its `(sha256, document type)` graph. Under `pg_advisory_xact_lock` on that graph it writes the versioned copy `graphs/{sha256}/{type}/v{n}.ttl` to the target, loads any pinned ontology version not yet in the store under the current base as `{base}graph/ontology/{id}/{version}`, sends a Graph Store Protocol `PUT` to Fuseki's `/ct/data` as `ct-writer`, and records the version (`published_graphs`, `published_graph_versions`) and the entities it minted (`published_entities`, `published_entity_sources`). A Fuseki outage is retried; a 4xx goes to review. Without `RDF_ENDPOINT` the copy and the version are still recorded. `python -m ingest_worker.rdf_rebuild` reloads, backfills and re-mints the store.
+
+The ontology library (ADR 0011, migration 0032) adds the document-less `ontology` task: `POST /api/ontologies` stores an uploaded OWL/RDFS, SKOS or SHACL file in the runs bucket and queues it; the worker parses it with rdflib (`ontology.parse_ontology`), writes canonical N-Triples and indexes its terms into `ontology_terms`, which the Ontologies pages browse as a tree.
+
 Phase 6 adds the drafting bundle (migration 0019 adds the `export` task). `POST /api/workbench/projects/:id/export` queues a document-less `export` job (one per project; the previous export and its zip are replaced). The worker's `bundle.run_export` refuses holdout samples, checks each PDF's sha256, assembles `context.md` with the drafting context builder and writes a deterministic zip to the runs bucket (`exports/{project}/{job}.zip`), served by `GET .../exports/:jobId/bundle` (admin token required for a local-only project). `POST /api/workbench/projects/import` unzips an uploaded bundle with a cap on the bytes actually inflated, validates the manifest, recipe (`template.yaml`), brief and every PDF before writing anything, and then creates a local project with draft v1, the brief and the dev samples, which are prepared again. The bundle also carries the accepted survey (`survey.json`) and the completed stages (`completedStages`); import recreates them as an accepted survey proposal and skips for the rest. Import streams the upload through temporary files: the zip is saved to disk, metadata entries are kept in memory, and each sample PDF is inflated to its own temp file, so a large bundle never sits in memory.
 
 `DELETE /api/workbench/projects/:id` deletes a project whose type was never published (409 otherwise): one transaction locks the type's recipe rows (`templates`), then the project (the order publish uses, so the two cannot deadlock), and removes its jobs (queued and running ones too, an exception to ADR 0005; see its addendum) and the type's project-less test jobs, workbench rows, the type's references, its unused documents and the recipe's drafts; then, best-effort, the project's internal files go (ADR 0005's rules; the prepared text, the step cache and the OCR cache stay).
 
 ## Access
 
-Every request to the API needs a session cookie, obtained by signing in with an access token. The
-admin token rotates on every API start and is printed in the log; admins issue user tokens on the
-**Access** page. See [ADR 0006](adr/0006-token-access.md).
+Every request to the API needs a session cookie, obtained by signing in with an email address and
+a password. The admin from the log signs in as `admin` with the token the API prints on every
+start; admins add users on the **Access** page, each with a one-time password they change at first
+sign-in, and can disable, unlock or reissue them and read recent sign-ins. See
+[ADR 0013](adr/0013-email-password-users.md), which replaced the access tokens of
+[ADR 0006](adr/0006-token-access.md).
 
 The same page issues **read-only S3 keys** for external consumers of the publish bucket (e.g. a data
 lake), when the publish target is the local SeaweedFS ([ADR 0008](adr/0008-s3-read-keys.md)). Each

@@ -4,7 +4,7 @@
  *
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies
  * db/migrations and writes 1,000 projects (under a random id prefix). Example:
- *   docker run --rm -d --name ih-test-pg-perf -e POSTGRES_PASSWORD=test -p 55442:5432 postgres:17-alpine
+ *   docker run --rm -d --name ih-test-pg-perf -e POSTGRES_PASSWORD=test -p 55442:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55442/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-list-perf
  *   docker stop ih-test-pg-perf
@@ -22,6 +22,8 @@ import { PgRepo } from '../../src/repositories/pg.js';
 import { SpecRegistry } from '../../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../../src/storage/object-store.js';
 import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
+import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
+import { MemoryLinkedDataRepo } from '../../src/linked-data/repo.js';
 import { PgTemplateRepo } from '../../src/templates/repo.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 import { seedWorkbenchProjects } from '../../src/workbench/seed.js';
@@ -65,6 +67,9 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       access: null,
       s3Keys: null,
       llm: new MemoryLlmConfigRepo(),
+      ontologies: new MemoryOntologyRepo(),
+      ontologyFetch: { hosts: [], maxBytes: 1 },
+      linkedData: new MemoryLinkedDataRepo(),
       llmSecrets: null,
       logger: { level: 'error' }, // a 500 prints its stack
     });

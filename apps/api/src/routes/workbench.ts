@@ -15,6 +15,7 @@ import {
   MAX_COMPARED_MODELS,
   DraftResultSchema,
   EMPTY_BRIEF,
+  vocabularyOf,
   FeedbackBodySchema,
   FeedbackItemSchema,
   GateViewSchema,
@@ -111,10 +112,15 @@ import {
   STEP_PROGRESS_EVENT,
   TestRunSchema,
   type ChangeStage,
+  mappingKeepUpTo,
+  ontologySelectionChangedAt,
+  type Creator,
 } from '@ih/shared';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
+import { mappingInputs, mappingView, type MappingParams } from '../workbench/mapping.js';
+import { ontologyLibrary } from '../workbench/suggestions.js';
 import { listProjectsPage } from '../workbench/list.js';
 import { PREPARE_EVENTS, prepareError, prepareProgress } from '../workbench/prepare.js';
 import { error, md, multipart, noContent, res } from '../openapi/zod.js';
@@ -128,6 +134,7 @@ import {
   choiceProblem,
   draftOutputsSnapshot,
   modelChoices,
+  blockingIssues,
   templateIssues,
   validateTemplate,
 } from '../templates/definitions.js';
@@ -138,6 +145,7 @@ import {
   type ProposalRecord,
   type SampleRecord,
 } from '../workbench/repo.js';
+import { creatorOf } from '../access/routes.js';
 
 export const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/, 'lowercase id: [a-z][a-z0-9_-]*');
 const CreateProject = z.object({ id: Id, name: z.string().min(1).optional() }).strict();
@@ -450,8 +458,8 @@ export async function addSampleFile(
     filename: string;
     body: Buffer;
     role: SampleRole;
-    /** Label of the access token adding the sample: its prepare job's creator. */
-    createdBy: string | null;
+    /** Who adds the sample: its prepare job's creator. */
+    createdBy: Creator | null;
   },
 ): Promise<{ view: SampleView } | { code: 409 | 415 | 422; error: string }> {
   const { workbench, templates } = app.deps;
@@ -765,10 +773,15 @@ async function referencesView(app: FastifyInstance, projectId: string): Promise<
   });
 }
 
-/** All five stages: the four proposal stages, then references (derived separately). */
+/** Every stage: the four proposal stages, references, then the mapping (both derived separately). */
 export async function allStages(app: FastifyInstance, projectId: string): Promise<StageView[]> {
   const earlier = await stagesOf(app, projectId);
-  return [...earlier, await referencesView(app, projectId)];
+  const outputsAt = earlier.find((s) => s.stage === 'outputs')?.completedAt ?? null;
+  return [
+    ...earlier,
+    await referencesView(app, projectId),
+    await mappingView(app, projectId, outputsAt),
+  ];
 }
 
 const EvaluateBody = z
@@ -1104,7 +1117,7 @@ async function startIteration(
           },
           referenceId: row.reference!.id,
           modelOverride: model,
-          createdBy: req.auth?.label ?? null,
+          createdBy: creatorOf(req),
         },
       ),
     ),
@@ -1219,7 +1232,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res('The new project.', ProjectViewSchema),
           400: error(
-            'Zod issues for an invalid id, or `name is required for a new document type`.',
+            'Zod issues for an invalid id, or `there is no document type {id} yet: give it a name to create it`.',
           ),
           409: error('`a workbench project for {id} already exists`, or ' + RETIRED_DOC + '.'),
         },
@@ -1238,7 +1251,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       let name = body.data.name;
       if (latest === null) {
         if (!name)
-          return reply.code(400).send({ error: 'name is required for a new document type' });
+          return reply.code(400).send({
+            error: `there is no document type ${id} yet: give it a name to create it`,
+          });
         await templates.create(
           id,
           1,
@@ -1368,7 +1383,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
       const files = await Promise.allSettled([
         ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
-        ...['drafting', 'segmentation', 'exports'].map((prefix) =>
+        ...['drafting', 'segmentation', 'exports', 'graphs', 'ontology-suggestions'].map((prefix) =>
           store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
         ),
       ]);
@@ -1475,10 +1490,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!project) return reply.code(404).send({ error: 'project not found' });
       const { draft, definition, ...gate } = await gateFor(app, project);
       if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
-      const issues = await templateIssues(
-        app.deps,
-        (await templates.get(projectId, draft))!.definition,
-        { draft: true },
+      const issues = blockingIssues(
+        await templateIssues(app.deps, (await templates.get(projectId, draft))!.definition, {
+          draft: true,
+        }),
       );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
@@ -1639,7 +1654,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         filename: file.filename,
         body,
         role: role.data,
-        createdBy: req.auth?.label ?? null,
+        createdBy: creatorOf(req),
       });
       if ('error' in added) return reply.code(added.code).send({ error: added.error });
       return reply.code(201).send(added.view);
@@ -1957,7 +1972,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               ...draftOutputsSnapshot(definition),
             },
             modelOverride: model,
-            createdBy: req.auth?.label ?? null,
+            createdBy: creatorOf(req),
           }),
         ),
       );
@@ -2123,7 +2138,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'setDataPolicy',
         summary: "Set a project's data policy",
         description: md`
-          **Admin token required.** \`local\`: the project's documents and sample text may only
+          **Admins only.** \`local\`: the project's documents and sample text may only
           go to models on providers marked \`location: local\`. \`external\`: external
           providers are allowed too. Switching to \`local\` also makes every existing job of the
           project local-only, so queued jobs, retries and step re-runs cannot go external after
@@ -2159,7 +2174,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /** References stage: run the draft model on every ready dev sample that has no reference. */
-  async function startReferences(projectId: string, createdBy: string | null, reply: FastifyReply) {
+  async function startReferences(
+    projectId: string,
+    createdBy: Creator | null,
+    reply: FastifyReply,
+  ) {
     const project = await workbench.getProject(projectId);
     if (!project) return reply.code(404).send({ error: 'project not found' });
     const blocking = firstIncomplete(await stagesOf(app, projectId));
@@ -2503,6 +2522,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             feedback.
           - \`revise\` (outside the order, cannot be skipped) answers the open feedback and the
             latest dev evaluation's failures; it needs open feedback.
+          - \`mapping\` (ADR 0011; outside the order, optional) proposes the recipe's ontology
+            mapping from the brief's vocabulary ontologies, using the values the dev samples'
+            latest runs produced; it needs the outputs stage complete and ready ontology versions.
           - \`references\` instead queues reference runs (\`201\` with the jobs): the draft
             model on every ready dev sample without a reference, stopped for review so the
             values can be verified and saved as references.
@@ -2513,7 +2535,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         params: z.object({
           id: z.string().describe('The project id.'),
           stage: z
-            .enum(['survey', 'outputs', 'sections', 'steps', 'references', 'revise'])
+            .enum(['survey', 'outputs', 'sections', 'steps', 'references', 'revise', 'mapping'])
             .describe('The stage.'),
         }),
         response: {
@@ -2528,7 +2550,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
               'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
-              'already running`, or ' +
+              'already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the ' +
+              'outputs stage first` or `ontology {id} v{n} is not ready`, or ' +
               RETIRED_DOC +
               '.',
           ),
@@ -2537,7 +2560,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       if (req.params.stage === 'references')
-        return startReferences(req.params.id, req.auth?.label ?? null, reply);
+        return startReferences(req.params.id, creatorOf(req), reply);
       const params = StageParams.safeParse(req.params);
       if (!params.success || !AVAILABLE_STAGES.includes(params.data.stage)) {
         return reply.code(400).send({ error: `stage ${req.params.stage} is not available yet` });
@@ -2566,11 +2589,41 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (revision && !revision.params.feedback.length) {
         return reply.code(409).send({ error: 'add feedback before asking for a revision' });
       }
-      // A revision can work from feedback alone; the other stages read the samples.
-      if (!samples.length && !revision) {
+      const brief = await workbench.latestBrief(projectId);
+      let mapping: MappingParams | null = null;
+      if (stage === 'mapping') {
+        const outputs = (await stagesOf(app, projectId)).find((s) => s.stage === 'outputs');
+        if (
+          !(await workbench.latestBrief(projectId))?.body.ontologies?.some(
+            (o) => o.role === 'vocabulary',
+          )
+        ) {
+          return reply
+            .code(409)
+            .send({ error: 'pin a vocabulary ontology on the Survey tab first' });
+        }
+        if (!outputs?.completedAt) {
+          return reply.code(409).send({ error: 'complete the outputs stage first' });
+        }
+        const inputs = await mappingInputs(app, projectId, brief?.body ?? EMPTY_BRIEF);
+        if ('error' in inputs) return reply.code(409).send({ error: inputs.error });
+        mapping = inputs.params;
+        // Versions the embedding model has not embedded (set from .env, an outage at import):
+        // this run is lexical for them, the next one semantic.
+        const { embeddingModel } = await app.deps.llm.getSettings();
+        if (embeddingModel) {
+          await app.deps.ontologies.createEmbedJobs(
+            embeddingModel,
+            mapping.versions.map((v) => ({ id: v.id, version: v.version })),
+          );
+        }
+      }
+      // A revision can work from feedback alone, a mapping from the outputs; the others read the samples.
+      if (!samples.length && !revision && !mapping) {
         return reply.code(409).send({ error: 'no prepared dev samples' });
       }
-      const brief = await workbench.latestBrief(projectId);
+      // Survey: the library to suggest ontologies from, and what the brief already pins.
+      const library = stage === 'survey' ? await ontologyLibrary(app) : [];
       const job = await app.deps.repo.createDraftJob(projectId, {
         stage,
         dataPolicy: project.dataPolicy,
@@ -2580,6 +2633,16 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         samples,
         ...(changeStage ? { survey: await acceptedSurvey(app, projectId) } : {}),
         ...(revision?.params ?? {}),
+        ...(mapping ? { mapping } : {}),
+        ...(library.length
+          ? {
+              library,
+              pinned: vocabularyOf(brief?.body ?? EMPTY_BRIEF).map((v) => ({
+                ontologyId: v.ontologyId,
+                version: v.version,
+              })),
+            }
+          : {}),
       });
       const proposal = await workbench.createProposal({
         id: job.id,
@@ -2773,7 +2836,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               params: referenceRunParams(project.dataPolicy, definition),
               // The template's own models: drafting never sees holdout, so no draft model.
               modelOverride: null,
-              createdBy: req.auth?.label ?? null,
+              createdBy: creatorOf(req),
             },
           ),
         ),
@@ -2851,7 +2914,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         task: 'process',
         params: referenceRunParams(project.dataPolicy, definition),
         modelOverride: set === 'dev' ? 'draft' : null,
-        createdBy: req.auth?.label ?? null,
+        createdBy: creatorOf(req),
       });
       req.log.info({ projectId, sampleId: sid, set }, 'sample reference run');
       return reply.code(201).send({ jobs: [job] });
@@ -2946,6 +3009,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(404).send({ error: 'project not found' });
       }
       const states = await stagesOf(app, projectId);
+      if (stage === 'mapping') {
+        // Outside the order: kept against the outputs and the brief's ontology selection.
+        const outputsAt = states.find((s) => s.stage === 'outputs')?.completedAt ?? null;
+        const view = await mappingView(app, projectId, outputsAt);
+        if (view.state !== 'stale') {
+          return reply.code(409).send({ error: `stage ${stage} is not stale` });
+        }
+        const briefs = await workbench.listBriefs(projectId);
+        const upTo = mappingKeepUpTo(outputsAt, ontologySelectionChangedAt(briefs))!;
+        await workbench.addConfirm(projectId, stage, upTo);
+        req.log.info({ projectId, stage, upTo }, 'workbench stage kept');
+        return reply.code(201).send(await allStages(app, projectId));
+      }
       const index = STAGE_ORDER.indexOf(stage);
       if (states[index]?.state !== 'stale') {
         return reply.code(409).send({ error: `stage ${stage} is not stale` });

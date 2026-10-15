@@ -2,7 +2,7 @@
  * Opt-in Postgres integration test for live job streams: the migration 0031 triggers and
  * PgJobWatch's LISTEN connection. Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY
  * database (it applies db/migrations and writes rows). Example:
- *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
+ *   docker run --rm -d --name ih-test-pg -e POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector (deploy/docker/postgres.Dockerfile)
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts job-watch-pg
  */

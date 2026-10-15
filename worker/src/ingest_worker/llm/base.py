@@ -77,3 +77,15 @@ class LLMProvider(Protocol):
     def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult: ...
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult: ...
+
+
+#: Provider kinds whose endpoints serve embeddings (`embed`); Anthropic has none.
+EMBEDDING_KINDS: frozenset[str] = frozenset({"openai-chat", "openai-responses"})
+
+
+class EmbeddingProvider(Protocol):
+    """A provider that can embed text (the OpenAI-compatible kinds)."""
+
+    name: str
+
+    def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...

@@ -8,6 +8,9 @@ describe('parseHash', () => {
     ['#/results/abc-123', { name: 'result', jobId: 'abc-123' }],
     ['#/templates', { name: 'templates' }],
     ['#/models', { name: 'models' }],
+    ['#/linked-data', { name: 'linked-data' }],
+    ['#/ontologies', { name: 'ontologies' }],
+    ['#/ontologies/idmp-o', { name: 'ontology', ontologyId: 'idmp-o' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
     ['#/workbench', { name: 'workbench' }],
     ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'overview' }],
@@ -25,6 +28,7 @@ describe('parseHash', () => {
     ['', { name: 'home' }],
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
+    ['#/account/password', { name: 'password' }],
     ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {

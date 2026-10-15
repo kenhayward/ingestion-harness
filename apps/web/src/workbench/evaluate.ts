@@ -256,3 +256,62 @@ export const HINT_LINK: Record<GateHint['stage'], string> = {
   steps: 'Open Steps',
   revise: 'Open Revise',
 };
+
+/** Verified references, and those a later output change has outdated (they no longer count). */
+export type ReferenceCounts = { verified: number; outdated: number };
+
+export function referenceCounts(
+  rows: readonly { reference: { outdated: readonly string[] } | null }[],
+): ReferenceCounts {
+  const kept = rows.filter((r) => r.reference !== null);
+  const outdated = kept.filter((r) => r.reference!.outdated.length > 0).length;
+  return { verified: kept.length - outdated, outdated };
+}
+
+/** The evaluation of `draft` on `set` still running (comparison members aside), if any. */
+export function runningEvaluation(
+  history: readonly IterationSummary[],
+  draft: number | null,
+  set: EvaluationSet,
+): IterationSummary | null {
+  return (
+    history.find(
+      (h) =>
+        h.set === set &&
+        h.groupId === null &&
+        h.templateVersion === draft &&
+        h.status === 'running',
+    ) ?? null
+  );
+}
+
+/**
+ * Why Evaluate on `set` is off, or null. Only a run of the open draft is in the way: an earlier
+ * version's run that never finishes (a job left queued) must not block the next one. References
+ * outdated by output changes in the draft say so, since re-verifying them is the fix.
+ */
+export function evaluateBlocker(o: {
+  retired: string | null;
+  draft: number | null;
+  set: EvaluationSet;
+  /** Undefined while unknown: an unknown count never blocks (the API decides). */
+  refs: ReferenceCounts | undefined;
+  history: readonly IterationSummary[];
+  comparing: boolean;
+  busy: boolean;
+}): string | null {
+  if (o.retired) return o.retired;
+  if (o.draft === null) return 'Start a draft version first';
+  if (o.refs && o.refs.verified === 0) {
+    const n = o.refs.outdated;
+    if (n === 0) return `No verified ${o.set} references yet — save some on the References tab`;
+    return n === 1
+      ? `1 ${o.set} reference is outdated by output changes in v${o.draft}: re-verify it on the References tab`
+      : `${n} ${o.set} references are outdated by output changes in v${o.draft}: re-verify them on the References tab`;
+  }
+  if (runningEvaluation(o.history, o.draft, o.set)) {
+    return `An evaluation of v${o.draft} on ${o.set} is still running`;
+  }
+  if (o.comparing) return 'A model comparison is still running';
+  return o.busy ? 'Starting…' : null;
+}

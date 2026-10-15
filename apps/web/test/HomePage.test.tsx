@@ -4,7 +4,9 @@ import type { JobLive, JobSummary } from '@ih/shared';
 import { HomePage } from '../src/home/HomePage.js';
 import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
-function home(jobs: JobSummary[], me = 'ken', api = fakeApi()) {
+const KEN = { name: 'ken', userId: 'u-ken' };
+
+function home(jobs: JobSummary[], me = KEN, api = fakeApi()) {
   render(
     <HomePage
       api={api}
@@ -30,7 +32,7 @@ describe('HomePage model names while the choices load', () => {
   it('shows a placeholder, not "Model no longer offered", until they are loaded', async () => {
     let resolve!: (c: typeof MODEL_CHOICES) => void;
     const listPickerChoices = vi.fn(() => new Promise<typeof MODEL_CHOICES>((r) => (resolve = r)));
-    home(mine, 'ken', fakeApi({ listPickerChoices }));
+    home(mine, KEN, fakeApi({ listPickerChoices }));
     expect(await modelOf()).toHaveTextContent('…');
     expect(screen.queryByText('Model no longer offered')).toBeNull();
     resolve(MODEL_CHOICES);
@@ -40,7 +42,7 @@ describe('HomePage model names while the choices load', () => {
   it('shows a dash when they cannot be read, never the ref', async () => {
     home(
       mine,
-      'ken',
+      KEN,
       fakeApi({ listPickerChoices: vi.fn(async () => Promise.reject(new Error('down'))) }),
     );
     await waitFor(async () => expect(await modelOf()).toHaveTextContent('—'));
@@ -53,6 +55,25 @@ describe('HomePage', () => {
   it('lists document types with retired ones included, for the job names (M8)', async () => {
     const api = home([job({})]);
     await waitFor(() => expect(api.listSpecs).toHaveBeenCalledWith({ retired: 'include' }));
+  });
+
+  it("takes your latest job by id, not a namesake's", async () => {
+    home([
+      job({
+        filename: 'namesake.pdf',
+        createdBy: 'ken',
+        createdByUser: 'u-other',
+        createdAt: '2026-10-13T10:05:00Z',
+      }),
+      job({
+        filename: 'mine.pdf',
+        createdBy: 'Kenneth',
+        createdByUser: 'u-ken',
+        createdAt: '2026-10-13T10:00:00Z',
+      }),
+    ]);
+    const panel = await screen.findByRole('complementary', { name: 'Job details' });
+    expect(within(panel).getByRole('heading', { name: 'mine.pdf' })).toBeInTheDocument();
   });
 
   it('has the upload strip and the latest job you queued, laid out wide', async () => {
@@ -106,7 +127,7 @@ describe('HomePage live progress', () => {
     render(
       <HomePage
         api={api}
-        me="ken"
+        me={KEN}
         jobs={jobs}
         error={null}
         refresh={refresh}
@@ -152,10 +173,12 @@ describe('HomePage live progress', () => {
     expect(vi.mocked(api.getJob).mock.calls.length).toBe(1);
   });
 
-  it('says it is live while following a job', async () => {
+  it('shows no live or refresh indicator: updates are pushed', async () => {
     const api = fakeApi({ getJob: vi.fn(() => new Promise<never>(() => {})) });
     live([job({ createdBy: 'ken', status: 'queued' })], api);
-    expect(await screen.findByText('Live · following this job')).toBeInTheDocument();
+    await screen.findByRole('complementary', { name: 'Job details' });
+    expect(screen.queryByText(/^Live ·/)).toBeNull();
+    expect(screen.queryByText(/refreshes every/)).toBeNull();
   });
 });
 
@@ -175,7 +198,7 @@ describe('HomePage pushed progress', () => {
     render(
       <HomePage
         api={api}
-        me="ken"
+        me={KEN}
         jobs={jobs}
         error={null}
         refresh={refresh}
@@ -228,7 +251,6 @@ describe('HomePage pushed progress', () => {
     await waitFor(() => expect(r.watchJob).toHaveBeenCalled());
     act(() => r.on().error());
     await waitFor(() => expect(vi.mocked(r.api.getJob).mock.calls.length).toBeGreaterThan(2));
-    expect(screen.getByText('Live · following this job')).toBeInTheDocument();
   });
 
   it('stops listening when the job is deleted, and reloads the list', async () => {

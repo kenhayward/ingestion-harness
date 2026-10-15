@@ -6,20 +6,30 @@ const FOCUSABLE =
 /**
  * Modal dialog: labelled by its title, takes focus on open, keeps Tab inside, closes on Escape,
  * Cancel or a click on the backdrop, and gives focus back to whatever had it before.
+ * With an `icon` or a `description` it is the richer layout (New project): an icon tile beside
+ * the title, the description under it, and the actions in a strip along the bottom.
  */
 export function Dialog({
   title,
   onClose,
   children,
   actions,
+  icon,
+  description,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   /** The primary action(s), beside Cancel (a submit button can target a form by `form`). */
   actions?: ReactNode;
+  /** Shown in a tile left of the title (decorative). */
+  icon?: ReactNode;
+  /** Under the title; it describes the dialog to assistive technology. */
+  description?: ReactNode;
 }) {
   const titleId = useId();
+  const descriptionId = useId();
+  const rich = icon !== undefined || description !== undefined;
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,14 +67,38 @@ export function Dialog({
     >
       <div
         ref={box}
-        className="dialog"
+        className={rich ? 'dialog dialog-rich' : 'dialog'}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description !== undefined ? descriptionId : undefined}
         onKeyDown={onKeyDown}
       >
-        <h2 id={titleId}>{title}</h2>
-        {children}
+        {rich ? (
+          <>
+            <div className="dialog-header">
+              {icon !== undefined && (
+                <span className="dialog-icon" aria-hidden="true">
+                  {icon}
+                </span>
+              )}
+              <div>
+                <h2 id={titleId}>{title}</h2>
+                {description !== undefined && (
+                  <p id={descriptionId} className="dialog-description">
+                    {description}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="dialog-body">{children}</div>
+          </>
+        ) : (
+          <>
+            <h2 id={titleId}>{title}</h2>
+            {children}
+          </>
+        )}
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
             Cancel

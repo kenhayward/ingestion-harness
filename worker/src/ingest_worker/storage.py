@@ -9,7 +9,11 @@ if TYPE_CHECKING:
 
 
 def output_key(
-    spec_id: str, version: int, output_id: str, document_id: str, fmt: Literal["csv", "json"]
+    spec_id: str,
+    version: int,
+    output_id: str,
+    document_id: str,
+    fmt: Literal["csv", "json", "ttl"],
 ) -> str:
     return f"{spec_id}/v{version}/{output_id}/{document_id}.{fmt}"
 
@@ -53,6 +57,26 @@ def prepared_triage_key(pdf_sha256: str) -> str:
     return f"prepared/{pdf_sha256}/triage.json"
 
 
+def shacl_report_key(job_id: str) -> str:
+    """A job's SHACL report of its document's graph (runs bucket; ADR 0011 step 5)."""
+    return f"{job_id}/shacl-report.json"
+
+
+def graph_version_key(sha256: str, template_id: str, version: int) -> str:
+    """One published version of a (file, document type) graph, in the target (ADR 0011)."""
+    return f"graphs/{sha256}/{template_id}/v{version}.ttl"
+
+
+def graph_preview_key(project_id: str, job_id: str) -> str:
+    """A graph preview's Turtle per sample (runs bucket, graph task; ADR 0011)."""
+    return f"graphs/{project_id}/{job_id}.json"
+
+
+def ontology_suggestions_key(project_id: str, job_id: str) -> str:
+    """A survey's or refresh's ontology suggestions (runs bucket; TS ontologySuggestionsKey)."""
+    return f"ontology-suggestions/{project_id}/{job_id}.json"
+
+
 def segmentation_key(project_id: str, job_id: str) -> str:
     """Section-anchor preview grid of a workbench project (runs bucket, segment task)."""
     return f"segmentation/{project_id}/{job_id}.json"
@@ -61,6 +85,16 @@ def segmentation_key(project_id: str, job_id: str) -> str:
 def drafting_key(project_id: str, job_id: str) -> str:
     """A drafting stage's result for a workbench project (runs bucket, draft task)."""
     return f"drafting/{project_id}/{job_id}.json"
+
+
+def ontology_source_key(ontology_id: str, sha256: str, ext: str) -> str:
+    """An imported ontology file, named by its bytes (runs bucket; ontologySourceKey)."""
+    return f"ontologies/{ontology_id}/sources/{sha256}.{ext}"
+
+
+def ontology_normalized_key(ontology_id: str, version: int) -> str:
+    """A version's canonical N-Triples (runs bucket, ontology task)."""
+    return f"ontologies/{ontology_id}/v{version}/normalized.nt"
 
 
 def export_key(project_id: str, job_id: str) -> str:

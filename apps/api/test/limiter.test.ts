@@ -32,3 +32,45 @@ describe('LoginLimiter', () => {
     expect(l.size()).toBe(0);
   });
 });
+
+/** A slot that must have been granted (neither over the limit nor busy). */
+function granted(limiter: LoginLimiter, ip: string) {
+  const slot = limiter.begin(ip);
+  if (slot === null || slot === 'busy') throw new Error(`no slot for ${ip}: ${slot}`);
+  return slot;
+}
+
+describe('LoginLimiter: attempts in flight', () => {
+  it('counts attempts still being checked towards the per-client limit', () => {
+    const limiter = new LoginLimiter(10, 100, 15 * 60_000, 100); // a global cap above 10
+    const held = Array.from({ length: 10 }, () => granted(limiter, '203.0.113.9'));
+    expect(limiter.begin('203.0.113.9')).toBeNull();
+    expect(limiter.begin('203.0.113.10')).not.toBeNull(); // other clients are unaffected
+    held[0]!.done(true); // a success frees its place
+    expect(limiter.begin('203.0.113.9')).not.toBeNull();
+  });
+
+  it('turns a failed attempt into a failure, and frees it either way', () => {
+    const limiter = new LoginLimiter();
+    for (let i = 0; i < 10; i++) granted(limiter, '203.0.113.9').done(false);
+    expect(limiter.allowed('203.0.113.9')).toBe(false);
+    expect(limiter.begin('203.0.113.9')).toBeNull();
+  });
+
+  it('caps the attempts being checked at once across every client', () => {
+    const limiter = new LoginLimiter(10, 100, 15 * 60_000, 3);
+    const slots = [1, 2, 3].map((n) => granted(limiter, `203.0.113.${n}`));
+    expect(limiter.begin('203.0.113.4')).toBe('busy');
+    slots[0]!.done(true);
+    expect(limiter.begin('203.0.113.4')).not.toBeNull();
+  });
+
+  it('ignores a second done()', () => {
+    const limiter = new LoginLimiter(10, 100, 15 * 60_000, 1);
+    const slot = granted(limiter, '203.0.113.1');
+    slot.done(false);
+    slot.done(false);
+    expect(limiter.begin('203.0.113.2')).not.toBe('busy');
+    expect(limiter.size()).toBe(1);
+  });
+});

@@ -33,6 +33,15 @@ app's own hostname. The browser refused to draw the app there. Even with framing
   (403 `cross-site request refused`), sign-in included. The app's own requests are same-origin,
   framed or not; scripts send no `Sec-Fetch-Site` and are unaffected.
 
+- **A widget page, `/widget.html`:** some dashboards (3DEXPERIENCE's "Run your app" widget)
+  do not frame the URL they are given: their servers fetch the page once and serve the copy from
+  their own site. The app's own page then runs on the dashboard's origin, its relative `/api`
+  calls go to the dashboard, and it names hashed assets that the next deploy removes (seen as a
+  blank widget and 404s for the old `/assets/index-….js`). `widget.html` is a page that never
+  changes between builds and holds only a full-size iframe of the app; nginx rewrites its
+  `src="/"` to `$forwarded_proto://$http_host/`, so the copy frames the app by absolute URL and the
+  app runs on its own origin. It is served `no-cache` with the same headers as every page.
+
 ## Consequences
 - Only the listed sites can frame the app; clickjacking from anywhere else stays blocked.
 - The outer proxy (NGINX Proxy Manager) must not add its own `X-Frame-Options` or

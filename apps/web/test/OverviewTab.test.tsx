@@ -83,12 +83,12 @@ describe('OverviewTab', () => {
     render(<OverviewTab projectId="letter" overview={projectOverview()} now={0} />);
     expect(screen.queryByRole('note')).toBeNull();
     const map = screen.getByRole('region', { name: 'Process map' });
-    expect(within(map).getAllByRole('link')).toHaveLength(12);
+    expect(within(map).getAllByRole('link')).toHaveLength(13);
     expect(
       within(map).getByRole('link', { name: 'Samples: Not started. Open the Samples tab' }),
     ).toHaveAttribute('href', '#/workbench/letter/samples');
     const stack = screen.getByRole('group', { name: 'Stages' });
-    expect(within(stack).getAllByRole('link')).toHaveLength(12);
+    expect(within(stack).getAllByRole('link')).toHaveLength(13);
     expect(screen.getByText(/Click any box to open its tab\./)).toBeInTheDocument();
   });
 });

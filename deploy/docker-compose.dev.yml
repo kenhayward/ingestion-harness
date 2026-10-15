@@ -12,6 +12,13 @@ services:
     ports:
       - 127.0.0.1:8888:8888 # filer UI (browse buckets)
 
+  fuseki:
+    # A worker on the host reaches it on localhost:FUSEKI_PUBLIC_PORT (published by the base file).
+    environment:
+      # A deploy/.env from before the triple store has no passwords: dev ones then.
+      RDF_WRITER_PASSWORD: ${RDF_WRITER_PASSWORD:-dev-writer}
+      RDF_READER_PASSWORD: ${RDF_READER_PASSWORD:-dev-reader}
+
   converter:
     # For a worker on the host (CONVERTER_URL=http://localhost:3010). A container only on an
     # internal network cannot publish ports, so in dev it also joins the default network; the

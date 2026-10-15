@@ -1,4 +1,20 @@
 import type {
+  GraphPreviewView,
+  OntologySuggestionsView,
+  ShaclReport,
+  LinkedDataBody,
+  LinkedDataView,
+  Neighbourhood,
+  OntologyDetail,
+  OntologyFromUrlBody,
+  OntologySettings,
+  OntologyPatch,
+  OntologySummary,
+  OntologyBatchResult,
+  OntologyVersionView,
+  TermDetail,
+  TermGroup,
+  TermPage,
   Brief,
   BriefBody,
   ChoiceCreateInput,
@@ -127,7 +143,8 @@ export interface TemplateRecordView {
     updatedAt: string;
     publishedAt: string | null;
   };
-  issues: { path: string; message: string }[];
+  /** `severity: 'warning'` never blocks publishing (an unmapped output, ADR 0011). */
+  issues: { path: string; message: string; severity?: 'warning' }[];
 }
 
 export interface RegressionReport {
@@ -244,26 +261,63 @@ export interface JobWatchHandlers {
   error(): void;
 }
 
+/** Fields of an ontology import; a new ontology needs `label`. */
+export interface OntologyImportFields {
+  id: string;
+  label?: string;
+  description?: string;
+  tags?: string[];
+  localOnly?: boolean;
+}
+
+/** `POST /api/ontologies/batch`: a folder or zip, merged into one ontology or one per file. */
+export type OntologyBatchFields =
+  | {
+      mode: 'merge';
+      id: string;
+      label?: string;
+      description?: string;
+      tags?: string[];
+      localOnly?: boolean;
+    }
+  | { mode: 'separate'; idPrefix: string; tags?: string[]; localOnly?: boolean };
+
+/** One page of an ontology version's terms (`root` or `parent` for the tree, `q` to search). */
+export interface OntologyTermQuery {
+  group?: TermGroup;
+  q?: string;
+  parent?: string;
+  root?: boolean;
+  offset?: number;
+  limit?: number;
+}
+
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
-  /** Exchange an access token for a session cookie. Rejects with an ApiError (401/429). */
-  login(token: string): Promise<Me>;
+  /**
+   * Sign in with an email address (or `admin`) and a password; sets the session cookie. Rejects
+   * with an ApiError: 401, 403 (disabled, expired one-time password) or 429 (a locked account
+   * carries `body.lockedUntil`; a client over the per-IP limit does not).
+   */
+  login(login: string, password: string): Promise<SignedIn>;
   logout(): Promise<void>;
+  /** Change the signed-in user's password (the first sign-in step with a one-time password). */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
-  listTokens(): Promise<AccessToken[]>;
-  /**
-   * A new token: the plaintext `token` is only ever returned here. Admin tokens must expire
-   * (the API refuses `null`).
-   */
-  createToken(
-    label: string,
-    expiresInDays: number | null,
-    role: AccessToken['role'],
-  ): Promise<{ token: string; record: AccessToken }>;
-  revokeToken(id: string): Promise<void>;
-  deleteToken(id: string): Promise<void>;
+  listUsers(): Promise<User[]>;
+  /** A new user: the one-time `password` is only ever returned here and by reissuePassword. */
+  addUser(user: { name: string; email: string; role: User['role'] }): Promise<WithPassword>;
+  updateUser(
+    id: string,
+    patch: Partial<{ name: string; email: string; role: User['role'] }>,
+  ): Promise<User>;
+  /** Enable (or unlock) and disable. Disabling signs the user out everywhere. */
+  setUserEnabled(id: string, enabled: boolean): Promise<User>;
+  reissuePassword(id: string): Promise<WithPassword>;
+  /** Recent sign-ins, newest first (admins). */
+  listSignIns(opts?: { userId?: string; limit?: number }): Promise<SignInEvent[]>;
   /** Read-only S3 keys for the data lake (ADR 0008). Rejects with a 404 ApiError when off. */
   listS3Keys(): Promise<S3KeysOverview>;
   /** A new consumer and key: `secretAccessKey` is only ever returned here and by rotate. */
@@ -278,6 +332,42 @@ export interface Api {
   deleteS3Consumer(consumerId: string): Promise<void>;
   /** LLM endpoints and their models (admins; ADR 0010). */
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
+  /** The ontology library (ADR 0011); retired ontologies only when asked. */
+  listOntologies(opts?: { retired?: boolean }): Promise<OntologySummary[]>;
+  /** One ontology with every version, newest first. */
+  getOntology(id: string): Promise<OntologyDetail>;
+  /** Admin: import a file as the next version of `fields.id`. */
+  importOntology(file: File, fields: OntologyImportFields): Promise<OntologyVersionView>;
+  /** Admin: a folder's ontology files (with their paths), or one .zip, in one import. */
+  importOntologyBatch(
+    files: { file: File; path: string }[],
+    fields: OntologyBatchFields,
+  ): Promise<OntologyBatchResult>;
+  /** Admin: name, description, tags, local only, retired. */
+  updateOntology(id: string, patch: OntologyPatch): Promise<OntologySummary>;
+  /** Admin: delete a version that is ready or failed. */
+  deleteOntologyVersion(id: string, version: number): Promise<void>;
+  /** Tree levels, search hits. */
+  listOntologyTerms(id: string, version: number, query: OntologyTermQuery): Promise<TermPage>;
+  /** One term with its neighbours. */
+  getOntologyTerm(id: string, version: number, iri: string): Promise<TermDetail>;
+  /** Admin: import an ontology the worker fetches from an allowlisted URL. */
+  importOntologyFromUrl(body: OntologyFromUrlBody): Promise<OntologyVersionView>;
+  /** Allowed hosts for URL imports and the size limit. */
+  getOntologySettings(): Promise<OntologySettings>;
+  /** Admin: the customer and base IRI RDF is minted under (ADR 0011). */
+  getLinkedData(): Promise<LinkedDataView>;
+  /** Admin: save them; `confirm` repeats the new base once RDF was published. */
+  saveLinkedData(body: LinkedDataBody): Promise<LinkedDataView>;
+  /** The base IRI RDF is minted under (null until an admin sets the customer). */
+  getEffectiveBase(): Promise<string | null>;
+  /** Render the open draft's mapping over the newest finished run of each dev sample. */
+  startGraphPreview(projectId: string, sampleIds?: string[]): Promise<GraphPreviewView>;
+  getGraphPreview(projectId: string, jobId: string): Promise<GraphPreviewView>;
+  getOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
+  refreshOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
+  /** A term and what it is related to, for the graph view. */
+  getNeighbourhood(id: string, version: number, iri: string, depth?: 1 | 2): Promise<Neighbourhood>;
   createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
   /** `apiKey`: a new key (stored encrypted), or null to remove the stored one. */
   updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
@@ -317,6 +407,8 @@ export interface Api {
   outputUrl(jobId: string, outputId: string, opts?: OutputUrlOptions): string;
   /** Published or draft output body as text (Results previews). Rejects with the API error. */
   getOutputText(jobId: string, outputId: string, stage: 'draft' | 'published'): Promise<string>;
+  /** The job's SHACL report of its graph (ADR 0011 step 5); null when it has none. */
+  getShaclReport(jobId: string): Promise<ShaclReport | null>;
   listResults(query?: {
     templateId?: string;
     /** File name substring (case-insensitive). */
@@ -474,18 +566,54 @@ export interface Api {
   getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
 }
 
-/** An access token as listed to admins (never the token itself). */
-export interface AccessToken {
+/** A user as listed to admins (ADR 0013; never a password). */
+export interface User {
   id: string;
-  label: string;
+  name: string;
+  /** null only for the admin from the log, who signs in as `admin`. */
+  email: string | null;
   role: 'admin' | 'user';
+  /** `locked` = temporarily, until `lockedUntil`. */
+  status: 'admin-from-log' | 'active' | 'must-change' | 'locked' | 'disabled';
   createdAt: string;
-  expiresAt: string | null;
-  revokedAt: string | null;
-  lastUsedAt: string | null;
-  /** The label of the session that issued it; null for the admin token from the log. */
-  issuedBy: string | null;
-  status: 'active' | 'expired' | 'revoked' | 'current-admin';
+  createdBy: string | null;
+  lastSignInAt: string | null;
+  /** Consecutive failed sign-ins since the last success. */
+  failedSignIns: number;
+  lastFailedAt: string | null;
+  lockedUntil: string | null;
+  disabledAt: string | null;
+  disabledReason: 'admin' | 'failed-sign-ins' | null;
+  disabledBy: string | null;
+  oneTimeExpiresAt: string | null;
+}
+
+/** A user and their one-time password, shown once. */
+export interface WithPassword {
+  user: User;
+  password: string;
+}
+
+/** One sign-in attempt or password change (GET /api/sign-ins). */
+export interface SignInEvent {
+  id: string;
+  at: string;
+  /** null for an email that matches nobody. */
+  userId: string | null;
+  name: string | null;
+  result:
+    | 'ok'
+    | 'wrong-password'
+    | 'unknown-login'
+    | 'locked'
+    | 'disabled'
+    | 'expired-one-time'
+    | 'password-changed'
+    | 'password-change-refused';
+  failures: number | null;
+  lockedUntil: string | null;
+  ip: string;
+  userAgent: string | null;
 }
 
 /** An S3 access key as listed to admins (never its secret). */
@@ -522,21 +650,33 @@ export interface IssuedS3Key {
   endpoint: string | null;
 }
 
-/** Signed-in identity (GET /api/auth/me). */
+/** Signed-in identity (GET /api/auth/me). `label` is the user's name. */
 export interface Me {
+  /** The user id: what jobs record as `createdByUser`. */
+  userId: string;
   role: 'admin' | 'user';
   label: string;
-  expiresAt: string | null;
+  /** null for the admin from the log. */
+  email: string | null;
+  /** Signed in with a one-time password: only the password change works until it is done. */
+  mustChangePassword: boolean;
+}
+
+/** The sign-in answer: Me plus the failed attempts it cleared (tell the person). */
+export interface SignedIn extends Me {
+  failedSinceLastSignIn: number;
+  lastFailedAt: string | null;
 }
 
 const unauthorizedListeners = new Set<() => void>();
 
-/** 401s that mean "not signed in yet / wrong token", not "your session ended". */
+/** 401s that mean "not signed in yet / wrong password", not "your session ended". */
 const SIGN_IN_CALLS = ['/auth/login', '/auth/me'];
 
 /**
- * fetch for API calls: a 401 from any other call (token management included) means the session
- * ended (expired, revoked, admin token rotated), so listeners can send the user back to sign-in.
+ * fetch for API calls: a 401 from any other call (user management included) means the session
+ * ended (expired, disabled, admin password rotated), so listeners can send the user back to
+ * sign-in.
  */
 const apiFetch: typeof fetch = async (input, init) => {
   const res = await fetch(input, init);
@@ -547,37 +687,57 @@ const apiFetch: typeof fetch = async (input, init) => {
   return res;
 };
 
-/** An API error carrying its HTTP status (e.g. 401, 429 on sign-in). */
+/** An API error carrying its HTTP status (e.g. 401, 429 on sign-in) and its JSON body. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly body: Record<string, unknown> = {},
   ) {
     super(message);
   }
 }
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
-      res.status,
-    );
+/**
+ * The message of an error response. `error` is a message, or the Zod issues of a body that failed
+ * validation (the API's ErrorBody), read as `path: message` so a list never shows as
+ * "[object Object]"; anything else falls back to the status.
+ */
+async function errorMessage(res: Response): Promise<string> {
+  return messageOf(res, await res.json().catch(() => ({})));
+}
+
+/** A rejected response as an ApiError, keeping its body (e.g. a lock's `lockedUntil`). */
+async function apiError(res: Response): Promise<ApiError> {
+  const body: Record<string, unknown> = await res.json().catch(() => ({}));
+  return new ApiError(messageOf(res, body), res.status, body);
+}
+
+function messageOf(res: Response, body: { error?: unknown }): string {
+  const { error } = body;
+  if (typeof error === 'string' && error) return error;
+  if (Array.isArray(error)) {
+    const issues = error
+      .map((i: { path?: unknown; message?: unknown }) => {
+        if (typeof i?.message !== 'string') return null;
+        const path = Array.isArray(i.path) ? i.path.join('.') : '';
+        return path ? `${path}: ${i.message}` : i.message;
+      })
+      .filter((m): m is string => m !== null);
+    if (issues.length) return issues.join('; ');
   }
+  return `${res.status} ${res.statusText}`.trim();
+}
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) throw await apiError(res);
   return res.json() as Promise<T>;
 }
 
 /** For 204 responses: throws the API error like json() does. */
 async function noContent(response: Promise<Response>): Promise<void> {
   const res = await response;
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      body.error ? String(body.error) : `${res.status} ${res.statusText}`,
-      res.status,
-    );
-  }
+  if (!res.ok) throw await apiError(res);
 }
 
 function post<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
@@ -594,24 +754,148 @@ export function createHttpApi(base = '/api'): Api {
       const res = await apiFetch(`${base}/auth/me`);
       return res.status === 401 ? null : json<Me>(res);
     },
-    login: (token) => post<Me>(`${base}/auth/login`, { token }),
+    login: (login, password) => post<SignedIn>(`${base}/auth/login`, { login, password }),
     logout: async () => {
       await apiFetch(`${base}/auth/logout`, { method: 'POST' });
     },
-    listTokens: () => apiFetch(`${base}/auth/tokens`).then(json<AccessToken[]>),
-    createToken: (label, expiresInDays, role) =>
-      post<{ token: string; record: AccessToken }>(`${base}/auth/tokens`, {
-        label,
-        expiresInDays,
-        role,
-      }),
-    revokeToken: async (id) => {
-      await noContent(apiFetch(`${base}/auth/tokens/${id}/revoke`, { method: 'POST' }));
+    changePassword: async (currentPassword, newPassword) => {
+      await noContent(
+        apiFetch(`${base}/auth/password`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword }),
+        }),
+      );
     },
-    deleteToken: async (id) => {
-      await noContent(apiFetch(`${base}/auth/tokens/${id}`, { method: 'DELETE' }));
+    listUsers: () => apiFetch(`${base}/users`).then(json<User[]>),
+    addUser: (user) => post<WithPassword>(`${base}/users`, user),
+    updateUser: (id, patch) =>
+      post<User>(`${base}/users/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    setUserEnabled: (id, enabled) =>
+      apiFetch(`${base}/users/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, {
+        method: 'POST',
+      }).then(json<User>),
+    reissuePassword: (id) =>
+      apiFetch(`${base}/users/${encodeURIComponent(id)}/one-time-password`, {
+        method: 'POST',
+      }).then(json<WithPassword>),
+    listSignIns: (opts = {}) => {
+      const q = new URLSearchParams();
+      if (opts.userId) q.set('userId', opts.userId);
+      if (opts.limit) q.set('limit', String(opts.limit));
+      const qs = q.toString();
+      return apiFetch(`${base}/sign-ins${qs ? `?${qs}` : ''}`).then(json<SignInEvent[]>);
     },
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
+    listOntologies: (opts = {}) =>
+      apiFetch(`${base}/ontologies${opts.retired ? '?retired=include' : ''}`).then(
+        json<OntologySummary[]>,
+      ),
+    getOntology: (id) =>
+      apiFetch(`${base}/ontologies/${encodeURIComponent(id)}`).then(json<OntologyDetail>),
+    importOntology: (file, fields) => {
+      const form = new FormData();
+      // Fields precede the file part: the API reads them from the file's preamble.
+      form.append('id', fields.id);
+      if (fields.label) form.append('label', fields.label);
+      if (fields.description) form.append('description', fields.description);
+      if (fields.tags?.length) form.append('tags', fields.tags.join(','));
+      if (fields.localOnly) form.append('localOnly', 'true');
+      form.append('file', file);
+      return apiFetch(`${base}/ontologies`, { method: 'POST', body: form }).then(
+        json<OntologyVersionView>,
+      );
+    },
+    importOntologyBatch: (files, fields) => {
+      const form = new FormData();
+      // Fields, then the paths (multipart drops folders from file names), then the files.
+      form.append('mode', fields.mode);
+      if (fields.mode === 'merge') {
+        form.append('id', fields.id);
+        if (fields.label) form.append('label', fields.label);
+        if (fields.description) form.append('description', fields.description);
+      } else {
+        form.append('idPrefix', fields.idPrefix);
+      }
+      if (fields.tags?.length) form.append('tags', fields.tags.join(','));
+      if (fields.localOnly) form.append('localOnly', 'true');
+      form.append('paths', JSON.stringify(files.map((f) => f.path)));
+      for (const { file } of files) form.append('file', file);
+      return apiFetch(`${base}/ontologies/batch`, { method: 'POST', body: form }).then(
+        async (res) => {
+          // A proxy in front of the API (the app's nginx, NGINX Proxy Manager) refuses with its
+          // own page, not the API's JSON.
+          if (res.status === 413) {
+            const body: unknown = await res
+              .clone()
+              .json()
+              .catch(() => null);
+            if (body === null || typeof body !== 'object') {
+              throw new ApiError(
+                'the files are over the upload limit of the proxy in front of CT Studio',
+                413,
+              );
+            }
+          }
+          return json<OntologyBatchResult>(res);
+        },
+      );
+    },
+    updateOntology: (id, patch) =>
+      post<OntologySummary>(`${base}/ontologies/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    deleteOntologyVersion: (id, version) =>
+      noContent(
+        apiFetch(`${base}/ontologies/${encodeURIComponent(id)}/versions/${version}`, {
+          method: 'DELETE',
+        }),
+      ),
+    listOntologyTerms: (id, version, query) => {
+      const params = new URLSearchParams();
+      if (query.group) params.set('group', query.group);
+      if (query.q) params.set('q', query.q);
+      if (query.parent) params.set('parent', query.parent);
+      if (query.root) params.set('root', '1');
+      if (query.offset) params.set('offset', String(query.offset));
+      if (query.limit) params.set('limit', String(query.limit));
+      const qs = params.toString();
+      return apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/terms${qs ? `?${qs}` : ''}`,
+      ).then(json<TermPage>);
+    },
+    importOntologyFromUrl: (body) => post<OntologyVersionView>(`${base}/ontologies/from-url`, body),
+    getOntologySettings: () => apiFetch(`${base}/ontology-settings`).then(json<OntologySettings>),
+    getLinkedData: () => apiFetch(`${base}/linked-data/settings`).then(json<LinkedDataView>),
+    saveLinkedData: (body) => post<LinkedDataView>(`${base}/linked-data/settings`, body, 'PUT'),
+    getEffectiveBase: () =>
+      apiFetch(`${base}/linked-data/base`)
+        .then(json<{ effectiveBase: string | null }>)
+        .then((r) => r.effectiveBase),
+    startGraphPreview: (projectId, sampleIds) =>
+      post<GraphPreviewView>(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews`,
+        sampleIds ? { sampleIds } : {},
+      ),
+    getOntologySuggestions: (projectId) =>
+      apiFetch(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/ontology-suggestions`,
+      ).then(json<OntologySuggestionsView>),
+    refreshOntologySuggestions: (projectId) =>
+      post<OntologySuggestionsView>(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/ontology-suggestions`,
+        {},
+      ),
+    getGraphPreview: (projectId, jobId) =>
+      apiFetch(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews/${encodeURIComponent(jobId)}`,
+      ).then(json<GraphPreviewView>),
+    getNeighbourhood: (id, version, iri, depth = 1) =>
+      apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/neighbourhood?iri=${encodeURIComponent(iri)}&depth=${depth}`,
+      ).then(json<Neighbourhood>),
+    getOntologyTerm: (id, version, iri) =>
+      apiFetch(
+        `${base}/ontologies/${encodeURIComponent(id)}/versions/${version}/term?iri=${encodeURIComponent(iri)}`,
+      ).then(json<TermDetail>),
     createLlmEndpoint: (body) => post<LlmEndpointView>(`${base}/llm/endpoints`, body),
     updateLlmEndpoint: (name, patch) =>
       post<LlmEndpointView>(`${base}/llm/endpoints/${encodeURIComponent(name)}`, patch, 'PATCH'),
@@ -677,10 +961,7 @@ export function createHttpApi(base = '/api'): Api {
     cancelJob: (id) => post<JobSummary>(`${base}/jobs/${id}/cancel`, {}),
     deleteJob: async (id) => {
       const res = await apiFetch(`${base}/jobs/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(await errorMessage(res));
     },
     cleanupJobs: (req) => post<CleanupResult>(`${base}/jobs/cleanup`, req),
     upload: ({ file, specId, specVersion, model }) => {
@@ -870,11 +1151,13 @@ export function createHttpApi(base = '/api'): Api {
     outputUrl: (jobId, outputId, opts) => outputPath(base, jobId, outputId, opts),
     getOutputText: async (jobId, outputId, stage) => {
       const res = await apiFetch(outputPath(base, jobId, outputId, { stage, inline: true }));
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ? String(body.error) : `${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(await errorMessage(res));
       return res.text();
+    },
+    getShaclReport: async (jobId) => {
+      const res = await apiFetch(`${base}/jobs/${jobId}/shacl-report`);
+      if (res.status === 404) return null;
+      return json<ShaclReport>(res);
     },
     listResults: (query = {}) => {
       const params = new URLSearchParams();
@@ -959,6 +1242,11 @@ export function createHttpApi(base = '/api'): Api {
 }
 
 export const httpApi = createHttpApi();
+
+/** The imported file of an ontology version (a plain link: the browser downloads it). */
+export function ontologySourceUrl(id: string, version: number): string {
+  return `/api/ontologies/${encodeURIComponent(id)}/versions/${version}/source`;
+}
 
 /**
  * A job's live stream. The browser reconnects a dropped stream by itself (the server says after

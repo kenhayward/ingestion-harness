@@ -1,47 +1,24 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AccessToken, Api, Me } from '../api/client.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Api, Me, User } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
-import { matchesQuery } from '../shell/derive.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
-import { Segmented } from '../ui/Segmented.js';
-import {
-  ADMIN_EXPIRY_OPTIONS,
-  EXPIRY_OPTIONS,
-  expiresSoon,
-  expiryDays,
-  expiryText,
-  tokenCounts,
-  tokenGroup,
-  type Expiry,
-  type TokenGroup,
-} from './derive.js';
+import { userCounts, userGroup, userMatches, userStatusView, type UserGroup } from './derive.js';
 import { S3KeysSection } from './S3KeysSection.js';
+import { SignInsPanel } from './SignInsPanel.js';
+import { UserDialog, type UserFields } from './UserDialog.js';
 
-const STATUS: Record<AccessToken['status'], { label: string; tone: string }> = {
-  active: { label: 'Active', tone: 'ok' },
-  expired: { label: 'Expired', tone: 'neutral' },
-  revoked: { label: 'Revoked', tone: 'danger' },
-  'current-admin': { label: 'Current admin', tone: 'info' },
-};
-
-type Role = AccessToken['role'];
-const ROLE_OPTIONS: readonly { value: Role; label: string }[] = [
-  { value: 'user', label: 'User' },
-  { value: 'admin', label: 'Admin' },
-];
-
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+/** A one-time password just issued: shown once, above the list. */
+interface Issued {
+  name: string;
+  email: string | null;
+  password: string;
+}
 
 /**
- * Admin page (ADR 0006, UI handoff §6): issue user tokens and expiring admin tokens (shown
- * once), revoke and delete them;
- * below, read-only S3 keys for the data lake (ADR 0008).
+ * Admin page (ADR 0013): the users, with Edit, Disable / Enable / Unlock, Reissue one-time
+ * password and Sign-in history on each row; recent sign-ins; below, read-only S3 keys for the
+ * data lake (ADR 0008).
  */
 export function AccessPage({
   api,
@@ -50,21 +27,23 @@ export function AccessPage({
 }: {
   api: Api;
   me: Me;
-  /** Top-bar search: shows only matching tokens. */
+  /** Top-bar search: shows only matching users (name or email). */
   query?: string;
 }) {
-  const [tokens, setTokens] = useState<AccessToken[]>([]);
-  const [label, setLabel] = useState('');
-  const [expiry, setExpiry] = useState<Expiry>('30');
-  const [role, setRole] = useState<Role>('user');
-  const [chip, setChip] = useState<'all' | TokenGroup>('all');
-  const [created, setCreated] = useState<{ label: string; token: string; role: Role } | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [chip, setChip] = useState<'all' | UserGroup>('all');
+  const [issued, setIssued] = useState<Issued | null>(null);
+  const [dialog, setDialog] = useState<{ user?: User } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyOf, setHistoryOf] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const isAdmin = me.role === 'admin';
 
   const load = useCallback(async () => {
     try {
-      setTokens(await api.listTokens());
+      setUsers(await api.listUsers());
+      setLoaded(true);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -81,30 +60,34 @@ export function AccessPage({
     try {
       await action();
       await load();
+      setRefreshKey((k) => k + 1);
     } catch (err) {
       setError((err as Error).message);
     }
   };
 
-  const create = (e: FormEvent) => {
-    e.preventDefault();
-    void act(async () => {
-      const res = await api.createToken(label.trim(), expiryDays(expiry), role);
-      setCreated({ label: label.trim(), token: res.token, role });
-      setLabel('');
-    });
+  const save = async (fields: Partial<UserFields>) => {
+    const editing = dialog?.user;
+    if (editing) {
+      await api.updateUser(editing.id, fields);
+    } else {
+      const res = await api.addUser(fields as UserFields);
+      setIssued({ name: res.user.name, email: res.user.email, password: res.password });
+    }
+    setDialog(null);
+    await load();
   };
 
-  const chooseRole = (next: Role) => {
-    setRole(next);
-    // Admin tokens must expire.
-    if (next === 'admin' && expiry === 'never') setExpiry('30');
+  const showHistory = (id: string | null) => {
+    setHistoryOf(id);
+    if (id) document.getElementById('sign-ins-heading')?.scrollIntoView?.({ block: 'start' });
   };
 
-  const counts = tokenCounts(tokens);
-  const inChip = tokens.filter((t) => chip === 'all' || tokenGroup(t.status) === chip);
-  const shown = inChip.filter((t) => matchesQuery(query, t.label, t.role));
+  const counts = userCounts(users);
+  const inChip = users.filter((u) => chip === 'all' || userGroup(u) === chip);
+  const shown = inChip.filter((u) => userMatches(u, query));
   const now = Date.now();
+  const self = (u: User) => u.id === me.userId;
 
   return (
     <div className="access-page">
@@ -112,165 +95,195 @@ export function AccessPage({
         <div>
           <h1>Access</h1>
           <p className="muted">
-            People sign in with an access token. Issue a token per person or machine; revoking one
-            ends its sessions immediately.
+            People sign in with their email address and a password. Add each person here: they get a
+            one-time password and choose their own at first sign-in.
           </p>
         </div>
+        <button type="button" className="primary" onClick={() => setDialog({})}>
+          <Icon name="plus" />
+          Add user
+        </button>
       </div>
-      <div className="access-top">
-        <form className="card-form" onSubmit={create} aria-label="Issue a token">
-          <h2>Issue a token</h2>
-          <label>
-            Label
-            <input
-              value={label}
-              placeholder="e.g. Ken – laptop"
-              maxLength={100}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </label>
-          <div className="field">
-            <span className="field-label">Role</span>
-            <Segmented label="Role" options={ROLE_OPTIONS} value={role} onChange={chooseRole} />
-          </div>
-          <div className="field">
-            <span className="field-label">Expires after</span>
-            <Segmented
-              label="Expires after"
-              options={role === 'admin' ? ADMIN_EXPIRY_OPTIONS : EXPIRY_OPTIONS}
-              value={expiry}
-              onChange={setExpiry}
-            />
-          </div>
-          {role === 'admin' && (
-            <p role="note" className="field-note">
-              Admin tokens have full access, including issuing tokens. They survive restarts, so
-              they must expire; revoke one as soon as it is no longer needed.
-            </p>
-          )}
-          <button type="submit" className="primary" disabled={!label.trim()}>
-            <Icon name="plus" />
-            {role === 'admin' ? 'Create admin token' : 'Create token'}
-          </button>
-        </form>
-        <aside className="note-card tone-info">
-          <Icon name="key" size={18} />
-          <div>
-            <strong>The admin token rotates</strong>
-            <p>
-              A new admin token is printed in the API log every time the API starts, and the old one
-              stops working. Issue user tokens here for day-to-day use, or an expiring admin token
-              for long-lived admin access.
-            </p>
-          </div>
-        </aside>
-      </div>
-      {created && (
-        // Keyed per token: a second token starts uncopied (each is shown only once).
-        <NewToken key={created.token} {...created} onDone={() => setCreated(null)} />
+      <aside className="note-card tone-info">
+        <Icon name="key" size={18} />
+        <div>
+          <strong>The admin password rotates</strong>
+          <p>
+            Sign in as <code>admin</code> with the token the API prints in its log on every start;
+            the old one stops working. Add yourself as an admin user for day-to-day use. Ten wrong
+            passwords in a row lock an account for 15 minutes, longer each time after; twenty
+            disable it until an admin enables it.
+          </p>
+        </div>
+      </aside>
+      {issued && (
+        // Keyed per password: a second one starts uncopied (each is shown only once).
+        <OneTimePassword key={issued.password} {...issued} onDone={() => setIssued(null)} />
       )}
       {error && <p role="alert">{error}</p>}
       <FilterChips
-        label="Filter tokens by status"
+        label="Filter users by status"
         value={chip}
         onChange={setChip}
         chips={[
           { value: 'all', label: 'All', count: counts.all },
           { value: 'active', label: 'Active', count: counts.active },
-          { value: 'expired', label: 'Expired', count: counts.expired },
-          { value: 'revoked', label: 'Revoked', count: counts.revoked },
+          { value: 'must-change', label: 'Must change password', count: counts['must-change'] },
+          { value: 'locked', label: 'Locked', count: counts.locked },
+          { value: 'disabled', label: 'Disabled', count: counts.disabled },
         ]}
       />
       <div className="list-box">
-        <table className="token-list" aria-label="Access tokens">
+        <table className="token-list" aria-label="Users">
           <thead>
             <tr>
-              <th>Label</th>
+              <th>Name</th>
               <th>Role</th>
-              <th>Created</th>
-              <th>Expires</th>
-              <th>Last used</th>
               <th>Status</th>
+              <th>Last signed in</th>
               <th className="actions-col">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {shown.length === 0 && tokens.length > 0 && (
+            {shown.length === 0 && loaded && (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={5} className="muted">
                   {inChip.length > 0 && query.trim()
-                    ? `No tokens match “${query.trim()}”.`
-                    : 'No tokens in this view.'}
+                    ? `No users match “${query.trim()}”.`
+                    : 'No users in this view.'}
                 </td>
               </tr>
             )}
-            {shown.map((t) => (
-              <TokenRow
-                key={t.id}
-                token={t}
+            {shown.map((u) => (
+              <UserRow
+                key={u.id}
+                user={u}
                 now={now}
-                onRevoke={() => act(() => api.revokeToken(t.id))}
-                onDelete={() => act(() => api.deleteToken(t.id))}
+                self={self(u)}
+                onEdit={() => setDialog({ user: u })}
+                onEnable={(enabled) => act(() => api.setUserEnabled(u.id, enabled))}
+                onReissue={() =>
+                  act(async () => {
+                    const res = await api.reissuePassword(u.id);
+                    setIssued({
+                      name: res.user.name,
+                      email: res.user.email,
+                      password: res.password,
+                    });
+                  })
+                }
+                onHistory={() => showHistory(u.id)}
               />
             ))}
           </tbody>
         </table>
       </div>
+      {dialog && (
+        <UserDialog
+          user={dialog.user}
+          self={dialog.user ? self(dialog.user) : false}
+          onSave={save}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      <SignInsPanel
+        api={api}
+        users={users}
+        userId={historyOf}
+        onUserId={showHistory}
+        refreshKey={refreshKey}
+      />
       <S3KeysSection api={api} />
     </div>
   );
 }
 
-function TokenRow({
-  token: t,
+type Confirm = 'disable' | 'reissue';
+
+function UserRow({
+  user: u,
   now,
-  onRevoke,
-  onDelete,
+  self,
+  onEdit,
+  onEnable,
+  onReissue,
+  onHistory,
 }: {
-  token: AccessToken;
+  user: User;
   now: number;
-  onRevoke: () => Promise<void>;
-  onDelete: () => Promise<void>;
+  self: boolean;
+  onEdit: () => void;
+  onEnable: (enabled: boolean) => Promise<void>;
+  onReissue: () => Promise<void>;
+  onHistory: () => void;
 }) {
-  const [confirm, setConfirm] = useState<'revoke' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (confirm) confirmButton.current?.focus();
   }, [confirm]);
 
-  const expiry = expiryText(t, now);
-  const soon = expiresSoon(t, now);
-  const status = STATUS[t.status];
-  const muted = t.status === 'expired' || t.status === 'revoked';
-  const className = confirm ? 'confirming' : muted ? 'muted-row' : undefined;
+  const status = userStatusView(u, now);
+  const fromLog = u.status === 'admin-from-log';
+  const disabled = u.status === 'disabled';
+  const className = confirm ? 'confirming' : disabled ? 'muted-row' : undefined;
+  const iconButton = (
+    label: string,
+    icon: Parameters<typeof Icon>[0]['name'],
+    onClick: () => void,
+    extra: { disabled?: boolean; title?: string; danger?: boolean } = {},
+  ) => (
+    <button
+      type="button"
+      className={extra.danger ? 'icon bordered danger' : 'icon bordered'}
+      aria-label={`${label} ${u.name}`}
+      title={extra.title ?? label}
+      disabled={extra.disabled}
+      onClick={onClick}
+    >
+      <Icon name={icon} />
+    </button>
+  );
 
   return (
     <tr className={className}>
       <td>
-        <span className="token-label">{t.label}</span>
-        {t.issuedBy && <small className="muted issued-by">Issued by {t.issuedBy}</small>}
+        <span className="token-label">{u.name}</span>
+        {fromLog ? (
+          <small className="muted issued-by">
+            Signs in as <code>admin</code>
+          </small>
+        ) : (
+          <small className="muted issued-by">{u.email}</small>
+        )}
         {confirm && (
           <small className="confirm-text">
-            {confirm === 'revoke' ? 'Revoke? Its sessions end now.' : 'Delete this token record?'}
+            {confirm === 'disable'
+              ? 'Disable? They are signed out at once.'
+              : 'Reissue? Their current password stops working and they are signed out.'}
           </small>
         )}
       </td>
       <td>
-        <span className={`tag tone-${t.role === 'admin' ? 'info' : 'neutral'}`}>{t.role}</span>
+        <span className={`tag tone-${u.role === 'admin' ? 'info' : 'neutral'}`}>
+          {u.role === 'admin' ? 'Admin' : 'User'}
+        </span>
       </td>
-      <td className="muted">{shortDate(t.createdAt)}</td>
-      <td className={soon ? 'expiry soon' : 'expiry'}>
-        {expiry.date && <span>{expiry.date}</span>}
-        <small>{expiry.relative}</small>
-      </td>
-      <td className="muted">{t.lastUsedAt ? relativeTime(t.lastUsedAt, now) : 'never used'}</td>
       <td>
         <span className={`pill tone-${status.tone}`}>{status.label}</span>
+        {status.detail && (
+          <small
+            className={u.failedSignIns > 0 && u.status !== 'disabled' ? 'expiry soon' : 'muted'}
+          >
+            {status.detail}
+          </small>
+        )}
+      </td>
+      <td className="muted">
+        {u.lastSignInAt ? relativeTime(u.lastSignInAt, now) : 'Never signed in'}
       </td>
       <td className="actions-cell">
-        {t.status === 'current-admin' ? (
-          <span className="muted">Rotates on restart</span>
-        ) : confirm ? (
+        {confirm ? (
           <div className="row-actions">
             <button type="button" onClick={() => setConfirm(null)}>
               Keep
@@ -280,30 +293,36 @@ function TokenRow({
               type="button"
               className="danger-fill"
               onClick={() => {
-                const action = confirm === 'revoke' ? onRevoke : onDelete;
+                const action = confirm === 'disable' ? () => onEnable(false) : onReissue;
                 setConfirm(null);
                 void action();
               }}
             >
-              {confirm === 'revoke' ? 'Revoke now' : 'Delete'}
+              {confirm === 'disable' ? 'Disable now' : 'Reissue now'}
             </button>
           </div>
         ) : (
           <div className="row-actions">
-            {t.status === 'active' && (
-              <button type="button" onClick={() => setConfirm('revoke')}>
-                Revoke
-              </button>
-            )}
-            <button
-              type="button"
-              className="icon bordered danger"
-              aria-label={`Delete ${t.label}`}
-              title="Delete"
-              onClick={() => setConfirm('delete')}
-            >
-              <Icon name="trash" />
-            </button>
+            {!fromLog && iconButton('Edit', 'pencil', onEdit)}
+            {!fromLog &&
+              u.status === 'locked' &&
+              iconButton('Unlock', 'unlock', () => void onEnable(true))}
+            {!fromLog && disabled && iconButton('Enable', 'userCheck', () => void onEnable(true))}
+            {!fromLog &&
+              !disabled &&
+              iconButton('Disable', 'userOff', () => setConfirm('disable'), {
+                disabled: self,
+                title: self ? 'You cannot disable yourself' : 'Disable',
+                danger: true,
+              })}
+            {!fromLog &&
+              iconButton('Reissue one-time password for', 'key', () => setConfirm('reissue'), {
+                disabled: self,
+                title: self
+                  ? 'Change your own password from the account menu'
+                  : 'Reissue one-time password',
+              })}
+            {iconButton('Sign-in history for', 'history', onHistory, { title: 'Sign-in history' })}
           </div>
         )}
       </td>
@@ -311,33 +330,27 @@ function TokenRow({
   );
 }
 
-function NewToken({
-  label,
-  token,
-  role,
-  onDone,
-}: {
-  label: string;
-  token: string;
-  role: Role;
-  onDone: () => void;
-}) {
+function OneTimePassword({ name, email, password, onDone }: Issued & { onDone: () => void }) {
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const label = `One-time password for ${name}`;
   return (
-    <div className="token-panel" role="region" aria-label="New token">
+    <div className="token-panel" role="region" aria-label={label}>
       <div>
         <strong>
-          {role === 'admin' ? 'Admin token' : 'Token'} created for “{label}”
+          {label}
+          {email && <span className="muted"> ({email})</span>}
         </strong>
-        <p>Copy it now — this is the only time it will be shown.</p>
+        <p>
+          Shown once. It works for 7 days, and {name} chooses their own password at first sign-in.
+        </p>
       </div>
       <div className="token-copy">
         <input
           className="mono"
           readOnly
-          aria-label={`New token for ${label}`}
-          value={token}
+          aria-label={label}
+          value={password}
           onFocus={(e) => e.target.select()}
         />
         <button
@@ -346,17 +359,17 @@ function NewToken({
           onClick={() => {
             // The clipboard API needs a secure context: on plain-HTTP LAN access it doesn't exist.
             if (!navigator.clipboard) {
-              setNote('Copying needs HTTPS here: select the token and copy it manually.');
+              setNote('Copying needs HTTPS here: select the password and copy it manually.');
               return;
             }
-            navigator.clipboard.writeText(token).then(
+            navigator.clipboard.writeText(password).then(
               () => {
                 setCopied(true);
                 setNote('Copied.');
               },
               () => {
                 setCopied(false);
-                setNote('Copy failed: select the token and copy it manually.');
+                setNote('Copy failed: select the password and copy it manually.');
               },
             );
           }}

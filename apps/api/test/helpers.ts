@@ -1,7 +1,10 @@
 import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
-import { MemoryAccessRepo } from '../src/access/repo.js';
+import type { FastifyInstance } from 'fastify';
+import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
+import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
+import { MemoryLinkedDataRepo } from '../src/linked-data/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
@@ -67,6 +70,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const templates = new MemoryTemplateRepo();
   const workbench = new MemoryWorkbenchRepo(repo, templates);
   const llm = new MemoryLlmConfigRepo();
+  const ontologies = new MemoryOntologyRepo();
   const app = await buildApp({
     repo,
     store,
@@ -83,6 +87,9 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
     llm,
+    ontologies,
+    ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
+    linkedData: new MemoryLinkedDataRepo(),
     llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),
@@ -95,7 +102,17 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   installConformance(app);
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
   const llmRepo = (overrides.llm ?? llm) as MemoryLlmConfigRepo;
-  return { app, repo, store, targetStore, templates, workbench, llm: llmRepo };
+  const ontologyRepo = (overrides.ontologies ?? ontologies) as MemoryOntologyRepo;
+  return {
+    app,
+    repo,
+    store,
+    targetStore,
+    templates,
+    workbench,
+    llm: llmRepo,
+    ontologies: ontologyRepo,
+  };
 }
 
 /**
@@ -126,26 +143,59 @@ export function seedModelChoices(ctx: { repo: MemoryRepo; llm: MemoryLlmConfigRe
   }));
 }
 
-/** An app with token access on (so the auth routes exist), signed-in cookies for both roles. */
+/** The session cookie a sign-in response set, as a `cookie` header value. */
+export const sessionCookie = (res: { headers: Record<string, unknown> }) =>
+  `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1] ?? ''}`;
+
+/** Sign in through the route; returns the cookie header (empty session when refused). */
+export async function signIn(app: FastifyInstance, login: string, password: string) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { login, password },
+  });
+  return sessionCookie(res);
+}
+
+/** The password `signInNewUser` gives every user it makes. */
+export const TEST_PASSWORD = 'a long test phrase';
+
+/**
+ * Add a user, sign in with their one-time password and change it to TEST_PASSWORD (ADR 0013):
+ * the cookie is a full session. Their email is `<name, lower case, dashes>@example.test` unless
+ * given.
+ */
+export async function signInNewUser(
+  app: FastifyInstance,
+  access: AccessRepo,
+  name: string,
+  role: 'admin' | 'user' = 'user',
+  email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
+) {
+  const created = await access.createUser({ name, email, role }, null);
+  if (typeof created === 'string') throw new Error(created);
+  const cookie = await signIn(app, email, created.password);
+  const changed = await app.inject({
+    method: 'PUT',
+    url: '/api/auth/password',
+    headers: { cookie },
+    payload: { currentPassword: created.password, newPassword: TEST_PASSWORD },
+  });
+  if (changed.statusCode !== 204) throw new Error(`password change: ${changed.body}`);
+  return { cookie, user: created.user, email };
+}
+
+/** An app with access control on (so the auth routes exist), signed-in cookies for both roles. */
 export async function accessApp(overrides: Partial<AppDeps> = {}) {
   const access = new MemoryAccessRepo();
   const ctx = await testApp({ access, ...overrides });
-  const signIn = async (token: string) => {
-    const res = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/auth/login',
-      payload: { token },
-    });
-    return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1]}`;
-  };
-  const adminToken = await access.rotateAdminToken();
-  const userToken = (await access.createToken('user', null)).token;
+  const adminPassword = await access.rotateAdminPassword();
   return {
     ...ctx,
     access,
-    adminToken,
-    adminCookie: await signIn(adminToken),
-    userCookie: await signIn(userToken),
+    adminPassword,
+    adminCookie: await signIn(ctx.app, 'admin', adminPassword),
+    userCookie: (await signInNewUser(ctx.app, access, 'user')).cookie,
   };
 }
 
@@ -159,7 +209,9 @@ export class UnreachableStore extends MemoryObjectStore {
 /** Build a multipart body for app.inject(). Fields are written before the file. */
 export function multipart(
   fields: Record<string, string>,
-  file?: { filename: string; content: Buffer; contentType?: string },
+  file?:
+    | { filename: string; content: Buffer; contentType?: string }
+    | { filename: string; content: Buffer; contentType?: string }[],
 ) {
   const boundary = '----ihtestboundary';
   const parts: Buffer[] = [];
@@ -170,13 +222,13 @@ export function multipart(
       ),
     );
   }
-  if (file) {
+  for (const f of file === undefined ? [] : Array.isArray(file) ? file : [file]) {
     parts.push(
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.filename}"\r\n` +
-          `Content-Type: ${file.contentType ?? 'application/pdf'}\r\n\r\n`,
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${f.filename}"\r\n` +
+          `Content-Type: ${f.contentType ?? 'application/pdf'}\r\n\r\n`,
       ),
-      file.content,
+      f.content,
       Buffer.from('\r\n'),
     );
   }

@@ -26,7 +26,7 @@ function Invoke-Compose {
 
 switch ($Action) {
   'up' {
-    Invoke-Compose up -d --wait postgres seaweedfs converter
+    Invoke-Compose up -d --wait postgres seaweedfs converter fuseki
     $pgPort = if ($cfg.POSTGRES_PORT) { $cfg.POSTGRES_PORT } else { '5433' }
     $s3Port = if ($cfg.S3_PUBLIC_PORT) { $cfg.S3_PUBLIC_PORT } else { '8335' }
     $env:DATABASE_URL = "postgres://$($cfg.POSTGRES_USER):$($cfg.POSTGRES_PASSWORD)@localhost:$pgPort/$($cfg.POSTGRES_DB)"
@@ -35,9 +35,13 @@ switch ($Action) {
     $env:S3_SECRET_KEY = $cfg.S3_SECRET_KEY
     $converterPort = if ($cfg.CONVERTER_PORT) { $cfg.CONVERTER_PORT } else { '3010' }
     $env:CONVERTER_URL = "http://localhost:$converterPort"
+    $fusekiPort = if ($cfg.FUSEKI_PUBLIC_PORT) { $cfg.FUSEKI_PUBLIC_PORT } else { '3030' }
+    $env:RDF_ENDPOINT = "http://localhost:$fusekiPort"
+    $env:RDF_USER = 'ct-writer'
+    $env:RDF_PASSWORD = if ($cfg.RDF_WRITER_PASSWORD) { $cfg.RDF_WRITER_PASSWORD } else { 'dev-writer' }
     Push-Location $RepoRoot; try { npm run migrate } finally { Pop-Location }
     Push-Location (Join-Path $RepoRoot 'worker'); try { uv run python -m ingest_worker.admin init-buckets } finally { Pop-Location }
-    Write-Host "Infra ready. DATABASE_URL=$($env:DATABASE_URL -replace ':[^:@]+@', ':***@')  S3_ENDPOINT=$($env:S3_ENDPOINT)  CONVERTER_URL=$($env:CONVERTER_URL)"
+    Write-Host "Infra ready. DATABASE_URL=$($env:DATABASE_URL -replace ':[^:@]+@', ':***@')  S3_ENDPOINT=$($env:S3_ENDPOINT)  CONVERTER_URL=$($env:CONVERTER_URL)  RDF_ENDPOINT=$($env:RDF_ENDPOINT)"
   }
   'down' { Invoke-Compose down }
   'reset' { Invoke-Compose down -v }

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { MultipartFile } from '@fastify/multipart';
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   BriefBodySchema,
@@ -54,12 +54,13 @@ import {
   stagesOf,
   versionsOf,
 } from './workbench.js';
+import { creatorOf } from '../access/routes.js';
 
 /**
  * Drafting bundles (Workbench phase 6): a zip of the drafting context and the dev samples, built
  * by the worker's `export` task, so drafting can continue in another tool.
  */
-const LOCAL_EXPORT = 'exporting a local-only project needs the admin token';
+const LOCAL_EXPORT = 'exporting a local-only project needs an admin';
 const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const JobParams = z.object({ id: Id, jobId: z.string().uuid() });
 /** The template version the export carried (`draft` is the definition it was built from). */
@@ -72,7 +73,7 @@ const SAMPLES_CHANGED = 'a sample changed since this export; export again';
 const ProjectIdParams = z.object({ id: z.string().describe('The project id.') });
 const PROJECT_NOT_FOUND = error('`project not found`.');
 const LOCAL_ONLY = error(
-  '`exporting a local-only project needs the admin token`: the bundle carries the samples.',
+  '`exporting a local-only project needs an admin`: the bundle carries the samples.',
 );
 const BUNDLE_DOCS =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
@@ -131,6 +132,38 @@ const exportView = (
     bytes: bytes?.success ? bytes.data.bytes : null,
   };
 };
+
+/** The brief's ontology versions with their bytes' sha256 (a version not found is left out). */
+async function briefOntologies(app: FastifyInstance, brief: BriefBody) {
+  const out: { id: string; version: number; sha256: string }[] = [];
+  for (const pick of brief.ontologies ?? []) {
+    const detail = await app.deps.ontologies.get(pick.ontologyId);
+    const version = detail?.versions.find((v) => v.version === pick.version);
+    if (version?.sha256)
+      out.push({ id: pick.ontologyId, version: pick.version, sha256: version.sha256 });
+  }
+  return out;
+}
+
+/**
+ * The local version holding each of the bundle's ontologies' bytes (`id@bundleVersion` ->
+ * local version; the bundle's own number first), and those the library lacks, as `id vN`.
+ */
+async function locateOntologies(
+  app: FastifyInstance,
+  wanted: { id: string; version: number; sha256: string }[],
+) {
+  const missing: string[] = [];
+  const versions = new Map<string, number>();
+  for (const o of wanted) {
+    const detail = await app.deps.ontologies.get(o.id);
+    const same = (detail?.versions ?? []).filter((v) => v.sha256 === o.sha256);
+    const local = same.find((v) => v.version === o.version) ?? same[0];
+    if (local) versions.set(`${o.id}@${o.version}`, local.version);
+    else missing.push(`${o.id} v${o.version}`);
+  }
+  return { missing, versions };
+}
 
 export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
   const { repo, store, buckets, templates, workbench } = app.deps;
@@ -242,6 +275,23 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
     if (retired) return answer(409, { error: retired });
     const samples = await sampleFiles(bundle, manifest.value, app.deps.maxUploadBytes);
     if (typeof samples === 'string') return answer(400, { error: samples });
+    const located = await locateOntologies(app, manifest.value.ontologies ?? []);
+    if (located.missing.length) {
+      return answer(400, {
+        error: `bundle needs ontologies not in the library: ${located.missing.join(', ')}`,
+      });
+    }
+    // Version numbers differ between deployments: the brief points at the local version that
+    // holds the same bytes.
+    if (brief) {
+      brief = {
+        ...brief,
+        ontologies: brief.ontologies.map((o) => ({
+          ...o,
+          version: located.versions.get(`${o.ontologyId}@${o.version}`) ?? o.version,
+        })),
+      };
+    }
 
     // Only now write: the draft, the project, the brief, then the samples.
     try {
@@ -284,7 +334,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           filename: sample.filename,
           body,
           role: 'dev',
-          createdBy: req.auth?.label ?? null,
+          createdBy: creatorOf(req),
         });
         // Unexpected after validation.
         if ('error' in added) return failed({ filename: sample.filename, error: added.error });
@@ -387,7 +437,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           (PDFs, or Word documents as \`.docx\`). Holdout
           samples never leave. A new export replaces the previous one. Poll
           \`GET …/exports\`, then download the zip. Exporting a \`local\` project needs the
-          admin token, since the bundle takes the samples out of the harness.
+          admin, since the bundle takes the samples out of the harness.
         `,
         params: ProjectIdParams,
         response: {
@@ -434,6 +484,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         draft: record.definition,
         survey: await acceptedSurvey(app, id),
         completedStages,
+        ontologies: await briefOntologies(app, brief?.body ?? EMPTY_BRIEF),
         samples,
       };
       const { job, removed } = await repo.createExportJob(id, params);
@@ -494,7 +545,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           The bundle zip of a finished export. Refused when a sample the export carried has
           since been removed or made holdout (export again), and, for a \`local\` project,
-          without the admin token.
+          for anyone but an admin.
         `,
         params: z.object({
           id: z.string().describe('The project id.'),

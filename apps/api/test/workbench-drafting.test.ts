@@ -7,7 +7,8 @@ import {
   type SampleView,
 } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
-import { letter, multipart, testApp } from './helpers.js';
+import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
+import { letter, multipart, signIn, signInNewUser, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 const survey = {
@@ -76,14 +77,10 @@ describe('data policy', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
-  it('refuses user tokens and allows the admin', async () => {
+  it('refuses users and allows admins', async () => {
     const access = new MemoryAccessRepo();
     const { app, workbench } = await testApp({ access });
     await workbench.createProject('letter', 'Letter');
-    const login = async (token: string) => {
-      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
-      return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))![1]}`;
-    };
     const put = (cookie: string) =>
       app.inject({
         method: 'PUT',
@@ -91,11 +88,11 @@ describe('data policy', () => {
         payload: { dataPolicy: 'external' },
         headers: { cookie },
       });
-    const { token } = await access.createToken('user', null);
-    expect((await put(await login(token))).statusCode).toBe(403);
+    const { cookie: user } = await signInNewUser(app, access, 'user');
+    expect((await put(user)).statusCode).toBe(403);
     expect((await workbench.getProject('letter'))!.dataPolicy).toBe('local');
-    const admin = await access.rotateAdminToken();
-    expect((await put(await login(admin))).statusCode).toBe(200);
+    const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
+    expect((await put(admin)).statusCode).toBe(200);
     expect((await workbench.getProject('letter'))!.dataPolicy).toBe('external');
   });
 
@@ -179,6 +176,32 @@ describe('survey stage', () => {
       brief: EMPTY_BRIEF,
       draft: letter(1),
       samples: [{ sampleId: dev.id, filename: 's1.pdf', sha256: dev.sha256, role: 'dev' }],
+    });
+  });
+
+  it('sends the ontology library and the vocabulary pins with a survey', async () => {
+    const ontologies = new MemoryOntologyRepo();
+    const { app, repo, add, start } = await project({ ontologies });
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/api/ontologies',
+      ...multipart(
+        { id: 'domain', label: 'Domain' },
+        { filename: 'd.ttl', content: Buffer.from('# d'), contentType: 'text/turtle' },
+      ),
+    });
+    expect(upload.statusCode).toBe(202);
+    ontologies.markReady('domain', 1);
+    await app.inject({
+      method: 'PUT',
+      url: '/api/workbench/projects/letter/brief',
+      payload: { ontologies: [{ ontologyId: 'qudt', version: 1, role: 'vocabulary' }] },
+    });
+    await add(1);
+    const view = (await start()).json() as ProposalView;
+    expect(repo.draftJobs.get(view.id)!.params).toMatchObject({
+      library: [{ id: 'domain', version: 1, label: 'Domain', terms: 0 }],
+      pinned: [{ ontologyId: 'qudt', version: 1 }],
     });
   });
 

@@ -1,6 +1,6 @@
 # 0006: Token access instead of user accounts
 
-**Status:** accepted · 2026-10-12
+**Status:** accepted · 2026-10-12 · superseded in part by [ADR 0013](0013-email-password-users.md) (users with email and password replace the access tokens; sessions, the cookie, the per-client sign-in limit, the public routes and the admin token from the log still stand)
 
 ## Context
 The app is exposed beyond the LAN through NGINX Proxy Manager. A full user-account and login

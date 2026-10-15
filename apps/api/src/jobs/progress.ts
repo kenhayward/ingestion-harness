@@ -1,9 +1,12 @@
 import {
+  GRAPH_PUBLISHED_EVENT,
+  GraphPublishedSchema,
   PREPARE_PROGRESS_EVENT,
   PrepareProgressSchema,
   SEGMENTED_EVENT,
   STEP_PROGRESS_EVENT,
   StepProgressSchema,
+  type JobGraph,
   type JobProgress,
   type StageTimes,
   type JobSummary,
@@ -55,4 +58,15 @@ export function stageTimes(job: JobSummary, events: readonly JobEventRecord[]): 
     return at ?? null;
   };
   return { readAt: latest(PREPARE_PROGRESS_EVENT), segmentedAt: latest(SEGMENTED_EVENT) };
+}
+
+/** The newest graph a job published (ADR 0011 step 6); malformed data reads as none. */
+export function jobGraph(events: readonly JobEventRecord[]): JobGraph | null {
+  const newest = events
+    .filter((e) => e.message === GRAPH_PUBLISHED_EVENT)
+    .reduce<JobEventRecord | null>((best, e) => (best && best.at >= e.at ? best : e), null);
+  const parsed = GraphPublishedSchema.safeParse(newest?.data);
+  if (!newest || !parsed.success) return null;
+  const { graph, ...rest } = parsed.data;
+  return { iri: graph, ...rest, publishedAt: newest.at };
 }
