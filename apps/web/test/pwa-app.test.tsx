@@ -95,7 +95,12 @@ describe('Install CT Studio', () => {
     const target = new EventTarget();
     const install = new InstallPrompt(target);
     const api = fakeApi({
-      me: vi.fn(async () => ({ role: 'admin' as const, label: 'Ken', expiresAt: null })),
+      me: vi.fn(async () => ({
+        role: 'admin' as const,
+        label: 'Ken',
+        email: null,
+        mustChangePassword: false,
+      })),
     });
     render(<App api={api} pollMs={0} install={install} launched={new LaunchedFiles()} />);
     const banner = await screen.findByRole('banner');

@@ -6,7 +6,7 @@ import { ApiError } from '../src/api/client.js';
 import { ModelsPage } from '../src/models/ModelsPage.js';
 import { fakeApi } from './fake-api.js';
 
-const admin = { role: 'admin' as const, label: 'Ken', expiresAt: null };
+const admin = { role: 'admin' as const, label: 'Ken', email: null, mustChangePassword: false };
 
 function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
   return {
@@ -170,7 +170,12 @@ describe('ModelsPage', () => {
   });
 
   it('is for admins only', () => {
-    render(<ModelsPage api={fakeApi()} me={{ role: 'user', label: 'Ann', expiresAt: null }} />);
+    render(
+      <ModelsPage
+        api={fakeApi()}
+        me={{ role: 'user', label: 'Ann', email: null, mustChangePassword: false }}
+      />,
+    );
     expect(screen.getByText('Admins only.')).toBeInTheDocument();
   });
 });

@@ -655,6 +655,20 @@ html {
   height: 100%;
   width: var(--ih-touch);
 }
+/* Email addresses read better in the text face; passwords stay monospaced. */
+.token-input.plain input:not([type='checkbox']) {
+  font-family: inherit;
+}
+.auth-card h2 {
+  margin: 0;
+}
+.failed-sign-ins {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.failed-sign-ins > span {
+  flex: 1;
+}
 .field-error {
   display: flex;
   align-items: center;

@@ -36,7 +36,7 @@ function stubNotifications(permission: NotificationPermission, answer = permissi
 function app(lists: JobSummary[][], role: 'user' | 'admin' = 'user') {
   let call = 0;
   const api = fakeApi({
-    me: vi.fn(async () => ({ role, label: ME, expiresAt: null })),
+    me: vi.fn(async () => ({ role, label: ME, email: null, mustChangePassword: false })),
     listJobs: vi.fn(async () => lists[Math.min(call++, lists.length - 1)]!),
   });
   render(
