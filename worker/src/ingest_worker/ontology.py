@@ -487,6 +487,10 @@ class OntologyStore(Protocol):
         """Mark it parsing; False when it is already ready or failed (a retry skips it)."""
         ...
 
+    def ready(self, ontology_id: str, version: int) -> bool:
+        """Whether its terms are saved: a retry then only finishes embedding them."""
+        ...
+
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None: ...
     def fail(self, ontology_id: str, version: int, error: str) -> None: ...
 
@@ -691,6 +695,14 @@ class PgOntologyStore:
             (ontology_id, version),
         )
         return cur.rowcount > 0
+
+    def ready(self, ontology_id: str, version: int) -> bool:
+        row = self._conn.execute(
+            """SELECT status = 'ready' FROM ontology_versions
+                WHERE ontology_id = %s AND version = %s""",
+            (ontology_id, version),
+        ).fetchone()
+        return bool(row and row[0])
 
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         from psycopg.types.json import Jsonb
@@ -1426,13 +1438,16 @@ def run_ontology_batch(
 ) -> int:
     """A folder imported as one ontology per file: every member is read first, so imports
     between members resolve to each other whatever their order; a member that cannot be read or
-    indexed fails alone. A retry skips members already finished."""
+    indexed fails alone. A retry skips members already finished, only finishing the embedding of
+    those that are ready."""
     store = deps.ontologies
     assert store is not None
     max_triples = deps.ontology_max_triples
     graphs: dict[tuple[str, int], Graph] = {}
     for m in members:
         if not store.start(m.ontology_id, m.version):
+            if store.ready(m.ontology_id, m.version):
+                embed_after_import(deps, queue, job.id, m.ontology_id, m.version)
             continue
         try:
             graphs[(m.ontology_id, m.version)] = read_graph(
@@ -1460,7 +1475,11 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
     """Read the version's file (uploaded, or fetched from its URL), resolve its owl:imports,
     keep its canonical N-Triples and index its terms with its imports'. A file that cannot be
     read fails the version (the job goes to review); other errors retry, failing the version on
-    the last attempt so it never stays 'parsing'. An import never fails the job."""
+    the last attempt so it never stays 'parsing'. An import never fails the job.
+
+    A retry of a version that is already ready (the worker stopped while embedding its terms,
+    e.g. a redeploy) only finishes the embedding: saving the terms again would delete the
+    embeddings written so far, which reference them."""
     try:
         params = OntologyJobParams.model_validate(job.params or {})
     except ValidationError as exc:
@@ -1473,7 +1492,9 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
         return ParsedOntology(0, None, None, None, [], [])
     oid, version = params.ontology_id, params.version
     assert oid is not None and version is not None  # the params validator guarantees them
-    store.start(oid, version)
+    if not store.start(oid, version) and store.ready(oid, version):
+        embed_after_import(deps, queue, job.id, oid, version)
+        return ParsedOntology(0, None, None, None, [], [])
     try:
         max_triples = deps.ontology_max_triples
         if params.sources is not None:
