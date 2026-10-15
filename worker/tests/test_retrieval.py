@@ -414,3 +414,28 @@ def test_pg_semantic_best_reads_each_query_vector_once() -> None:
         assert elapsed < 20.0, f"20 candidates against 20k embeddings took {elapsed:.1f}s"
     finally:
         conn.execute("DELETE FROM ontologies WHERE id = %s", (version[0],))
+
+
+@pytest.mark.integration
+def test_pg_semantic_best_runs_in_parallel() -> None:
+    """The query vectors are a `vector[]` parameter (parsed once, parallel safe), not a CTE (a
+    materialized CTE keeps the scan on one CPU): Postgres splits the scan across workers. The
+    spike on the live library: 31.9 s -> 11.5 s for 23 vectors, the same matches."""
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import parallel_scan, semantic_best_statement
+
+    conn = psycopg.connect(url, autocommit=True)
+    statement, params = semantic_best_statement(
+        [("pharma-sem", 1)], MODEL, [[0.1] * 16, [0.2] * 16], [["class"], ["class"]], 0.6
+    )
+    with parallel_scan(conn):
+        plan = " | ".join(
+            r[0] for r in conn.execute(b"EXPLAIN " + statement.as_bytes(conn), params)
+        )
+    assert "Gather" in plan, plan
+    assert "CTE" not in plan, plan
+    conn.close()
