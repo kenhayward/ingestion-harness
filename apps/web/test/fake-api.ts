@@ -797,6 +797,7 @@ export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyV
     bytes: 120,
     sourceKind: 'upload',
     sourceUrl: null,
+    sourceFiles: null,
     ontologyIri: 'https://example.org/pv',
     versionIri: null,
     license: null,

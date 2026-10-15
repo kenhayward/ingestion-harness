@@ -293,6 +293,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
       fileName: input.fileName,
       mediaType: input.mediaType,
       ...fields,
+      sourceFiles: null,
       ontologyIri: null,
       versionIri: null,
       license: null,
@@ -442,7 +443,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
 }
 
 const RAW_VERSION_COLS = `ontology_id, version, status, file_name, media_type, sha256, bytes,
-  source_kind, source_url, ontology_iri, version_iri, license, kinds, stats, imports, error,
+  source_kind, source_url, source_files, ontology_iri, version_iri, license, kinds, stats, imports, error,
   imported_by, imported_at`;
 
 /** Unfinished while queued or parsing with no active job: then it reads as failed. */
@@ -452,7 +453,7 @@ const STOPPED = `(v.status IN ('queued', 'parsing') AND NOT EXISTS (
 /** A version as read (alias `v`): the effective status of the memory repo's `effective`. */
 const VERSION_COLS = `v.ontology_id, v.version,
   CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
-  v.file_name, v.media_type, v.sha256, v.bytes, v.source_kind, v.source_url,
+  v.file_name, v.media_type, v.sha256, v.bytes, v.source_kind, v.source_url, v.source_files,
   v.ontology_iri, v.version_iri, v.license,
   v.kinds, v.stats, v.imports,
   CASE WHEN ${STOPPED} THEN coalesce(v.error,
@@ -470,6 +471,7 @@ interface VersionRow {
   bytes: string | number | null;
   source_kind: OntologyVersionView['sourceKind'];
   source_url: string | null;
+  source_files: { fileName: string; sha256: string; bytes: number; mediaType?: string }[] | null;
   ontology_iri: string | null;
   version_iri: string | null;
   license: string | null;
@@ -496,6 +498,8 @@ function toVersion(r: VersionRow): OntologyVersionView {
     bytes: r.bytes === null ? null : Number(r.bytes),
     sourceKind: r.source_kind,
     sourceUrl: r.source_url,
+    sourceFiles:
+      r.source_files?.map(({ fileName, sha256, bytes }) => ({ fileName, sha256, bytes })) ?? null,
     ontologyIri: r.ontology_iri,
     versionIri: r.version_iri,
     license: r.license,

@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   NeighbourhoodQuerySchema,
+  OntologyBatchResultSchema,
+  OntologyImportSchema,
+  ONTOLOGY_MAX_FILES,
+  ONTOLOGY_SOURCE_KINDS,
+  fileOntologyIds,
   OntologyFromUrlBodySchema,
   hostAllowed,
   ontologySourceExtension,
@@ -116,4 +121,61 @@ describe('stored source extensions (shared with the worker)', () => {
       expect(ontologySourceExtension(fileName, mediaType)).toBe(ext);
     },
   );
+});
+
+describe('fileOntologyIds (folder imports, one ontology per file)', () => {
+  it.each([
+    [['idmp/Core.ttl'], '', ['core']],
+    [
+      ['idmp/Core.ttl', 'idmp/Medicinal Product.ttl'],
+      'idmp-',
+      ['idmp-core', 'idmp-medicinal-product'],
+    ],
+    [['a/core.ttl', 'b/core.owl', 'c/Core.rdf'], 'x-', ['x-core', 'x-core-2', 'x-core-3']],
+    [['x.ttl'], '', ['x-ontology']],
+    [['_.ttl'], 'p-', ['p-ontology']],
+    [[`${'long'.repeat(20)}.ttl`], 'idmp-', [`idmp-${'long'.repeat(20)}`.slice(0, 63)]],
+  ])('%j with prefix %j', (paths, prefix, ids) => {
+    const got = fileOntologyIds(paths, prefix);
+    expect(got).toEqual(ids);
+    for (const id of got) expect(ONTOLOGY_ID_RE.test(id)).toBe(true);
+  });
+
+  it('keeps ids unique even when trimming makes them collide', () => {
+    const stem = 'a'.repeat(70);
+    const ids = fileOntologyIds([`${stem}.ttl`, `x/${stem}.ttl`], '');
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) expect(ONTOLOGY_ID_RE.test(id)).toBe(true);
+  });
+});
+
+describe('batch results and included imports', () => {
+  it('an import satisfied inside a folder version is included', () => {
+    expect(
+      OntologyImportSchema.parse({
+        iri: 'https://w3id.org/idmp/core',
+        resolution: 'included',
+        ontologyId: null,
+        version: null,
+        reason: null,
+      }).resolution,
+    ).toBe('included');
+    expect(ONTOLOGY_SOURCE_KINDS).toContain('files');
+    expect(ONTOLOGY_MAX_FILES).toBe(300);
+    expect(
+      OntologyBatchResultSchema.parse({
+        versions: [],
+        skipped: [{ fileName: 'a.ttl', ontologyId: 'a', reason: 'already version 1 of a' }],
+      }).skipped,
+    ).toHaveLength(1);
+  });
+});
+
+describe('fileOntologyIds paths', () => {
+  it('takes the file name from Windows and zip paths and drops accents', () => {
+    expect(fileOntologyIds(['idmp\\sub\\Médicament.ttl', 'zip/dir/Été.owl'], '')).toEqual([
+      'medicament',
+      'ete',
+    ]);
+  });
 });

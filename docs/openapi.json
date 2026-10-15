@@ -37511,13 +37511,44 @@
                                 "enum": [
                                   "upload",
                                   "url",
-                                  "import"
+                                  "import",
+                                  "files"
                                 ]
                               },
                               "sourceUrl": {
                                 "type": [
                                   "string",
                                   "null"
+                                ]
+                              },
+                              "sourceFiles": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "fileName": {
+                                          "type": "string"
+                                        },
+                                        "sha256": {
+                                          "type": "string"
+                                        },
+                                        "bytes": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "fileName",
+                                        "sha256",
+                                        "bytes"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
                                 ]
                               },
                               "ontologyIri": {
@@ -37605,7 +37636,8 @@
                                       "enum": [
                                         "unresolved",
                                         "library",
-                                        "fetched"
+                                        "fetched",
+                                        "included"
                                       ]
                                     },
                                     "ontologyId": {
@@ -37667,6 +37699,7 @@
                               "bytes",
                               "sourceKind",
                               "sourceUrl",
+                              "sourceFiles",
                               "ontologyIri",
                               "versionIri",
                               "license",
@@ -37834,13 +37867,44 @@
                       "enum": [
                         "upload",
                         "url",
-                        "import"
+                        "import",
+                        "files"
                       ]
                     },
                     "sourceUrl": {
                       "type": [
                         "string",
                         "null"
+                      ]
+                    },
+                    "sourceFiles": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "fileName",
+                              "sha256",
+                              "bytes"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "ontologyIri": {
@@ -37928,7 +37992,8 @@
                             "enum": [
                               "unresolved",
                               "library",
-                              "fetched"
+                              "fetched",
+                              "included"
                             ]
                           },
                           "ontologyId": {
@@ -37990,6 +38055,7 @@
                     "bytes",
                     "sourceKind",
                     "sourceUrl",
+                    "sourceFiles",
                     "ontologyIri",
                     "versionIri",
                     "license",
@@ -38318,13 +38384,44 @@
                               "enum": [
                                 "upload",
                                 "url",
-                                "import"
+                                "import",
+                                "files"
                               ]
                             },
                             "sourceUrl": {
                               "type": [
                                 "string",
                                 "null"
+                              ]
+                            },
+                            "sourceFiles": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "fileName": {
+                                        "type": "string"
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      },
+                                      "bytes": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "fileName",
+                                      "sha256",
+                                      "bytes"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ]
                             },
                             "ontologyIri": {
@@ -38412,7 +38509,8 @@
                                     "enum": [
                                       "unresolved",
                                       "library",
-                                      "fetched"
+                                      "fetched",
+                                      "included"
                                     ]
                                   },
                                   "ontologyId": {
@@ -38474,6 +38572,7 @@
                             "bytes",
                             "sourceKind",
                             "sourceUrl",
+                            "sourceFiles",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -38541,13 +38640,44 @@
                             "enum": [
                               "upload",
                               "url",
-                              "import"
+                              "import",
+                              "files"
                             ]
                           },
                           "sourceUrl": {
                             "type": [
                               "string",
                               "null"
+                            ]
+                          },
+                          "sourceFiles": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "fileName": {
+                                      "type": "string"
+                                    },
+                                    "sha256": {
+                                      "type": "string"
+                                    },
+                                    "bytes": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "fileName",
+                                    "sha256",
+                                    "bytes"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "ontologyIri": {
@@ -38635,7 +38765,8 @@
                                   "enum": [
                                     "unresolved",
                                     "library",
-                                    "fetched"
+                                    "fetched",
+                                    "included"
                                   ]
                                 },
                                 "ontologyId": {
@@ -38697,6 +38828,7 @@
                           "bytes",
                           "sourceKind",
                           "sourceUrl",
+                          "sourceFiles",
                           "ontologyIri",
                           "versionIri",
                           "license",
@@ -38929,13 +39061,44 @@
                               "enum": [
                                 "upload",
                                 "url",
-                                "import"
+                                "import",
+                                "files"
                               ]
                             },
                             "sourceUrl": {
                               "type": [
                                 "string",
                                 "null"
+                              ]
+                            },
+                            "sourceFiles": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "fileName": {
+                                        "type": "string"
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      },
+                                      "bytes": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "fileName",
+                                      "sha256",
+                                      "bytes"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ]
                             },
                             "ontologyIri": {
@@ -39023,7 +39186,8 @@
                                     "enum": [
                                       "unresolved",
                                       "library",
-                                      "fetched"
+                                      "fetched",
+                                      "included"
                                     ]
                                   },
                                   "ontologyId": {
@@ -39085,6 +39249,7 @@
                             "bytes",
                             "sourceKind",
                             "sourceUrl",
+                            "sourceFiles",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -40488,13 +40653,44 @@
                       "enum": [
                         "upload",
                         "url",
-                        "import"
+                        "import",
+                        "files"
                       ]
                     },
                     "sourceUrl": {
                       "type": [
                         "string",
                         "null"
+                      ]
+                    },
+                    "sourceFiles": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "fileName",
+                              "sha256",
+                              "bytes"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "ontologyIri": {
@@ -40582,7 +40778,8 @@
                             "enum": [
                               "unresolved",
                               "library",
-                              "fetched"
+                              "fetched",
+                              "included"
                             ]
                           },
                           "ontologyId": {
@@ -40644,6 +40841,7 @@
                     "bytes",
                     "sourceKind",
                     "sourceUrl",
+                    "sourceFiles",
                     "ontologyIri",
                     "versionIri",
                     "license",
