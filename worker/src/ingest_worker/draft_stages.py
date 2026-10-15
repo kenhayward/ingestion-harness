@@ -179,10 +179,21 @@ EMPTY_SECTIONS = (
 )
 
 
+def _chunkable(c: dict[str, Any]) -> bool:
+    """chunkPages applies only to a table step reading exactly one section (template.ExtractStep)."""
+    return bool(c.get("table")) and len(c.get("sections") or []) == 1
+
+
 def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """A chunkPages the step cannot use is dropped with a note rather than failing the stage:
+    it is a hint about long tables, and models keep setting it on every step."""
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
+    unchunked: list[str] = []
     for i, c in enumerate(data["changes"]):
+        if c["op"] == "putStep" and c.get("chunkPages") and not _chunkable(c):
+            unchunked.append(repr(c["id"]))
+            c = {**c, "chunkPages": None}
         try:
             if c["op"] == "putStep":
                 step: BaseModel
@@ -230,7 +241,14 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 )
         except ValidationError as exc:
             errors += _errors(i, exc)
-    return {"notes": data["notes"], "changes": changes}, errors
+    notes = data["notes"]
+    if unchunked:
+        dropped = (
+            f"Ignored chunkPages on {', '.join(unchunked)}: only a table step reading one "
+            "section can be chunked."
+        )
+        notes = f"{notes}\n{dropped}" if notes else dropped
+    return {"notes": notes, "changes": changes}, errors
 
 
 def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
@@ -287,7 +305,7 @@ Task: propose the extraction pipeline that fills every output in the current dra
     lack) goes in the step that reads the section it belongs with; it may come back empty.
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
-  - chunkPages: only for a long table in one section.
+  - chunkPages: null unless the step fills a long table (table set) from exactly one section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
     a field id or table.column.
 - putStep with type check: values and reference are paths (field or table.column) whose values
@@ -488,6 +506,7 @@ def _answers(value: Any) -> list[str]:
 def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
+    notes = [data["notes"]] if data["notes"] else []
     for i, c in enumerate(data["changes"]):
         stage, key = _REVISE_GROUPS[c["op"]]
         payload = _compact(c.get(key)) if isinstance(c.get(key), dict) else None
@@ -501,9 +520,10 @@ def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             {"notes": "", "changes": [{**payload, "op": c["op"], "reason": c["reason"]}]}
         )
         errors += [e.replace("changes[0]", f"changes[{i}]", 1) for e in errs]
+        notes += [body["notes"]] if body["notes"] else []
         answers = _answers(c.get("answers"))
         changes += [{**ch, "answers": answers} if answers else ch for ch in body["changes"]]
-    return {"notes": data["notes"], "changes": changes}, errors
+    return {"notes": "\n".join(notes), "changes": changes}, errors
 
 
 def check_revise(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
