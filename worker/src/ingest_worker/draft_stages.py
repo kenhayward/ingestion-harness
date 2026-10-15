@@ -292,6 +292,8 @@ Task: propose the extraction pipeline that fills every output in the current dra
     a field id or table.column.
 - putStep with type check: values and reference are paths (field or table.column) whose values
   must match; aliases optional.
+- Every extraction prompt states the source file name and starts each page with "[page N]":
+  a step can fill the originating file name from it, and a page number from the markers.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in the order given; context may only use outputs filled by earlier steps.

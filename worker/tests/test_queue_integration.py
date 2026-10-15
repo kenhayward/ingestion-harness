@@ -288,3 +288,12 @@ def test_a_survey_queues_one_suggest_job_per_project(
     finally:
         q._conn.execute("DELETE FROM jobs WHERE project_id = %s", (project,))
         q._conn.execute("DELETE FROM workbench_projects WHERE id = %s", (project,))
+
+
+def test_a_claimed_job_carries_its_documents_file_name(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.id == job_id
+    assert claimed.filename == "a.pdf"
