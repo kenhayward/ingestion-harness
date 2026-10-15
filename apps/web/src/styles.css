@@ -3431,25 +3431,168 @@ tr.confirming td {
   flex-direction: column;
   gap: var(--ih-space-4);
 }
+.ontologies-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-bottom: 4px;
+}
+.ontologies-title {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.ontologies-title h1 {
+  margin: 0;
+}
+.ontologies-title p {
+  margin: 4px 0 0;
+}
+.ontologies-header .ontologies-search {
+  flex: 0 1 440px;
+  min-width: 240px;
+  max-width: none;
+  height: 40px;
+  background: var(--ih-surface);
+}
+.ontologies-actions {
+  flex: 1 1 260px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+.ontologies-actions .segmented button {
+  min-height: 34px;
+}
+/* auto-fill: a single result keeps a card's width instead of spanning the page. */
+.ontology-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 16px;
+}
 .ontology-card {
-  padding: 16px 20px;
+  padding: 18px 20px;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);
   background: var(--ih-surface);
   display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+.ontology-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.ontology-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 0;
+}
+.ontology-card-body > p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
 }
 .ontology-card-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
 }
 .ontology-card-head h2 {
   margin: 0;
-  font-size: var(--ih-text-lg);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ontology-card-head h2 a,
+.ontology-table a {
+  color: var(--ih-accent-soft-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ontology-card-head h2 a:hover,
+.ontology-table a:hover {
+  text-decoration: underline;
+}
+.ontology-card-head .mono {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ontology-card .ontology-version {
+  border-top: 1px solid var(--ih-border-soft);
+  padding-top: 10px;
+}
+/* List view: one line per ontology; narrow screens scroll sideways instead of squashing. */
+.ontology-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.ontology-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.ontology-table th:nth-child(1) {
+  width: 24%;
+}
+.ontology-table th:nth-child(2) {
+  width: 18%;
+}
+.ontology-table th:nth-child(3) {
+  width: 18%;
+}
+.ontology-table th:nth-child(4) {
+  width: 17%;
+}
+.ontology-table th:nth-child(5) {
+  width: 23%;
+}
+.ontology-table th {
+  padding: 11px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ih-muted);
+  border-bottom: 1px solid var(--ih-border);
+}
+.ontology-table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--ih-border-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.ontology-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ontology-table tbody tr:hover {
+  background: var(--ih-sel-row);
+}
+/* Name, id and contents: one line each, cut with an ellipsis (the full value is the title). */
+.ontology-table td:is(:nth-child(1), :nth-child(2), :nth-child(5)) > * {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ontology-table td .mono {
+  font-size: 12px;
+}
+.ontology-table .pills {
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .ontology-version {
   margin: 0;
