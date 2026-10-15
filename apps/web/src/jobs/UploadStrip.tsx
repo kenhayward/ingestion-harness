@@ -56,16 +56,11 @@ export function folderNote({ name, files: found, skipped }: DroppedFolder): stri
 export function UploadStrip({
   api,
   onUploaded,
-  pickPending = false,
-  onPicked,
   launched,
   focusRequest = 0,
 }: {
   api: Api;
   onUploaded: () => void;
-  /** Upload document (top bar) was pressed: open the file picker, then report it with onPicked. */
-  pickPending?: boolean;
-  onPicked?: () => void;
   /** Files opened with the installed app (Explorer: Open with CT Studio) join the list. */
   launched?: LaunchedFiles;
   /**
@@ -92,22 +87,6 @@ export function UploadStrip({
   const nextKey = useRef(0);
   /** A batch is uploading: rows added now must not drop its in-progress rows. */
   const uploading = useRef(false);
-
-  /** StrictMode re-runs effects before onPicked lands: open the picker once per request. */
-  const picking = useRef(false);
-
-  useEffect(() => {
-    if (!pickPending) {
-      picking.current = false;
-      return;
-    }
-    if (picking.current) return;
-    picking.current = true;
-    fileInput.current?.click();
-    onPicked?.();
-    // onPicked is a callback prop: the picker opens once per request, not per render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickPending]);
 
   useEffect(() => {
     if (!launched) return;

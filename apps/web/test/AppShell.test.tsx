@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe('app shell', () => {
-  it('has a top bar with search, colour mode, Upload document and the signed-in user', async () => {
+  it('has a top bar with search, colour mode and the signed-in user', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
@@ -26,7 +26,8 @@ describe('app shell', () => {
     const banner = await screen.findByRole('banner');
     expect(within(banner).getByRole('searchbox', { name: SEARCH })).toBeInTheDocument();
     expect(within(banner).getByRole('group', { name: 'Colour mode' })).toBeInTheDocument();
-    expect(within(banner).getByRole('button', { name: 'Upload document' })).toBeInTheDocument();
+    // Uploading is Home's (its Upload documents card): the top bar has no Upload button.
+    expect(within(banner).queryByRole('button', { name: /upload/i })).toBeNull();
     expect(
       within(banner).getByRole('button', { name: 'Ken – laptop (user): account menu' }),
     ).toHaveTextContent('KL');
@@ -267,31 +268,6 @@ describe('search', () => {
       ).not.toBeInTheDocument(),
     );
     expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' });
-  });
-});
-
-describe('Upload document', () => {
-  it('goes to Jobs and opens the file picker once', async () => {
-    window.location.hash = '#/results';
-    const click = vi.spyOn(HTMLInputElement.prototype, 'click');
-    const pickerOpens = () =>
-      click.mock.contexts.filter((c) => c instanceof HTMLInputElement && c.type === 'file').length;
-    render(<App api={fakeApi()} pollMs={0} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Upload document' }));
-    const input = await screen.findByLabelText('PDF or Word files');
-    await vi.waitFor(() => expect(click.mock.contexts).toContain(input));
-    expect(window.location.hash).toBe('#/');
-    expect(pickerOpens()).toBe(1);
-    // leaving and returning to Jobs must not reopen the picker
-    window.location.hash = '#/results';
-    await screen.findByRole('heading', { name: 'Results' });
-    await vi.waitFor(() =>
-      expect(screen.queryByLabelText('PDF or Word files')).not.toBeInTheDocument(),
-    );
-    window.location.hash = '#/';
-    await screen.findByLabelText('PDF or Word files');
-    expect(pickerOpens()).toBe(1);
-    click.mockRestore();
   });
 });
 
