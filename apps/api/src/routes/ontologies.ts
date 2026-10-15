@@ -784,8 +784,9 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           'How ontologies can be imported',
           md`
             The hosts ontologies may be imported from by URL (\`ONTOLOGY_FETCH_ALLOW\`; empty
-            means URL imports are off) and the size limit of a fetched file, for the import
-            dialog.
+            means URL imports are off), the size limit of a fetched file (\`maxBytes\`) and of
+            an upload, one file or a folder's files together (\`maxUploadBytes\`), so the import
+            dialog can refuse a selection over it before sending it.
           `,
         ),
         response: { 200: res('The settings.', OntologySettingsSchema) },
@@ -794,6 +795,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
     async () => ({
       fetchHosts: app.deps.ontologyFetch.hosts,
       maxBytes: app.deps.ontologyFetch.maxBytes,
+      maxUploadBytes: app.deps.maxUploadBytes,
     }),
   );
 

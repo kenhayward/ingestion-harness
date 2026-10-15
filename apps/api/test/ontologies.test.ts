@@ -281,12 +281,14 @@ describe('importing by URL', () => {
     const { app } = await testApp({
       ontologies: new MemoryOntologyRepo(),
       ontologyFetch: { hosts: [], maxBytes: 5 },
+      maxUploadBytes: 7,
     });
     const res = await post(app, { id: 'x1', label: 'X', url: 'https://w3id.org/a' });
     expect(res.json().error).toBe('URL imports are off: set ONTOLOGY_FETCH_ALLOW');
     expect((await app.inject({ url: '/api/ontology-settings' })).json()).toEqual({
       fetchHosts: [],
       maxBytes: 5,
+      maxUploadBytes: 7,
     });
   });
 

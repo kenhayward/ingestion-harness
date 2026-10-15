@@ -302,6 +302,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getOntologySettings: vi.fn(async () => ({
       fetchHosts: ['w3id.org'],
       maxBytes: 104857600,
+      maxUploadBytes: 52428800,
     })),
     getNeighbourhood: vi.fn(async () => {
       throw new Error('getNeighbourhood not stubbed');

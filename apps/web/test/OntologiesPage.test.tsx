@@ -141,7 +141,11 @@ describe('OntologiesPage', () => {
 
   it('says why a URL cannot be imported before sending it', async () => {
     page([], 'admin', {
-      getOntologySettings: vi.fn(async () => ({ fetchHosts: ['w3id.org'], maxBytes: 1 })),
+      getOntologySettings: vi.fn(async () => ({
+        fetchHosts: ['w3id.org'],
+        maxBytes: 1,
+        maxUploadBytes: 1_000_000,
+      })),
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
     const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
@@ -154,7 +158,11 @@ describe('OntologiesPage', () => {
 
   it('explains when URL imports are off', async () => {
     page([], 'admin', {
-      getOntologySettings: vi.fn(async () => ({ fetchHosts: [], maxBytes: 1 })),
+      getOntologySettings: vi.fn(async () => ({
+        fetchHosts: [],
+        maxBytes: 1,
+        maxUploadBytes: 1_000_000,
+      })),
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
     const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
@@ -164,7 +172,11 @@ describe('OntologiesPage', () => {
 
   it('says why Import is disabled, on hover and in the dialog', async () => {
     page([], 'admin', {
-      getOntologySettings: vi.fn(async () => ({ fetchHosts: ['www.dublincore.org'], maxBytes: 1 })),
+      getOntologySettings: vi.fn(async () => ({
+        fetchHosts: ['www.dublincore.org'],
+        maxBytes: 1,
+        maxUploadBytes: 1_000_000,
+      })),
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
     const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
@@ -552,5 +564,82 @@ describe('OntologiesPage list row actions (Download, Edit, Delete as on the deta
     expect(within(row).getByRole('link', { name: 'Download pv.ttl' })).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: /^Edit / })).toBeNull();
     expect(within(row).queryByRole('button', { name: /^Delete / })).toBeNull();
+  });
+});
+
+describe('ImportOntologyDialog upload limit (a folder or file over it is refused before sending)', () => {
+  const kb = (n: number, path: string) => {
+    const file = new File([new Uint8Array(n * 1024)], path.split('/').pop()!);
+    Object.defineProperty(file, 'webkitRelativePath', { value: path });
+    return file;
+  };
+
+  async function open(source: string) {
+    const api = page([ontologySummary()], 'admin', {
+      getOntologySettings: vi.fn(async () => ({
+        fetchHosts: [],
+        maxBytes: 1,
+        maxUploadBytes: 4 * 1024,
+      })),
+      importOntologyBatch: vi.fn(),
+      importOntology: vi.fn(),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    await userEvent.click(within(dialog).getByRole('button', { name: source }));
+    return { api, dialog };
+  }
+
+  it('names the total, the limit and the largest files of a folder over the limit', async () => {
+    const { api, dialog } = await open('From a folder or .zip');
+    await userEvent.upload(within(dialog).getByLabelText('Ontology folder'), [
+      kb(9, 'afo/voc/chebi/chebi.ttl'),
+      kb(2, 'afo/voc/pato/pato.ttl'),
+      kb(1, 'afo/voc/bfo/bfo.ttl'),
+    ]);
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'AFO');
+    const reason =
+      'These files total 12 KB; the upload limit is 4 KB. Largest: afo/voc/chebi/chebi.ttl (9 KB), afo/voc/pato/pato.ttl (2 KB)';
+    const importButton = within(dialog).getByRole('button', { name: 'Import' });
+    await waitFor(() => expect(importButton).toHaveAttribute('title', reason));
+    expect(importButton).toBeDisabled();
+    expect(within(dialog).getByText(/These files total 12 KB/)).toBeInTheDocument();
+    expect(api.importOntologyBatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses a zip or a single file over the limit', async () => {
+    const zip = await open('From a folder or .zip');
+    await userEvent.upload(
+      within(zip.dialog).getByLabelText('or a .zip'),
+      new File([new Uint8Array(5 * 1024)], 'afo.zip', { type: 'application/zip' }),
+    );
+    await userEvent.type(within(zip.dialog).getByLabelText('Name'), 'AFO');
+    await waitFor(() =>
+      expect(within(zip.dialog).getByRole('button', { name: 'Import' })).toHaveAttribute(
+        'title',
+        'afo.zip is 5 KB; the upload limit is 4 KB',
+      ),
+    );
+    cleanup();
+    const one = await open('From a file');
+    await userEvent.upload(within(one.dialog).getByLabelText('Ontology file'), kb(6, 'chebi.ttl'));
+    await userEvent.type(within(one.dialog).getByLabelText('Name'), 'ChEBI');
+    await waitFor(() =>
+      expect(within(one.dialog).getByRole('button', { name: 'Import' })).toHaveAttribute(
+        'title',
+        'chebi.ttl is 6 KB; the upload limit is 4 KB',
+      ),
+    );
+  });
+
+  it('warns when a folder holds merged copies beside the modules they combine', async () => {
+    const { dialog } = await open('From a folder or .zip');
+    await userEvent.upload(within(dialog).getByLabelText('Ontology folder'), [
+      kb(1, 'afo/voc/afo/REC/afo.ttl'),
+      kb(1, 'afo/voc/afo/merged/REC/merged-without-qudt.ttl'),
+    ]);
+    expect(
+      within(dialog).getByText(/merged copies \(merged\/\) beside the modules/),
+    ).toBeInTheDocument();
   });
 });

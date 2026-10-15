@@ -300,7 +300,10 @@ export function ontologyFileNameFromUrl(url: string): string {
 /** What the import dialog needs to know about URL imports (GET /api/ontology-settings). */
 export const OntologySettingsSchema = z.object({
   fetchHosts: z.array(z.string()),
+  /** The size limit of a file fetched from a URL (`ONTOLOGY_MAX_BYTES`). */
   maxBytes: z.number().int(),
+  /** The size limit of an upload: one file, or a folder's files together (`MAX_UPLOAD_MB`). */
+  maxUploadBytes: z.number().int(),
 });
 export type OntologySettings = z.infer<typeof OntologySettingsSchema>;
 
