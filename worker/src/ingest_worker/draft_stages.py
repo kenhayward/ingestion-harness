@@ -171,6 +171,14 @@ def check_outputs(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
     return errors
 
 
+#: Why an extract step needs sections, and what to do with a value no section holds.
+EMPTY_SECTIONS = (
+    "sections is empty: an extract step reads at least one section. For a value no section "
+    "holds (a file name, a value these documents lack), fill it in the step that reads the "
+    "section it belongs with; it may come back empty."
+)
+
+
 def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -184,6 +192,11 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                         _clean({"type": "check", **{k: c.get(k) for k in keys}})
                     )
                 else:
+                    if not c.get("sections"):
+                        # Dropped as empty, it would read "sections: Field required": the model
+                        # sent the key, so it repeats itself. Say what the rule is instead.
+                        errors.append(f"changes[{i}]: step {c['id']!r}: {EMPTY_SECTIONS}")
+                        continue
                     items = c.get("context") or []
                     if any(not x.get("name") or not x.get("path") for x in items):
                         errors.append(f"changes[{i}]: context item needs name and path")
@@ -268,8 +281,10 @@ STEPS = Stage(
 Task: propose the extraction pipeline that fills every output in the current draft.
 - putStep with type extract:
   - id, and sections (ids from the current draft's sections).
+    Every extract step reads at least one section: never send an empty list.
   - Either fields (field ids) or table (one table id). Every field and table must be filled
-    by exactly one step.
+    by exactly one step. A field no section holds (the file name, a value these documents
+    lack) goes in the step that reads the section it belongs with; it may come back empty.
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
   - chunkPages: only for a long table in one section.
