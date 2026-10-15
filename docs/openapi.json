@@ -90,6 +90,18 @@
                       "type": "boolean",
                       "description": "A one-time password session: only me, the password change and sign-out work."
                     },
+                    "avatarUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The linked GitHub account's picture (`GET /api/profile`); null: none linked."
+                    },
                     "failedSinceLastSignIn": {
                       "type": "integer",
                       "description": "Failed sign-ins this success cleared: worth telling the person about."
@@ -113,6 +125,7 @@
                     "label",
                     "email",
                     "mustChangePassword",
+                    "avatarUrl",
                     "failedSinceLastSignIn",
                     "lastFailedAt"
                   ],
@@ -323,7 +336,7 @@
         "tags": [
           "Auth & sessions"
         ],
-        "description": "The role, name and email of the signed-in user, and whether the session was opened\nwith a one-time password. The web app calls this on load to choose between the\nsign-in page, the password change and the app, and to show the admin pages only to\nadmins.",
+        "description": "The role, name, email and picture of the signed-in user, and whether the session was\nopened with a one-time password. The web app calls this on load to choose between the\nsign-in page, the password change and the app, and to show the admin pages only to\nadmins.",
         "responses": {
           "200": {
             "description": "The signed-in user.",
@@ -358,6 +371,18 @@
                     "mustChangePassword": {
                       "type": "boolean",
                       "description": "A one-time password session: only me, the password change and sign-out work."
+                    },
+                    "avatarUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The linked GitHub account's picture (`GET /api/profile`); null: none linked."
                     }
                   },
                   "required": [
@@ -365,7 +390,8 @@
                     "role",
                     "label",
                     "email",
-                    "mustChangePassword"
+                    "mustChangePassword",
+                    "avatarUrl"
                   ],
                   "additionalProperties": true,
                   "description": "The signed-in user."
@@ -2837,6 +2863,1178 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "operationId": "getProfile",
+        "summary": "Get your profile",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Your name, email address, job title, company and LinkedIn name, and the GitHub account\nyou linked with the repository recipe YAML will be stored in. `githubAvailable` says\nwhether this deployment can link GitHub accounts.",
+        "responses": {
+          "200": {
+            "description": "Your profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin on the Access page."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateProfile",
+        "summary": "Save your details",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Saves your name, job title, company and LinkedIn name (the name in\n`linkedin.com/in/<name>`, or that address). Blank details are cleared. Your name is\nwhat jobs and changes you make record. An admin changes your email address.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Unique, whatever the case."
+                  },
+                  "jobTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Blank: none."
+                  },
+                  "company": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Blank: none."
+                  },
+                  "linkedin": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The name in `linkedin.com/in/<name>`, or that address. Blank: none."
+                  }
+                },
+                "required": [
+                  "name",
+                  "jobTitle",
+                  "company",
+                  "linkedin"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Your profile, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin on the Access page."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a detail is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a detail is refused."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a user with this name already exists`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a user with this name already exists`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/connect": {
+      "get": {
+        "operationId": "connectGitHub",
+        "summary": "Start linking a GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "A browser navigation: redirects to GitHub, which asks you to let CT Studio read your\nprofile and your repositories (scope `repo read:user`; the repository will receive\nrecipe YAML). GitHub then sends you to the callback. Linking again replaces the\naccount. The link must finish within 10 minutes, in the same\nbrowser.",
+        "responses": {
+          "302": {
+            "description": "To GitHub."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`GitHub linking is not set up: an admin sets GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and LLM_SECRETS_KEY`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`GitHub linking is not set up: an admin sets GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and LLM_SECRETS_KEY`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/callback": {
+      "get": {
+        "operationId": "gitHubCallback",
+        "summary": "Finish linking a GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Where GitHub sends the browser back to. It needs no session: the `state` must be the\none Connect issued to this browser in the last 10 minutes, and\nit works once. Redirects to the app's Profile dialog with `github=` `linked`,\n`denied` (you said no on GitHub), `expired` (the state is unknown, used or not\nthis browser's), `taken` (another user linked that GitHub account) or `failed`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "description": "From GitHub: the code for the token."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "description": "From GitHub: the state Connect sent."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "description": "From GitHub, when the user said no."
+          }
+        ],
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "To the app's Profile dialog."
+          }
+        }
+      }
+    },
+    "/api/profile/github": {
+      "delete": {
+        "operationId": "unlinkGitHub",
+        "summary": "Unlink your GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Forgets the linked account and its chosen repository, and asks GitHub to revoke the\ntoken (if GitHub cannot, the account is still unlinked here; revoke CT Studio under\nyour GitHub settings' Applications). Your picture goes back to your initials.",
+        "responses": {
+          "204": {
+            "description": "Unlinked (also when nothing was linked)."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/repos": {
+      "get": {
+        "operationId": "listGitHubRepos",
+        "summary": "List repositories you can push to",
+        "tags": [
+          "Profile"
+        ],
+        "description": "The repositories the linked GitHub account can push to (owned, collaborator and\norganisation ones, at most 1,000), by name: the choices for the YAML repository.",
+        "responses": {
+          "200": {
+            "description": "The repositories.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string",
+                        "description": "`owner/name`."
+                      },
+                      "private": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "fullName",
+                      "private"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The repositories."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`link a GitHub account first`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`link a GitHub account first`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "What GitHub said, e.g. that it no longer accepts the link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "What GitHub said, e.g. that it no longer accepts the link."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/repo": {
+      "put": {
+        "operationId": "setGitHubRepo",
+        "summary": "Choose the repository for recipe YAML",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Chooses the repository recipe YAML will be stored in (`owner/name`, any case; kept\nas GitHub spells it), or none (`null`). The linked account must be able to push to\nit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "`owner/name` of a repository the linked account can push to; null: none."
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Your profile, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin on the Access page."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`<login> cannot push to <owner/name> on GitHub`, or a malformed name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`<login> cannot push to <owner/name> on GitHub`, or a malformed name."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`link a GitHub account first`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`link a GitHub account first`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "What GitHub said, e.g. that it no longer accepts the link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "What GitHub said, e.g. that it no longer accepts the link."
                 }
               }
             }
@@ -48193,6 +49391,10 @@
       "description": "Sign in with an email address and a password to get a session cookie (`ih_session`).\nEvery `/api` route needs the session except sign-in, sign-out and these docs. See\n[ADR 0013](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0013-email-password-users.md)."
     },
     {
+      "name": "Profile",
+      "description": "Your own profile: name, job title, company and LinkedIn name, and a linked GitHub account\n(its picture is your picture in the app) with the repository recipe YAML will be stored in.\nThe email address is changed by an admin."
+    },
+    {
       "name": "Users",
       "description": "Admins add people with a name, an email address and a one-time password, and can edit,\ndisable, unlock or reissue them, and read recent sign-ins. The admin from the API log signs\nin as `admin` with the token the API prints on every start."
     },
@@ -48250,6 +49452,7 @@
       "name": "Administration",
       "tags": [
         "Auth & sessions",
+        "Profile",
         "Users",
         "Data-lake S3 keys",
         "Linked data",

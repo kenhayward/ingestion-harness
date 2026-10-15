@@ -73,8 +73,20 @@ const EnvSchema = z
     TRUST_PROXY: optional(z.string()),
     /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */
     FRAME_ANCESTORS: FrameAncestors,
+    /** The GitHub OAuth app users link their accounts with (docs/design/profile.md); both or none. */
+    GITHUB_CLIENT_ID: optional(z.string()),
+    GITHUB_CLIENT_SECRET: optional(z.string()),
+    /** The callback registered with that app; unset: from the request (proxy headers). */
+    GITHUB_REDIRECT_URL: optional(z.string().url()),
   })
   .superRefine((env, ctx) => {
+    if (Boolean(env.GITHUB_CLIENT_ID) !== Boolean(env.GITHUB_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GITHUB_CLIENT_ID'],
+        message: 'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET go together',
+      });
+    }
     if (env.LINKED_DATA_BASE_IRI && !env.LINKED_DATA_CUSTOMER) {
       ctx.addIssue({
         code: 'custom',
@@ -124,4 +136,16 @@ export function s3KeysConfig(c: Config): { bucket: string; endpoint: string | nu
   const target = targetConfig(c);
   if (target.endpoint !== c.S3_ENDPOINT) return null;
   return { bucket: target.bucket, endpoint: c.S3_PUBLIC_URL ?? null };
+}
+
+/** The GitHub OAuth app, or null when users cannot link GitHub accounts. */
+export function githubConfig(
+  c: Config,
+): { clientId: string; clientSecret: string; redirectUrl: string | null } | null {
+  if (!c.GITHUB_CLIENT_ID || !c.GITHUB_CLIENT_SECRET) return null;
+  return {
+    clientId: c.GITHUB_CLIENT_ID,
+    clientSecret: c.GITHUB_CLIENT_SECRET,
+    redirectUrl: c.GITHUB_REDIRECT_URL ?? null,
+  };
 }
