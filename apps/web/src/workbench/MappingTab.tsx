@@ -55,7 +55,10 @@ export function MappingTab({
           document type maps to on the Survey tab, and the model will propose a mapping from their
           terms.
         </p>
-        <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey/ontologies`)}>
+        <button
+          type="button"
+          onClick={() => onNavigate(`#/workbench/${projectId}/survey/ontologies`)}
+        >
           Choose ontologies on Survey
         </button>
       </div>

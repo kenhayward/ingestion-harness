@@ -295,9 +295,9 @@ describe('SurveyTab', () => {
       />,
     );
     await open('Questions');
-    const card = screen.getByRole('heading', { name: 'Questions from the model' }).closest(
-      'section',
-    )!;
+    const card = screen
+      .getByRole('heading', { name: 'Questions from the model' })
+      .closest('section')!;
     expect(within(card).getByText('1 of 2 answered')).toBeInTheDocument();
     expect(within(card).getByRole('img', { name: /Answered 1 of 2/ })).toBeInTheDocument();
     expect(within(card).getByText('Why it asks: Some PDFs hold two copies')).toBeInTheDocument();
