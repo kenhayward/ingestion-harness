@@ -3909,3 +3909,17 @@ tr.confirming td {
   gap: var(--ih-space-2);
   justify-items: start;
 }
+.also-matched ul {
+  display: grid;
+  gap: var(--ih-space-2);
+  margin: var(--ih-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.also-matched li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ih-space-2);
+}

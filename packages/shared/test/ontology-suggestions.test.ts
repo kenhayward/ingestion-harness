@@ -31,6 +31,16 @@ describe('ontology suggestions contract', () => {
     expect(SuggestionRecordSchema.parse(fixture.record)).toEqual(fixture.record);
   });
 
+  it('reads records from before also-matched rows said what they add', () => {
+    const record = fixture.record as { alsoMatched: Record<string, unknown>[] };
+    const older = {
+      ...record,
+      alsoMatched: record.alsoMatched.map(({ adds: _a, evidence: _e, ...rest }) => rest),
+    };
+    const parsed = SuggestionRecordSchema.parse(older);
+    expect(parsed.alsoMatched[0]).toMatchObject({ adds: [], evidence: [] });
+  });
+
   it('refuses unknown keys in params', () => {
     expect(SuggestParamsSchema.safeParse({ ...(fixture.params as object), extra: 1 }).success).toBe(
       false,

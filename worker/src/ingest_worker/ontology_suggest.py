@@ -99,6 +99,12 @@ class Suggestion(Cover):
     evidence: list[Evidence]
 
 
+class AlsoMatched(Cover):
+    #: The candidates it covers beyond the pins and the suggestions (older records: none).
+    adds: list[str] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+
+
 class SuggestionRecord(BaseModel):
     """What a survey or refresh writes (TS SuggestionRecordSchema)."""
 
@@ -110,7 +116,7 @@ class SuggestionRecord(BaseModel):
     library_key: str = Field(alias="libraryKey")
     suggestions: list[Suggestion]
     pinned: list[Cover]
-    also_matched: list[Cover] = Field(alias="alsoMatched")
+    also_matched: list[AlsoMatched] = Field(alias="alsoMatched")
     uncovered: list[str]
     notes: list[str]
 
@@ -214,9 +220,9 @@ def suggest_ontologies(
             "covers": [names[i] for i in sorted(cover[v])],
         }
 
-    def evidence(v: tuple[str, int]) -> list[dict[str, Any]]:
+    def evidence(v: tuple[str, int], only: set[int] | None = None) -> list[dict[str, Any]]:
         out = []
-        for i in sorted(cover[v])[:MAX_EVIDENCE]:
+        for i in sorted(cover[v] if only is None else only)[:MAX_EVIDENCE]:
             h = hits[i][v]
             via = "both" if len(h.via) == 2 else next(iter(h.via))
             out.append(
@@ -231,16 +237,26 @@ def suggest_ontologies(
             )
         return out
 
-    pinned_cover: set[int] = set().union(*(cover[p] for p in pins)) if pins else set()
+    # Also matched: the ontologies left out that would still add candidates beyond the pins and
+    # the suggestions (below MIN_GAIN, or past MAX_SUGGESTIONS), most added first, with the
+    # terms behind what they add. One that only repeats covered ground is not worth listing.
+    adds = {v: cover[v] - covered for v in pool if v not in chosen}
     also = sorted(
-        (v for v in pool if v not in chosen and len(cover[v] - pinned_cover) >= MIN_GAIN),
-        key=lambda v: (-len(cover[v]), v),
+        (v for v, extra in adds.items() if extra),
+        key=lambda v: (-len(adds[v]), -len(cover[v]), v),
     )[:MAX_ALSO_MATCHED]
     return {
         "candidates": len(candidates),
         "suggestions": [{**entry(v), "evidence": evidence(v)} for v in chosen],
         "pinned": [entry(p) for p in pins],
-        "alsoMatched": [entry(v) for v in also],
+        "alsoMatched": [
+            {
+                **entry(v),
+                "adds": [names[i] for i in sorted(adds[v])],
+                "evidence": evidence(v, adds[v]),
+            }
+            for v in also
+        ],
         "uncovered": [names[i] for i in range(len(candidates)) if i not in covered],
     }
 

@@ -65,12 +65,22 @@ export const SuggestionRecordSchema = z.object({
   /** In pick order (greedy set cover). */
   suggestions: z.array(CoverSchema.extend({ evidence: z.array(EvidenceSchema) })),
   pinned: z.array(CoverSchema),
-  alsoMatched: z.array(CoverSchema),
+  /**
+   * Ontologies left out that would still add candidates beyond the pins and the suggestions,
+   * most added first: `adds` and the `evidence` behind it (both empty in older records).
+   */
+  alsoMatched: z.array(
+    CoverSchema.extend({
+      adds: z.array(z.string()).default([]),
+      evidence: z.array(EvidenceSchema).default([]),
+    }),
+  ),
   uncovered: z.array(z.string()),
   notes: z.array(z.string()),
 });
 export type SuggestionRecord = z.infer<typeof SuggestionRecordSchema>;
 export type OntologySuggestion = SuggestionRecord['suggestions'][number];
+export type AlsoMatchedOntology = SuggestionRecord['alsoMatched'][number];
 
 export const OntologySuggestionsViewSchema = z.object({
   record: SuggestionRecordSchema.nullable(),
