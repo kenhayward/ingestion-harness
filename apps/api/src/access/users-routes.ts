@@ -296,18 +296,25 @@ export function registerUserRoutes(app: FastifyInstance, access: AccessRepo): vo
         description: md`
           **Admins only.** Replaces the user's password with a new one-time password, returned
           in this response only, valid for 7 days. Their current password stops working, every
-          session of theirs ends, and the account is enabled and unlocked.
+          session of theirs ends, and the account is enabled and unlocked. You cannot reissue
+          your own (change it with \`PUT /api/auth/password\`).
         `,
         params: UserParams,
         response: {
           200: res('The user and their new one-time password.', WithPassword),
           403: ADMINS_ONLY,
           404: NOT_FOUND,
-          409: error('The admin from the log.'),
+          409: error('Your own user, or the admin from the log.'),
         },
       },
     },
     async (req, reply) => {
+      // Reissuing ends every session of the user: your own would sign you out before you saw it.
+      if (self(req)) {
+        return reply
+          .code(409)
+          .send({ error: 'you cannot reissue your own password: change it from the account menu' });
+      }
       const result = await access.reissuePassword(req.params.id);
       if (typeof result !== 'string') {
         req.log.info({ userId: result.user.id, by: by(req) }, 'one-time password reissued');

@@ -317,7 +317,10 @@ function UserRow({
               })}
             {!fromLog &&
               iconButton('Reissue one-time password for', 'key', () => setConfirm('reissue'), {
-                title: 'Reissue one-time password',
+                disabled: self,
+                title: self
+                  ? 'Change your own password from the account menu'
+                  : 'Reissue one-time password',
               })}
             {iconButton('Sign-in history for', 'history', onHistory, { title: 'Sign-in history' })}
           </div>

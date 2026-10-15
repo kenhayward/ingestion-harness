@@ -27,6 +27,7 @@ export const SESSION_COOKIE = 'ih_session';
 const WHILE_CHANGING = new Set(['GET /api/auth/me', 'PUT /api/auth/password']);
 export const CHANGE_FIRST = 'change your one-time password first';
 export const INVALID_LOGIN = 'invalid email or password';
+const BUSY = 'too many sign-ins at once, try again in a moment';
 
 const LoginBody = z.object({
   login: z
@@ -195,73 +196,83 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
             '`too many failed sign-ins for this account: try again after <time>` (with `lockedUntil`), or `too many attempts, try again later` for the client.',
             LockedBody.partial({ lockedUntil: true }),
           ),
+          503: error(`\`${BUSY}\`: too many sign-ins are being checked at this moment.`),
         },
       },
     },
     async (req, reply) => {
-      if (!limiter.allowed(req.ip)) {
+      // A place is reserved before the password is checked, so a burst of parallel attempts
+      // counts against the client at once and at most a few scrypts run together.
+      const slot = limiter.begin(req.ip);
+      if (slot === null) {
         return reply.code(429).send({ error: 'too many attempts, try again later' });
       }
-      const body = LoginBody.safeParse(req.body ?? {});
-      if (!body.success) {
-        limiter.fail(req.ip);
-        return reply.code(401).send({ error: INVALID_LOGIN }); // nothing to attribute: not recorded
-      }
-      const result = await access.login(body.data.login, body.data.password);
-      const record = recorder(access, req);
-      switch (result.kind) {
-        case 'invalid': {
-          limiter.fail(req.ip);
-          const lockedUntil =
-            typeof result.locked === 'object' && result.locked ? result.locked.until : null;
-          await record({
-            userId: result.userId,
-            result: result.userId ? 'wrong-password' : 'unknown-login',
-            failures: result.failures,
-            lockedUntil,
-          });
-          req.log.warn({ ip: req.ip, userId: result.userId }, 'failed sign-in');
-          if (lockedUntil) {
-            req.log.warn(
-              { userId: result.userId, failures: result.failures, lockedUntil },
-              'user locked',
-            );
-          }
-          if (result.locked === 'disabled') {
-            req.log.warn(
-              { userId: result.userId, failures: result.failures },
-              'user disabled after failed sign-ins',
-            );
-          }
-          if (limiter.surge()) req.log.warn('many failed sign-ins from many clients (scan?)');
-          return reply.code(401).send({ error: INVALID_LOGIN });
+      if (slot === 'busy') return reply.code(503).send({ error: BUSY });
+      let ok = true;
+      try {
+        const body = LoginBody.safeParse(req.body ?? {});
+        if (!body.success) {
+          ok = false;
+          return reply.code(401).send({ error: INVALID_LOGIN }); // nothing to attribute: not recorded
         }
-        case 'locked':
-          // Not limiter.fail: the password was not checked, so this is not a guess.
-          await record({ userId: result.userId, result: 'locked', lockedUntil: result.until });
-          return reply
-            .code(429)
-            .send({ error: lockedMessage(result.until), lockedUntil: result.until });
-        case 'disabled':
-          await record({ userId: result.userId, result: 'disabled' });
-          return reply.code(403).send({ error: 'this account is disabled: ask an admin' });
-        case 'expired':
-          await record({ userId: result.userId, result: 'expired-one-time' });
-          return reply
-            .code(403)
-            .send({ error: 'this one-time password has expired: ask an admin for a new one' });
-        case 'ok':
-          await record({
-            userId: result.session.userId,
-            result: 'ok',
-            failures: result.failedSinceLastSignIn,
-          });
-          setSession(req, reply, result.sessionId);
-          return {
-            ...meView(result.session),
-            failedSinceLastSignIn: result.failedSinceLastSignIn,
-            lastFailedAt: result.lastFailedAt,
-          };
+        const result = await access.login(body.data.login, body.data.password);
+        const record = recorder(access, req);
+        switch (result.kind) {
+          case 'invalid': {
+            ok = false;
+            const lockedUntil =
+              typeof result.locked === 'object' && result.locked ? result.locked.until : null;
+            await record({
+              userId: result.userId,
+              result: result.userId ? 'wrong-password' : 'unknown-login',
+              failures: result.failures,
+              lockedUntil,
+            });
+            req.log.warn({ ip: req.ip, userId: result.userId }, 'failed sign-in');
+            if (lockedUntil) {
+              req.log.warn(
+                { userId: result.userId, failures: result.failures, lockedUntil },
+                'user locked',
+              );
+            }
+            if (result.locked === 'disabled') {
+              req.log.warn(
+                { userId: result.userId, failures: result.failures },
+                'user disabled after failed sign-ins',
+              );
+            }
+            if (limiter.surge()) req.log.warn('many failed sign-ins from many clients (scan?)');
+            return reply.code(401).send({ error: INVALID_LOGIN });
+          }
+          case 'locked':
+            // Not limiter.fail: the password was not checked, so this is not a guess.
+            await record({ userId: result.userId, result: 'locked', lockedUntil: result.until });
+            return reply
+              .code(429)
+              .send({ error: lockedMessage(result.until), lockedUntil: result.until });
+          case 'disabled':
+            await record({ userId: result.userId, result: 'disabled' });
+            return reply.code(403).send({ error: 'this account is disabled: ask an admin' });
+          case 'expired':
+            await record({ userId: result.userId, result: 'expired-one-time' });
+            return reply
+              .code(403)
+              .send({ error: 'this one-time password has expired: ask an admin for a new one' });
+          case 'ok':
+            await record({
+              userId: result.session.userId,
+              result: 'ok',
+              failures: result.failedSinceLastSignIn,
+            });
+            setSession(req, reply, result.sessionId);
+            return {
+              ...meView(result.session),
+              failedSinceLastSignIn: result.failedSinceLastSignIn,
+              lastFailedAt: result.lastFailedAt,
+            };
+        }
+      } finally {
+        slot.done(ok);
       }
     },
   );

@@ -39,7 +39,10 @@ has to stay inside the stack: no external identity provider and no email service
   temporary lock keeps the user's open sessions; the disable ends them. The admin from the log is
   never locked: its password is a 256-bit token, and a lock would let anyone block the one
   account that can unlock the others until the next restart. The per-client limit of ADR 0006
-  (10 failures per IP, or IPv6 /64, per 15 minutes) still applies to everyone.
+  (10 failures per IP, or IPv6 /64, per 15 minutes) still applies to everyone, and now counts a
+  client's attempts still being checked too, so a burst of parallel requests cannot slip past it.
+  Each check costs a 32 MiB scrypt on libuv's small thread pool (shared with file and DNS work),
+  so at most 8 run at once across all clients; beyond that sign-in answers `503`.
 - **Answers:** an unknown email and a wrong password are the same `401 invalid email or
   password`. An unknown email is still checked against a dummy hash, so timing does not tell
   which emails exist. Only someone who gives the right password learns that the account is
@@ -57,7 +60,8 @@ has to stay inside the stack: no external identity provider and no email service
   the table under a scan. Rows older than 90 days are deleted at start and every hour.
 - **Admin routes:** `GET|POST /api/users`, `PATCH /api/users/:id`,
   `POST /api/users/:id/disable|enable|one-time-password`, `GET /api/sign-ins`. An admin cannot
-  disable themselves or remove their own admin role.
+  disable themselves, remove their own admin role or reissue their own one-time password (that
+  would sign them out before they saw it; they change it from the account menu).
 - **Unchanged:** the cross-site guard and cookie attributes (ADR 0012), the public routes (sign-in,
   sign-out, the API docs), the data-lake S3 keys (ADR 0008).
 

@@ -236,6 +236,38 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "`too many sign-ins at once, try again in a moment`: too many sign-ins are being checked at this moment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`too many sign-ins at once, try again in a moment`: too many sign-ins are being checked at this moment."
+                }
+              }
+            }
           }
         }
       }
@@ -2222,7 +2254,7 @@
         "tags": [
           "Users"
         ],
-        "description": "**Admins only.** Replaces the user's password with a new one-time password, returned\nin this response only, valid for 7 days. Their current password stops working, every\nsession of theirs ends, and the account is enabled and unlocked.",
+        "description": "**Admins only.** Replaces the user's password with a new one-time password, returned\nin this response only, valid for 7 days. Their current password stops working, every\nsession of theirs ends, and the account is enabled and unlocked. You cannot reissue\nyour own (change it with `PUT /api/auth/password`).",
         "parameters": [
           {
             "schema": {
@@ -2526,7 +2558,7 @@
             }
           },
           "409": {
-            "description": "The admin from the log.",
+            "description": "Your own user, or the admin from the log.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2552,7 +2584,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The admin from the log."
+                  "description": "Your own user, or the admin from the log."
                 }
               }
             }

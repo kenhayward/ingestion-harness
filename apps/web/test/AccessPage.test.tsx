@@ -207,6 +207,11 @@ describe('AccessPage', () => {
     const disable = within(ann).getByRole('button', { name: 'Disable Ann' });
     expect(disable).toBeDisabled();
     expect(disable).toHaveAttribute('title', 'You cannot disable yourself');
+    const reissue = within(ann).getByRole('button', {
+      name: 'Reissue one-time password for Ann',
+    });
+    expect(reissue).toBeDisabled();
+    expect(reissue).toHaveAttribute('title', 'Change your own password from the account menu');
     await userEvent.click(within(ann).getByRole('button', { name: 'Edit Ann' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Ann' });
     expect(within(dialog).getByRole('button', { name: 'User' })).toBeDisabled();

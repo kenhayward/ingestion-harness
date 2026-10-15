@@ -529,6 +529,19 @@ describe('email and password access', () => {
       payload: { role: 'user' },
     });
     expect(demote.json()).toEqual({ error: 'you cannot remove your own admin role' });
+    // Reissuing your own would sign you out before you could read the new password.
+    const reissue = await app.inject({
+      method: 'POST',
+      url: `/api/users/${user.id}/one-time-password`,
+      headers: { cookie: ann },
+    });
+    expect(reissue.statusCode).toBe(409);
+    expect(reissue.json()).toEqual({
+      error: 'you cannot reissue your own password: change it from the account menu',
+    });
+    expect((await app.inject({ url: '/api/auth/me', headers: { cookie: ann } })).statusCode).toBe(
+      200,
+    );
   });
 
   it('users get 403 on the user and sign-in routes; a bad limit is 400', async () => {
@@ -576,6 +589,57 @@ describe('email and password access', () => {
     expect(blocked.res.statusCode).toBe(429);
     expect(blocked.res.json()).toEqual({ error: 'too many attempts, try again later' });
     expect((await from('203.0.113.6', adminPassword)).res.statusCode).toBe(200);
+  });
+
+  it('counts a parallel burst against the per-IP limit before any attempt finishes', async () => {
+    const { app, access } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = access.login.bind(access);
+    const login = vi.fn(async (l: string, p: string) => {
+      await gate;
+      return real(l, p);
+    });
+    access.login = login;
+    const burst = Array.from({ length: 12 }, () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { login: 'a@example.com', password: 'guess' },
+        headers: { 'x-forwarded-for': '203.0.113.77' },
+      }),
+    );
+    await vi.waitFor(() => expect(login).toHaveBeenCalledTimes(8)); // the global cap
+    release();
+    const codes = (await Promise.all(burst)).map((r) => r.statusCode).sort();
+    expect(login).toHaveBeenCalledTimes(8);
+    expect(codes.filter((c) => c === 401)).toHaveLength(8);
+    expect(codes.filter((c) => c !== 401).every((c) => c === 429 || c === 503)).toBe(true);
+  });
+
+  it('answers 503 when too many sign-ins are being checked at once', async () => {
+    const { app, access } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = access.login.bind(access);
+    access.login = vi.fn(async (l: string, p: string) => {
+      await gate;
+      return real(l, p);
+    });
+    const send = (i: number) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { login: 'a@example.com', password: 'guess' },
+        headers: { 'x-forwarded-for': `203.0.113.${100 + i}` },
+      });
+    const held = Array.from({ length: 8 }, (_, i) => send(i));
+    await vi.waitFor(() => expect(access.login).toHaveBeenCalledTimes(8));
+    const busy = await send(50);
+    expect(busy.statusCode).toBe(503);
+    expect(busy.json()).toEqual({ error: 'too many sign-ins at once, try again in a moment' });
+    release();
+    await Promise.all(held);
   });
 
   it('leaves health checks public', async () => {
