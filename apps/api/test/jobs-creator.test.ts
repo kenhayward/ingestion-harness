@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { preparedTextKey, preparedTriageKey, type SampleView } from '@ih/shared';
-import { accessApp, fakePdf, letter, multipart, testApp } from './helpers.js';
+import {
+  TEST_PASSWORD,
+  accessApp,
+  fakePdf,
+  letter,
+  multipart,
+  signIn,
+  testApp,
+} from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 
-/** Signed in as the admin token (label `admin`) and a user token (label `user`). */
+/** Signed in as the admin from the log (name `Admin`) and a user named `user`. */
 async function signedIn() {
   const ctx = await accessApp();
   const upload = (cookie: string, filename = 'a.pdf') => {
@@ -27,9 +35,9 @@ async function signedIn() {
 const names = (jobs: { filename: string }[]) => jobs.map((j) => j.filename).sort();
 
 describe('job creator', () => {
-  it("records the signed-in token's label on an uploaded job", async () => {
+  it("records the signed-in user's name on an uploaded job", async () => {
     const { upload, adminCookie, userCookie } = await signedIn();
-    expect((await upload(adminCookie)).json().createdBy).toBe('admin');
+    expect((await upload(adminCookie)).json().createdBy).toBe('Admin');
     expect((await upload(userCookie)).json().createdBy).toBe('user');
   });
 
@@ -51,13 +59,11 @@ describe('job creator', () => {
     expect(names(await list(userCookie, '?mine=1&limit=1'))).toEqual(['mine.pdf']);
   });
 
-  it('matches by label, so a token reissued under the same name keeps the list', async () => {
-    const { app, access, upload, list, adminCookie, userCookie } = await signedIn();
+  it("matches by name, so the user's other sessions see the same list", async () => {
+    const { app, upload, list, adminCookie, userCookie } = await signedIn();
     await upload(userCookie, 'before.pdf');
     await upload(adminCookie, 'not-mine.pdf');
-    const { token } = await access.createToken('user', null);
-    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
-    const cookie = `ih_session=${/ih_session=([^;]*)/.exec(String(login.headers['set-cookie']))![1]}`;
+    const cookie = await signIn(app, 'user@example.test', TEST_PASSWORD);
     expect(names(await list(cookie, '?mine=1'))).toEqual(['before.pdf']);
   });
 

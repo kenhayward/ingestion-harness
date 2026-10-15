@@ -59,7 +59,7 @@ import {
  * Drafting bundles (Workbench phase 6): a zip of the drafting context and the dev samples, built
  * by the worker's `export` task, so drafting can continue in another tool.
  */
-const LOCAL_EXPORT = 'exporting a local-only project needs the admin token';
+const LOCAL_EXPORT = 'exporting a local-only project needs an admin';
 const Id = z.string().regex(/^[a-z][a-z0-9_-]*$/);
 const JobParams = z.object({ id: Id, jobId: z.string().uuid() });
 /** The template version the export carried (`draft` is the definition it was built from). */
@@ -72,7 +72,7 @@ const SAMPLES_CHANGED = 'a sample changed since this export; export again';
 const ProjectIdParams = z.object({ id: z.string().describe('The project id.') });
 const PROJECT_NOT_FOUND = error('`project not found`.');
 const LOCAL_ONLY = error(
-  '`exporting a local-only project needs the admin token`: the bundle carries the samples.',
+  '`exporting a local-only project needs an admin`: the bundle carries the samples.',
 );
 const BUNDLE_DOCS =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/design/workbench.md';
@@ -436,7 +436,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
           (PDFs, or Word documents as \`.docx\`). Holdout
           samples never leave. A new export replaces the previous one. Poll
           \`GET …/exports\`, then download the zip. Exporting a \`local\` project needs the
-          admin token, since the bundle takes the samples out of the harness.
+          admin, since the bundle takes the samples out of the harness.
         `,
         params: ProjectIdParams,
         response: {
@@ -544,7 +544,7 @@ export const workbenchBundleRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           The bundle zip of a finished export. Refused when a sample the export carried has
           since been removed or made holdout (export again), and, for a \`local\` project,
-          without the admin token.
+          for anyone but an admin.
         `,
         params: z.object({
           id: z.string().describe('The project id.'),

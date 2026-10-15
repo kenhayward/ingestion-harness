@@ -1,10 +1,9 @@
-import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { MemoryAccessRepo } from '../src/access/repo.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
 import { S3KeyService } from '../src/s3keys/service.js';
-import { testApp } from './helpers.js';
+import { signIn, signInNewUser, testApp } from './helpers.js';
 
 const MISSING = '00000000-0000-4000-8000-000000000000';
 
@@ -20,11 +19,6 @@ class DownIssuer extends MemoryS3KeyIssuer {
   }
 }
 
-async function cookieFor(app: FastifyInstance, token: string) {
-  const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
-  return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))?.[1] ?? ''}`;
-}
-
 async function setup() {
   const access = new MemoryAccessRepo();
   const issuer = new DownIssuer();
@@ -35,7 +29,7 @@ async function setup() {
     endpoint: 'https://lake-s3.example.com',
   });
   const { app } = await testApp({ access, s3Keys });
-  const admin = await cookieFor(app, await access.rotateAdminToken());
+  const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
   const call = (method: 'GET' | 'POST' | 'DELETE', url: string, payload?: object, cookie = admin) =>
     app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
   return { app, access, issuer, admin, call };
@@ -119,8 +113,7 @@ describe('S3 key routes (ADR 0008)', () => {
 
   it('is for admins only', async () => {
     const { app, access, call } = await setup();
-    const { token } = await access.createToken('user', 7);
-    const user = await cookieFor(app, token);
+    const { cookie: user } = await signInNewUser(app, access, 'user');
     expect((await call('GET', '/api/access/s3-keys', undefined, user)).statusCode).toBe(403);
     const create = await call(
       'POST',
@@ -154,7 +147,7 @@ describe('S3 key routes (ADR 0008)', () => {
   it('says so when keys are not available (publish target is not the local SeaweedFS)', async () => {
     const access = new MemoryAccessRepo();
     const { app } = await testApp({ access, s3Keys: null });
-    const admin = await cookieFor(app, await access.rotateAdminToken());
+    const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
     const res = await app.inject({ url: '/api/access/s3-keys', headers: { cookie: admin } });
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toMatch(/not available/);

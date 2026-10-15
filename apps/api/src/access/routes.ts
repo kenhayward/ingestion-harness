@@ -1,78 +1,91 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { error, md, noContent, res } from '../openapi/zod.js';
+import { ErrorBody, error, md, noContent, res } from '../openapi/zod.js';
 import { LoginLimiter } from './limiter.js';
-import { ADMIN_TOKENS_MUST_EXPIRE, type SessionInfo } from './repo.js';
+import { MAX_PASSWORD } from './passwords.js';
+import {
+  DISABLE_AFTER,
+  LOCK_AFTER,
+  SESSION_MAX_MS,
+  USER_AGENT_MAX,
+  type AccessRepo,
+  type NewSignInEvent,
+  type SessionInfo,
+} from './repo.js';
+import { registerUserRoutes } from './users-routes.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
-    /** The signed-in token (set by the access hook). */
+    /** The signed-in user (set by the access hook). */
     auth?: SessionInfo;
   }
 }
 
 export const SESSION_COOKIE = 'ih_session';
-const UUID = z.string().uuid();
+
+/** What a session opened with a one-time password may call (ADR 0013). */
+const WHILE_CHANGING = new Set(['GET /api/auth/me', 'PUT /api/auth/password']);
+export const CHANGE_FIRST = 'change your one-time password first';
+export const INVALID_LOGIN = 'invalid email or password';
 
 const LoginBody = z.object({
-  token: z.string().min(1).max(200).describe('The access token: `ih_` and 43 more characters.'),
-});
-const CreateBody = z.object({
-  label: z
+  login: z
     .string()
-    .trim()
     .min(1)
-    .max(100)
-    .describe('Who or what the token is for, e.g. "Ken – laptop".'),
-  expiresInDays: z.union([
-    z.literal(1),
-    z.literal(7),
-    z.literal(30),
-    z.literal(90),
-    z.literal(365),
-    z.null(),
-  ]),
-  role: z
-    .enum(['admin', 'user'])
-    .default('user')
-    .describe('`admin` for an admin token, which must expire. Default `user`.'),
+    .max(254)
+    .describe('The email address (any case), or `admin` for the admin from the API log.'),
+  password: z
+    .string()
+    .min(1)
+    .max(MAX_PASSWORD)
+    .describe('The password, a one-time password, or for `admin` the token from the log.'),
 });
-const TokenParams = z.object({ id: z.string().uuid().describe('The token id.') });
+const PasswordBody = z.object({
+  currentPassword: z
+    .string()
+    .min(1)
+    .max(MAX_PASSWORD)
+    .describe('The current or one-time password.'),
+  newPassword: z
+    .string()
+    .min(1)
+    .max(1000)
+    .describe(
+      '12 to 200 characters, different from the current one, not containing the email address.',
+    ),
+});
 
 const Role = z.enum(['admin', 'user']);
-const Expiry = z.string().datetime().nullable();
 
-/** The signed-in token, as login and me return it. */
-const SessionView = z.object({
+/** The signed-in user, as login and me return it. */
+export const MeSchema = z.object({
   role: Role,
-  label: z.string(),
-  expiresAt: Expiry.describe('When the token expires; null = never.'),
+  label: z.string().describe("The user's name, as recorded on the jobs and changes they make."),
+  email: z.string().nullable().describe('null for the admin from the API log.'),
+  mustChangePassword: z
+    .boolean()
+    .describe('A one-time password session: only me, the password change and sign-out work.'),
+});
+const SignedInSchema = MeSchema.extend({
+  failedSinceLastSignIn: z
+    .number()
+    .int()
+    .describe('Failed sign-ins this success cleared: worth telling the person about.'),
+  lastFailedAt: z.string().datetime().nullable().describe('When the last failed sign-in was.'),
+});
+export const LockedBody = ErrorBody.extend({
+  lockedUntil: z.string().datetime().describe('When sign-in works again.'),
 });
 
-export const AccessTokenSchema = z.object({
-  id: z.string().uuid(),
-  label: z.string(),
-  role: Role,
-  createdAt: z.string().datetime(),
-  expiresAt: Expiry,
-  revokedAt: Expiry,
-  lastUsedAt: Expiry,
-  issuedBy: z
-    .string()
-    .nullable()
-    .describe('The label of the session that issued the token; null for the admin token.'),
-  status: z.enum(['active', 'expired', 'revoked', 'current-admin']),
+const meView = (s: SessionInfo) => ({
+  role: s.role,
+  label: s.label,
+  email: s.email,
+  mustChangePassword: s.mustChangePassword,
 });
 
-const CreatedToken = z.object({
-  token: z.string().describe('The plaintext token. Shown only in this response.'),
-  record: AccessTokenSchema,
-});
-
-const ADMINS_ONLY = error('`admins only`: the session was opened with a user token.');
-
-/** Browsers cap cookie lifetimes at 400 days; the server still ends idle sessions after 7. */
-const MAX_COOKIE_AGE_S = 400 * 86_400;
+const lockedMessage = (until: string) =>
+  `too many failed sign-ins for this account: try again after ${until}`;
 
 /**
  * The session cookie's cross-site attributes. Normally SameSite=Strict. When other sites may frame
@@ -88,37 +101,36 @@ function cookieSite(req: FastifyRequest) {
     : ({ sameSite: 'strict', secure: req.protocol === 'https' } as const);
 }
 
-function setSession(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  sessionId: string,
-  expiresAt: string | null,
-) {
-  // Persistent until the token expires (not a browser-session cookie): people shouldn't have to
-  // re-enter a token after every browser restart.
+function setSession(req: FastifyRequest, reply: FastifyReply, sessionId: string) {
+  // Persistent for the session's longest life (30 days, D10), not a browser-session cookie:
+  // people shouldn't sign in after every browser restart. The server also ends idle sessions.
   // Secure only over HTTPS (via the proxies' X-Forwarded-Proto): plain-HTTP LAN access must work.
   void reply.setCookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     path: '/',
     ...cookieSite(req),
-    maxAge:
-      expiresAt === null
-        ? MAX_COOKIE_AGE_S
-        : Math.max(
-            0,
-            Math.min(MAX_COOKIE_AGE_S, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)),
-          ),
+    maxAge: SESSION_MAX_MS / 1000,
   });
 }
 
 /** Methods that change something: refused when the browser says another site sent them. */
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/** Records a sign-in event (D11); a failed write is logged and never changes the answer. */
+function recorder(access: AccessRepo, req: FastifyRequest) {
+  const userAgent = req.headers['user-agent']?.slice(0, USER_AGENT_MAX) ?? null;
+  return (event: Omit<NewSignInEvent, 'ip' | 'userAgent'>) =>
+    access
+      .recordSignIn({ ...event, ip: req.ip, userAgent })
+      .catch((err: unknown) => req.log.warn({ err }, 'sign-in event not recorded'));
+}
+
 /**
- * Token access (ADR 0006): every /api route needs a valid session cookie except the routes marked
- * `config.public` (sign-in, sign-out and the API docs); token management needs the admin role. `deps.access === null` disables it (unit
- * tests only - server.ts always provides a repo). Registered on the root instance before the
- * route plugins, so the hook covers every route.
+ * Email and password access (ADR 0013): every /api route needs a valid session cookie except the
+ * routes marked `config.public` (sign-in, sign-out and the API docs); a session opened with a
+ * one-time password can only change it; user management needs the admin role.
+ * `deps.access === null` disables it (unit tests only - server.ts always provides a repo).
+ * Registered on the root instance before the route plugins, so the hook covers every route.
  */
 export async function registerAccess(app: FastifyInstance): Promise<void> {
   const access = app.deps.access;
@@ -141,12 +153,11 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     const sessionId = req.cookies[SESSION_COOKIE];
     const session = sessionId ? await access.session(sessionId) : null;
     if (!session) return reply.code(401).send({ error: 'sign in required' });
+    if (session.mustChangePassword && !WHILE_CHANGING.has(`${req.method} ${route}`)) {
+      return reply.code(403).send({ error: CHANGE_FIRST });
+    }
     req.auth = session;
   });
-
-  const adminOnly = async (req: FastifyRequest, reply: FastifyReply) => {
-    if (req.auth?.role !== 'admin') return reply.code(403).send({ error: 'admins only' });
-  };
 
   app.post(
     '/api/auth/login',
@@ -155,22 +166,35 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Auth & sessions'],
         operationId: 'login',
-        summary: 'Sign in with an access token',
+        summary: 'Sign in with an email address and a password',
         description: md`
-          Opens a session for an active access token and sets the \`ih_session\` cookie
-          (HttpOnly, SameSite=Strict, Secure when the request came over HTTPS). The cookie lasts
-          until the token expires (at most 400 days, the browser limit; tokens that never expire
-          get the maximum), but the server ends a session after 7 days without use.
+          Opens a session and sets the \`ih_session\` cookie (HttpOnly, SameSite=Strict, Secure
+          when the request came over HTTPS). A session ends 30 days after sign-in, or after 7
+          days without use. \`login\` is the email address, or \`admin\` for the admin from the
+          API log, whose password is the token the API prints on every start.
 
-          A wrong, expired or revoked token, or a missing one, is a \`401\`. After 10 failed
-          attempts in 15 minutes a client (an IP address, or an IPv6 /64) gets \`429\` until older
-          failures age out; other clients are unaffected.
+          A session opened with a one-time password (\`mustChangePassword: true\`) can only read
+          \`/api/auth/me\`, change the password and sign out until the password is changed.
+
+          An unknown email and a wrong password are the same \`401\`. The ${LOCK_AFTER}th
+          failed sign-in in a row locks the account for 15 minutes, each one after doubles the
+          lock (at most 24 hours), and the ${DISABLE_AFTER}th disables the account until an
+          admin enables it; the admin from the log is never locked. While locked, any password
+          gets \`429\` with \`lockedUntil\`, unchecked. Separately, after 10 failed attempts in 15
+          minutes a client (an IP address, or an IPv6 /64) gets \`429\` until older failures
+          age out. Every attempt is recorded for admins (\`GET /api/sign-ins\`).
         `,
         body: LoginBody,
         response: {
-          200: res('Signed in; the session cookie is set.', SessionView),
-          401: error('`invalid or expired token`.'),
-          429: error('`too many attempts, try again later`.'),
+          200: res('Signed in; the session cookie is set.', SignedInSchema),
+          401: error(`\`${INVALID_LOGIN}\`.`),
+          403: error(
+            '`this account is disabled: ask an admin`, or `this one-time password has expired: ask an admin for a new one`.',
+          ),
+          429: res(
+            '`too many failed sign-ins for this account: try again after <time>` (with `lockedUntil`), or `too many attempts, try again later` for the client.',
+            LockedBody.partial({ lockedUntil: true }),
+          ),
         },
       },
     },
@@ -179,16 +203,66 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         return reply.code(429).send({ error: 'too many attempts, try again later' });
       }
       const body = LoginBody.safeParse(req.body ?? {});
-      const result = body.success ? await access.login(body.data.token) : null;
-      if (!result) {
+      if (!body.success) {
         limiter.fail(req.ip);
-        req.log.warn({ ip: req.ip }, 'failed sign-in');
-        if (limiter.surge()) req.log.warn('many failed sign-ins from many clients (scan?)');
-        return reply.code(401).send({ error: 'invalid or expired token' });
+        return reply.code(401).send({ error: INVALID_LOGIN }); // nothing to attribute: not recorded
       }
-      setSession(req, reply, result.sessionId, result.session.expiresAt);
-      const { role, label, expiresAt } = result.session;
-      return { role, label, expiresAt };
+      const result = await access.login(body.data.login, body.data.password);
+      const record = recorder(access, req);
+      switch (result.kind) {
+        case 'invalid': {
+          limiter.fail(req.ip);
+          const lockedUntil =
+            typeof result.locked === 'object' && result.locked ? result.locked.until : null;
+          await record({
+            userId: result.userId,
+            result: result.userId ? 'wrong-password' : 'unknown-login',
+            failures: result.failures,
+            lockedUntil,
+          });
+          req.log.warn({ ip: req.ip, userId: result.userId }, 'failed sign-in');
+          if (lockedUntil) {
+            req.log.warn(
+              { userId: result.userId, failures: result.failures, lockedUntil },
+              'user locked',
+            );
+          }
+          if (result.locked === 'disabled') {
+            req.log.warn(
+              { userId: result.userId, failures: result.failures },
+              'user disabled after failed sign-ins',
+            );
+          }
+          if (limiter.surge()) req.log.warn('many failed sign-ins from many clients (scan?)');
+          return reply.code(401).send({ error: INVALID_LOGIN });
+        }
+        case 'locked':
+          // Not limiter.fail: the password was not checked, so this is not a guess.
+          await record({ userId: result.userId, result: 'locked', lockedUntil: result.until });
+          return reply
+            .code(429)
+            .send({ error: lockedMessage(result.until), lockedUntil: result.until });
+        case 'disabled':
+          await record({ userId: result.userId, result: 'disabled' });
+          return reply.code(403).send({ error: 'this account is disabled: ask an admin' });
+        case 'expired':
+          await record({ userId: result.userId, result: 'expired-one-time' });
+          return reply
+            .code(403)
+            .send({ error: 'this one-time password has expired: ask an admin for a new one' });
+        case 'ok':
+          await record({
+            userId: result.session.userId,
+            result: 'ok',
+            failures: result.failedSinceLastSignIn,
+          });
+          setSession(req, reply, result.sessionId);
+          return {
+            ...meView(result.session),
+            failedSinceLastSignIn: result.failedSinceLastSignIn,
+            lastFailedAt: result.lastFailedAt,
+          };
+      }
     },
   );
 
@@ -201,9 +275,9 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         operationId: 'logout',
         summary: 'Sign out',
         description: md`
-          Ends the current session and clears the \`ih_session\` cookie. Other sessions opened
-          with the same token stay signed in (revoke the token to end them all). Answers \`204\`
-          even when there is no session.
+          Ends the current session and clears the \`ih_session\` cookie. Other sessions of the
+          same user stay signed in (an admin's Disable ends them all). Answers \`204\` even when
+          there is no session.
         `,
         response: { 204: noContent('Signed out.') },
       },
@@ -222,155 +296,86 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Auth & sessions'],
         operationId: 'me',
-        summary: 'Get the signed-in token',
+        summary: 'Get the signed-in user',
         description: md`
-          The role, label and expiry of the token the current session was opened with. The web
-          app calls this on load to choose between the sign-in page and the app, and to show the
-          admin pages only to admins.
+          The role, name and email of the signed-in user, and whether the session was opened
+          with a one-time password. The web app calls this on load to choose between the
+          sign-in page, the password change and the app, and to show the admin pages only to
+          admins.
         `,
-        response: { 200: res('The signed-in token.', SessionView) },
+        response: { 200: res('The signed-in user.', MeSchema) },
       },
     },
-    async (req) => {
-      const { role, label, expiresAt } = req.auth!;
-      return { role, label, expiresAt };
-    },
+    async (req) => meView(req.auth!),
   );
 
-  app.get(
-    '/api/auth/tokens',
+  app.put(
+    '/api/auth/password',
     {
-      preHandler: adminOnly,
       schema: {
-        tags: ['Access tokens'],
-        'x-admin': true,
-        operationId: 'listTokens',
-        summary: 'List access tokens',
+        tags: ['Auth & sessions'],
+        operationId: 'changePassword',
+        summary: 'Change your password',
         description: md`
-          **Admin token required.** Every access token, newest first, with its status:
-          \`active\`, \`expired\`, \`revoked\`, or \`current-admin\` for the admin token the
-          running API printed in its log (issued admin tokens have the usual statuses). Plaintext
-          tokens are never stored, so they are not listed.
-        `,
-        response: {
-          200: res('The tokens.', z.array(AccessTokenSchema)),
-          403: ADMINS_ONLY,
-        },
-      },
-    },
-    async () => access.listTokens(),
-  );
+          Changes the signed-in user's password; with a one-time password session this is the
+          first sign-in step. The new password is 12 to 200 characters, differs from the current
+          one and does not contain the email address. Every other session of the user ends;
+          this one stays signed in.
 
-  app.post(
-    '/api/auth/tokens',
-    {
-      preHandler: adminOnly,
-      schema: {
-        tags: ['Access tokens'],
-        'x-admin': true,
-        operationId: 'createToken',
-        summary: 'Issue an access token',
-        description: md`
-          **Admin token required.** Issues a new token. The plaintext \`token\` is in this
-          response only: give it to the person who will sign in with it. \`expiresInDays\` is
-          1, 7, 30, 90 or 365, or \`null\` for a token that never expires.
-
-          With \`role: "admin"\` the token has full admin access, including issuing tokens, for
-          long-lived admin access without the admin token from the API log. Unlike that token,
-          it survives restarts, so it must expire, and it can be revoked or deleted by any admin.
-          Every token records who issued it (\`issuedBy\`), and issuing an admin token is logged.
+          A wrong current password counts as a failed sign-in and can lock the account, as for
+          sign-in. The admin from the API log cannot change its password: it rotates on every
+          API start.
         `,
-        body: CreateBody,
+        body: PasswordBody,
         response: {
-          200: res('The new token and its record.', CreatedToken),
-          400: error(
-            '`label (1-100 chars) and expiresInDays are required`, or `admin tokens must expire`.',
+          204: noContent('Changed.'),
+          400: error('`the current password is wrong`, or why the new password is refused.'),
+          409: error('`the admin password rotates on restart and cannot be changed`.'),
+          429: res(
+            '`too many failed sign-ins for this account: try again after <time>`.',
+            LockedBody,
           ),
-          403: ADMINS_ONLY,
         },
       },
     },
     async (req, reply) => {
-      const body = CreateBody.safeParse(req.body ?? {});
+      const body = PasswordBody.safeParse(req.body ?? {});
       if (!body.success) {
-        return reply
-          .code(400)
-          .send({ error: 'label (1-100 chars) and expiresInDays are required' });
+        return reply.code(400).send({ error: 'currentPassword and newPassword are required' });
       }
-      const { label, expiresInDays, role } = body.data;
-      if (role === 'admin' && expiresInDays === null)
-        return reply.code(400).send({ error: ADMIN_TOKENS_MUST_EXPIRE });
-      const issuedBy = req.auth?.label ?? null;
-      const created = await access.createToken(label, expiresInDays, { role, issuedBy });
-      if (role === 'admin') {
-        const { id: tokenId, expiresAt } = created.record;
-        app.log.warn({ tokenId, label, expiresAt, issuedBy }, 'admin token issued');
-      }
-      return created;
-    },
-  );
-
-  const change =
-    (apply: (id: string) => Promise<'ok' | 'not_found' | 'admin'>) =>
-    async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      if (!UUID.safeParse(req.params.id).success)
-        return reply.code(404).send({ error: 'not found' });
-      const result = await apply(req.params.id);
-      if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
-      if (result === 'admin') {
+      const auth = req.auth!;
+      const record = recorder(access, req);
+      const result = await access.changePassword(
+        req.cookies[SESSION_COOKIE]!,
+        body.data.currentPassword,
+        body.data.newPassword,
+      );
+      if (result === 'admin-from-log') {
         return reply
           .code(409)
-          .send({ error: 'the admin token rotates on restart and cannot be revoked or deleted' });
+          .send({ error: 'the admin password rotates on restart and cannot be changed' });
       }
+      if (result === 'wrong' || result === 'locked') {
+        const user = (await access.listUsers()).find((u) => u.id === auth.userId);
+        await record({
+          userId: auth.userId,
+          result: 'password-change-refused',
+          failures: user?.failedSignIns ?? null,
+          lockedUntil: user?.status === 'locked' ? user.lockedUntil : null,
+        });
+        if (result === 'wrong') {
+          limiter.fail(req.ip);
+          return reply.code(400).send({ error: 'the current password is wrong' });
+        }
+        const until = user?.lockedUntil ?? new Date().toISOString();
+        return reply.code(429).send({ error: lockedMessage(until), lockedUntil: until });
+      }
+      if (typeof result === 'object') return reply.code(400).send({ error: result.problem });
+      await record({ userId: auth.userId, result: 'password-changed' });
+      req.log.info({ userId: auth.userId }, 'password changed');
       return reply.code(204).send();
-    };
-
-  const changeResponses = (done: string) => ({
-    204: noContent(done),
-    403: ADMINS_ONLY,
-    404: error('`not found`: no token with this id.'),
-    409: error('`the admin token rotates on restart and cannot be revoked or deleted`.'),
-  });
-
-  app.post<{ Params: { id: string } }>(
-    '/api/auth/tokens/:id/revoke',
-    {
-      preHandler: adminOnly,
-      schema: {
-        tags: ['Access tokens'],
-        'x-admin': true,
-        operationId: 'revokeToken',
-        summary: 'Revoke an access token',
-        description: md`
-          **Admin token required.** Revokes a token (a user token or an issued admin token) and
-          ends every session opened with it. The token stays in the list as \`revoked\`, so its
-          history is kept; delete it to remove it. The admin token from the API log cannot be
-          revoked (it rotates on every API start).
-        `,
-        params: TokenParams,
-        response: changeResponses('Revoked; its sessions are ended.'),
-      },
     },
-    change((id) => access.revokeToken(id)),
   );
-  app.delete<{ Params: { id: string } }>(
-    '/api/auth/tokens/:id',
-    {
-      preHandler: adminOnly,
-      schema: {
-        tags: ['Access tokens'],
-        'x-admin': true,
-        operationId: 'deleteToken',
-        summary: 'Delete an access token',
-        description: md`
-          **Admin token required.** Deletes a token (a user token or an issued admin token) and
-          its sessions. Unlike revoking, the token disappears from the list. The admin token from
-          the API log cannot be deleted (it rotates on every API start).
-        `,
-        params: TokenParams,
-        response: changeResponses('Deleted, with its sessions.'),
-      },
-    },
-    change((id) => access.deleteToken(id)),
-  );
+
+  registerUserRoutes(app, access);
 }

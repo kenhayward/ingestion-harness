@@ -15,7 +15,7 @@ export function ExportPanel({
   pollMs = 3000,
 }: {
   api: Api;
-  /** The session's role: a local-only project's bundle downloads with the admin token only. */
+  /** The session's role: a local-only project's bundle downloads for admins only. */
   role: 'admin' | 'user';
   projectId: string;
   dataPolicy: DataPolicy;
@@ -91,7 +91,7 @@ export function ExportPanel({
             </a>
           ) : (
             <span className="muted">
-              Downloading a local-only project&apos;s bundle needs the admin token.
+              Downloading a local-only project&apos;s bundle needs an admin.
             </span>
           ))}
         <button type="button" disabled={busy || active} onClick={() => void start()}>
@@ -100,7 +100,7 @@ export function ExportPanel({
       </div>
       {dataPolicy === 'local' && (
         <p className="muted export-note">
-          Local-only project: exporting and downloading need the admin token.
+          Local-only project: exporting and downloading need an admin.
         </p>
       )}
     </section>

@@ -7,7 +7,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
-import { letter, multipart, testApp } from './helpers.js';
+import { letter, multipart, signIn, signInNewUser, testApp } from './helpers.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
 const survey = {
@@ -76,14 +76,10 @@ describe('data policy', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
-  it('refuses user tokens and allows the admin', async () => {
+  it('refuses users and allows admins', async () => {
     const access = new MemoryAccessRepo();
     const { app, workbench } = await testApp({ access });
     await workbench.createProject('letter', 'Letter');
-    const login = async (token: string) => {
-      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
-      return `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))![1]}`;
-    };
     const put = (cookie: string) =>
       app.inject({
         method: 'PUT',
@@ -91,11 +87,11 @@ describe('data policy', () => {
         payload: { dataPolicy: 'external' },
         headers: { cookie },
       });
-    const { token } = await access.createToken('user', null);
-    expect((await put(await login(token))).statusCode).toBe(403);
+    const { cookie: user } = await signInNewUser(app, access, 'user');
+    expect((await put(user)).statusCode).toBe(403);
     expect((await workbench.getProject('letter'))!.dataPolicy).toBe('local');
-    const admin = await access.rotateAdminToken();
-    expect((await put(await login(admin))).statusCode).toBe(200);
+    const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
+    expect((await put(admin)).statusCode).toBe(200);
     expect((await workbench.getProject('letter'))!.dataPolicy).toBe('external');
   });
 

@@ -2134,7 +2134,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'setDataPolicy',
         summary: "Set a project's data policy",
         description: md`
-          **Admin token required.** \`local\`: the project's documents and sample text may only
+          **Admins only.** \`local\`: the project's documents and sample text may only
           go to models on providers marked \`location: local\`. \`external\`: external
           providers are allowed too. Switching to \`local\` also makes every existing job of the
           project local-only, so queued jobs, retries and step re-runs cannot go external after

@@ -145,7 +145,7 @@ describe('model choices API', () => {
       id: 'main',
       label: 'Main Production Model',
       ref: 'local/qwen3-32b',
-      updatedBy: 'admin',
+      updatedBy: 'Admin',
     });
     const missing = await app.inject({
       method: 'PATCH',
