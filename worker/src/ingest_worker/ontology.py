@@ -118,6 +118,32 @@ class Term:
     defined_in: str | None = None
 
 
+@dataclass(frozen=True)
+class TermHit:
+    """A version's best term for a query, with an absolute similarity (0-1)."""
+
+    ontology_id: str
+    version: int
+    term: Term
+    similarity: float
+
+
+def _trigrams(text: str) -> set[str]:
+    out: set[str] = set()
+    for word in re.findall(r"[a-z0-9]+", text.lower()):
+        padded = f"  {word} "
+        out.update(padded[i : i + 3] for i in range(len(padded) - 2))
+    return out
+
+
+def trigram_similarity(a: str, b: str) -> float:
+    """pg_trgm's `similarity`: shared trigrams over all trigrams of the two strings' words
+    (each word padded with two spaces before and one after)."""
+    x, y = _trigrams(a), _trigrams(b)
+    union = x | y
+    return len(x & y) / len(union) if union else 0.0
+
+
 @dataclass
 class ParsedOntology:
     triples: int
@@ -542,6 +568,25 @@ class OntologyStore(Protocol):
         """Any of `versions` has vectors for the model."""
         ...
 
+    def lexical_best(
+        self, versions: list[tuple[str, int]], text: str, kinds: list[str], min_similarity: float
+    ) -> list[TermHit]:
+        """Each version's term of `kinds` whose label or a synonym is most similar to `text`
+        (pg_trgm similarity, whole strings), when at least `min_similarity`; best first."""
+        ...
+
+    def semantic_best(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        min_similarity: float,
+    ) -> list[TermHit]:
+        """Each version's term of `kinds` nearest `vector` (1 - cosine distance), when at
+        least `min_similarity`; best first."""
+        ...
+
     def create_imported(
         self,
         *,
@@ -956,6 +1001,80 @@ class PgOntologyStore:
             },
         ).fetchall()
         return _unique([_read_term(r) for r in rows])
+
+    def lexical_best(
+        self, versions: list[tuple[str, int]], text: str, kinds: list[str], min_similarity: float
+    ) -> list[TermHit]:
+        if not versions or not text.strip():
+            return []
+        rows = self._conn.execute(
+            f"""WITH q AS (SELECT lower(%(q)s) AS text),
+                scored AS (
+                  SELECT t.ontology_id, t.version, {_READ_COLUMNS},
+                         greatest(similarity(lower(t.label), q.text),
+                                  coalesce((SELECT max(similarity(lower(a), q.text))
+                                              FROM unnest(t.alt_labels) a), 0)) AS sim
+                    FROM ontology_terms t
+                    JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                      ON t.ontology_id = p.id AND t.version = p.v
+                   CROSS JOIN q
+                   WHERE t.kind = ANY(%(kinds)s::text[]))
+                SELECT DISTINCT ON (ontology_id, version) * FROM scored
+                 WHERE sim >= %(min)s
+                 ORDER BY ontology_id, version, sim DESC, label, iri""",
+            {
+                "q": text,
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "min": min_similarity,
+            },
+        ).fetchall()
+        hits = [TermHit(r[0], r[1], _read_term(r[2:]), float(r[-1])) for r in rows]
+        return sorted(hits, key=lambda h: (-h.similarity, h.ontology_id, h.version))
+
+    def semantic_best(
+        self,
+        versions: list[tuple[str, int]],
+        model_ref: str,
+        vector: list[float],
+        kinds: list[str],
+        min_similarity: float,
+    ) -> list[TermHit]:
+        from psycopg import sql
+
+        if not versions or not vector:
+            return []
+        query = sql.SQL(
+            """WITH c AS MATERIALIZED (
+                 SELECT t.ontology_id, t.version, {cols},
+                        1 - (e.embedding <=> %(vec)s::vector) AS sim
+                   FROM ontology_term_embeddings e
+                   JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+                   JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                     ON e.ontology_id = p.id AND e.version = p.v
+                  WHERE e.model_ref = {ref} AND e.dims = {dims}
+                    AND e.kind = ANY(%(kinds)s::text[]))
+               SELECT DISTINCT ON (ontology_id, version) * FROM c
+                WHERE sim >= %(min)s
+                ORDER BY ontology_id, version, sim DESC, label, iri"""
+        ).format(
+            cols=sql.SQL(_READ_COLUMNS),
+            ref=sql.Literal(model_ref),
+            dims=sql.Literal(len(vector)),
+        )
+        rows = self._conn.execute(
+            query,
+            {
+                "ids": [v[0] for v in versions],
+                "vs": [v[1] for v in versions],
+                "kinds": kinds,
+                "vec": vector_literal(vector),
+                "min": min_similarity,
+            },
+        ).fetchall()
+        hits = [TermHit(r[0], r[1], _read_term(r[2:]), float(r[-1])) for r in rows]
+        return sorted(hits, key=lambda h: (-h.similarity, h.ontology_id, h.version))
 
     def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
         if not versions:

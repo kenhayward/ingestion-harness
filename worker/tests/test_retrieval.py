@@ -221,3 +221,38 @@ def test_pg_definitions_bring_terms_in_and_recall_holds_on_the_real_sql() -> Non
     assert hits / sum(len(c["expected"]) for c in CASES) >= 0.6
     conn.execute("DELETE FROM ontologies WHERE id = 'pharma-recall'")
     conn.close()
+
+
+@pytest.mark.integration
+def test_pg_best_hits_carry_similarities() -> None:
+    url = os.environ.get("IH_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("IH_TEST_DATABASE_URL not set")
+    import psycopg
+
+    from ingest_worker.ontology import PgOntologyStore, trigram_similarity
+
+    conn = psycopg.connect(url, autocommit=True)
+    conn.execute("DELETE FROM ontologies WHERE id = 'pharma-best'")
+    conn.execute("INSERT INTO ontologies (id, label) VALUES ('pharma-best', 'P')")
+    conn.execute(
+        """INSERT INTO ontology_versions (ontology_id, version, file_name, media_type, sha256, bytes)
+           VALUES ('pharma-best', 1, 'p.ttl', 'text/turtle', 'abc', 10)"""
+    )
+    pg = PgOntologyStore(conn)
+    pg.save(
+        "pharma-best",
+        1,
+        parse_ontology((FIXTURE / "ontology.ttl").read_bytes(), "text/turtle", "o.ttl"),
+    )
+    hits = pg.lexical_best([("pharma-best", 1)], "expiry date", ["datatype_property"], 0.45)
+    assert [h.term.iri for h in hits] == ["https://ex.example/pharma#expiryDate"]
+    # pg_trgm and the Python twin agree (the memory store relies on it).
+    assert hits[0].similarity == pytest.approx(
+        max(
+            trigram_similarity(n, "expiry date")
+            for n in [hits[0].term.label, *hits[0].term.alt_labels]
+        ),
+        abs=1e-3,
+    )
+    assert pg.lexical_best([("pharma-best", 1)], "zzz", ["datatype_property"], 0.45) == []
