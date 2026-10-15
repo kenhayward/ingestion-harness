@@ -45,5 +45,5 @@ if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
   echo "==> admin token rotated; on the host run: deploy/scripts/admin-token.sh --env-file $ENV_FILE -f deploy/docker-compose.yml"
 else
   echo "==> ADMIN TOKEN (valid until the API restarts): $ADMIN_TOKEN"
-  echo "    Sign in with it, then issue user tokens under Access (ADR 0006)."
+  echo "    Sign in as admin with it as the password, then add users under Access (ADR 0013)."
 fi
