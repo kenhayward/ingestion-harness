@@ -90,7 +90,7 @@ describe('POST /api/ontologies', () => {
     expect(refused.json()).toEqual({ error: 'admins only' });
     const accepted = await send(adminCookie);
     expect(accepted.statusCode).toBe(202);
-    expect(accepted.json().importedBy).toBe('admin');
+    expect(accepted.json().importedBy).toBe('Admin');
   });
 });
 

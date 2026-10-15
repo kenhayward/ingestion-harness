@@ -100,9 +100,10 @@ function NotifyBell({ notify }: { notify: NotifySetting }) {
 const INSTALL_LABEL = 'Install CT Studio';
 
 /**
- * An admin's name opens the account menu (Models, Access, Install CT Studio while the browser
- * offers it, Sign out; ADR 0010). It closes on Escape (focus back on the name), a click outside,
- * or a choice.
+ * The signed-in name opens the account menu: for admins Models, Linked data and Access (ADR
+ * 0010); Install CT Studio while the browser offers it (admins); Change password for everyone
+ * with a password of their own (not the admin from the log, ADR 0013); Sign out. It closes on
+ * Escape (focus back on the name), a click outside, or a choice.
  */
 function AccountMenu({
   me,
@@ -118,6 +119,7 @@ function AccountMenu({
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const name = `${me.label} (${me.role}): account menu`;
+  const admin = me.role === 'admin';
 
   useEffect(() => {
     if (!open) return;
@@ -165,19 +167,29 @@ function AccountMenu({
       </button>
       {open && (
         <div role="menu" aria-label={name} className="menu-popover">
-          <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
-            <Icon name="chip" />
-            Models
-          </a>
-          <a role="menuitem" href="#/linked-data" onClick={() => setOpen(false)}>
-            <Icon name="link" />
-            Linked data
-          </a>
-          <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
-            <Icon name="key" />
-            Access
-          </a>
-          {onInstall && (
+          {admin && (
+            <>
+              <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
+                <Icon name="chip" />
+                Models
+              </a>
+              <a role="menuitem" href="#/linked-data" onClick={() => setOpen(false)}>
+                <Icon name="link" />
+                Linked data
+              </a>
+              <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
+                <Icon name="key" />
+                Access
+              </a>
+            </>
+          )}
+          {me.email !== null && (
+            <a role="menuitem" href="#/account/password" onClick={() => setOpen(false)}>
+              <Icon name="lock" />
+              Change password
+            </a>
+          )}
+          {admin && onInstall && (
             <button
               type="button"
               role="menuitem"
@@ -308,32 +320,7 @@ export function AppShell({
             <Icon name="upload" />
             Upload document
           </button>
-          {me.role === 'admin' ? (
-            <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
-          ) : (
-            <div
-              className="user-chip"
-              role="group"
-              aria-label={`Signed in as ${me.label} (${me.role})`}
-            >
-              <span className="avatar" aria-hidden="true">
-                {initials(me.label)}
-              </span>
-              <span className="who" aria-hidden="true">
-                <span>{me.label}</span>
-                <small>{me.role}</small>
-              </span>
-              <button
-                type="button"
-                className="icon"
-                aria-label="Sign out"
-                title="Sign out"
-                onClick={onSignOut}
-              >
-                <Icon name="signOut" size={18} />
-              </button>
-            </div>
-          )}
+          <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
         </div>
       </header>
       <div className="app-body">

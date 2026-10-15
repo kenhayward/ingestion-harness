@@ -655,6 +655,20 @@ html {
   height: 100%;
   width: var(--ih-touch);
 }
+/* Email addresses read better in the text face; passwords stay monospaced. */
+.token-input.plain input:not([type='checkbox']) {
+  font-family: inherit;
+}
+.auth-card h2 {
+  margin: 0;
+}
+.failed-sign-ins {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.failed-sign-ins > span {
+  flex: 1;
+}
 .field-error {
   display: flex;
   align-items: center;
@@ -3850,6 +3864,12 @@ tr.confirming td {
 .ontology-row-actions .icon-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Change password from the account menu: the sign-in card's form, in the app. */
+.password-page {
+  max-width: 440px;
+  margin: 24px auto;
 }
 
 /* Survey tab: ontology suggestions and the moved picker (ADR 0011 follow-up). */

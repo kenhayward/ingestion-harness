@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Post-deploy checks through the nginx front door, including token access (ADR 0006), Word
-# documents through the converter (ADR 0009) and the data lake's read-only S3 keys (ADR 0008).
-#   ADMIN_TOKEN  required: the admin token the API logged at startup ("ADMIN TOKEN ...").
+# Post-deploy checks through the nginx front door, including email and password access (ADR
+# 0013), Word documents through the converter (ADR 0009) and the data lake's read-only S3 keys
+# (ADR 0008).
+#   ADMIN_TOKEN  required: the admin token the API logged at startup ("ADMIN TOKEN ..."), the
+#                password of the user "admin".
 #   S3_URL       the SeaweedFS S3 port as the lake sees it (default: localhost:S3_PUBLIC_PORT).
 set -euo pipefail
 
@@ -33,9 +35,9 @@ check() {
   return 1
 }
 
-login() { # token jar
-  curl -fsS -c "$2" -H 'content-type: application/json' \
-    -d "{\"token\":\"$1\"}" "$BASE_URL/api/auth/login" >/dev/null
+login() { # login password jar
+  curl -fsS -c "$3" -H 'content-type: application/json' \
+    -d "{\"login\":\"$1\",\"password\":\"$2\"}" "$BASE_URL/api/auth/login" >/dev/null
 }
 
 check /healthz
@@ -86,28 +88,37 @@ echo "ok   widget page"
 [[ "$(status "$BASE_URL/api/specs")" == 401 ]] || fail "/api/specs must need a session"
 echo "ok   /api/specs without a session -> 401"
 
-login "$ADMIN_TOKEN" "$ADMIN_JAR" || fail "admin sign-in"
+login admin "$ADMIN_TOKEN" "$ADMIN_JAR" || fail "admin sign-in"
 echo "ok   admin sign-in"
 check /api/specs
 check /api/models
 check /api/results
-check /api/auth/tokens
+check /api/users
 
+# A user (ADR 0013): added with a one-time password, which only allows the password change.
+# Smoke users stay in the list, disabled; their .invalid addresses can never be real ones.
+smoke_id="$RANDOM$RANDOM"
+email="smoke-$smoke_id@example.invalid"
 created="$(curl -fsS -b "$ADMIN_JAR" -H 'content-type: application/json' \
-  -d '{"label":"smoke test","expiresInDays":1}' "$BASE_URL/api/auth/tokens")"
-user_token="$(json_field token <<<"$created")"
-token_id="$(grep -o '"id":"[^"]*"' <<<"$created" | head -1 | cut -d'"' -f4)"
-[[ -n "$user_token" && -n "$token_id" ]] || fail "create user token: $created"
+  -d "{\"name\":\"Smoke test $smoke_id\",\"email\":\"$email\"}" "$BASE_URL/api/users")"
+otp="$(json_field password <<<"$created")"
+user_id="$(grep -o '"id":"[^"]*"' <<<"$created" | head -1 | cut -d'"' -f4)"
+[[ -n "$otp" && -n "$user_id" ]] || fail "add user: $created"
 
-login "$user_token" "$USER_JAR" || fail "user sign-in"
-[[ "$(status -b "$USER_JAR" "$BASE_URL/api/auth/me")" == 200 ]] || fail "user session"
-[[ "$(status -b "$USER_JAR" "$BASE_URL/api/auth/tokens")" == 403 ]] || fail "users can't list tokens"
-[[ "$(status -b "$ADMIN_JAR" -X POST "$BASE_URL/api/auth/tokens/$token_id/revoke")" == 204 ]] \
-  || fail "revoke"
-[[ "$(status -b "$USER_JAR" "$BASE_URL/api/auth/me")" == 401 ]] || fail "revoked session must end"
-[[ "$(status -b "$ADMIN_JAR" -X DELETE "$BASE_URL/api/auth/tokens/$token_id")" == 204 ]] \
-  || fail "delete"
-echo "ok   user token: sign-in, revoke, delete"
+login "$email" "$otp" "$USER_JAR" || fail "first sign-in"
+[[ "$(status -b "$USER_JAR" "$BASE_URL/api/specs")" == 403 ]] || fail "one-time sessions are restricted"
+[[ "$(status -b "$USER_JAR" -X PUT -H 'content-type: application/json' \
+  -d "{\"currentPassword\":\"$otp\",\"newPassword\":\"smoke test phrase $smoke_id\"}" \
+  "$BASE_URL/api/auth/password")" == 204 ]] || fail "change password"
+[[ "$(status -b "$USER_JAR" "$BASE_URL/api/specs")" == 200 ]] || fail "signed in after the change"
+[[ "$(status -b "$USER_JAR" "$BASE_URL/api/users")" == 403 ]] || fail "users can't list users"
+[[ "$(status -b "$ADMIN_JAR" -X POST "$BASE_URL/api/users/$user_id/disable")" == 200 ]] \
+  || fail "disable"
+[[ "$(status -b "$USER_JAR" "$BASE_URL/api/specs")" == 401 ]] || fail "disabling ends sessions"
+events="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/sign-ins?userId=$user_id&limit=10")"
+grep -q '"result":"password-changed"' <<<"$events" || fail "sign-in events: $events"
+[[ "$(status -b "$USER_JAR" "$BASE_URL/api/sign-ins")" == 401 ]] || fail "sign-ins need a session"
+echo "ok   users: add, first sign-in, password change, disable, sign-in events"
 
 # --- Word documents (ADR 0009): a .docx sample is converted and prepared (no model call) ------
 word_project=smoke-word

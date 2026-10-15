@@ -24,7 +24,7 @@ import { TemplateConflictError } from '../src/templates/repo.js';
 import { WorkbenchConflictError } from '../src/workbench/repo.js';
 import { BundleError, readBundle, type ReadBundleOptions } from '../src/workbench/bundle-import.js';
 import { acceptedSurvey } from '../src/routes/workbench.js';
-import { letter, multipart, testApp } from './helpers.js';
+import { letter, multipart, signIn, signInNewUser, testApp } from './helpers.js';
 import { docx } from './docx-fixtures.js';
 
 const pdf = (n: number) => Buffer.from(`%PDF-1.7\n% sample ${n}\n%%EOF\n`);
@@ -37,7 +37,7 @@ const brief = {
   rules: '',
   answers: [],
 };
-const LOCAL_EXPORT = 'exporting a local-only project needs the admin token';
+const LOCAL_EXPORT = 'exporting a local-only project needs an admin';
 
 async function project(overrides: Partial<AppDeps> = {}) {
   const ctx = await testApp(overrides);
@@ -366,21 +366,11 @@ describe('export', () => {
 });
 
 describe('export of a local-only project', () => {
-  it('needs the admin token to export or download', async () => {
+  it('needs an admin to export or download', async () => {
     const access = new MemoryAccessRepo();
     const ctx = await project({ access });
-    const login = async (token: string) => {
-      const res = await ctx.app.inject({
-        method: 'POST',
-        url: '/api/auth/login',
-        payload: { token },
-      });
-      return {
-        cookie: `ih_session=${/ih_session=([^;]*)/.exec(String(res.headers['set-cookie']))![1]}`,
-      };
-    };
-    const admin = await login(await access.rotateAdminToken());
-    const user = await login((await access.createToken('user', null)).token);
+    const admin = { cookie: await signIn(ctx.app, 'admin', await access.rotateAdminPassword()) };
+    const user = { cookie: (await signInNewUser(ctx.app, access, 'user')).cookie };
     await ctx.add(1, 'dev', admin);
 
     const refused = await ctx.start(user);

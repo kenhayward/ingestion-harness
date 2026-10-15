@@ -96,13 +96,23 @@ const CROSS_SITE_REFUSED = {
   required: ['error'],
 };
 
-/** A route's own 403, or also the access hook's cross-site refusal. */
-function withCrossSite(existing: unknown) {
-  if (existing === undefined) return CROSS_SITE_REFUSED;
-  const own = existing as { description?: string };
+const CHANGE_PASSWORD_FIRST = {
+  type: 'object',
+  description: 'A one-time password session: change the password first (`PUT /api/auth/password`).',
+  properties: { error: { type: 'string', const: 'change your one-time password first' } },
+  required: ['error'],
+};
+
+/** What a session opened with a one-time password may still call (ADR 0013). */
+const WHILE_CHANGING = ['GET /api/auth/me', 'PUT /api/auth/password'];
+
+/** A route's own 403, or also the access hook's refusals. */
+function with403(existing: unknown, ...hook: { description: string }[]) {
+  const all = existing === undefined ? hook : [existing, ...hook];
+  if (all.length === 1) return all[0];
   return {
-    description: `${own.description ?? ''} Or sent from another site's page: refused.`.trim(),
-    anyOf: [existing, CROSS_SITE_REFUSED],
+    description: all.map((s) => (s as { description?: string }).description ?? '').join(' Or: '),
+    anyOf: all,
   };
 }
 
@@ -111,7 +121,8 @@ const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 /**
  * `@fastify/swagger` transform: Zod → JSON Schema, plus what every route shares. Public routes
  * (and the health checks outside /api) need no session; the rest gain the 401 the access hook
- * sends. Every /api route that changes something gains its cross-site 403.
+ * sends and its 403 for a one-time password session. Every /api route that changes something
+ * gains its cross-site 403.
  */
 export function transform({
   schema,
@@ -134,14 +145,23 @@ export function transform({
     );
   }
   const isPublic = (route.config as { public?: boolean } | undefined)?.public === true;
-  if (isPublic || !url.startsWith('/api/')) {
+  const guarded = !isPublic && url.startsWith('/api/');
+  if (!guarded) {
     out.security = [];
   } else if (out.response && !('401' in out.response)) {
     out.response = { ...out.response, 401: SIGN_IN_REQUIRED };
   }
   const methods = [route.method ?? []].flat();
-  if (out.response && url.startsWith('/api/') && methods.some((m) => UNSAFE_METHODS.includes(m))) {
-    out.response = { ...out.response, 403: withCrossSite(out.response['403']) };
+  const hook403 = [
+    ...(guarded && !methods.some((m) => WHILE_CHANGING.includes(`${m} ${url}`))
+      ? [CHANGE_PASSWORD_FIRST]
+      : []),
+    ...(url.startsWith('/api/') && methods.some((m) => UNSAFE_METHODS.includes(m))
+      ? [CROSS_SITE_REFUSED]
+      : []),
+  ];
+  if (out.response && hook403.length) {
+    out.response = { ...out.response, 403: with403(out.response['403'], ...hook403) };
   }
   return { schema: out, url };
 }

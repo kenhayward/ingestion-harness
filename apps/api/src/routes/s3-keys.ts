@@ -72,7 +72,7 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'listS3Keys',
           'List data-lake consumers and keys',
           md`
-            **Admin token required.** The data-lake consumers (one read-only SeaweedFS identity
+            **Admins only.** The data-lake consumers (one read-only SeaweedFS identity
             each, \`lake-{id}\`) and their keys, never their secrets, with the bucket and
             endpoint the data lake is configured with. See [ADR 0008](${ADR}).`,
         ),
@@ -97,7 +97,7 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'createS3Key',
           'Create a data-lake consumer and key',
           md`
-            **Admin token required.** Creates a consumer with read-only access to the publish
+            **Admins only.** Creates a consumer with read-only access to the publish
             bucket and its first key. The \`secretAccessKey\` is in this response only:
             SeaweedFS holds it and it is never shown again.
           `,
@@ -137,7 +137,7 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'rotateS3Key',
           "Rotate a consumer's key",
           md`
-            **Admin token required.** Issues a new key for the consumer and sets the current
+            **Admins only.** Issues a new key for the consumer and sets the current
             ones to expire after \`graceDays\` (1, 7 or 30), so the data lake can switch without
             downtime. A consumer has at most two active keys.
           `,
@@ -190,7 +190,7 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'revokeS3Key',
           'Revoke a key',
           md`
-            **Admin token required.** Revokes one key and deletes it from SeaweedFS at once. If
+            **Admins only.** Revokes one key and deletes it from SeaweedFS at once. If
             SeaweedFS is unreachable, the key is still revoked and is deleted as soon as it can
             be reached (the reconciler runs every minute).
           `,
@@ -230,8 +230,8 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'deleteS3Consumer',
           'Delete a data-lake consumer',
           md`
-            **Admin token required.** Deletes the consumer, its keys and its SeaweedFS
-            identity.
+            **Admins only.** Deletes the consumer, its keys and its SeaweedFS
+            identity: its keys stop working at once.
           `,
         ),
         params: ConsumerParams,

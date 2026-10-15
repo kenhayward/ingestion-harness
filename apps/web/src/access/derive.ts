@@ -1,74 +1,144 @@
-import type { AccessToken } from '../api/client.js';
+import type { SignInEvent, User } from '../api/client.js';
+import { relativeTime } from '../jobs/derive.js';
+import { matchesQuery } from '../shell/derive.js';
+import { lockTime } from './passwords.js';
 
-/** Anything with an expiry and an access-token-like status (user tokens, S3 keys). */
-type Expiring = Pick<AccessToken, 'status' | 'expiresAt'>;
+export type Tone = 'ok' | 'info' | 'warn' | 'danger' | 'neutral';
+const DAY = 86_400_000;
 
-export type Expiry = '1' | '7' | '30' | '90' | '365' | 'never';
+const failures = (n: number) => `${n} failed sign-in${n === 1 ? '' : 's'}`;
 
-/** Expiry presets for tokens and S3 keys (the API accepts exactly these). */
-export const EXPIRY_OPTIONS: readonly { value: Expiry; label: string }[] = [
-  { value: '1', label: '1 day' },
-  { value: '7', label: '7 days' },
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-  { value: 'never', label: 'Never' },
-];
+/** A user's status tag (label and tone) and the line under it (ADR 0013). */
+export function userStatusView(
+  u: User,
+  now: number,
+): { label: string; tone: Tone; detail: string | null } {
+  const counted = u.failedSignIns > 0 ? failures(u.failedSignIns) : null;
+  switch (u.status) {
+    case 'admin-from-log':
+      return { label: 'Admin from the log', tone: 'info', detail: 'Rotates on every restart' };
+    case 'locked':
+      return {
+        label: u.lockedUntil ? `Locked until ${lockTime(u.lockedUntil, now)}` : 'Locked',
+        tone: 'warn',
+        detail: counted,
+      };
+    case 'disabled':
+      if (u.disabledReason === 'failed-sign-ins') {
+        return {
+          label: `Disabled: ${failures(u.failedSignIns)}`,
+          tone: 'danger',
+          detail: u.disabledAt ? relativeTime(u.disabledAt, now) : null,
+        };
+      }
+      return {
+        label: 'Disabled',
+        tone: 'neutral',
+        detail:
+          u.disabledBy && u.disabledAt
+            ? `By ${u.disabledBy}, ${relativeTime(u.disabledAt, now).toLowerCase()}`
+            : null,
+      };
+    case 'must-change': {
+      if (!u.oneTimeExpiresAt)
+        return { label: 'Must change password', tone: 'info', detail: counted };
+      const left = Date.parse(u.oneTimeExpiresAt) - now;
+      if (left <= 0) {
+        return {
+          label: 'Must change password',
+          tone: 'warn',
+          detail: 'One-time password expired: reissue it',
+        };
+      }
+      const days = Math.ceil(left / DAY);
+      return {
+        label: 'Must change password',
+        tone: 'info',
+        detail: `One-time password expires in ${days} day${days === 1 ? '' : 's'}`,
+      };
+    }
+    default:
+      return { label: 'Active', tone: 'ok', detail: counted };
+  }
+}
 
-/** Admin tokens must expire, so they offer every preset but Never. */
-export const ADMIN_EXPIRY_OPTIONS = EXPIRY_OPTIONS.filter((o) => o.value !== 'never');
+export type UserGroup = 'active' | 'must-change' | 'locked' | 'disabled';
 
-export const expiryDays = (e: Expiry): number | null => (e === 'never' ? null : Number(e));
+/** The filter chip a user falls under (the admin from the log counts as active). */
+export function userGroup(u: User): UserGroup {
+  return u.status === 'admin-from-log' ? 'active' : u.status;
+}
 
-export type TokenGroup = 'active' | 'expired' | 'revoked';
-
-/** The current admin token counts as active (it signs people in until the next restart). */
-export const tokenGroup = (status: AccessToken['status']): TokenGroup =>
-  status === 'current-admin' ? 'active' : status;
-
-export function tokenCounts(tokens: readonly AccessToken[]) {
-  const counts = { all: tokens.length, active: 0, expired: 0, revoked: 0 };
-  for (const t of tokens) counts[tokenGroup(t.status)]++;
+export function userCounts(users: User[]): Record<'all' | UserGroup, number> {
+  const counts = { all: users.length, active: 0, 'must-change': 0, locked: 0, disabled: 0 };
+  for (const u of users) counts[userGroup(u)] += 1;
   return counts;
 }
 
-const DAY = 86_400_000;
+/** The top-bar search: name or email. */
+export const userMatches = (u: User, query: string) => matchesQuery(query, u.name, u.email ?? '');
 
-/** An active user token that stops working within `days` (the list shows it amber). */
-export function expiresSoon(token: Expiring, now: number, days = 7): boolean {
-  if (token.status !== 'active' || !token.expiresAt) return false;
-  const left = Date.parse(token.expiresAt) - now;
-  return left > 0 && left <= days * DAY;
+/** A sign-in event's result in words, and its tone (ADR 0013, D11). */
+export function signInResultView(e: SignInEvent, now: number): { label: string; tone: Tone } {
+  switch (e.result) {
+    case 'ok':
+      return e.failures
+        ? {
+            label: `Signed in after ${e.failures} failed attempt${e.failures === 1 ? '' : 's'}`,
+            tone: 'warn',
+          }
+        : { label: 'Signed in', tone: 'ok' };
+    case 'wrong-password':
+      if (e.lockedUntil) {
+        return {
+          label: `Wrong password: locked until ${lockTime(e.lockedUntil, now)}`,
+          tone: 'danger',
+        };
+      }
+      return {
+        label:
+          e.failures && e.failures > 1
+            ? `Wrong password (${e.failures} in a row)`
+            : 'Wrong password',
+        tone: 'warn',
+      };
+    case 'unknown-login':
+      return { label: 'Unknown email', tone: 'neutral' };
+    case 'locked':
+      return { label: 'Refused: locked', tone: 'warn' };
+    case 'disabled':
+      return { label: 'Refused: disabled', tone: 'neutral' };
+    case 'expired-one-time':
+      return { label: 'One-time password expired', tone: 'neutral' };
+    case 'password-changed':
+      return { label: 'Password changed', tone: 'ok' };
+    case 'password-change-refused':
+      return { label: 'Password change refused', tone: 'warn' };
+  }
 }
 
-const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const BROWSERS: [RegExp, string][] = [
+  [/Edg\//, 'Edge'],
+  [/OPR\//, 'Opera'],
+  [/Firefox\//, 'Firefox'],
+  [/Chrome\//, 'Chrome'],
+  [/Safari\//, 'Safari'],
+];
+const SYSTEMS: [RegExp, string][] = [
+  [/iPhone/, 'iPhone'],
+  [/iPad/, 'iPad'],
+  [/Android/, 'Android'],
+  [/CrOS/, 'ChromeOS'],
+  [/Windows/, 'Windows'],
+  [/Mac OS X|Macintosh/, 'macOS'],
+  [/Linux/, 'Linux'],
+];
 
-/** "in 2 days" / "6 weeks ago"; whole units, rounded down. */
-function relative(ms: number): string {
-  const past = ms < 0;
-  const mins = Math.floor(Math.abs(ms) / 60_000);
-  const hours = Math.floor(mins / 60);
-  const days = Math.floor(hours / 24);
-  const text =
-    days >= 14
-      ? unit(Math.floor(days / 7), 'week')
-      : days >= 1
-        ? unit(days, 'day')
-        : hours >= 1
-          ? `${hours} h`
-          : `${mins} min`;
-  return past ? `${text} ago` : `in ${text}`;
-}
-
-/** The Expires cell: the date (null when there isn't one) and how far away it is. */
-export function expiryText(
-  token: Expiring,
-  now: number,
-): { date: string | null; relative: string } {
-  if (token.status === 'current-admin') return { date: null, relative: 'On restart' };
-  if (!token.expiresAt) return { date: null, relative: 'Never' };
-  return {
-    date: new Date(token.expiresAt).toLocaleDateString(),
-    relative: relative(Date.parse(token.expiresAt) - now),
-  };
+/** A user agent as "Browser on System"; anything else its first 40 characters; none "—". */
+export function deviceName(userAgent: string | null): string {
+  if (!userAgent) return '—';
+  const browser = BROWSERS.find(([re]) => re.test(userAgent))?.[1];
+  const system = SYSTEMS.find(([re]) => re.test(userAgent))?.[1];
+  if (browser && system) return `${browser} on ${system}`;
+  return userAgent.slice(0, 40);
 }

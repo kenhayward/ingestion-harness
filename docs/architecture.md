@@ -147,9 +147,12 @@ Phase 6 adds the drafting bundle (migration 0019 adds the `export` task). `POST 
 
 ## Access
 
-Every request to the API needs a session cookie, obtained by signing in with an access token. The
-admin token rotates on every API start and is printed in the log; admins issue user tokens on the
-**Access** page. See [ADR 0006](adr/0006-token-access.md).
+Every request to the API needs a session cookie, obtained by signing in with an email address and
+a password. The admin from the log signs in as `admin` with the token the API prints on every
+start; admins add users on the **Access** page, each with a one-time password they change at first
+sign-in, and can disable, unlock or reissue them and read recent sign-ins. See
+[ADR 0013](adr/0013-email-password-users.md), which replaced the access tokens of
+[ADR 0006](adr/0006-token-access.md).
 
 The same page issues **read-only S3 keys** for external consumers of the publish bucket (e.g. a data
 lake), when the publish target is the local SeaweedFS ([ADR 0008](adr/0008-s3-read-keys.md)). Each

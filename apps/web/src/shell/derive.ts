@@ -10,6 +10,7 @@ export type Section =
   | 'ontologies'
   | 'workbench'
   | 'access'
+  | 'account'
   | 'models'
   | 'linked-data';
 
@@ -24,6 +25,7 @@ const SECTION: Record<Route['name'], Section> = {
   workbench: 'workbench',
   project: 'workbench',
   access: 'access',
+  password: 'account',
   models: 'models',
   'linked-data': 'linked-data',
   ontologies: 'ontologies',
@@ -87,6 +89,7 @@ const PAGE: Record<Route['name'], string> = {
   workbench: 'Workbench',
   project: 'Workbench',
   access: 'Access',
+  password: 'Change password',
   models: 'Models',
   'linked-data': 'Linked data',
   ontologies: 'Ontologies',

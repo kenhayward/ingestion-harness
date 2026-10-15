@@ -7,7 +7,7 @@ const respond = (status: number, body: unknown = {}) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe('http api: ended sessions', () => {
-  it('reports a 401 from any call, including token management', async () => {
+  it('reports a 401 from any call, including user management', async () => {
     const api = createHttpApi('/api');
     const ended = vi.fn();
     const off = api.onUnauthorized(ended);
@@ -16,7 +16,7 @@ describe('http api: ended sessions', () => {
       vi.fn(async () => respond(401, { error: 'sign in required' })),
     );
     await expect(api.listJobs()).rejects.toThrow('sign in required');
-    await expect(api.listTokens()).rejects.toThrow('sign in required');
+    await expect(api.listUsers()).rejects.toThrow('sign in required');
     expect(ended).toHaveBeenCalledTimes(2);
     off();
   });
@@ -27,27 +27,87 @@ describe('http api: ended sessions', () => {
     const off = api.onUnauthorized(ended);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => respond(401, { error: 'invalid or expired token' })),
+      vi.fn(async () => respond(401, { error: 'invalid email or password' })),
     );
     expect(await api.me()).toBeNull();
-    await expect(api.login('ih_x')).rejects.toMatchObject({ status: 401 });
+    await expect(api.login('ken@example.com', 'x')).rejects.toMatchObject({ status: 401 });
     expect(ended).not.toHaveBeenCalled();
     off();
   });
 });
 
-describe('http api: access tokens', () => {
-  it('sends the role of a new token', async () => {
-    const fetch = vi.fn(async () => respond(200, { token: 'ih_x', record: {} }));
+describe('http api: sign-in and users', () => {
+  const calls = (fetch: ReturnType<typeof vi.fn>) =>
+    (fetch.mock.calls as unknown as [string, RequestInit | undefined][]).map(([url, init]) => ({
+      url,
+      method: init?.method ?? 'GET',
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    }));
+
+  it('signs in with a login and a password', async () => {
+    const fetch = vi.fn(async () => respond(200, { role: 'user', label: 'Ken' }));
     vi.stubGlobal('fetch', fetch);
-    await createHttpApi('/api').createToken('Ops laptop', 90, 'admin');
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/auth/tokens');
-    expect(JSON.parse(String(init.body))).toEqual({
-      label: 'Ops laptop',
-      expiresInDays: 90,
-      role: 'admin',
+    await createHttpApi('/api').login('ken@example.com', 'a long phrase');
+    expect(calls(fetch)).toEqual([
+      {
+        url: '/api/auth/login',
+        method: 'POST',
+        body: { login: 'ken@example.com', password: 'a long phrase' },
+      },
+    ]);
+  });
+
+  it("keeps a locked account's lockedUntil on the error", async () => {
+    const until = '2026-10-15T10:42:00.000Z';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(429, { error: 'too many failed sign-ins', lockedUntil: until })),
+    );
+    await expect(createHttpApi('/api').login('a@b.c', 'x')).rejects.toMatchObject({
+      status: 429,
+      body: { lockedUntil: until },
     });
+  });
+
+  it('changes the password with PUT /api/auth/password', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    await createHttpApi('/api').changePassword('abcd-efgh-jkmn-pqrs', 'my long new phrase');
+    expect(calls(fetch)).toEqual([
+      {
+        url: '/api/auth/password',
+        method: 'PUT',
+        body: { currentPassword: 'abcd-efgh-jkmn-pqrs', newPassword: 'my long new phrase' },
+      },
+    ]);
+  });
+
+  it('calls the user routes', async () => {
+    const fetch = vi.fn(async () => respond(200, {}));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listUsers();
+    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'user' });
+    await api.updateUser('u1', { email: 'k@x.com' });
+    await api.setUserEnabled('u1', false);
+    await api.setUserEnabled('u1', true);
+    await api.reissuePassword('u1');
+    await api.listSignIns({ userId: 'u1', limit: 200 });
+    await api.listSignIns();
+    expect(calls(fetch)).toEqual([
+      { url: '/api/users', method: 'GET', body: undefined },
+      {
+        url: '/api/users',
+        method: 'POST',
+        body: { name: 'Ken', email: 'ken@example.com', role: 'user' },
+      },
+      { url: '/api/users/u1', method: 'PATCH', body: { email: 'k@x.com' } },
+      { url: '/api/users/u1/disable', method: 'POST', body: undefined },
+      { url: '/api/users/u1/enable', method: 'POST', body: undefined },
+      { url: '/api/users/u1/one-time-password', method: 'POST', body: undefined },
+      { url: '/api/sign-ins?userId=u1&limit=200', method: 'GET', body: undefined },
+      { url: '/api/sign-ins', method: 'GET', body: undefined },
+    ]);
   });
 });
 

@@ -79,7 +79,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'listLlmEndpoints',
           'List LLM endpoints and their models',
           md`
-            **Admin token required.** Every endpoint, seeded from \`.env\` or added by an admin,
+            **Admins only.** Every endpoint, seeded from \`.env\` or added by an admin,
             with every model the database knows for it: \`curated\` ones are offered in the
             pickers, the others were discovered on the endpoint (suggestions). A key entered
             here is never returned, only \`keySet\`. See [ADR 0010](${ADR}).`,
@@ -98,7 +98,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'createLlmEndpoint',
           'Add an LLM endpoint',
           md`
-            **Admin token required.** Adds an endpoint (\`source: ui\`) with the models to
+            **Admins only.** Adds an endpoint (\`source: ui\`) with the models to
             offer. Its name becomes the model-ref prefix (\`name/model-id\`). An \`apiKey\` is
             stored encrypted with \`LLM_SECRETS_KEY\` (409 without it). Workers pick the change
             up within seconds.
@@ -138,7 +138,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'updateLlmEndpoint',
           'Change an LLM endpoint',
           md`
-            **Admin token required.** Changes the kind, base URL, \`location\` (what the data
+            **Admins only.** Changes the kind, base URL, \`location\` (what the data
             policy allows), enabled flag or key (\`apiKey\`: a new one, stored encrypted, or
             \`null\` to remove it). The edit is recorded (\`editedAt\`, \`updatedBy\`) and
             \`.env\` no longer changes the endpoint. Disabling an endpoint an alias uses is
@@ -194,7 +194,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'setLlmEndpointModels',
           "Choose an endpoint's models",
           md`
-            **Admin token required.** Exactly these models are offered in the pickers for this
+            **Admins only.** Exactly these models are offered in the pickers for this
             endpoint: ids not known yet are added, curated ones left out are withdrawn (they stay
             as suggestions). Withdrawing a model an alias uses is refused. \`.env\` no longer
             changes these choices.
@@ -236,7 +236,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'deleteLlmEndpoint',
           'Remove an LLM endpoint',
           md`
-            **Admin token required.** Removes an endpoint added in the UI. One seeded from
+            **Admins only.** Removes an endpoint added in the UI. One seeded from
             \`.env\` would come back on the next worker start, so it can only be disabled.
             Removing an endpoint an alias uses is refused.
           `,
@@ -280,7 +280,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'discoverLlmEndpoint',
           'List the models an endpoint serves now',
           md`
-            **Admin token required.** Asks the workers to list every endpoint's models now
+            **Admins only.** Asks the workers to list every endpoint's models now
             rather than at the next discovery interval; what they find shows as suggestions
             (\`curated: false\`) within seconds.
           `,
@@ -305,7 +305,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'listModelChoices',
           'List model choices and pipeline settings',
           md`
-            **Admin token required.** The labelled model choices people pick (each pointing at
+            **Admins only.** The labelled model choices people pick (each pointing at
             an offered model) and the pipeline settings: the default choice (used by recipe
             steps that name none), the drafting model and the OCR model. See [ADR 0010](${ADR}).`,
         ),
@@ -323,7 +323,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'createModelChoice',
           'Add a model choice',
           md`
-            **Admin token required.** A labelled choice ("Main Production Model") pointing at an
+            **Admins only.** A labelled choice ("Main Production Model") pointing at an
             offered model. Its \`id\`, what recipes and jobs store, is made from the label
             when left out (\`main-production-model\`, with a suffix if taken).
           `,
@@ -365,7 +365,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'updateModelChoice',
           'Change a model choice',
           md`
-            **Admin token required.** Renames it, changes its description or points it at
+            **Admins only.** Renames it, changes its description or points it at
             another offered model. Recipes and jobs keep naming it by id, so a rename changes
             nothing they do; a new model applies to every job queued from then on.
           `,
@@ -401,7 +401,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'deleteModelChoice',
           'Remove a model choice',
           md`
-            **Admin token required.** Refused while it is the default choice, while a recipe
+            **Admins only.** Refused while it is the default choice, while a recipe
             step (any version) names it, or while an unfinished job (queued, running or
             awaiting review) uses it.
           `,
@@ -461,7 +461,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'setLlmSettings',
           'Set the default choice and the pipeline models',
           md`
-            **Admin token required.** The default choice (used by recipe steps that name
+            **Admins only.** The default choice (used by recipe steps that name
             none), the drafting model (the Workbench's proposal stages and dev reference runs)
             and the OCR model (the OCR stage only). Both models must be offered. The edit wins
             over \`.env\`.

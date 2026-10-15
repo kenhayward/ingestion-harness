@@ -34,7 +34,7 @@ describe('ExportPanel', () => {
     expect(link).toHaveAttribute('href', api.exportBundleUrl('letter', 'j1'));
   });
 
-  it('says local-only exports need the admin token', async () => {
+  it('says local-only exports need an admin', async () => {
     render(
       <ExportPanel
         api={fakeApi()}
@@ -44,7 +44,7 @@ describe('ExportPanel', () => {
         pollMs={10}
       />,
     );
-    expect(await screen.findByText(/admin token/)).toBeInTheDocument();
+    expect(await screen.findByText(/needs? an admin/)).toBeInTheDocument();
   });
 
   it('shows a failed export', async () => {
@@ -61,14 +61,14 @@ describe('ExportPanel', () => {
   it('shows the server error when the export is refused', async () => {
     const api = fakeApi({
       startExport: vi.fn(async () => {
-        throw new Error('exporting a local-only project needs the admin token');
+        throw new Error('exporting a local-only project needs an admin');
       }),
     });
     render(
       <ExportPanel api={api} role="admin" projectId="letter" dataPolicy="external" pollMs={10} />,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Export bundle' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('needs the admin token');
+    expect(await screen.findByRole('alert')).toHaveTextContent('needs an admin');
   });
 
   it.each<['admin' | 'user', boolean]>([
@@ -79,9 +79,7 @@ describe('ExportPanel', () => {
     render(<ExportPanel api={api} role={role} projectId="letter" dataPolicy="local" pollMs={10} />);
     expect(await screen.findByText(/Export ready/)).toBeInTheDocument();
     const link = screen.queryByRole('link', { name: 'Download bundle' });
-    const note = screen.queryByText(
-      "Downloading a local-only project's bundle needs the admin token.",
-    );
+    const note = screen.queryByText("Downloading a local-only project's bundle needs an admin.");
     if (offered) {
       expect(link).toBeInTheDocument();
       expect(note).not.toBeInTheDocument();
@@ -141,12 +139,10 @@ describe('ExportPanel', () => {
     expect(await screen.findByText(/never holdout samples/)).toBeInTheDocument();
   });
 
-  it('notes that a local-only project needs the admin token', async () => {
+  it('notes that a local-only project needs an admin', async () => {
     render(<ExportPanel api={fakeApi()} role="admin" projectId="letter" dataPolicy="local" />);
     expect(
-      await screen.findByText(
-        'Local-only project: exporting and downloading need the admin token.',
-      ),
+      await screen.findByText('Local-only project: exporting and downloading need an admin.'),
     ).toBeInTheDocument();
   });
 });

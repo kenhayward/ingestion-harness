@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { outputKey, preparedTriageKey, type SampleView } from '@ih/shared';
 import { MemoryAccessRepo } from '../src/access/repo.js';
-import { letter, multipart, seedModelChoices, testApp } from './helpers.js';
+import { letter, multipart, seedModelChoices, signInNewUser, testApp } from './helpers.js';
 
 const pdf = (n: number) =>
   Buffer.from(`%PDF-1.7
@@ -188,9 +188,7 @@ describe('publish gate', () => {
     const access = new MemoryAccessRepo();
     const { app, workbench } = await testApp({ access });
     await workbench.createProject('letter', 'Letter');
-    const { token } = await access.createToken('ken', null);
-    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { token } });
-    const cookie = `ih_session=${/ih_session=([^;]*)/.exec(String(login.headers['set-cookie']))![1]}`;
+    const { cookie } = await signInNewUser(app, access, 'ken');
     const res = await app.inject({
       method: 'PATCH',
       url: '/api/workbench/projects/letter',

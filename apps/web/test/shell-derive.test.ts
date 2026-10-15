@@ -73,6 +73,7 @@ describe('routeTitle', () => {
     [{ name: 'project', projectId: 'invoice', tab: 'samples' }, 'Workbench · CT Studio'],
     [{ name: 'access' }, 'Access · CT Studio'],
     [{ name: 'models' }, 'Models · CT Studio'],
+    [{ name: 'password' }, 'Change password · CT Studio'],
   ] as const)('%o → %s', (route, title) => {
     expect(routeTitle(route)).toBe(title);
   });

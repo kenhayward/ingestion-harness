@@ -26,6 +26,7 @@ import {
 } from '../templates/definitions.js';
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { storeFor } from '../storage/stage.js';
+import { creatorOf } from '../access/routes.js';
 
 const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50).describe('At most 500.'),
@@ -92,8 +93,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         summary: 'List jobs',
         description: md`
           The newest jobs first, optionally of one status, and with \`mine=1\` only those queued
-          by the signed-in token (\`createdBy\`, the token's label: a token issued again under
-          the same name sees the same jobs). Lists the jobs of uploaded documents (production,
+          by the signed-in user: by user id (\`createdByUser\`), so a rename keeps them; jobs
+          from before ids were recorded match by name (\`createdBy\`). Lists the jobs of uploaded documents (production,
           test and regression runs); the Workbench's preparation, preview, drafting and export
           jobs are not listed.
         `,
@@ -110,8 +111,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       const { mine, ...rest } = query.data;
       if (mine !== '1') return app.deps.repo.listJobs(rest);
       // Without access control nobody is signed in, so nothing is "mine".
-      if (!req.auth) return [];
-      return app.deps.repo.listJobs({ ...rest, createdBy: req.auth.label });
+      const me = creatorOf(req);
+      if (!me) return [];
+      return app.deps.repo.listJobs({ ...rest, mine: me });
     },
   );
 
