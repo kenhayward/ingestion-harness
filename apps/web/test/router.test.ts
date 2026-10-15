@@ -18,6 +18,10 @@ describe('parseHash', () => {
     ['#/workbench/letter/samples', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['#/workbench/letter/brief', { name: 'project', projectId: 'letter', tab: 'brief' }],
     ['#/workbench/letter/survey', { name: 'project', projectId: 'letter', tab: 'survey' }],
+    [
+      '#/workbench/letter/survey/ontologies',
+      { name: 'project', projectId: 'letter', tab: 'survey', view: 'ontologies' },
+    ],
     ['#/workbench/letter/outputs', { name: 'project', projectId: 'letter', tab: 'outputs' }],
     ['#/workbench/letter/steps', { name: 'project', projectId: 'letter', tab: 'steps' }],
     ['#/workbench/letter/sections', { name: 'project', projectId: 'letter', tab: 'sections' }],

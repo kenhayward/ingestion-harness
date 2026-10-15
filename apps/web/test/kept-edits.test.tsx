@@ -184,6 +184,8 @@ describe('Survey tab keeps typed answers', () => {
         pollMs={1}
       />,
     );
+  const openQuestions = async () =>
+    userEvent.click(await screen.findByRole('tab', { name: /^Questions/ }));
   const proposal = proposalView(); // the same survey on every visit
   const api = () =>
     fakeApi({
@@ -193,14 +195,16 @@ describe('Survey tab keeps typed answers', () => {
 
   it('brings them back, and forgets them once saved to the brief', async () => {
     const first = open(api());
+    await openQuestions();
     await userEvent.type(
-      await screen.findByLabelText('Which copy should be extracted?'),
+      screen.getByLabelText('Which copy should be extracted?'),
       'The executed copy',
     );
     first.unmount();
 
     const second = open(api());
-    expect(await screen.findByLabelText('Which copy should be extracted?')).toHaveValue(
+    await openQuestions();
+    expect(screen.getByLabelText('Which copy should be extracted?')).toHaveValue(
       'The executed copy',
     );
     expect(screen.getByRole('status')).toHaveTextContent(RESTORED);
@@ -209,7 +213,8 @@ describe('Survey tab keeps typed answers', () => {
     second.unmount();
 
     open(api());
-    expect(await screen.findByLabelText('Which copy should be extracted?')).toHaveValue('');
+    await openQuestions();
+    expect(screen.getByLabelText('Which copy should be extracted?')).toHaveValue('');
   });
 });
 

@@ -240,6 +240,7 @@ function SignedInApp({
         api={api}
         projectId={route.projectId}
         tab={route.tab}
+        surveyView={route.tab === 'survey' ? route.view : undefined}
         onNavigate={navigate}
         pollMs={pollMs}
         role={me.role}
