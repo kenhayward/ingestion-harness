@@ -286,6 +286,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     importOntology: vi.fn(async () => {
       throw new Error('importOntology not stubbed');
     }),
+    importOntologyBatch: vi.fn(async () => {
+      throw new Error('importOntologyBatch not stubbed');
+    }),
     updateOntology: vi.fn(async () => {
       throw new Error('updateOntology not stubbed');
     }),
@@ -797,6 +800,7 @@ export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyV
     bytes: 120,
     sourceKind: 'upload',
     sourceUrl: null,
+    sourceFiles: null,
     ontologyIri: 'https://example.org/pv',
     versionIri: null,
     license: null,

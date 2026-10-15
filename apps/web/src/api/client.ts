@@ -9,6 +9,7 @@ import type {
   OntologySettings,
   OntologyPatch,
   OntologySummary,
+  OntologyBatchResult,
   OntologyVersionView,
   TermDetail,
   TermGroup,
@@ -268,6 +269,18 @@ export interface OntologyImportFields {
   localOnly?: boolean;
 }
 
+/** `POST /api/ontologies/batch`: a folder or zip, merged into one ontology or one per file. */
+export type OntologyBatchFields =
+  | {
+      mode: 'merge';
+      id: string;
+      label?: string;
+      description?: string;
+      tags?: string[];
+      localOnly?: boolean;
+    }
+  | { mode: 'separate'; idPrefix: string; tags?: string[]; localOnly?: boolean };
+
 /** One page of an ontology version's terms (`root` or `parent` for the tree, `q` to search). */
 export interface OntologyTermQuery {
   group?: TermGroup;
@@ -318,6 +331,11 @@ export interface Api {
   getOntology(id: string): Promise<OntologyDetail>;
   /** Admin: import a file as the next version of `fields.id`. */
   importOntology(file: File, fields: OntologyImportFields): Promise<OntologyVersionView>;
+  /** Admin: a folder's ontology files (with their paths), or one .zip, in one import. */
+  importOntologyBatch(
+    files: { file: File; path: string }[],
+    fields: OntologyBatchFields,
+  ): Promise<OntologyBatchResult>;
   /** Admin: name, description, tags, local only, retired. */
   updateOntology(id: string, patch: OntologyPatch): Promise<OntologySummary>;
   /** Admin: delete a version that is ready or failed. */
@@ -704,6 +722,25 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/ontologies`, { method: 'POST', body: form }).then(
         json<OntologyVersionView>,
+      );
+    },
+    importOntologyBatch: (files, fields) => {
+      const form = new FormData();
+      // Fields, then the paths (multipart drops folders from file names), then the files.
+      form.append('mode', fields.mode);
+      if (fields.mode === 'merge') {
+        form.append('id', fields.id);
+        if (fields.label) form.append('label', fields.label);
+        if (fields.description) form.append('description', fields.description);
+      } else {
+        form.append('idPrefix', fields.idPrefix);
+      }
+      if (fields.tags?.length) form.append('tags', fields.tags.join(','));
+      if (fields.localOnly) form.append('localOnly', 'true');
+      form.append('paths', JSON.stringify(files.map((f) => f.path)));
+      for (const { file } of files) form.append('file', file);
+      return apiFetch(`${base}/ontologies/batch`, { method: 'POST', body: form }).then(
+        json<OntologyBatchResult>,
       );
     },
     updateOntology: (id, patch) =>

@@ -31,11 +31,38 @@ export interface NewOntologyVersion {
   fileName: string;
   /** '' for a URL version: the worker learns it from the response. */
   mediaType: string;
-  /** An uploaded file already in the runs bucket, or a URL the worker fetches. */
+  /**
+   * An uploaded file already in the runs bucket, a URL the worker fetches, or a folder's files
+   * merged into one version (`sha256` over the files' sha256s, `bytes` their total).
+   */
   source:
     | { kind: 'upload'; sourceKey: string; sha256: string; bytes: number }
-    | { kind: 'url'; url: string };
+    | { kind: 'url'; url: string }
+    | { kind: 'files'; files: StoredSourceFile[]; sha256: string; bytes: number };
   by: string | null;
+}
+
+/** One stored file of a folder or zip import. */
+export interface StoredSourceFile {
+  sourceKey: string;
+  fileName: string;
+  mediaType: string;
+  sha256: string;
+  bytes: number;
+}
+
+/** A folder imported as one ontology per file: each file is the next version of its id. */
+export interface NewBatchMember extends StoredSourceFile {
+  ontologyId: string;
+  /** Used when the ontology is new. */
+  meta: { label: string; description: string; tags: string[]; localOnly: boolean };
+}
+
+export interface BatchResult {
+  versions: OntologyVersionView[];
+  skipped: { fileName: string; ontologyId: string; reason: string }[];
+  /** The one `ontology` job importing every created version; null when nothing was. */
+  jobId: string | null;
 }
 
 export type CreateVersionResult =
@@ -53,7 +80,14 @@ export interface TermQuery {
 }
 
 export type DeleteVersionResult =
-  | { result: 'deleted'; sha256: string | null; fileName: string; mediaType: string }
+  | {
+      result: 'deleted';
+      sha256: string | null;
+      fileName: string;
+      mediaType: string;
+      /** A folder version's files (its source objects), else null. */
+      sourceFiles: { fileName: string; sha256: string; mediaType?: string }[] | null;
+    }
   | { result: 'missing' }
   | { result: 'busy' };
 
@@ -62,6 +96,11 @@ export interface OntologyRepo {
   get(id: string): Promise<OntologyDetail | null>;
   /** The version row and its `ontology` job, in one transaction. */
   createVersion(input: NewOntologyVersion): Promise<CreateVersionResult>;
+  /**
+   * A folder as one ontology per file, in one transaction and one job: a file already a
+   * version of its ontology is skipped; no job when every file is.
+   */
+  createBatch(members: NewBatchMember[], by: string | null): Promise<BatchResult>;
   update(id: string, patch: OntologyPatch): Promise<OntologySummary | null>;
   /** 'busy' while queued or parsing; deleting the last version deletes the ontology. */
   deleteVersion(id: string, version: number): Promise<DeleteVersionResult>;
@@ -106,21 +145,43 @@ const jobParams = (input: NewOntologyVersion, version: number) => ({
   version,
   ...(input.source.kind === 'upload'
     ? { sourceKey: input.source.sourceKey }
-    : { sourceUrl: input.source.url }),
+    : input.source.kind === 'url'
+      ? { sourceUrl: input.source.url }
+      : { sources: input.source.files.map(sourceParams) }),
   fileName: input.fileName,
   mediaType: input.mediaType,
 });
 
+const sourceParams = (f: StoredSourceFile) => ({
+  sourceKey: f.sourceKey,
+  fileName: f.fileName,
+  mediaType: f.mediaType,
+});
+
+/** What `source_files` holds (and the view shows, without the media type). */
+const listedFiles = (files: StoredSourceFile[]) =>
+  files.map((f) => ({
+    fileName: f.fileName,
+    sha256: f.sha256,
+    bytes: f.bytes,
+    mediaType: f.mediaType,
+  }));
+
 /** The bytes a version starts with: none for a URL version until it is fetched. */
 const sourceFields = (input: NewOntologyVersion) =>
-  input.source.kind === 'upload'
-    ? {
+  input.source.kind === 'url'
+    ? { sha256: null, bytes: null, sourceKind: 'url' as const, sourceUrl: input.source.url }
+    : {
         sha256: input.source.sha256,
         bytes: input.source.bytes,
-        sourceKind: 'upload' as const,
+        sourceKind: input.source.kind,
         sourceUrl: null,
-      }
-    : { sha256: null, bytes: null, sourceKind: 'url' as const, sourceUrl: input.source.url };
+      };
+
+const viewFiles = (input: NewOntologyVersion) =>
+  input.source.kind === 'files'
+    ? input.source.files.map(({ fileName, sha256, bytes }) => ({ fileName, sha256, bytes }))
+    : null;
 
 const KIND_ORDER: readonly OntologyTermKind[] = [
   'class',
@@ -293,6 +354,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
       fileName: input.fileName,
       mediaType: input.mediaType,
       ...fields,
+      sourceFiles: viewFiles(input),
       ontologyIri: null,
       versionIri: null,
       license: null,
@@ -314,6 +376,71 @@ export class MemoryOntologyRepo implements OntologyRepo {
     });
     this.versionJobs.set(`${o.id}:${number}`, jobId);
     return { ok: true, version, jobId };
+  }
+
+  async createBatch(members: NewBatchMember[], by: string | null): Promise<BatchResult> {
+    const versions: OntologyVersionView[] = [];
+    const skipped: BatchResult['skipped'] = [];
+    const params: Record<string, unknown>[] = [];
+    const jobId = randomUUID();
+    for (const m of members) {
+      let o = this.ontologies.get(m.ontologyId);
+      const same = o?.versions.find((v) => v.sha256 === m.sha256);
+      if (same) {
+        skipped.push({
+          fileName: m.fileName,
+          ontologyId: m.ontologyId,
+          reason: `already version ${same.version} of ${m.ontologyId}`,
+        });
+        continue;
+      }
+      if (!o) {
+        o = {
+          id: m.ontologyId,
+          ...m.meta,
+          retiredAt: null,
+          createdBy: by,
+          createdAt: new Date().toISOString(),
+          versions: [],
+        };
+        this.ontologies.set(o.id, o);
+      }
+      const number = (o.versions[0]?.version ?? 0) + 1;
+      const version: OntologyVersionView = {
+        ontologyId: o.id,
+        version: number,
+        status: 'queued',
+        fileName: m.fileName,
+        mediaType: m.mediaType,
+        sha256: m.sha256,
+        bytes: m.bytes,
+        sourceKind: 'upload',
+        sourceUrl: null,
+        sourceFiles: null,
+        ontologyIri: null,
+        versionIri: null,
+        license: null,
+        kinds: [],
+        stats: null,
+        imports: [],
+        error: null,
+        importedBy: by,
+        importedAt: new Date().toISOString(),
+      };
+      o.versions.unshift(version);
+      this.versionJobs.set(`${o.id}:${number}`, jobId);
+      versions.push(version);
+      params.push({ ontologyId: o.id, version: number, ...sourceParams(m) });
+    }
+    if (!versions.length) return { versions, skipped, jobId: null };
+    this.jobs.push({
+      id: jobId,
+      params: { members: params },
+      createdBy: by,
+      status: 'queued',
+      error: null,
+    });
+    return { versions, skipped, jobId };
   }
 
   async update(id: string, patch: OntologyPatch): Promise<OntologySummary | null> {
@@ -338,7 +465,13 @@ export class MemoryOntologyRepo implements OntologyRepo {
     o.versions = o.versions.filter((x) => x !== v);
     this.termsByVersion.delete(`${id}:${version}`);
     if (o.versions.length === 0) this.ontologies.delete(id);
-    return { result: 'deleted', sha256: v.sha256, fileName: v.fileName, mediaType: v.mediaType };
+    return {
+      result: 'deleted',
+      sha256: v.sha256,
+      fileName: v.fileName,
+      mediaType: v.mediaType,
+      sourceFiles: v.sourceFiles,
+    };
   }
 
   async terms(id: string, version: number, query: TermQuery): Promise<TermPage | null> {
@@ -442,7 +575,7 @@ export class MemoryOntologyRepo implements OntologyRepo {
 }
 
 const RAW_VERSION_COLS = `ontology_id, version, status, file_name, media_type, sha256, bytes,
-  source_kind, source_url, ontology_iri, version_iri, license, kinds, stats, imports, error,
+  source_kind, source_url, source_files, ontology_iri, version_iri, license, kinds, stats, imports, error,
   imported_by, imported_at`;
 
 /** Unfinished while queued or parsing with no active job: then it reads as failed. */
@@ -452,7 +585,7 @@ const STOPPED = `(v.status IN ('queued', 'parsing') AND NOT EXISTS (
 /** A version as read (alias `v`): the effective status of the memory repo's `effective`. */
 const VERSION_COLS = `v.ontology_id, v.version,
   CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
-  v.file_name, v.media_type, v.sha256, v.bytes, v.source_kind, v.source_url,
+  v.file_name, v.media_type, v.sha256, v.bytes, v.source_kind, v.source_url, v.source_files,
   v.ontology_iri, v.version_iri, v.license,
   v.kinds, v.stats, v.imports,
   CASE WHEN ${STOPPED} THEN coalesce(v.error,
@@ -470,6 +603,7 @@ interface VersionRow {
   bytes: string | number | null;
   source_kind: OntologyVersionView['sourceKind'];
   source_url: string | null;
+  source_files: { fileName: string; sha256: string; bytes: number; mediaType?: string }[] | null;
   ontology_iri: string | null;
   version_iri: string | null;
   license: string | null;
@@ -496,6 +630,8 @@ function toVersion(r: VersionRow): OntologyVersionView {
     bytes: r.bytes === null ? null : Number(r.bytes),
     sourceKind: r.source_kind,
     sourceUrl: r.source_url,
+    sourceFiles:
+      r.source_files?.map(({ fileName, sha256, bytes }) => ({ fileName, sha256, bytes })) ?? null,
     ontologyIri: r.ontology_iri,
     versionIri: r.version_iri,
     license: r.license,
@@ -668,8 +804,8 @@ export class PgOntologyRepo implements OntologyRepo {
       const { rows } = await client.query<VersionRow>(
         `INSERT INTO ontology_versions
            (ontology_id, version, file_name, media_type, sha256, bytes, source_kind,
-            source_url, job_id, imported_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${RAW_VERSION_COLS}`,
+            source_url, job_id, imported_by, source_files)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${RAW_VERSION_COLS}`,
         [
           input.ontologyId,
           next,
@@ -681,10 +817,80 @@ export class PgOntologyRepo implements OntologyRepo {
           fields.sourceUrl,
           jobId,
           input.by,
+          input.source.kind === 'files' ? JSON.stringify(listedFiles(input.source.files)) : null,
         ],
       );
       await client.query('COMMIT');
       return { ok: true, version: toVersion(rows[0]!), jobId };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async createBatch(members: NewBatchMember[], by: string | null): Promise<BatchResult> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const id of [...new Set(members.map((m) => m.ontologyId))].sort()) {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext('ontology:' || $1))`, [id]);
+      }
+      const versions: OntologyVersionView[] = [];
+      const skipped: BatchResult['skipped'] = [];
+      const params: Record<string, unknown>[] = [];
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, test, priority, max_attempts, params, created_by)
+         VALUES ('ontology', false, $1, 3, '{}', $2) RETURNING id`,
+        [ONTOLOGY_PRIORITY, by],
+      );
+      const jobId = job.rows[0]!.id;
+      for (const m of members) {
+        const same = await client.query<{ version: number }>(
+          'SELECT version FROM ontology_versions WHERE ontology_id = $1 AND sha256 = $2',
+          [m.ontologyId, m.sha256],
+        );
+        if (same.rows[0]) {
+          skipped.push({
+            fileName: m.fileName,
+            ontologyId: m.ontologyId,
+            reason: `already version ${same.rows[0].version} of ${m.ontologyId}`,
+          });
+          continue;
+        }
+        await client.query(
+          `INSERT INTO ontologies (id, label, description, tags, local_only, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+          [m.ontologyId, m.meta.label, m.meta.description, m.meta.tags, m.meta.localOnly, by],
+        );
+        const next = (
+          await client.query<{ next: number }>(
+            `SELECT coalesce(max(version), 0) + 1 AS next FROM ontology_versions
+              WHERE ontology_id = $1`,
+            [m.ontologyId],
+          )
+        ).rows[0]!.next;
+        const { rows } = await client.query<VersionRow>(
+          `INSERT INTO ontology_versions
+             (ontology_id, version, file_name, media_type, sha256, bytes, source_kind, job_id,
+              imported_by)
+           VALUES ($1, $2, $3, $4, $5, $6, 'upload', $7, $8) RETURNING ${RAW_VERSION_COLS}`,
+          [m.ontologyId, next, m.fileName, m.mediaType, m.sha256, m.bytes, jobId, by],
+        );
+        versions.push(toVersion(rows[0]!));
+        params.push({ ontologyId: m.ontologyId, version: next, ...sourceParams(m) });
+      }
+      if (!versions.length) {
+        await client.query('ROLLBACK');
+        return { versions, skipped, jobId: null };
+      }
+      await client.query('UPDATE jobs SET params = $1 WHERE id = $2', [
+        JSON.stringify({ members: params }),
+        jobId,
+      ]);
+      await client.query('COMMIT');
+      return { versions, skipped, jobId };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -728,9 +934,10 @@ export class PgOntologyRepo implements OntologyRepo {
         file_name: string;
         media_type: string;
         job_id: string | null;
+        source_files: { fileName: string; sha256: string; mediaType?: string }[] | null;
       }>(
         `SELECT CASE WHEN ${STOPPED} THEN 'failed' ELSE v.status END AS status,
-                v.sha256, v.file_name, v.media_type, v.job_id
+                v.sha256, v.file_name, v.media_type, v.job_id, v.source_files
            FROM ontology_versions v WHERE v.ontology_id = $1 AND v.version = $2
             FOR UPDATE OF v`,
         [id, version],
@@ -744,7 +951,14 @@ export class PgOntologyRepo implements OntologyRepo {
         id,
         version,
       ]);
-      if (row.job_id) await client.query('DELETE FROM jobs WHERE id = $1', [row.job_id]);
+      if (row.job_id) {
+        // A folder imported one ontology per file shares one job: it goes with its last version.
+        await client.query(
+          `DELETE FROM jobs WHERE id = $1
+             AND NOT EXISTS (SELECT 1 FROM ontology_versions WHERE job_id = $1)`,
+          [row.job_id],
+        );
+      }
       await client.query(
         `DELETE FROM ontologies WHERE id = $1
            AND NOT EXISTS (SELECT 1 FROM ontology_versions WHERE ontology_id = $1)`,
@@ -756,6 +970,7 @@ export class PgOntologyRepo implements OntologyRepo {
         sha256: row.sha256,
         fileName: row.file_name,
         mediaType: row.media_type,
+        sourceFiles: row.source_files,
       };
     } catch (err) {
       await client.query('ROLLBACK');

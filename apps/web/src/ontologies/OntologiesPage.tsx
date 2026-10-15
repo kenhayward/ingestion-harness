@@ -20,6 +20,8 @@ export function OntologiesPage({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [importing, setImporting] = useState(false);
+  /** What the last folder import did (versions queued, files skipped). */
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -72,6 +74,7 @@ export function OntologiesPage({
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
+      {note && <p role="status">{note}</p>}
       {error && <p role="alert">{error}</p>}
       {items === null && !error && <p>Loading…</p>}
       {items?.length === 0 && (
@@ -89,8 +92,9 @@ export function OntologiesPage({
           api={api}
           existing={items ?? []}
           onClose={() => setImporting(false)}
-          onImported={() => {
+          onImported={(done) => {
             setImporting(false);
+            setNote(done ?? null);
             void load();
           }}
         />

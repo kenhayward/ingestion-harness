@@ -161,4 +161,144 @@ describe('OntologiesPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
     expect(await within(dialog).findByText(/URL imports are off/)).toBeInTheDocument();
   });
+
+  it('says why Import is disabled, on hover and in the dialog', async () => {
+    page([], 'admin', {
+      getOntologySettings: vi.fn(async () => ({ fetchHosts: ['www.dublincore.org'], maxBytes: 1 })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    const importButton = () => within(dialog).getByRole('button', { name: 'Import' });
+    expect(importButton()).toHaveAttribute('title', 'Choose an ontology file');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a URL' }));
+    await within(dialog).findByText('Allowed hosts: www.dublincore.org');
+    expect(importButton()).toHaveAttribute('title', "Enter the ontology's URL");
+    await userEvent.type(
+      within(dialog).getByLabelText('URL'),
+      'https://www.dublincore.org/specifications/dublin-core/dcmi-terms/dublin_core_terms.ttl',
+    );
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'DublinCore');
+    expect(importButton()).toBeEnabled();
+    await userEvent.clear(within(dialog).getByLabelText('Id'));
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'DCMI');
+    const reason =
+      'The id must be 2-63 lower-case letters, digits or hyphens, starting with a letter or digit (try dcmi)';
+    expect(importButton()).toBeDisabled();
+    expect(importButton()).toHaveAttribute('title', reason);
+    expect(importButton()).toHaveAccessibleDescription(reason);
+    expect(within(dialog).getByLabelText('Id')).toHaveAccessibleDescription(reason);
+    await userEvent.clear(within(dialog).getByLabelText('Id'));
+    await userEvent.type(within(dialog).getByLabelText('Id'), 'dcmi');
+    expect(importButton()).toBeEnabled();
+    expect(importButton()).not.toHaveAttribute('title');
+  });
+});
+
+/** A file as a folder picker gives it: with its path in the folder. */
+function inFolder(path: string, body = 'x'): File {
+  const file = new File([body], path.split('/').pop()!);
+  Object.defineProperty(file, 'webkitRelativePath', { value: path });
+  return file;
+}
+
+describe('ImportOntologyDialog, from a folder or .zip', () => {
+  const folder = [
+    inFolder('idmp/core.ttl'),
+    inFolder('idmp/sub/prod.ttl'),
+    inFolder('idmp/README.md'),
+    inFolder('idmp/.git/config.ttl'),
+  ];
+
+  async function open(overrides: Partial<Api> = {}, list = [ontologySummary()]) {
+    const api = page(list, 'admin', overrides);
+    await userEvent.click(await screen.findByRole('button', { name: 'Import ontology' }));
+    const dialog = screen.getByRole('dialog', { name: 'Import ontology' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'From a folder or .zip' }));
+    return { api, dialog };
+  }
+
+  it('merges a folder into one ontology', async () => {
+    const { api, dialog } = await open({
+      importOntologyBatch: vi.fn(async () => ({
+        versions: [ontologyVersion({ ontologyId: 'idmp-o', sourceKind: 'files' })],
+        skipped: [],
+      })),
+    });
+    const importButton = within(dialog).getByRole('button', { name: 'Import' });
+    expect(importButton).toHaveAttribute('title', 'Choose a folder or a .zip');
+    await userEvent.upload(within(dialog).getByLabelText('Ontology folder'), folder);
+    expect(
+      within(dialog).getByText('2 ontology files · 1 other file left out'),
+    ).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'IDMP-O');
+    expect(within(dialog).getByLabelText('Id')).toHaveValue('idmp-o');
+    await userEvent.click(importButton);
+    await waitFor(() =>
+      expect(api.importOntologyBatch).toHaveBeenCalledWith(
+        [
+          { file: folder[0], path: 'idmp/core.ttl' },
+          { file: folder[1], path: 'idmp/sub/prod.ttl' },
+        ],
+        { mode: 'merge', id: 'idmp-o', label: 'IDMP-O', tags: [], localOnly: false },
+      ),
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('1 version queued.');
+  });
+
+  it('imports one ontology per file, previewing the ids and what they add to', async () => {
+    const { api, dialog } = await open(
+      {
+        importOntologyBatch: vi.fn(async () => ({
+          versions: [ontologyVersion({ ontologyId: 'idmp-core' })],
+          skipped: [
+            {
+              fileName: 'idmp/sub/prod.ttl',
+              ontologyId: 'idmp-prod',
+              reason: 'already version 1 of idmp-prod',
+            },
+          ],
+        })),
+      },
+      [ontologySummary({ id: 'idmp-prod', label: 'prod', versionCount: 1 })],
+    );
+    await userEvent.upload(within(dialog).getByLabelText('Ontology folder'), folder);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'One ontology per file' }));
+    expect(within(dialog).getByLabelText('Id prefix')).toHaveValue('idmp-');
+    const preview = within(dialog).getByRole('list', { name: 'Ontologies to import' });
+    expect(preview).toHaveTextContent('idmp-core (new)');
+    expect(preview).toHaveTextContent('idmp-prod (adds version 2)');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(api.importOntologyBatch).toHaveBeenCalledWith(expect.any(Array), {
+        mode: 'separate',
+        idPrefix: 'idmp-',
+        tags: [],
+        localOnly: false,
+      }),
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      '1 version queued. 1 file skipped: idmp/sub/prod.ttl (already version 1 of idmp-prod).',
+    );
+  });
+
+  it('imports a .zip, and says when a folder has no ontology files', async () => {
+    const { api, dialog } = await open({
+      importOntologyBatch: vi.fn(async () => ({ versions: [ontologyVersion()], skipped: [] })),
+    });
+    await userEvent.upload(within(dialog).getByLabelText('Ontology folder'), [inFolder('x/a.md')]);
+    expect(within(dialog).getByRole('button', { name: 'Import' })).toHaveAttribute(
+      'title',
+      'The folder has no ontology files',
+    );
+    const zip = new File(['PK'], 'idmp-o-1.4.zip', { type: 'application/zip' });
+    await userEvent.upload(within(dialog).getByLabelText('or a .zip'), zip);
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'IDMP-O');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+    await waitFor(() =>
+      expect(api.importOntologyBatch).toHaveBeenCalledWith(
+        [{ file: zip, path: 'idmp-o-1.4.zip' }],
+        expect.objectContaining({ mode: 'merge', id: 'idmp-o' }),
+      ),
+    );
+  });
 });

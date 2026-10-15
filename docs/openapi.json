@@ -37511,13 +37511,44 @@
                                 "enum": [
                                   "upload",
                                   "url",
-                                  "import"
+                                  "import",
+                                  "files"
                                 ]
                               },
                               "sourceUrl": {
                                 "type": [
                                   "string",
                                   "null"
+                                ]
+                              },
+                              "sourceFiles": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "fileName": {
+                                          "type": "string"
+                                        },
+                                        "sha256": {
+                                          "type": "string"
+                                        },
+                                        "bytes": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "fileName",
+                                        "sha256",
+                                        "bytes"
+                                      ],
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
                                 ]
                               },
                               "ontologyIri": {
@@ -37605,7 +37636,8 @@
                                       "enum": [
                                         "unresolved",
                                         "library",
-                                        "fetched"
+                                        "fetched",
+                                        "included"
                                       ]
                                     },
                                     "ontologyId": {
@@ -37667,6 +37699,7 @@
                               "bytes",
                               "sourceKind",
                               "sourceUrl",
+                              "sourceFiles",
                               "ontologyIri",
                               "versionIri",
                               "license",
@@ -37834,13 +37867,44 @@
                       "enum": [
                         "upload",
                         "url",
-                        "import"
+                        "import",
+                        "files"
                       ]
                     },
                     "sourceUrl": {
                       "type": [
                         "string",
                         "null"
+                      ]
+                    },
+                    "sourceFiles": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "fileName",
+                              "sha256",
+                              "bytes"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "ontologyIri": {
@@ -37928,7 +37992,8 @@
                             "enum": [
                               "unresolved",
                               "library",
-                              "fetched"
+                              "fetched",
+                              "included"
                             ]
                           },
                           "ontologyId": {
@@ -37990,6 +38055,7 @@
                     "bytes",
                     "sourceKind",
                     "sourceUrl",
+                    "sourceFiles",
                     "ontologyIri",
                     "versionIri",
                     "license",
@@ -38211,6 +38277,540 @@
         }
       }
     },
+    "/api/ontologies/batch": {
+      "post": {
+        "operationId": "importOntologyBatch",
+        "summary": "Import a folder or zip of ontology files",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "**Admin token required.** Every ontology file (.ttl,.owl,.rdf,.jsonld,.nt,.n3) of a folder, sent\nas one `file` part each, or of one `.zip` part (hidden entries and others are\nleft out), imported in one go, at most 300 files within the upload\nlimit. Fields come before the files:\n\n- `mode`: `merge` makes the files one version of the ontology `id` (a new\n  ontology needs `label`); imports between them are `included`. The same set of\n  files twice is refused (409).\n- `separate` makes each file the next version of the ontology\n  `<idPrefix><file name>`, all imported by one job, so imports between them\n  resolve to each other. A file already a version of its ontology is skipped.\n- `paths`: a JSON array of the files' paths in the folder, in part order (browsers\n  send only the file name).\n\nThe answer lists the versions queued and the files skipped.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "merge",
+                      "separate"
+                    ],
+                    "description": "How the files land."
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "`merge`: the ontology id, e.g. `idmp-o`."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "`merge`: the name of a new ontology."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "`merge`: optional description."
+                  },
+                  "idPrefix": {
+                    "type": "string",
+                    "description": "`separate`: prefix of every id, e.g. `idmp-` (may be empty)."
+                  },
+                  "tags": {
+                    "type": "string",
+                    "description": "Comma-separated tags for new ontologies."
+                  },
+                  "localOnly": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true`: never sent to external models (new ontologies)."
+                  },
+                  "paths": {
+                    "type": "string",
+                    "description": "JSON array of the files' paths, in order."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "An ontology file (repeat the part per file), or one .zip. Send them last."
+                  }
+                },
+                "required": [
+                  "mode",
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "202": {
+            "description": "The versions queued and the files skipped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ontologyId": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "parsing",
+                              "ready",
+                              "failed"
+                            ]
+                          },
+                          "fileName": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "bytes": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceKind": {
+                            "type": "string",
+                            "enum": [
+                              "upload",
+                              "url",
+                              "import",
+                              "files"
+                            ]
+                          },
+                          "sourceUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "sourceFiles": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "fileName": {
+                                      "type": "string"
+                                    },
+                                    "sha256": {
+                                      "type": "string"
+                                    },
+                                    "bytes": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "fileName",
+                                    "sha256",
+                                    "bytes"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ontologyIri": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "versionIri": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "license": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "kinds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "owl",
+                                "skos",
+                                "shacl"
+                              ]
+                            }
+                          },
+                          "stats": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "triples": {
+                                    "type": "integer"
+                                  },
+                                  "classes": {
+                                    "type": "integer"
+                                  },
+                                  "properties": {
+                                    "type": "integer"
+                                  },
+                                  "concepts": {
+                                    "type": "integer"
+                                  },
+                                  "schemes": {
+                                    "type": "integer"
+                                  },
+                                  "shapes": {
+                                    "type": "integer"
+                                  },
+                                  "imported": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "triples",
+                                  "classes",
+                                  "properties",
+                                  "concepts",
+                                  "schemes",
+                                  "shapes",
+                                  "imported"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "imports": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "iri": {
+                                  "type": "string"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unresolved",
+                                    "library",
+                                    "fetched",
+                                    "included"
+                                  ]
+                                },
+                                "ontologyId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "reason": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "iri",
+                                "resolution",
+                                "ontologyId",
+                                "version",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "importedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "importedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ontologyId",
+                          "version",
+                          "status",
+                          "fileName",
+                          "mediaType",
+                          "sha256",
+                          "bytes",
+                          "sourceKind",
+                          "sourceUrl",
+                          "sourceFiles",
+                          "ontologyIri",
+                          "versionIri",
+                          "license",
+                          "kinds",
+                          "stats",
+                          "imports",
+                          "error",
+                          "importedBy",
+                          "importedAt"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fileName": {
+                            "type": "string"
+                          },
+                          "ontologyId": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fileName",
+                          "ontologyId",
+                          "reason"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions",
+                    "skipped"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The versions queued and the files skipped."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A missing or invalid field, no ontology files, too many, or a bad zip.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "A missing or invalid field, no ontology files, too many, or a bad zip."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or sent from another site's page: refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or sent from another site's page: refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`merge`: the same files are already a version of this ontology.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`merge`: the same files are already a version of this ontology."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The files are over the upload limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The files are over the upload limit."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ontologies/{id}": {
       "get": {
         "operationId": "getOntology",
@@ -38318,13 +38918,44 @@
                               "enum": [
                                 "upload",
                                 "url",
-                                "import"
+                                "import",
+                                "files"
                               ]
                             },
                             "sourceUrl": {
                               "type": [
                                 "string",
                                 "null"
+                              ]
+                            },
+                            "sourceFiles": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "fileName": {
+                                        "type": "string"
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      },
+                                      "bytes": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "fileName",
+                                      "sha256",
+                                      "bytes"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ]
                             },
                             "ontologyIri": {
@@ -38412,7 +39043,8 @@
                                     "enum": [
                                       "unresolved",
                                       "library",
-                                      "fetched"
+                                      "fetched",
+                                      "included"
                                     ]
                                   },
                                   "ontologyId": {
@@ -38474,6 +39106,7 @@
                             "bytes",
                             "sourceKind",
                             "sourceUrl",
+                            "sourceFiles",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -38541,13 +39174,44 @@
                             "enum": [
                               "upload",
                               "url",
-                              "import"
+                              "import",
+                              "files"
                             ]
                           },
                           "sourceUrl": {
                             "type": [
                               "string",
                               "null"
+                            ]
+                          },
+                          "sourceFiles": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "fileName": {
+                                      "type": "string"
+                                    },
+                                    "sha256": {
+                                      "type": "string"
+                                    },
+                                    "bytes": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "fileName",
+                                    "sha256",
+                                    "bytes"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "ontologyIri": {
@@ -38635,7 +39299,8 @@
                                   "enum": [
                                     "unresolved",
                                     "library",
-                                    "fetched"
+                                    "fetched",
+                                    "included"
                                   ]
                                 },
                                 "ontologyId": {
@@ -38697,6 +39362,7 @@
                           "bytes",
                           "sourceKind",
                           "sourceUrl",
+                          "sourceFiles",
                           "ontologyIri",
                           "versionIri",
                           "license",
@@ -38929,13 +39595,44 @@
                               "enum": [
                                 "upload",
                                 "url",
-                                "import"
+                                "import",
+                                "files"
                               ]
                             },
                             "sourceUrl": {
                               "type": [
                                 "string",
                                 "null"
+                              ]
+                            },
+                            "sourceFiles": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "fileName": {
+                                        "type": "string"
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      },
+                                      "bytes": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "fileName",
+                                      "sha256",
+                                      "bytes"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ]
                             },
                             "ontologyIri": {
@@ -39023,7 +39720,8 @@
                                     "enum": [
                                       "unresolved",
                                       "library",
-                                      "fetched"
+                                      "fetched",
+                                      "included"
                                     ]
                                   },
                                   "ontologyId": {
@@ -39085,6 +39783,7 @@
                             "bytes",
                             "sourceKind",
                             "sourceUrl",
+                            "sourceFiles",
                             "ontologyIri",
                             "versionIri",
                             "license",
@@ -40488,13 +41187,44 @@
                       "enum": [
                         "upload",
                         "url",
-                        "import"
+                        "import",
+                        "files"
                       ]
                     },
                     "sourceUrl": {
                       "type": [
                         "string",
                         "null"
+                      ]
+                    },
+                    "sourceFiles": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "fileName",
+                              "sha256",
+                              "bytes"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "ontologyIri": {
@@ -40582,7 +41312,8 @@
                             "enum": [
                               "unresolved",
                               "library",
-                              "fetched"
+                              "fetched",
+                              "included"
                             ]
                           },
                           "ontologyId": {
@@ -40644,6 +41375,7 @@
                     "bytes",
                     "sourceKind",
                     "sourceUrl",
+                    "sourceFiles",
                     "ontologyIri",
                     "versionIri",
                     "license",

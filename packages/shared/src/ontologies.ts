@@ -70,13 +70,51 @@ export function ontologySourceExtension(fileName: string, mediaType: string): st
 
 export const ONTOLOGY_STATUSES = ['queued', 'parsing', 'ready', 'failed'] as const;
 
-/** upload: a file; url: fetched by the worker (rollout step 2); import: pulled in by owl:imports. */
-export const ONTOLOGY_SOURCE_KINDS = ['upload', 'url', 'import'] as const;
+/**
+ * upload: a file; url: fetched by the worker (rollout step 2); import: pulled in by owl:imports;
+ * files: a folder or zip merged into one version (`sourceFiles`).
+ */
+export const ONTOLOGY_SOURCE_KINDS = ['upload', 'url', 'import', 'files'] as const;
+
+/** Ontology files one folder or zip import may carry. */
+export const ONTOLOGY_MAX_FILES = 300;
+
+/**
+ * Library ids for a folder imported as one ontology per file: the prefix and the file's stem as a
+ * slug, within ONTOLOGY_ID_RE, `-2`, `-3`… on collisions. The web previews them; the API decides.
+ */
+export function fileOntologyIds(paths: readonly string[], prefix: string): string[] {
+  const used = new Set<string>();
+  return paths.map((path) => {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    const stem = name.replace(/\.[^.]*$/, '');
+    const slug =
+      stem
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'ontology';
+    let base = `${prefix}${slug}`;
+    if (base.length < 2) base = `${base}-ontology`;
+    base = base.slice(0, 63).replace(/-+$/, '');
+    let id = base;
+    for (let n = 2; used.has(id); n++) {
+      const suffix = `-${n}`;
+      id = `${base.slice(0, 63 - suffix.length).replace(/-+$/, '')}${suffix}`;
+    }
+    used.add(id);
+    return id;
+  });
+}
 
 export const OntologyImportSchema = z.object({
   iri: z.string(),
-  /** library: an existing ready version; fetched: imported now into the library. */
-  resolution: z.enum(['unresolved', 'library', 'fetched']),
+  /**
+   * library: an existing ready version; fetched: imported now into the library; included: one
+   * of the files of this (folder) version declares it.
+   */
+  resolution: z.enum(['unresolved', 'library', 'fetched', 'included']),
   ontologyId: z.string().nullable(),
   version: z.number().int().nullable(),
   /** Why an import is unresolved. */
@@ -108,6 +146,10 @@ export const OntologyVersionViewSchema = z.object({
   bytes: z.number().int().nullable(),
   sourceKind: z.enum(ONTOLOGY_SOURCE_KINDS),
   sourceUrl: z.string().nullable(),
+  /** A `files` version's files (paths as uploaded); null otherwise. */
+  sourceFiles: z
+    .array(z.object({ fileName: z.string(), sha256: z.string(), bytes: z.number().int() }))
+    .nullable(),
   ontologyIri: z.string().nullable(),
   versionIri: z.string().nullable(),
   license: z.string().nullable(),
@@ -120,6 +162,13 @@ export const OntologyVersionViewSchema = z.object({
   importedAt: z.string(),
 });
 export type OntologyVersionView = z.infer<typeof OntologyVersionViewSchema>;
+
+/** `POST /api/ontologies/batch`: the versions queued, and the files left out (duplicates). */
+export const OntologyBatchResultSchema = z.object({
+  versions: z.array(OntologyVersionViewSchema),
+  skipped: z.array(z.object({ fileName: z.string(), ontologyId: z.string(), reason: z.string() })),
+});
+export type OntologyBatchResult = z.infer<typeof OntologyBatchResultSchema>;
 
 export const OntologySummarySchema = z.object({
   id: z.string(),

@@ -510,8 +510,11 @@ class MemoryOntologyStore:
         self.imports_of[(oid, 1)] = parsed.import_entries
         return oid, 1
 
-    def start(self, ontology_id: str, version: int) -> None:
+    def start(self, ontology_id: str, version: int) -> bool:
+        if self.status.get((ontology_id, version), "queued") not in ("queued", "parsing"):
+            return False
         self.status[(ontology_id, version)] = "parsing"
+        return True
 
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         self.saved[(ontology_id, version)] = parsed

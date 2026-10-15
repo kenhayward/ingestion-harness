@@ -175,7 +175,9 @@ export class UnreachableStore extends MemoryObjectStore {
 /** Build a multipart body for app.inject(). Fields are written before the file. */
 export function multipart(
   fields: Record<string, string>,
-  file?: { filename: string; content: Buffer; contentType?: string },
+  file?:
+    | { filename: string; content: Buffer; contentType?: string }
+    | { filename: string; content: Buffer; contentType?: string }[],
 ) {
   const boundary = '----ihtestboundary';
   const parts: Buffer[] = [];
@@ -186,13 +188,13 @@ export function multipart(
       ),
     );
   }
-  if (file) {
+  for (const f of file === undefined ? [] : Array.isArray(file) ? file : [file]) {
     parts.push(
       Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.filename}"\r\n` +
-          `Content-Type: ${file.contentType ?? 'application/pdf'}\r\n\r\n`,
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${f.filename}"\r\n` +
+          `Content-Type: ${f.contentType ?? 'application/pdf'}\r\n\r\n`,
       ),
-      file.content,
+      f.content,
       Buffer.from('\r\n'),
     );
   }
