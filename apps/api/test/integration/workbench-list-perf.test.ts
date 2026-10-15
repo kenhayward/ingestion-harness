@@ -24,6 +24,7 @@ import { MemoryObjectStore } from '../../src/storage/object-store.js';
 import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
 import { MemoryLinkedDataRepo } from '../../src/linked-data/repo.js';
+import { MemoryProfileRepo } from '../../src/profile/repo.js';
 import { PgTemplateRepo } from '../../src/templates/repo.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 import { seedWorkbenchProjects } from '../../src/workbench/seed.js';
@@ -65,6 +66,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
       maxUploadBytes: 1024 * 1024,
       access: null,
+      profiles: new MemoryProfileRepo(),
       s3Keys: null,
       llm: new MemoryLlmConfigRepo(),
       ontologies: new MemoryOntologyRepo(),

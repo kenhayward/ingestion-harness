@@ -1,7 +1,41 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A modal's focus: the first control takes focus on open, Tab stays inside, and focus goes back
+ * to whatever had it on close. Returns the Tab handler for the modal's `onKeyDown`.
+ */
+export function useModalFocus(box: RefObject<HTMLElement | null>): (e: KeyboardEvent) => void {
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    return () => opener?.focus();
+  }, [box]);
+
+  return (e: KeyboardEvent) => {
+    if (e.key !== 'Tab' || !box.current) return;
+    const items = [...box.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    const first = items[0];
+    const last = items.at(-1);
+    if (!first || !last) return;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+}
 
 /**
  * Modal dialog: labelled by its title, takes focus on open, keeps Tab inside, closes on Escape,
@@ -31,12 +65,7 @@ export function Dialog({
   const descriptionId = useId();
   const rich = icon !== undefined || description !== undefined;
   const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
-    return () => opener?.focus();
-  }, []);
+  const trapTab = useModalFocus(box);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -44,18 +73,7 @@ export function Dialog({
       onClose();
       return;
     }
-    if (e.key !== 'Tab' || !box.current) return;
-    const items = [...box.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    const first = items[0];
-    const last = items.at(-1);
-    if (!first || !last) return;
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
+    trapTab(e);
   };
 
   return (

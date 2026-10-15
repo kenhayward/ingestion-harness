@@ -1,4 +1,7 @@
 import type {
+  GitHubRepo,
+  Profile,
+  ProfileBody,
   GraphPreviewView,
   ModelSettingsBody,
   OntologySuggestionsView,
@@ -323,6 +326,17 @@ export interface Api {
   logout(): Promise<void>;
   /** Change the signed-in user's password (the first sign-in step with a one-time password). */
   changePassword(currentPassword: string, newPassword: string): Promise<void>;
+  /** The signed-in user's own profile (docs/design/profile.md). */
+  getProfile(): Promise<Profile>;
+  /** Saves the name and details (409: the name is taken). */
+  updateProfile(body: ProfileBody): Promise<Profile>;
+  /** Where the browser goes to link a GitHub account (a navigation: GitHub, then back). */
+  gitHubConnectUrl(): string;
+  unlinkGitHub(): Promise<void>;
+  /** Repositories the linked account can push to. */
+  listGitHubRepos(): Promise<GitHubRepo[]>;
+  /** The repository recipe YAML will be stored in; null: none. */
+  setGitHubRepo(repo: string | null): Promise<Profile>;
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
   listUsers(): Promise<User[]>;
@@ -504,6 +518,8 @@ export interface Api {
   getProject(id: string): Promise<ProjectView>;
   /** Deletes a project whose type was never published (409 otherwise). */
   deleteProject(id: string): Promise<void>;
+  /** Starts the project again, keeping its samples and the brief's written sections. */
+  resetProject(id: string): Promise<ProjectView>;
   setDataPolicy(projectId: string, dataPolicy: DataPolicy): Promise<ProjectView>;
   /** Queue the project's drafting bundle (replaces its previous export). */
   startExport(projectId: string): Promise<ExportView>;
@@ -696,6 +712,8 @@ export interface Me {
   email: string | null;
   /** Signed in with a one-time password: only the password change works until it is done. */
   mustChangePassword: boolean;
+  /** The linked GitHub account's picture; null or absent: initials. */
+  avatarUrl?: string | null;
 }
 
 /** The sign-in answer: Me plus the failed attempts it cleared (tell the person). */
@@ -803,6 +821,12 @@ export function createHttpApi(base = '/api'): Api {
         }),
       );
     },
+    getProfile: () => apiFetch(`${base}/profile`).then(json<Profile>),
+    updateProfile: (body) => post<Profile>(`${base}/profile`, body, 'PUT'),
+    gitHubConnectUrl: () => `${base}/profile/github/connect`,
+    unlinkGitHub: () => noContent(apiFetch(`${base}/profile/github`, { method: 'DELETE' })),
+    listGitHubRepos: () => apiFetch(`${base}/profile/github/repos`).then(json<GitHubRepo[]>),
+    setGitHubRepo: (repo) => post<Profile>(`${base}/profile/github/repo`, { repo }, 'PUT'),
     listUsers: () => apiFetch(`${base}/users`).then(json<User[]>),
     addUser: (user) => post<WithPassword>(`${base}/users`, user),
     updateUser: (id, patch) =>
@@ -1041,6 +1065,7 @@ export function createHttpApi(base = '/api'): Api {
       noContent(apiFetch(`${base}/workbench/pins/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     deleteProject: (id) =>
       noContent(apiFetch(`${base}/workbench/projects/${id}`, { method: 'DELETE' })),
+    resetProject: (id) => post<ProjectView>(`${base}/workbench/projects/${id}/reset`, {}),
     startExport: (id) => post<ExportView>(`${base}/workbench/projects/${id}/export`, {}),
     listExports: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/exports`).then(json<ExportView[]>),

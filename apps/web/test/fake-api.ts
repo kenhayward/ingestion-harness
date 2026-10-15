@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type {
+  Profile,
   OntologyDetail,
   OntologyListItem,
   OntologyTerm,
@@ -248,6 +249,20 @@ export const ADMIN_ME: Me = {
   mustChangePassword: false,
 };
 
+/** A profile as GET /api/profile returns it; override what the test is about. */
+export function profile(fields: Partial<Profile> = {}): Profile {
+  return {
+    name: 'Ken Hayward',
+    email: 'ken@example.com',
+    jobTitle: null,
+    company: null,
+    linkedin: null,
+    github: null,
+    githubAvailable: true,
+    ...fields,
+  };
+}
+
 /** A user as GET /api/users lists them; override what the test is about. */
 export function user(fields: Partial<User> = {}): User {
   return {
@@ -291,6 +306,14 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),
     changePassword: vi.fn(async () => undefined),
+    getProfile: vi.fn(async () => profile()),
+    updateProfile: vi.fn(async (body) => profile(body)),
+    gitHubConnectUrl: () => '/api/profile/github/connect',
+    unlinkGitHub: vi.fn(async () => undefined),
+    listGitHubRepos: vi.fn(async () => []),
+    setGitHubRepo: vi.fn(async () => {
+      throw new Error('setGitHubRepo not stubbed');
+    }),
     listUsers: vi.fn(async () => [ADMIN_FROM_LOG]),
     addUser: vi.fn(async () => {
       throw new Error('addUser not stubbed');
@@ -572,6 +595,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listPublications: vi.fn(async () => []),
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
+    }),
+    resetProject: vi.fn(async () => {
+      throw new Error('resetProject not stubbed');
     }),
     deleteProject: vi.fn(async () => {
       throw new Error('deleteProject not stubbed');

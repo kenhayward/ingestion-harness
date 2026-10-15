@@ -11,6 +11,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
+import { DeliveryTargets } from './DeliveryTargets.js';
 import { OutputsView } from './OutputsView.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { StaleBanner } from './StaleBanner.js';
@@ -429,6 +430,17 @@ export function StagePanel({
       {stage === 'outputs' && draftDef && typeof draft === 'number' ? (
         <>
           {proposal?.status === 'ready' && card}
+          <DeliveryTargets
+            api={api}
+            projectId={projectId}
+            draftVersion={draft}
+            definition={draftDef}
+            updatedAt={definitions.draftUpdatedAt}
+            onSaved={() => {
+              void definitions.reload();
+              onApplied();
+            }}
+          />
           <OutputsView
             draftVersion={draft}
             liveVersion={definitions.liveDef ? published : null}

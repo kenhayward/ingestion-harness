@@ -52,7 +52,8 @@ function Field({
 
 /**
  * Choose a password (ADR 0013): at first sign-in with a one-time password (`first`, the only
- * screen such a session gets), or from the account menu (`account`).
+ * screen such a session gets), on its own page (`account`, `#/account/password`), or as the
+ * Profile dialog's Change password tab (`embedded`: the dialog names it and closes it).
  */
 export function ChangePassword({
   api,
@@ -63,8 +64,8 @@ export function ChangePassword({
 }: {
   api: Api;
   me: Me;
-  mode: 'first' | 'account';
-  /** The password changed (first) or the person leaves the page (account). */
+  mode: 'first' | 'account' | 'embedded';
+  /** The password changed (first) or the person leaves the page (account); unused embedded. */
   onDone: () => void;
   onSignOut: () => void;
 }) {
@@ -75,6 +76,7 @@ export function ChangePassword({
   const [error, setError] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
   const first = mode === 'first';
+  const embedded = mode === 'embedded';
 
   const edit = (set: (v: string) => void) => (value: string) => {
     set(value);
@@ -107,8 +109,16 @@ export function ChangePassword({
   }
 
   return (
-    <form className="card auth-card" onSubmit={submit} aria-labelledby="change-password-title">
-      <h2 id="change-password-title">{first ? 'Choose your password' : 'Change your password'}</h2>
+    <form
+      className={embedded ? 'password-form' : 'card auth-card'}
+      onSubmit={submit}
+      aria-labelledby={embedded ? undefined : 'change-password-title'}
+    >
+      {!embedded && (
+        <h2 id="change-password-title">
+          {first ? 'Choose your password' : 'Change your password'}
+        </h2>
+      )}
       {first && (
         <p className="muted">
           Welcome, {me.label}. You signed in with a one-time password: choose your own to continue.
@@ -151,7 +161,7 @@ export function ChangePassword({
       )}
       <button
         type="submit"
-        className="primary block"
+        className={embedded ? 'primary' : 'primary block'}
         disabled={busy || !current || !next || !repeat}
       >
         {first ? 'Set password' : 'Change password'}
@@ -160,7 +170,7 @@ export function ChangePassword({
         <button type="button" className="block" onClick={onSignOut}>
           Sign out
         </button>
-      ) : (
+      ) : embedded ? null : (
         <button type="button" className="block" onClick={onDone}>
           Back
         </button>

@@ -14,6 +14,7 @@ import {
   type SessionInfo,
 } from './repo.js';
 import { registerUserRoutes } from './users-routes.js';
+import { registerProfileRoutes } from '../profile/routes.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -72,6 +73,11 @@ export const MeSchema = z.object({
   mustChangePassword: z
     .boolean()
     .describe('A one-time password session: only me, the password change and sign-out work.'),
+  avatarUrl: z
+    .string()
+    .url()
+    .nullable()
+    .describe("The linked GitHub account's picture (`GET /api/profile`); null: none linked."),
 });
 const SignedInSchema = MeSchema.extend({
   failedSinceLastSignIn: z
@@ -84,12 +90,14 @@ export const LockedBody = ErrorBody.extend({
   lockedUntil: z.string().datetime().describe('When sign-in works again.'),
 });
 
-const meView = (s: SessionInfo) => ({
+/** The signed-in user with their picture: the linked GitHub account's, if any. */
+const meView = async (req: FastifyRequest, s: SessionInfo) => ({
   userId: s.userId,
   role: s.role,
   label: s.label,
   email: s.email,
   mustChangePassword: s.mustChangePassword,
+  avatarUrl: (await req.server.deps.profiles.get(s.userId)).github?.avatarUrl ?? null,
 });
 
 const lockedMessage = (until: string) =>
@@ -273,7 +281,7 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
             });
             setSession(req, reply, result.sessionId);
             return {
-              ...meView(result.session),
+              ...(await meView(req, result.session)),
               failedSinceLastSignIn: result.failedSinceLastSignIn,
               lastFailedAt: result.lastFailedAt,
             };
@@ -316,15 +324,15 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
         operationId: 'me',
         summary: 'Get the signed-in user',
         description: md`
-          The role, name and email of the signed-in user, and whether the session was opened
-          with a one-time password. The web app calls this on load to choose between the
+          The role, name, email and picture of the signed-in user, and whether the session was
+          opened with a one-time password. The web app calls this on load to choose between the
           sign-in page, the password change and the app, and to show the admin pages only to
           admins.
         `,
         response: { 200: res('The signed-in user.', MeSchema) },
       },
     },
-    async (req) => meView(req.auth!),
+    async (req) => meView(req, req.auth!),
   );
 
   app.put(
@@ -396,4 +404,5 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
   );
 
   registerUserRoutes(app, access);
+  registerProfileRoutes(app, access);
 }

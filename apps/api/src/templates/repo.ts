@@ -458,7 +458,7 @@ export class PgTemplateRepo implements TemplateRepo {
   }
 
   async setLabel(id: string, version: number, body: VersionLabelBody, by: string | null) {
-    // $3/$5 say whether the label/note was sent; updated_at is left alone (migration 0044).
+    // $3/$5 say whether the label/note was sent; updated_at is left alone (migration 0045).
     return this.one(
       `UPDATE templates
           SET label = CASE WHEN $3 THEN $4 ELSE label END,

@@ -18,6 +18,7 @@ import {
   type WorkbenchProject,
   EMPTY_BRIEF,
   vocabularyOf,
+  deliveryTargets,
 } from '@ih/shared';
 import { handEditedAt } from '../templates/changes.js';
 import { mappedOutputs } from '../workbench/mapping.js';
@@ -245,6 +246,11 @@ export async function overviewParts(
     workbench.listFeedback(id),
     workbench.listPublications(id),
   ]);
+  // The open draft's RDF switch (Outputs tab) decides whether the mapping stage is used.
+  const draftDef =
+    view.draft === null
+      ? null
+      : ((await app.deps.templates.get(id, view.draft))?.definition ?? null);
   const since =
     publications
       .map((p) => p.publishedAt)
@@ -291,6 +297,7 @@ export async function overviewParts(
     revise: revise ? statusOf(revise, draftJob.get(revise.id) ?? null) : null,
     mapping: {
       used: vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length > 0,
+      rdf: deliveryTargets(draftDef ?? {}).rdf,
       state: stages.find((s) => s.stage === 'mapping')?.state ?? 'pending',
     },
     evaluation: {

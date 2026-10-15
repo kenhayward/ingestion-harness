@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * A recipe version's label and note (issue #144, migration 0044): what a person says the version
+ * A recipe version's label and note (issue #144, migration 0045): what a person says the version
  * is for. Metadata only: never part of the definition, so it changes nothing that runs and can be
  * set on published versions too.
  */
