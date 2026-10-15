@@ -32,6 +32,36 @@ export function keepDraft<T>(key: string, kept: Kept<T> | null): void {
   }
 }
 
+/** Every kind of kept edit keyed by project (or by recipe id, which is the project id). */
+const PROJECT_KINDS = [
+  'briefDraft',
+  'recipeDraft',
+  'sectionsDraft',
+  'surveyAnswers',
+  'feedbackDraft',
+  'commentDraft',
+  'ontologyGuidance',
+];
+
+/** Forgets every kept edit of a project (it was reset: they describe what is gone). */
+export function forgetProjectDrafts(projectId: string): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+    for (const key of keys) {
+      if (
+        key !== null &&
+        PROJECT_KINDS.some(
+          (kind) => key === `ih.${kind}.${projectId}` || key.startsWith(`ih.${kind}.${projectId}.`),
+        )
+      ) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // storage blocked: nothing was kept
+  }
+}
+
 /** A plain object of strings (typed answers), or null. */
 export function stringRecord(value: unknown): Record<string, string> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
