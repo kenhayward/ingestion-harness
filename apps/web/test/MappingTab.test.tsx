@@ -88,7 +88,7 @@ describe('MappingTab', () => {
     const { onNavigate } = show(false);
     expect(screen.getByText(/Not used: no vocabulary is pinned on Survey/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Choose ontologies on Survey' }));
-    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/survey');
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/survey/ontologies');
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 

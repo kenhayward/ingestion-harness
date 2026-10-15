@@ -1,4 +1,4 @@
-import type { BriefBody } from '@ih/shared';
+import type { BriefBody, SuggestionRecord } from '@ih/shared';
 
 /** Whether the brief already pins a suggested ontology as a vocabulary, and at which version. */
 export function pinState(
@@ -27,4 +27,22 @@ export function staleText(stale: 'library' | 'survey'): string {
   return stale === 'library'
     ? 'The ontology library changed since these suggestions.'
     : 'These suggestions are from an earlier survey.';
+}
+
+/**
+ * For each candidate the suggestions leave uncovered, the also-matched ontology that would
+ * cover it and the term behind it, with how it matched and how closely, so the reader can judge:
+ * `execution_date: OBI v1 matches “extraction date” (lexical, 0.48)`. Candidates nothing in the
+ * library covers get no line.
+ */
+export function uncoveredHints(record: SuggestionRecord): string[] {
+  return record.uncovered.flatMap((candidate) => {
+    const m = record.alsoMatched.find((a) => a.adds.includes(candidate));
+    if (!m) return [];
+    const term = m.evidence.find((e) => e.candidate === candidate);
+    const match = term
+      ? ` matches “${term.label}” (${term.via}, ${term.similarity.toFixed(2)})`
+      : '';
+    return [`${candidate}: ${m.label} v${m.version}${match}`];
+  });
 }

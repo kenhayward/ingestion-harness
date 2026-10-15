@@ -144,12 +144,25 @@ def test_shared_params_and_record_parse() -> None:
     )
 
 
-def test_set_cover_picks_the_module_then_units_and_lists_the_merged_copy() -> None:
+def test_records_from_before_adds_still_parse() -> None:
+    older = {
+        **SHARED["record"],
+        "alsoMatched": [
+            {k: v for k, v in m.items() if k not in ("adds", "evidence")}
+            for m in SHARED["record"]["alsoMatched"]
+        ],
+    }
+    parsed = SuggestionRecord.model_validate(older)
+    assert parsed.also_matched[0].adds == [] and parsed.also_matched[0].evidence == []
+
+
+def test_set_cover_picks_the_module_then_units_and_leaves_out_the_merged_copy() -> None:
     s, library = library_store()
     out = suggest_ontologies(s, CANDIDATES, library, [], vectors=None, model_ref=None)
     assert [x["ontologyId"] for x in out["suggestions"]] == ["domain", "units"]
     assert out["suggestions"][0]["covers"] == ["active_substance", "batch_number", "expiry_date"]
-    assert [x["ontologyId"] for x in out["alsoMatched"]] == ["merged"]
+    # The merged copy covers nothing the suggestions do not: it is not worth listing.
+    assert out["alsoMatched"] == []
     assert out["uncovered"] == ["signatory_name"]
     ev = out["suggestions"][0]["evidence"][0]
     assert ev == {
@@ -341,3 +354,35 @@ def test_invalid_suggest_params_need_review() -> None:
     queue = FakeQueue(jobs=[suggest_job(extra=1)])
     run_once(queue, deps, "w1")
     assert queue.reviewed
+
+
+def test_also_matched_lists_what_each_ontology_would_add_beyond_the_suggestions() -> None:
+    s, library = library_store()
+    s.saved[("extra", 1)] = parse_ontology(
+        (SUGGEST / "extra.ttl").read_bytes(), "text/turtle", "extra.ttl"
+    )
+    library.append(LibraryVersion(id="extra", version=1, label="Extra", terms=2))
+    out = suggest_ontologies(s, CANDIDATES, library, [], vectors=None, model_ref=None)
+    # Extra adds one candidate only (below MIN_GAIN), so it is not suggested, but it is listed
+    # with what it adds and the term that matched, and the candidate stays uncovered.
+    assert [x["ontologyId"] for x in out["suggestions"]] == ["domain", "units"]
+    assert out["alsoMatched"] == [
+        {
+            "ontologyId": "extra",
+            "version": 1,
+            "label": "Extra",
+            "covers": ["batch_number", "signatory_name"],
+            "adds": ["signatory_name"],
+            "evidence": [
+                {
+                    "candidate": "signatory_name",
+                    "iri": "https://ex.example/extra#signatoryName",
+                    "label": "signatory name",
+                    "kind": "datatype_property",
+                    "via": "lexical",
+                    "similarity": 1.0,
+                }
+            ],
+        }
+    ]
+    assert out["uncovered"] == ["signatory_name"]

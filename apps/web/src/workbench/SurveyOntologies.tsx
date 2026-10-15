@@ -11,7 +11,7 @@ import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { BriefOntologies } from './BriefOntologies.js';
-import { pinState, staleText, withPin } from './suggestions.js';
+import { pinState, staleText, uncoveredHints, withPin } from './suggestions.js';
 
 /**
  * The Survey tab's Ontologies section: the survey's suggestions (pin a vocabulary with one click,
@@ -159,19 +159,60 @@ export function SurveyOntologies({
             ))}
           </div>
           {record.alsoMatched.length > 0 && (
-            <details>
+            <details open className="also-matched">
               <summary>Also matched ({record.alsoMatched.length})</summary>
               <ul>
-                {record.alsoMatched.map((m) => (
-                  <li key={`${m.ontologyId}@${m.version}`}>
-                    {m.label} v{m.version} · covers {m.covers.length}: {m.covers.join(', ')}
-                  </li>
-                ))}
+                {record.alsoMatched.map((m) => {
+                  const name = `${m.label} v${m.version}`;
+                  const state = pinState(m, base);
+                  return (
+                    <li key={`${m.ontologyId}@${m.version}`} aria-label={name}>
+                      <span>
+                        <strong>{name}</strong> ·{' '}
+                        {m.adds.length
+                          ? `adds ${m.adds.length}: ${m.adds.join(', ')}`
+                          : `covers ${m.covers.length}: ${m.covers.join(', ')}`}
+                        {m.evidence.length > 0 && (
+                          <span className="muted">
+                            {' '}
+                            ({m.evidence.map((e) => `${e.candidate} → ${e.label}`).join('; ')})
+                          </span>
+                        )}
+                      </span>
+                      {state.kind === 'pinned' ? (
+                        <span className="tone-ok">
+                          <Icon name="check" /> Pinned
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy || retired !== null}
+                          title={retired ?? undefined}
+                          aria-label={
+                            state.kind === 'older'
+                              ? `Use v${m.version} of ${m.label}`
+                              : `Pin ${name}`
+                          }
+                          onClick={() => void save(withPin(base, m.ontologyId, m.version))}
+                        >
+                          {state.kind === 'older'
+                            ? `v${state.pinned} pinned · use v${m.version}`
+                            : 'Pin'}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </details>
           )}
           {record.uncovered.length > 0 && (
-            <p className="muted">Not covered: {record.uncovered.join(', ')}</p>
+            <div className="muted">
+              <p>Not covered by the suggestions: {record.uncovered.join(', ')}</p>
+              {uncoveredHints(record).map((hint) => (
+                <p key={hint}>{hint}</p>
+              ))}
+            </div>
           )}
           {record.notes.map((n) => (
             <p key={n} className="muted">

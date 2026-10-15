@@ -62,44 +62,39 @@ function offer(target: EventTarget) {
   return event;
 }
 
-/**
- * Offers install and waits for the top bar to show it. The shell subscribes to the offer in an
- * effect, which can run after its header is already on screen (the signed-in shell commits from
- * the session check, outside act): an offer made in between reaches the shell only once it has
- * subscribed, so reading the button straight away is a race that load can lose.
- */
-async function offerShown(target: EventTarget, banner: HTMLElement) {
-  const event = offer(target);
-  await within(banner).findByRole('button', { name: 'Install CT Studio' });
-  return event;
-}
+// The top bar is read afresh each time: it re-renders while the app signs in, and a slow run
+// (coverage in CI) could otherwise hold an element that is no longer on the page.
+const signedIn = () => screen.findByLabelText('PDF or Word files'); // Home, signed in
+const installButton = () =>
+  within(screen.getByRole('banner')).queryByRole('button', { name: 'Install CT Studio' });
+const findInstallButton = async () =>
+  within(await screen.findByRole('banner')).findByRole('button', { name: 'Install CT Studio' });
 
 describe('Install CT Studio', () => {
   it('appears in the top bar only while the browser offers install', async () => {
     const target = new EventTarget();
     const install = new InstallPrompt(target);
     render(<App api={fakeApi()} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
-    expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull();
+    await signedIn();
+    expect(installButton()).toBeNull();
 
-    const event = await offerShown(target, banner);
-    await userEvent.click(within(banner).getByRole('button', { name: 'Install CT Studio' }));
+    const event = offer(target);
+    await userEvent.click(await findInstallButton());
     expect(event.prompt).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull(),
-    );
+    await waitFor(() => expect(installButton()).toBeNull());
   });
 
   it('goes away once the app is installed', async () => {
     const target = new EventTarget();
     const install = new InstallPrompt(target);
     render(<App api={fakeApi()} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
-    await offerShown(target, banner);
+    await signedIn();
+    offer(target);
+    expect(await findInstallButton()).toBeInTheDocument();
     act(() => {
       target.dispatchEvent(new Event('appinstalled'));
     });
-    expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull();
+    await waitFor(() => expect(installButton()).toBeNull());
   });
 
   it("is in an admin's account menu too", async () => {
@@ -115,10 +110,11 @@ describe('Install CT Studio', () => {
       })),
     });
     render(<App api={api} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
-    const event = await offerShown(target, banner);
+    await signedIn();
+    const event = offer(target);
+    await findInstallButton(); // the shell has the offer: the menu lists it too
     await userEvent.click(
-      within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
+      within(screen.getByRole('banner')).getByRole('button', { name: 'Ken (admin): account menu' }),
     );
     await userEvent.click(screen.getByRole('menuitem', { name: 'Install CT Studio' }));
     expect(event.prompt).toHaveBeenCalled();

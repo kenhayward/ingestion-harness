@@ -246,3 +246,7 @@ work, never a whole-graph load. The only per-job whole-graph loads are SHACL sha
 - The Survey tab saves one brief change at a time (answers, Pin, the picker, guidance share one
   lock), reads the suggestions again when the survey finishes or is decided, and keeps unsaved
   mapping guidance in `ih.ontologyGuidance.<project>`.
+- *Also matched* (follow-up): only ontologies that add candidates beyond the pins and the
+  suggestions are listed, most added first, each with `adds` and the terms behind them and its
+  own Pin; *Not covered by the suggestions* names, per candidate, the also-matched ontology and
+  term that would cover it, with how it matched and how closely.

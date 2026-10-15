@@ -28,6 +28,11 @@ function tab(overrides = {}, dataPolicy: 'local' | 'external' = 'local') {
   return { api, onBriefSaved };
 }
 
+/** Opens one of the Survey tab's own tabs (Findings, Questions, Candidates, Ontologies). */
+async function open(name: string) {
+  await userEvent.click(await screen.findByRole('tab', { name: new RegExp(`^${name}`) }));
+}
+
 describe('SurveyTab', () => {
   it('runs a survey and polls until it is ready', async () => {
     const listProposals = vi
@@ -45,6 +50,7 @@ describe('SurveyTab', () => {
     expect(
       await screen.findByText('Process validation protocols, blank and executed.'),
     ).toBeInTheDocument();
+    await open('Candidates');
     const candidates = screen.getByRole('table', { name: 'Candidate data' });
     expect(within(candidates).getByText('protocol_number')).toBeInTheDocument();
   });
@@ -101,6 +107,7 @@ describe('SurveyTab', () => {
       ]),
     });
     expect(await screen.findAllByText('Same')).toHaveLength(2);
+    await open('Candidates');
     const table = screen.getByRole('table', { name: 'Candidate data' });
     expect(within(table).getAllByText('protocol_number')).toHaveLength(2);
   });
@@ -111,8 +118,9 @@ describe('SurveyTab', () => {
       listProposals: vi.fn(async () => [proposalView()]),
       saveBrief: vi.fn(async () => saved),
     });
+    await open('Questions');
     await userEvent.type(
-      await screen.findByLabelText('Which copy should be extracted?'),
+      screen.getByLabelText('Which copy should be extracted?'),
       'The executed copy',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
@@ -125,7 +133,8 @@ describe('SurveyTab', () => {
 
   it('explains why Save answers and Run again are disabled', async () => {
     tab({ listProposals: vi.fn(async () => [proposalView()]) });
-    const save = await screen.findByRole('button', { name: 'Save answers to brief (v3)' });
+    await open('Questions');
+    const save = screen.getByRole('button', { name: 'Save answers to brief (v3)' });
     expect(save).toBeDisabled();
     expect(save).toHaveAttribute('title', 'Type an answer first');
     expect(screen.getByRole('button', { name: 'Run again' })).toBeEnabled();
@@ -160,7 +169,8 @@ describe('SurveyTab', () => {
         pollMs={1}
       />,
     );
-    await userEvent.clear(await screen.findByLabelText('Which copy should be extracted?'));
+    await open('Questions');
+    await userEvent.clear(screen.getByLabelText('Which copy should be extracted?'));
     await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
     expect(api.saveBrief).toHaveBeenCalledWith('letter', { ...answered.body, answers: [] });
   });
@@ -196,7 +206,8 @@ describe('SurveyTab', () => {
         pollMs={1}
       />,
     );
-    expect(await screen.findByLabelText('Which copy should be extracted?')).toHaveValue('Blank');
+    await open('Questions');
+    expect(screen.getByLabelText('Which copy should be extracted?')).toHaveValue('Blank');
     expect(screen.getByRole('button', { name: 'Save answers to brief (v3)' })).toBeDisabled();
   });
 
@@ -216,7 +227,8 @@ describe('SurveyTab', () => {
       saveBrief: vi.fn(async () => ({ ...brief, version: 3 })),
       startStage: vi.fn(async () => second),
     });
-    await userEvent.type(await screen.findByLabelText('Which copy should be extracted?'), 'Exec');
+    await open('Questions');
+    await userEvent.type(screen.getByLabelText('Which copy should be extracted?'), 'Exec');
     await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
     await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
     const next = await screen.findByLabelText('Is page 1 a cover?');
@@ -282,9 +294,10 @@ describe('SurveyTab', () => {
         pollMs={1}
       />,
     );
-    const card = (await screen.findByRole('heading', { name: 'Questions from the model' })).closest(
-      'section',
-    )!;
+    await open('Questions');
+    const card = screen
+      .getByRole('heading', { name: 'Questions from the model' })
+      .closest('section')!;
     expect(within(card).getByText('1 of 2 answered')).toBeInTheDocument();
     expect(within(card).getByRole('img', { name: /Answered 1 of 2/ })).toBeInTheDocument();
     expect(within(card).getByText('Why it asks: Some PDFs hold two copies')).toBeInTheDocument();
@@ -314,6 +327,9 @@ describe('SurveyTab', () => {
     )!;
     expect(within(found).getByText(/Main Production Model · brief v1/)).toBeInTheDocument();
     expect(within(found).getByText('Acme — two-column header')).toBeInTheDocument();
+    const anatomy = screen.getByRole('complementary', { name: 'Document anatomy' });
+    expect(within(anatomy).getByText('Find it: PROTOCOL APPROVAL')).toBeInTheDocument();
+    await open('Candidates');
     const table = screen.getByRole('table', { name: 'Candidate data' });
     const [, first, second] = within(table).getAllByRole('row');
     expect(first).toHaveTextContent('FIELD');
@@ -323,8 +339,6 @@ describe('SurveyTab', () => {
     expect(
       screen.getByText('1 field · 1 table · the Outputs stage turns these into fields and tables'),
     ).toBeInTheDocument();
-    const anatomy = screen.getByRole('complementary', { name: 'Document anatomy' });
-    expect(within(anatomy).getByText('Find it: PROTOCOL APPROVAL')).toBeInTheDocument();
   });
 
   it('says In brief once the brief asks for a candidate', async () => {
@@ -339,7 +353,8 @@ describe('SurveyTab', () => {
         pollMs={1}
       />,
     );
-    const table = await screen.findByRole('table', { name: 'Candidate data' });
+    await open('Candidates');
+    const table = screen.getByRole('table', { name: 'Candidate data' });
     expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Yes');
   });
 
@@ -395,6 +410,81 @@ describe('SurveyTab', () => {
     expect(within(header).getByRole('button', { name: 'Skip this stage' })).toBeInTheDocument();
   });
 
+  it('splits the survey into Findings, Questions, Candidates and Ontologies, Findings first', async () => {
+    tab({ listProposals: vi.fn(async () => [proposalView()]) });
+    const list = await screen.findByRole('tablist', { name: 'Survey' });
+    const tabs = within(list).getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      'Findings',
+      'Questions0/1',
+      'Candidates1',
+      'Ontologies',
+    ]);
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { name: 'What the model found' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Document anatomy' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Questions from the model' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Candidate data' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Ontologies' })).toBeNull();
+
+    await open('Candidates');
+    expect(screen.getByRole('tab', { name: /^Candidates/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tabpanel', { name: /^Candidates/ })).toContainElement(
+      screen.getByRole('table', { name: 'Candidate data' }),
+    );
+    expect(screen.queryByRole('heading', { name: 'What the model found' })).toBeNull();
+    // Accept stays below the tabs, whichever is open.
+    expect(screen.getByRole('button', { name: 'Accept survey' })).toBeInTheDocument();
+  });
+
+  it('keeps typed answers while another tab is open', async () => {
+    tab({ listProposals: vi.fn(async () => [proposalView()]) });
+    await open('Questions');
+    await userEvent.type(screen.getByLabelText('Which copy should be extracted?'), 'Executed');
+    expect(screen.getByRole('tab', { name: /^Questions/ })).toHaveTextContent('Questions1/1');
+    await open('Ontologies');
+    await open('Questions');
+    expect(screen.getByLabelText('Which copy should be extracted?')).toHaveValue('Executed');
+  });
+
+  it('opens on the tab a link names', async () => {
+    const api = fakeApi({ listProposals: vi.fn(async () => [proposalView()]) });
+    render(
+      <SurveyTab
+        api={api}
+        projectId="letter"
+        dataPolicy="local"
+        brief={brief}
+        onBriefSaved={vi.fn()}
+        pollMs={1}
+        view="ontologies"
+      />,
+    );
+    expect(await screen.findByRole('tab', { name: 'Ontologies' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('heading', { name: 'Ontologies' })).toBeInTheDocument();
+  });
+
+  it('says what each tab will hold before the survey has run', async () => {
+    tab({ listProposals: vi.fn(async () => []) });
+    expect(
+      await screen.findByText('Run the survey to see what the model finds in the dev samples.'),
+    ).toBeInTheDocument();
+    await open('Questions');
+    expect(
+      screen.getByText('Run the survey to see the questions the model asks about the brief.'),
+    ).toBeInTheDocument();
+    await open('Candidates');
+    expect(
+      screen.getByText('Run the survey to see the data the model proposes to extract.'),
+    ).toBeInTheDocument();
+  });
+
   it('points to Outputs once accepted', async () => {
     const p = proposalView();
     tab({
@@ -437,17 +527,21 @@ describe('SurveyTab ontology suggestions (final review fixes)', () => {
       getOntologySuggestions: vi.fn(async () => suggestions),
       saveBrief,
     });
+    await open('Questions');
     await userEvent.type(
-      await screen.findByLabelText('Which copy should be extracted?'),
+      screen.getByLabelText('Which copy should be extracted?'),
       'The executed copy',
     );
+    await open('Ontologies');
     await userEvent.click(await screen.findByRole('button', { name: 'Pin IDMP-O v2' }));
+    await open('Questions');
     expect(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' })).toBeDisabled();
     finish({ ...brief, version: 3 });
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' })).toBeEnabled(),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
+    await open('Ontologies');
     expect(screen.getByRole('button', { name: 'Pin IDMP-O v2' })).toBeDisabled();
     finish({ ...brief, version: 4 });
     expect(saveBrief).toHaveBeenCalledTimes(2);
@@ -463,6 +557,7 @@ describe('SurveyTab ontology suggestions (final review fixes)', () => {
       .mockResolvedValueOnce({ record: null, running: false, failed: null, stale: null })
       .mockResolvedValue(suggestions);
     tab({ listProposals, getOntologySuggestions });
+    await open('Ontologies');
     expect(await screen.findByRole('article', { name: 'IDMP-O v2' })).toBeInTheDocument();
     expect(getOntologySuggestions.mock.calls.length).toBeGreaterThanOrEqual(2);
   });

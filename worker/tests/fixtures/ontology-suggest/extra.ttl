@@ -1,0 +1,6 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix x: <https://ex.example/extra#> .
+<https://ex.example/extra> a owl:Ontology .
+x:signatoryName a owl:DatatypeProperty ; rdfs:label "signatory name" .
+x:batchNumber a owl:DatatypeProperty ; rdfs:label "batch number" .
