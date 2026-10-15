@@ -48,7 +48,7 @@ const view = (over: Partial<OntologySuggestionsView> = {}): OntologySuggestionsV
 function show(overrides = {}, props: Partial<Parameters<typeof SurveyOntologies>[0]> = {}) {
   const api = fakeApi({ getOntologySuggestions: vi.fn(async () => view()), ...overrides });
   const onBriefSaved = vi.fn();
-  render(
+  const r = render(
     <SurveyOntologies
       api={api}
       projectId="letter"
@@ -61,7 +61,7 @@ function show(overrides = {}, props: Partial<Parameters<typeof SurveyOntologies>
       {...props}
     />,
   );
-  return { api, onBriefSaved };
+  return { api, onBriefSaved, unmount: r.unmount };
 }
 
 describe('SurveyOntologies', () => {
@@ -262,5 +262,16 @@ describe('SurveyOntologies manual picker (moved from the Brief)', () => {
       },
     );
     expect(await screen.findByText(/mapping will use local models/)).toBeTruthy();
+  });
+});
+
+describe('SurveyOntologies guidance draft', () => {
+  it('keeps unsaved mapping guidance when the tab is left', async () => {
+    const first = show();
+    await userEvent.type(await screen.findByLabelText('Guidance for the mapping'), 'Prefer IDMP-O');
+    first.unmount();
+    show();
+    expect(await screen.findByLabelText('Guidance for the mapping')).toHaveValue('Prefer IDMP-O');
+    expect(screen.getByRole('button', { name: 'Save guidance' })).toBeEnabled();
   });
 });

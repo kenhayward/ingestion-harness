@@ -408,3 +408,62 @@ describe('SurveyTab', () => {
     );
   });
 });
+
+describe('SurveyTab ontology suggestions (final review fixes)', () => {
+  const suggestions = {
+    record: {
+      surveyProposalId: 'p1',
+      createdAt: '2026-10-15T10:00:00Z',
+      candidates: 1,
+      libraryKey: 'lexical|idmp@2',
+      suggestions: [
+        { ontologyId: 'idmp', version: 2, label: 'IDMP-O', covers: ['a', 'b'], evidence: [] },
+      ],
+      pinned: [],
+      alsoMatched: [],
+      uncovered: [],
+      notes: [],
+    },
+    running: false,
+    failed: null,
+    stale: null,
+  };
+
+  it('saves one brief change at a time: Pin and Save answers lock each other', async () => {
+    let finish: (b: typeof brief) => void = () => {};
+    const saveBrief = vi.fn(() => new Promise<typeof brief>((r) => (finish = r)));
+    tab({
+      listProposals: vi.fn(async () => [proposalView()]),
+      getOntologySuggestions: vi.fn(async () => suggestions),
+      saveBrief,
+    });
+    await userEvent.type(
+      await screen.findByLabelText('Which copy should be extracted?'),
+      'The executed copy',
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Pin IDMP-O v2' }));
+    expect(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' })).toBeDisabled();
+    finish({ ...brief, version: 3 });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save 1 answer to brief (v3)' }));
+    expect(screen.getByRole('button', { name: 'Pin IDMP-O v2' })).toBeDisabled();
+    finish({ ...brief, version: 4 });
+    expect(saveBrief).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads the suggestions again when the survey finishes on the open tab', async () => {
+    const listProposals = vi
+      .fn()
+      .mockResolvedValueOnce([proposalView({ status: 'running', body: null })])
+      .mockResolvedValue([proposalView()]);
+    const getOntologySuggestions = vi
+      .fn()
+      .mockResolvedValueOnce({ record: null, running: false, failed: null, stale: null })
+      .mockResolvedValue(suggestions);
+    tab({ listProposals, getOntologySuggestions });
+    expect(await screen.findByRole('article', { name: 'IDMP-O v2' })).toBeInTheDocument();
+    expect(getOntologySuggestions.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});

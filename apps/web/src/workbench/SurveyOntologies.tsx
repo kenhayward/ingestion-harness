@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   EMPTY_BRIEF,
   type Brief,
@@ -9,6 +9,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { BriefOntologies } from './BriefOntologies.js';
 import { pinState, staleText, withPin } from './suggestions.js';
 
@@ -23,6 +24,9 @@ export function SurveyOntologies({
   dataPolicy,
   brief,
   onBriefSaved,
+  saveBrief,
+  briefBusy = false,
+  surveyKey = '',
   pollMs,
   retired,
   hasSurvey,
@@ -32,6 +36,12 @@ export function SurveyOntologies({
   dataPolicy: DataPolicy;
   brief: Brief | null;
   onBriefSaved: (brief: Brief) => void;
+  /** The tab's one-at-a-time brief save (null: another save is in flight); default: save here. */
+  saveBrief?: (next: BriefBody) => Promise<Brief | null>;
+  /** Another brief save on the tab is in flight. */
+  briefBusy?: boolean;
+  /** The survey proposal's id and status: the suggestions are read again when it changes. */
+  surveyKey?: string;
   pollMs: number;
   retired: string | null;
   hasSurvey: boolean;
@@ -40,14 +50,28 @@ export function SurveyOntologies({
   const [view, setView] = useState<OntologySuggestionsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
   const body = brief?.body ?? null;
   const savedGuidance = body?.ontologyGuidance ?? '';
-  const [guidance, setGuidance] = useState(savedGuidance);
-  useEffect(() => setGuidance(savedGuidance), [savedGuidance]);
+  const keptKey = `ih.ontologyGuidance.${projectId}`;
+  // Unsaved guidance survives leaving the tab (ui/keptDraft.ts), as the Brief's did.
+  const [restored] = useState(() => {
+    const kept = loadKept(keptKey, (v) => (typeof v === 'string' ? v : null));
+    return kept && kept.value !== savedGuidance ? kept.value : null;
+  });
+  const [guidance, setGuidance] = useState(restored ?? savedGuidance);
+  useEffect(() => {
+    keepDraft(
+      keptKey,
+      guidance !== savedGuidance ? { base: brief?.version ?? null, value: guidance } : null,
+    );
+  }, [keptKey, guidance, savedGuidance, brief?.version]);
 
   const load = useCallback(
     () => api.getOntologySuggestions(projectId).then(setView, (e: Error) => setError(e.message)),
-    [api, projectId],
+    // surveyKey: a survey that finishes, or is decided, on the open tab brings new suggestions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, projectId, surveyKey],
   );
   useEffect(() => {
     void load();
@@ -58,15 +82,21 @@ export function SurveyOntologies({
     return () => clearTimeout(t);
   }, [view, load, pollMs]);
 
-  const save = async (next: BriefBody) => {
-    if (saving) return;
+  const busy = saving || briefBusy;
+  const save = async (next: BriefBody): Promise<boolean> => {
+    if (lock.current || briefBusy) return false;
+    lock.current = true;
     setSaving(true);
     setError(null);
     try {
+      if (saveBrief) return (await saveBrief(next)) !== null;
       onBriefSaved(await api.saveBrief(projectId, next));
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
+      lock.current = false;
       setSaving(false);
     }
   };
@@ -122,7 +152,7 @@ export function SurveyOntologies({
                 s={s}
                 of={record.candidates}
                 state={pinState(s, base)}
-                disabled={saving || retired !== null}
+                disabled={busy || retired !== null}
                 reason={retired}
                 onPin={() => void save(withPin(base, s.ontologyId, s.version))}
               />
@@ -163,11 +193,15 @@ export function SurveyOntologies({
           setGuidance(next.ontologyGuidance);
         }}
       />
+      {busy && <p className="muted">Saving to the brief…</p>}
+      {restored !== null && guidance === restored && guidance !== savedGuidance && (
+        <p className="kept-note">Restored your unsaved guidance from your last visit.</p>
+      )}
       {guidance !== savedGuidance && (
         <button
           type="button"
           className="primary"
-          disabled={saving}
+          disabled={busy}
           onClick={() => void save({ ...base, ontologyGuidance: guidance })}
         >
           Save guidance
