@@ -13,6 +13,7 @@ import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
+import { SurveyOntologies } from './SurveyOntologies.js';
 import { keepDraft, loadKept, stringRecord } from '../ui/keptDraft.js';
 import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
@@ -396,6 +397,18 @@ export function SurveyTab({
           )}
         </div>
       )}
+      <SurveyOntologies
+        api={api}
+        projectId={projectId}
+        dataPolicy={dataPolicy}
+        brief={brief}
+        onBriefSaved={onBriefSaved}
+        pollMs={pollMs}
+        retired={retired}
+        hasSurvey={
+          proposal !== null && proposal?.status !== 'failed' && proposal?.status !== 'running'
+        }
+      />
     </div>
   );
 }

@@ -277,6 +277,15 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     startGraphPreview: vi.fn(async () => {
       throw new Error('startGraphPreview not faked');
     }),
+    getOntologySuggestions: vi.fn(async () => ({
+      record: null,
+      running: false,
+      failed: null,
+      stale: null,
+    })),
+    refreshOntologySuggestions: vi.fn(async () => {
+      throw new Error('refreshOntologySuggestions not faked');
+    }),
     getGraphPreview: vi.fn(async () => {
       throw new Error('getGraphPreview not faked');
     }),

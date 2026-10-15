@@ -107,7 +107,9 @@ describe('the mapping stage (ADR 0011)', () => {
   it('refuses without vocabulary ontologies in the brief, before outputs, and on an unready version', async () => {
     const { brief, skip, start, ontologies } = await project();
     await brief({ purpose: 'Letters', ontologies: [{ ...acme, role: 'shapes' }] });
-    expect((await start()).json()).toEqual({ error: 'pin a vocabulary ontology on the Survey tab first' });
+    expect((await start()).json()).toEqual({
+      error: 'pin a vocabulary ontology on the Survey tab first',
+    });
     await brief({ purpose: 'Letters', ontologies: [acme] });
     expect((await start()).json()).toEqual({ error: 'complete the outputs stage first' });
     await skip('survey');

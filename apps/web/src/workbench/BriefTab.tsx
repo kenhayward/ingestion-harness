@@ -5,7 +5,6 @@ import {
   SurveyBodySchema,
   briefDiff,
   type Brief,
-  type DataPolicy,
   type BriefBody,
   type BriefSection,
   type BriefVersionView,
@@ -14,7 +13,6 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
-import { BriefOntologies } from './BriefOntologies.js';
 import { Icon } from '../ui/Icon.js';
 import {
   BRIEF_HINT,
@@ -158,12 +156,9 @@ export function BriefTab({
   onSaved,
   onNavigate,
   aside,
-  dataPolicy = null,
 }: {
   api: Api;
   projectId: string;
-  /** The project's data policy: a local-only ontology on an external project gets a note. */
-  dataPolicy?: DataPolicy | null;
   brief: Brief | null;
   /** The Brief entry of the project overview (status line); null until it loads. */
   item: OverviewItem | null;
@@ -386,16 +381,22 @@ export function BriefTab({
               Open Survey
             </button>
           </section>
-          <BriefOntologies
-            api={api}
-            ontologies={body.ontologies}
-            guidance={body.ontologyGuidance}
-            dataPolicy={dataPolicy}
-            onChange={(next) => {
-              setMessage(null);
-              setBody({ ...body, ...next });
-            }}
-          />
+          <section className="card brief-ontology-summary" aria-label="Ontologies">
+            <h3>Ontologies</h3>
+            <p className="muted">
+              {body.ontologies.length === 0
+                ? 'No ontologies pinned.'
+                : `${body.ontologies.length} ${body.ontologies.length === 1 ? 'ontology' : 'ontologies'} pinned: ${body.ontologies
+                    .map(
+                      (o) =>
+                        `${o.ontologyId} v${o.version}${o.role === 'shapes' ? ' (shapes)' : ''}`,
+                    )
+                    .join(' · ')}`}
+            </p>
+            <button type="button" onClick={() => onNavigate(`#/workbench/${projectId}/survey`)}>
+              {body.ontologies.length === 0 ? 'Choose on Survey' : 'Change on Survey'}
+            </button>
+          </section>
         </form>
 
         <div className="brief-side">

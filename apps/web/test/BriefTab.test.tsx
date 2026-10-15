@@ -332,72 +332,58 @@ describe('BriefTab keeps unsaved edits (per project, in this browser)', () => {
   });
 });
 
-describe('BriefTab ontologies (ADR 0011)', () => {
-  const summary = (id: string, latest: number, localOnly = false) =>
-    ({
-      id,
-      label: id === 'acme' ? 'Acme terms' : 'Pharma',
-      localOnly,
-      latest: { version: latest, status: 'ready' },
-    }) as unknown as Awaited<ReturnType<Api['listOntologies']>>[number];
-  const detail = {
-    id: 'acme',
-    label: 'Acme terms',
-    versions: [
-      { version: 2, status: 'failed' },
-      { version: 1, status: 'ready' },
-    ],
-  } as unknown as Awaited<ReturnType<Api['getOntology']>>;
+describe('BriefTab ontologies (ADR 0011): a summary, chosen on Survey', () => {
+  it('summarises the pinned ontologies and links to Survey', async () => {
+    const onNavigate = vi.fn();
+    show(
+      fakeApi(),
+      brief(2, {
+        ontologies: [
+          { ontologyId: 'idmp', version: 2, role: 'vocabulary' },
+          { ontologyId: 'shp', version: 1, role: 'shapes' },
+        ],
+      }),
+      { onNavigate },
+    );
+    const section = screen.getByRole('region', { name: 'Ontologies' });
+    expect(section).toHaveTextContent('2 ontologies pinned: idmp v2 · shp v1 (shapes)');
+    expect(screen.queryByRole('button', { name: 'Add ontology' })).toBeNull();
+    await userEvent.click(within(section).getByRole('button', { name: 'Change on Survey' }));
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey');
+  });
 
-  it('adds an ontology with a ready version and a role, and saves it with the guidance', async () => {
+  it('says when none is pinned', () => {
+    show(fakeApi(), brief(2));
+    const section = screen.getByRole('region', { name: 'Ontologies' });
+    expect(section).toHaveTextContent('No ontologies pinned.');
+    expect(within(section).getByRole('button', { name: 'Choose on Survey' })).toBeTruthy();
+  });
+
+  it('never restores ontology picks from a kept brief draft', async () => {
+    // As an older build kept them: the ontologies section among the edited ones.
+    localStorage.setItem(
+      'ih.briefDraft.letter',
+      JSON.stringify({
+        base: 2,
+        value: {
+          rules: 'DMY',
+          ontologies: [{ ontologyId: 'old', version: 1, role: 'vocabulary' }],
+          ontologyGuidance: 'old guidance',
+        },
+      }),
+    );
     const saveBrief = vi.fn(async (_id: string, body: BriefBody) => brief(3, body));
-    const api = fakeApi({
-      listOntologies: vi.fn(async () => [summary('acme', 2)]),
-      getOntology: vi.fn(async () => detail),
-      saveBrief,
-    } as Partial<Api>);
-    show(api, brief(2));
-    const section = await screen.findByRole('region', { name: 'Ontologies' });
-    await userEvent.selectOptions(await within(section).findByLabelText('Ontology'), 'acme');
-    const versionSelect = await within(section).findByLabelText('Version');
-    expect(within(versionSelect).queryByRole('option', { name: 'v2' })).toBeNull();
-    await userEvent.selectOptions(versionSelect, '1');
-    await userEvent.selectOptions(within(section).getByLabelText('Role'), 'vocabulary');
-    await userEvent.click(within(section).getByRole('button', { name: 'Add ontology' }));
-    await userEvent.type(within(section).getByLabelText('Guidance for the mapping'), 'Prefer acme');
+    const saved = brief(2, {
+      ontologies: [{ ontologyId: 'idmp', version: 2, role: 'vocabulary' }],
+    });
+    show(fakeApi({ saveBrief } as Partial<Api>), saved);
+    expect(screen.getByLabelText('Rules')).toHaveValue('DMY');
+    expect(screen.getByRole('region', { name: 'Ontologies' })).toHaveTextContent('idmp v2');
     await userEvent.click(screen.getByRole('button', { name: 'Save as v3' }));
     expect(saveBrief.mock.calls[0]![1]).toMatchObject({
-      ontologies: [{ ontologyId: 'acme', version: 1, role: 'vocabulary' }],
-      ontologyGuidance: 'Prefer acme',
+      rules: 'DMY',
+      ontologies: [{ ontologyId: 'idmp', version: 2, role: 'vocabulary' }],
+      ontologyGuidance: '',
     });
-  });
-
-  it('says when a newer ready version exists, and lets the pick move to it', async () => {
-    const api = fakeApi({
-      listOntologies: vi.fn(async () => [summary('acme', 3)]),
-    } as Partial<Api>);
-    show(api, brief(2, { ontologies: [{ ontologyId: 'acme', version: 1, role: 'vocabulary' }] }));
-    const pick = await screen.findByRole('listitem', { name: 'acme v1' });
-    expect(pick).toHaveTextContent('Update available: v3');
-    await userEvent.click(within(pick).getByRole('button', { name: 'Use v3' }));
-    expect(screen.getByRole('listitem', { name: 'acme v3' })).toBeTruthy();
-  });
-
-  it('notes that a local-only ontology keeps mapping on local models', async () => {
-    const api = fakeApi({
-      listOntologies: vi.fn(async () => [summary('pharma', 1, true)]),
-    } as Partial<Api>);
-    render(
-      <BriefTab
-        api={api}
-        projectId="letter"
-        brief={brief(2, { ontologies: [{ ontologyId: 'pharma', version: 1, role: 'vocabulary' }] })}
-        item={item}
-        dataPolicy="external"
-        onSaved={vi.fn()}
-        onNavigate={vi.fn()}
-      />,
-    );
-    expect(await screen.findByText(/mapping will use local models/)).toBeTruthy();
   });
 });

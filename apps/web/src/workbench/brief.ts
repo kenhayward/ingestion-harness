@@ -111,7 +111,13 @@ export type BriefDraft = { base: number | null; changes: Partial<BriefBody> };
 const draftKey = (projectId: string) => `ih.briefDraft.${projectId}`;
 const briefChanges = (value: unknown): Partial<BriefBody> | null => {
   const changes = BriefBodySchema.partial().safeParse(value);
-  return changes.success ? changes.data : null;
+  if (!changes.success) return null;
+  // Ontologies are chosen on the Survey tab and saved at once: a kept draft (from a build that
+  // edited them here) must never put old picks back.
+  const rest: Partial<BriefBody> = { ...changes.data };
+  delete rest.ontologies;
+  delete rest.ontologyGuidance;
+  return rest;
 };
 
 export function loadBriefDraft(projectId: string): BriefDraft | null {

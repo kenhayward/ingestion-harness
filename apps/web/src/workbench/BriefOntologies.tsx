@@ -8,12 +8,15 @@ import { Icon } from '../ui/Icon.js';
  * (vocabulary) or that check the document's graph (shapes), and guidance for the mapping.
  */
 export function BriefOntologies({
+  title = 'Ontologies',
   api,
   ontologies,
   guidance,
   dataPolicy,
   onChange,
 }: {
+  /** The card's heading (the Survey tab's section has its own "Ontologies"). */
+  title?: string;
   api: Api;
   ontologies: BriefOntology[];
   guidance: string;
@@ -48,7 +51,7 @@ export function BriefOntologies({
         <Icon name="graph" />
       </span>
       <div className="brief-ontologies-body">
-        <h3 id={titleId}>Ontologies</h3>
+        <h3 id={titleId}>{title}</h3>
         <p className="muted">
           The vocabularies the Mapping stage draws its terms from, and shapes the document&apos;s
           graph is checked against.

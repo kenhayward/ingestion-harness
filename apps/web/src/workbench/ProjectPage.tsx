@@ -277,7 +277,6 @@ export function ProjectPage({
               projectId={project.id}
               brief={view.brief}
               item={itemOf('brief')}
-              dataPolicy={project.dataPolicy}
               onNavigate={onNavigate}
               onSaved={(brief) => {
                 setView({ ...view, brief });
