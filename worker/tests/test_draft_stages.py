@@ -180,6 +180,54 @@ def test_empty_strings_and_lists_are_treated_as_absent() -> None:
     assert any("sections" in e for e in errors)
 
 
+CHUNK_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "document": {"sections": [{"id": "all", "anchor": "\\A"}, {"id": "end", "anchor": "^End"}]},
+    "outputs": {"fields": [{"id": "sender"}], "tables": [{"id": "rows", "columns": [{"id": "x"}]}]},
+}
+
+
+@pytest.mark.parametrize(
+    ("item", "kept"),
+    [
+        (step_item(id="t", fields=None, table="rows", chunkPages=5), True),
+        (step_item(chunkPages=5), False),  # a field step
+        (
+            step_item(id="t", fields=None, table="rows", sections=["all", "end"], chunkPages=5),
+            False,
+        ),
+    ],
+)
+def test_chunk_pages_where_it_cannot_apply_is_dropped_with_a_note(
+    item: dict[str, Any], kept: bool
+) -> None:
+    other = (
+        step_item(id="o", fields=None, table="rows")
+        if item["table"] is None
+        else step_item(id="o", fields=["sender"])
+    )
+    body, errors = run(STEPS, {"notes": "n", "changes": [item, other]}, CHUNK_DRAFT)
+    assert errors == []
+    step = body["changes"][0]["step"]
+    if kept:
+        assert step["chunkPages"] == 5 and body["notes"] == "n"
+    else:
+        assert "chunkPages" not in step
+        assert body["notes"].startswith("n\n") and repr(item["id"]) in body["notes"]
+
+
+def test_revise_keeps_the_note_about_dropped_chunk_pages() -> None:
+    step = {k: v for k, v in step_item(chunkPages=5).items() if k not in ("op", "reason")}
+    body, errors = REVISE.convert(
+        {
+            "notes": "",
+            "changes": [{"op": "putStep", "step": step, "answers": [], "reason": "r"}],
+        }
+    )
+    assert errors == [] and "chunkPages" not in body["changes"][0]["step"]
+    assert "'head'" in body["notes"]
+
+
 def test_removes_are_checked_against_the_draft_after_earlier_changes() -> None:
     both = [output_item(), output_item(op="removeOutput")]
     _, errors = run(OUTPUTS, {"notes": "", "changes": both})
