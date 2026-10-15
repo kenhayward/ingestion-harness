@@ -18489,6 +18489,367 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/reset": {
+      "post": {
+        "operationId": "resetProject",
+        "summary": "Reset a project",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "Starts the project again, keeping only its samples (prepared as they are) and the\nbrief's written sections. Deleted: its proposals and stage decisions, feedback,\ntest, reference and evaluation runs with their files, every reference of the\ndocument type, survey answers and pinned ontologies. The open draft becomes an\nempty recipe of the same name and version, with a change log of one entry.\nPublished versions and the publication log stay; the data policy, threshold and\npins too. Queued and running jobs of the project are deleted with the rest.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project, reset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "dataPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "external"
+                          ]
+                        },
+                        "dataPolicyChangedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dataPolicyChangedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishThreshold": {
+                          "type": "number"
+                        },
+                        "thresholdSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "thresholdSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "createdAt",
+                        "dataPolicy",
+                        "dataPolicyChangedAt",
+                        "dataPolicyChangedBy",
+                        "publishThreshold",
+                        "thresholdSetBy",
+                        "thresholdSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "brief": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "body": {
+                              "type": "object",
+                              "properties": {
+                                "purpose": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "outputs": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "exampleOutput": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "glossary": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "variants": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "rules": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "answers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "answer": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "answer"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "version",
+                            "body",
+                            "createdAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "draft",
+                    "published",
+                    "brief",
+                    "retired"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The project, reset."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/publish-gate": {
       "get": {
         "operationId": "getPublishGate",
