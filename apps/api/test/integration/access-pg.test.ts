@@ -35,7 +35,10 @@ describe.skipIf(!url)('PgAccessRepo', { timeout: 60_000 }, () => {
   it('parallel wrong guesses count to exactly 10, lock once, and the right one is then refused', async () => {
     const repo = await make();
     await repo.rotateAdminPassword();
-    const created = await repo.createUser({ name: 'P', email: 'p@example.com', role: 'user' }, null);
+    const created = await repo.createUser(
+      { name: 'P', email: 'p@example.com', role: 'user' },
+      null,
+    );
     if (typeof created === 'string') throw new Error(created);
     const tries = await Promise.all(
       Array.from({ length: LOCK_AFTER + 5 }, () => repo.login('p@example.com', 'wrong')),
@@ -53,7 +56,10 @@ describe.skipIf(!url)('PgAccessRepo', { timeout: 60_000 }, () => {
   it('a right password racing the 10th wrong one never opens a session after the lock', async () => {
     const repo = await make();
     await repo.rotateAdminPassword();
-    const created = await repo.createUser({ name: 'Q', email: 'q@example.com', role: 'user' }, null);
+    const created = await repo.createUser(
+      { name: 'Q', email: 'q@example.com', role: 'user' },
+      null,
+    );
     if (typeof created === 'string') throw new Error(created);
     for (let i = 0; i < LOCK_AFTER - 1; i++) await repo.login('q@example.com', 'wrong');
     const [wrong, right] = await Promise.all([

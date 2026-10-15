@@ -54,9 +54,9 @@ describe('passwords', () => {
   });
 
   it('policy: must differ from the current password', () => {
-    expect(
-      passwordProblem('same old phrase!', { email: null, current: 'same old phrase!' }),
-    ).toBe('choose a password different from the current one');
+    expect(passwordProblem('same old phrase!', { email: null, current: 'same old phrase!' })).toBe(
+      'choose a password different from the current one',
+    );
   });
 
   it('normalises emails', () => {

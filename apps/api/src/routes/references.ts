@@ -267,12 +267,7 @@ export const referenceRoutes: FastifyPluginAsync = async (app) => {
       const jobs = [];
       for (const reference of references) {
         jobs.push(
-          await app.deps.repo.createRegressionJob(
-            reference,
-            version,
-            params,
-            creatorOf(req),
-          ),
+          await app.deps.repo.createRegressionJob(reference, version, params, creatorOf(req)),
         );
       }
       return reply.code(201).send({ jobs });

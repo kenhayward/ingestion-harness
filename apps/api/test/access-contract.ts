@@ -111,9 +111,9 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
       await repo.changePassword(a.sessionId, password, 'my new long phrase');
       const b = await signIn(repo, 'ken@example.com', 'my new long phrase');
       const c = await signIn(repo, 'ken@example.com', 'my new long phrase');
-      expect(await repo.changePassword(b.sessionId, 'my new long phrase', 'another long phrase')).toBe(
-        'ok',
-      );
+      expect(
+        await repo.changePassword(b.sessionId, 'my new long phrase', 'another long phrase'),
+      ).toBe('ok');
       expect(await repo.session(b.sessionId)).not.toBeNull();
       expect(await repo.session(c.sessionId)).toBeNull();
     });
@@ -122,12 +122,14 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
       const { repo, user, password } = await setup();
       const open = await signIn(repo, 'ken@example.com', password);
       const results = await fail(repo, LOCK_AFTER);
-      expect(results.slice(0, 9).every((r) => r.kind === 'invalid' && r.locked === null)).toBe(true);
-      const last = results[9]!;
-      expect(last.kind === 'invalid' && last.failures).toBe(LOCK_AFTER);
-      expect(last.kind === 'invalid' && typeof last.locked === 'object' && last.locked !== null).toBe(
+      expect(results.slice(0, 9).every((r) => r.kind === 'invalid' && r.locked === null)).toBe(
         true,
       );
+      const last = results[9]!;
+      expect(last.kind === 'invalid' && last.failures).toBe(LOCK_AFTER);
+      expect(
+        last.kind === 'invalid' && typeof last.locked === 'object' && last.locked !== null,
+      ).toBe(true);
       // the right password is refused too, and nothing more is counted
       expect((await repo.login('ken@example.com', password)).kind).toBe('locked');
       expect((await repo.login('ken@example.com', 'wrong guess')).kind).toBe('locked');
@@ -168,30 +170,36 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
       expect((await fail(repo, 1))[0]).toMatchObject({ failures: 1, locked: null });
     });
 
-    it.skipIf(!opts.clock)(`the ${DISABLE_AFTER}th failure disables and ends sessions`, async () => {
-      const { repo, clock, user, password } = await setup();
-      const open = await signIn(repo, 'ken@example.com', password);
-      await fail(repo, LOCK_AFTER);
-      for (let n = LOCK_AFTER + 1; n <= DISABLE_AFTER; n++) {
+    it.skipIf(!opts.clock)(
+      `the ${DISABLE_AFTER}th failure disables and ends sessions`,
+      async () => {
+        const { repo, clock, user, password } = await setup();
+        const open = await signIn(repo, 'ken@example.com', password);
+        await fail(repo, LOCK_AFTER);
+        for (let n = LOCK_AFTER + 1; n <= DISABLE_AFTER; n++) {
+          clock!.advance(24 * 60 * MIN + 1);
+          // keep the session in use, so only the disable can end it (not the 7-day idle rule)
+          expect(await repo.session(open.sessionId)).not.toBeNull();
+          const [r] = await fail(repo, 1);
+          expect(r).toMatchObject({
+            failures: n,
+            locked: n === DISABLE_AFTER ? 'disabled' : expect.anything(),
+          });
+        }
+        expect(await repo.session(open.sessionId)).toBeNull();
         clock!.advance(24 * 60 * MIN + 1);
-        // keep the session in use, so only the disable can end it (not the 7-day idle rule)
-        expect(await repo.session(open.sessionId)).not.toBeNull();
-        const [r] = await fail(repo, 1);
-        expect(r).toMatchObject({ failures: n, locked: n === DISABLE_AFTER ? 'disabled' : expect.anything() });
-      }
-      expect(await repo.session(open.sessionId)).toBeNull();
-      clock!.advance(24 * 60 * MIN + 1);
-      expect(await repo.login('ken@example.com', password)).toEqual({
-        kind: 'disabled',
-        userId: user.id,
-      });
-      expect((await repo.listUsers()).find((u) => u.id === user.id)).toMatchObject({
-        status: 'disabled',
-        disabledReason: 'failed-sign-ins',
-        disabledBy: null,
-        failedSignIns: DISABLE_AFTER,
-      });
-    });
+        expect(await repo.login('ken@example.com', password)).toEqual({
+          kind: 'disabled',
+          userId: user.id,
+        });
+        expect((await repo.listUsers()).find((u) => u.id === user.id)).toMatchObject({
+          status: 'disabled',
+          disabledReason: 'failed-sign-ins',
+          disabledBy: null,
+          failedSignIns: DISABLE_AFTER,
+        });
+      },
+    );
 
     it('a success resets the count and reports what it cleared (D9)', async () => {
       const { repo, password } = await setup();
@@ -255,16 +263,19 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
       await signIn(repo, 'ken@example.com', password);
     });
 
-    it.skipIf(!opts.clock)('sessions end 30 days after sign-in even when used daily (D10)', async () => {
-      const { repo, clock, password } = await setup();
-      const s = await signIn(repo, 'ken@example.com', password);
-      for (let day = 1; day < 30; day++) {
+    it.skipIf(!opts.clock)(
+      'sessions end 30 days after sign-in even when used daily (D10)',
+      async () => {
+        const { repo, clock, password } = await setup();
+        const s = await signIn(repo, 'ken@example.com', password);
+        for (let day = 1; day < 30; day++) {
+          clock!.advance(DAY);
+          expect(await repo.session(s.sessionId)).not.toBeNull();
+        }
         clock!.advance(DAY);
-        expect(await repo.session(s.sessionId)).not.toBeNull();
-      }
-      clock!.advance(DAY);
-      expect(await repo.session(s.sessionId)).toBeNull();
-    });
+        expect(await repo.session(s.sessionId)).toBeNull();
+      },
+    );
 
     it.skipIf(!opts.clock)('sessions end after 7 idle days', async () => {
       const { repo, clock, password } = await setup();
@@ -282,7 +293,12 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
         ip: '10.0.0.1',
         userAgent: 'Firefox',
       });
-      await repo.recordSignIn({ userId: null, result: 'unknown-login', ip: '10.0.0.2', userAgent: null });
+      await repo.recordSignIn({
+        userId: null,
+        result: 'unknown-login',
+        ip: '10.0.0.2',
+        userAgent: null,
+      });
       const all = await repo.listSignIns({ limit: 50 });
       expect(all.map((e) => e.result)).toEqual(['unknown-login', 'wrong-password']);
       expect(all[1]).toMatchObject({
@@ -294,9 +310,9 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
         userAgent: 'Firefox',
       });
       expect(all[0]).toMatchObject({ userId: null, name: null });
-      expect(
-        (await repo.listSignIns({ userId: user.id, limit: 50 })).map((e) => e.result),
-      ).toEqual(['wrong-password']);
+      expect((await repo.listSignIns({ userId: user.id, limit: 50 })).map((e) => e.result)).toEqual(
+        ['wrong-password'],
+      );
       expect(await repo.listSignIns({ limit: 1 })).toHaveLength(1);
       expect(await repo.pruneSignIns(new Date('2000-01-01'))).toBe(0);
       expect(await repo.pruneSignIns(new Date('2100-01-01'))).toBe(2);
@@ -305,7 +321,12 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
 
     it('truncates long user agents to 200 characters', async () => {
       const { repo } = await setup();
-      await repo.recordSignIn({ userId: null, result: 'unknown-login', ip: '10.0.0.3', userAgent: 'x'.repeat(500) });
+      await repo.recordSignIn({
+        userId: null,
+        result: 'unknown-login',
+        ip: '10.0.0.3',
+        userAgent: 'x'.repeat(500),
+      });
       expect((await repo.listSignIns({ limit: 1 }))[0]?.userAgent).toHaveLength(200);
     });
 
@@ -341,7 +362,9 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
         await repo.updateUser(user.id, { role: 'admin', email: ' Ken@New.example' }),
       ).toMatchObject({ role: 'admin', email: 'ken@new.example' });
       expect((await repo.session(s.sessionId))?.role).toBe('admin');
-      expect(await repo.updateUser(user.id, { name: 'Kenneth' })).toMatchObject({ name: 'Kenneth' });
+      expect(await repo.updateUser(user.id, { name: 'Kenneth' })).toMatchObject({
+        name: 'Kenneth',
+      });
       expect((await repo.session(s.sessionId))?.label).toBe('Kenneth');
       await repo.createUser({ name: 'Ann', email: 'ann@example.com', role: 'user' }, null);
       expect(await repo.updateUser(user.id, { email: 'ANN@example.com' })).toBe('email_taken');
@@ -366,13 +389,16 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
       expect(await repo.changePassword(s.sessionId, password, 'my new long phrase')).toBe('locked');
     });
 
-    it.skipIf(!opts.clock)(`one-time passwords expire after ${ONE_TIME_PASSWORD_DAYS} days`, async () => {
-      const { repo, clock, user, password } = await setup();
-      clock!.advance(ONE_TIME_PASSWORD_DAYS * DAY + 1);
-      expect(await repo.login('ken@example.com', password)).toEqual({
-        kind: 'expired',
-        userId: user.id,
-      });
-    });
+    it.skipIf(!opts.clock)(
+      `one-time passwords expire after ${ONE_TIME_PASSWORD_DAYS} days`,
+      async () => {
+        const { repo, clock, user, password } = await setup();
+        clock!.advance(ONE_TIME_PASSWORD_DAYS * DAY + 1);
+        expect(await repo.login('ken@example.com', password)).toEqual({
+          kind: 'expired',
+          userId: user.id,
+        });
+      },
+    );
   });
 }
