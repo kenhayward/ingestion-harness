@@ -109,7 +109,9 @@ class JobQueue(Protocol):
 
     def upsert_models(self, models: list[ModelDescriptor]) -> None: ...
 
-    def reap_stale(self, older_than_s: float) -> int: ...
+    def reap_stale(self, older_than_s: float) -> int:
+        """Re-queue running jobs whose heartbeat stopped (their worker died)."""
+        ...
 
 
 # Project-scoped jobs (task segment) have no document: its columns come back as ''/0.
@@ -123,7 +125,7 @@ WITH next AS (
 ), claimed AS (
   UPDATE jobs j
      SET status = 'running', attempts = j.attempts + 1, locked_by = %(worker)s,
-         locked_at = now(), updated_at = now()
+         locked_at = now(), heartbeat_at = now(), updated_at = now()
     FROM next WHERE j.id = next.id
   RETURNING j.*
 )
@@ -311,12 +313,15 @@ class PgJobQueue:
                 )
 
     def reap_stale(self, older_than_s: float) -> int:
-        """Re-queue jobs whose worker died mid-run, whatever their attempts: a restart (a
-        redeploy) is rarely the job's fault, and `run_once` logs a job run past its limit."""
+        """Re-queue jobs whose worker died mid-run: no heartbeat (heartbeat.py) for
+        `older_than_s`, or no claim time for a claim from before migration 0042. Whatever their
+        attempts: a restart (a redeploy) is rarely the job's fault, and `run_once` logs a job
+        run past its limit."""
         cur = self._conn.execute(
             """UPDATE jobs SET status = 'queued', locked_by = NULL, locked_at = NULL,
-                      error = 'worker lock expired', updated_at = now()
-                WHERE status = 'running' AND locked_at < now() - make_interval(secs => %s)""",
+                      heartbeat_at = NULL, error = 'worker lock expired', updated_at = now()
+                WHERE status = 'running'
+                  AND COALESCE(heartbeat_at, locked_at) < now() - make_interval(secs => %s)""",
             (older_than_s,),
         )
         return cur.rowcount

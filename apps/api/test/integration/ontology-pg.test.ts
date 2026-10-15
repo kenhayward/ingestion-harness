@@ -165,6 +165,34 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
     await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
   });
 
+  it("counts the newest ready version's embedded terms under a model", async () => {
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
+    const created = await repo.createVersion(
+      input({ source: { kind: 'upload', sourceKey: 'k', sha256: 'emb', bytes: 10 } }),
+    );
+    if (!created.ok) throw new Error('not created');
+    expect(await repo.embeddingProgress('emb/pg', ['pv-pg'])).toEqual(new Map()); // not ready
+    await pool.query(
+      `INSERT INTO ontology_terms (ontology_id, version, iri, kind, label)
+       VALUES ('pv-pg', 1, $1, 'class', 'A'), ('pv-pg', 1, $2, 'class', 'B'),
+              ('pv-pg', 1, $3, 'shape', 'S')`,
+      [`${C}A`, `${C}B`, `${C}S`],
+    );
+    await pool.query(`UPDATE ontology_versions SET status = 'ready' WHERE ontology_id = 'pv-pg'`);
+    await pool.query(
+      `INSERT INTO ontology_term_embeddings
+         (ontology_id, version, kind, iri, model_ref, dims, text_sha256, embedding)
+       VALUES ('pv-pg', 1, 'class', $1, 'emb/pg', 2, 'x', '[1,0]'),
+              ('pv-pg', 1, 'class', $1, 'emb/old', 2, 'x', '[1,0]'),
+              ('pv-pg', 1, 'class', $2, 'emb/old', 2, 'x', '[0,1]')`,
+      [`${C}A`, `${C}B`],
+    );
+    expect(await repo.embeddingProgress('emb/pg', ['pv-pg', 'nope'])).toEqual(
+      new Map([['pv-pg', { model: 'emb/pg', version: 1, terms: 2, embedded: 1 }]]),
+    );
+    await pool.query(`DELETE FROM ontologies WHERE id = 'pv-pg'`);
+  });
+
   it('reads a version whose job stopped as failed, and lets it be deleted', async () => {
     const created = await repo.createVersion(
       input({ source: { kind: 'upload', sourceKey: 'k', sha256: 'stuck', bytes: 10 } }),

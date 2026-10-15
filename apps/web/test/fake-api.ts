@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type {
   OntologyDetail,
-  OntologySummary,
+  OntologyListItem,
   OntologyTerm,
   OntologyVersionView,
   TermDetail,
@@ -616,8 +616,8 @@ export function projectOverview(overrides: Partial<ProjectOverview> = {}): Proje
       state: stage === 'template' ? ('none' as const) : ('pending' as const),
       status: stage === 'template' ? 'Draft v1' : 'Not started',
       metrics: [
-        { label: 'Figure', value: '—', at: null },
-        { label: 'Other', value: '—', at: null },
+        { label: 'Figure', value: 'â€”', at: null },
+        { label: 'Other', value: 'â€”', at: null },
       ],
     })),
     next: null,
@@ -885,7 +885,8 @@ export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyV
   };
 }
 
-export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySummary {
+/** A library row (OntologyListItem); also usable as a plain summary. */
+export function ontologySummary(o: Partial<OntologyListItem> = {}): OntologyListItem {
   return {
     id: 'pv',
     label: 'Process validation',
@@ -897,6 +898,7 @@ export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySumma
     createdAt: '2026-10-14T10:00:00.000Z',
     latest: ontologyVersion(),
     versionCount: 1,
+    embedding: null,
     ...o,
   };
 }
