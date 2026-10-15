@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  EMPTY_BRIEF,
   draftingKey,
   preparedTriageKey,
   type DraftStage,
@@ -518,6 +519,26 @@ describe('GET /api/workbench/projects/:id/overview', () => {
       jobIds: [],
     });
     expect((await p.overview()).next).toMatchObject({ stage: 'publish' });
+  });
+
+  it('uses the mapping stage only while the draft has RDF on (Outputs tab)', async () => {
+    const p = await project();
+    await p.workbench.saveBrief('letter', {
+      ...EMPTY_BRIEF,
+      ontologies: [{ ontologyId: 'acme', version: 1, role: 'vocabulary' }],
+    });
+    expect(await p.item('mapping')).toMatchObject({
+      state: 'skipped',
+      status: 'Not used: RDF is off on the Outputs tab',
+    });
+    await p.templates.updateDraft('letter', 1, {
+      ...letter(1),
+      delivery: { formats: ['csv', 'json', 'rdf'] },
+    });
+    expect(await p.item('mapping')).toMatchObject({
+      state: 'pending',
+      status: 'Optional, not started',
+    });
   });
 
   it('ignores a revise accepted before the latest publication', async () => {

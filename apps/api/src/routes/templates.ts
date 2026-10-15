@@ -1,7 +1,13 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
-import { RetirementSchema } from '@ih/shared';
+import {
+  PublishLabelSchema,
+  RetirementSchema,
+  VersionLabelBodySchema,
+  VersionLabelSchema,
+  versionName,
+} from '@ih/shared';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import {
@@ -52,6 +58,17 @@ const RenameBody = z
     name: z.string().trim().min(1).max(200).describe('The new name, trimmed; 1 to 200 characters.'),
   })
   .strict();
+const RestoreBody = z
+  .object({
+    from: z.number().int().positive().describe('The version whose definition to write.'),
+    baseUpdatedAt: z
+      .string()
+      .datetime()
+      .optional()
+      .describe('The draft `updatedAt` the user saw: a draft written since is a 409.'),
+  })
+  .strict();
+const DRAFT_CHANGED = 'the draft changed since you opened it; reload it to see the changes';
 const ImportBody = z
   .object({
     yaml: z.string().min(1).describe('A definition as YAML (or JSON), with `id` and `version`.'),
@@ -87,6 +104,7 @@ const TemplateTypeSchema = z.object({
       version: z.number().int(),
       status: TemplateStatusSchema,
       updatedAt: z.string(),
+      label: z.string().nullable().describe('What the version is for; null when unlabelled.'),
     }),
   ),
   summary: z
@@ -109,11 +127,17 @@ const TemplateTypeSchema = z.object({
     .describe('Of the version shown: the open draft, else the latest published version.'),
 });
 
+/** One row of a document type's version list (#144): everything but the definition. */
+const VersionItem = z.object({
+  version: z.number().int(),
+  status: TemplateStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  publishedAt: z.string().nullable(),
+  ...VersionLabelSchema.shape,
+});
+
 const NOT_FOUND = error('`recipe not found`.');
-const NOT_VALID = res(
-  'The definition is not valid: `recipe is not valid`, with `issues`.',
-  z.object({ error: z.string(), issues: z.array(TemplateIssueSchema) }),
-);
 
 /** The record with its issues, the models its steps name included (ADR 0010). */
 const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
@@ -178,6 +202,145 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
   const repo = () => app.deps.templates;
   const versionOf = (p: Params) => Number(p.version);
   const notFound = (reply: FastifyReply) => reply.code(404).send({ error: 'recipe not found' });
+  /** A publish's label and note, set on the draft before it is published. */
+  const labelFirst = async (
+    id: string,
+    version: number,
+    body: z.infer<typeof PublishLabelSchema>,
+    by: string | null,
+  ) => {
+    if (body.label !== undefined || body.note !== undefined) {
+      await repo().setLabel(id, version, body, by);
+    }
+  };
+
+  app.get<{ Params: { id: string } }>(
+    '/templates/:id/versions',
+    {
+      schema: {
+        tags: ['Recipes'],
+        operationId: 'listTemplateVersions',
+        summary: 'List the versions of a document type',
+        description: md`
+          Every recipe version of a database document type, newest first, with its label and
+          note and without its definition (\`GET …/versions/{version}\` has it).
+        `,
+        params: TypeParams,
+        response: { 200: res('The versions, newest first.', z.array(VersionItem)), 404: NOT_FOUND },
+      },
+    },
+    async (req, reply) => {
+      const versions = (await repo().list()).filter((r) => r.id === req.params.id);
+      if (!versions.length) return notFound(reply);
+      return versions
+        .sort((a, b) => b.version - a.version)
+        .map(({ id: _id, definition: _definition, ...item }) => item);
+    },
+  );
+
+  app.patch<{ Params: Params }>(
+    '/templates/:id/versions/:version',
+    {
+      schema: {
+        tags: ['Recipes'],
+        operationId: 'setVersionLabel',
+        summary: "Set a version's label and note",
+        description: md`
+          Sets what a recipe version is for: a short \`label\` and a longer \`note\`. A field
+          left out keeps its value and \`null\` clears it. Drafts and published versions alike
+          (published versions stay immutable: the label is not part of the definition), retired
+          document types too. Not an edit of the draft: its \`updatedAt\` and change log are
+          left alone.
+        `,
+        params: VersionParams,
+        body: VersionLabelBodySchema,
+        response: {
+          200: res('The version.', RecordView),
+          400: error('Zod issues: a blank or too long label or note, or neither sent.'),
+          404: NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = VersionLabelBodySchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const record = await repo().setLabel(
+        req.params.id,
+        versionOf(req.params),
+        body.data,
+        req.auth?.label ?? null,
+      );
+      return record ? await withIssues(record) : notFound(reply);
+    },
+  );
+
+  app.post<{ Params: Params }>(
+    '/templates/:id/versions/:version/restore',
+    {
+      schema: {
+        tags: ['Recipes'],
+        operationId: 'restoreVersion',
+        summary: 'Replace the draft with another version',
+        description: md`
+          Writes the definition of version \`from\` into the open draft \`version\`, replacing
+          it, to go back to an earlier version. Logged in the draft's change log as a
+          \`restore\` (nothing is written when the draft already equals it). To make an earlier
+          version the latest, restore it into the draft and publish.
+        `,
+        params: VersionParams,
+        body: RestoreBody,
+        response: {
+          200: res('The draft.', RecordView),
+          400: error('Zod issues, or `a draft cannot be restored from itself`.'),
+          404: NOT_FOUND,
+          409: error(
+            '`{id} v{version} is not an open draft`, or `' +
+              DRAFT_CHANGED +
+              '` when `baseUpdatedAt` is not its `updatedAt` (or it changed while restoring).',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = RestoreBody.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id } = req.params;
+      const version = versionOf(req.params);
+      if (body.data.from === version) {
+        return reply.code(400).send({ error: 'a draft cannot be restored from itself' });
+      }
+      const [draft, source] = await Promise.all([
+        repo().get(id, version),
+        repo().get(id, body.data.from),
+      ]);
+      if (!draft || !source) return notFound(reply);
+      if (draft.status !== 'draft') {
+        return reply.code(409).send({ error: `${id} v${version} is not an open draft` });
+      }
+      const base = body.data.baseUpdatedAt ?? draft.updatedAt;
+      if (base !== draft.updatedAt) return reply.code(409).send({ error: DRAFT_CHANGED });
+      const definition = pinned(source.definition, id, version);
+      const change = draftChange(
+        draft.definition,
+        definition,
+        { source: 'restore', stage: null, proposalId: null, by: req.auth?.label ?? null },
+        ` (from ${versionName(source.version, source.label)})`,
+      );
+      if (!change) return await withIssues(draft); // already that version: nothing to write
+      const record = await repo().updateDraft(id, version, definition, {
+        expectedUpdatedAt: base,
+        change,
+      });
+      if (!record) {
+        const now = await repo().get(id, version);
+        return reply.code(409).send({
+          error: now?.status === 'draft' ? DRAFT_CHANGED : `${id} v${version} is not an open draft`,
+        });
+      }
+      req.log.info({ templateId: id, version, from: source.version }, 'version restored');
+      return await withIssues(record);
+    },
+  );
 
   /** One entry per document type: name, latest published version, open draft. */
   app.get(
@@ -219,6 +382,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
             version: v.version,
             status: v.status,
             updatedAt: v.updatedAt,
+            label: v.label,
           })),
           latest,
           draftRecord: draft,
@@ -361,12 +525,18 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           Publishes a valid draft. It becomes immutable and the version new uploads use by
           default. Workbench document types publish only through their holdout gate
-          (\`POST /api/workbench/projects/{id}/publish\`), never here.
+          (\`POST /api/workbench/projects/{id}/publish\`), never here. \`label\` and \`note\`,
+          when given, are set on the version first (it keeps the draft's otherwise).
         `,
         params: VersionParams,
+        body: PublishLabelSchema,
         response: {
           200: res('The published version.', RecordView),
-          400: NOT_VALID,
+          400: res(
+            'Zod issues for an invalid label or note, or the definition is not valid: ' +
+              '`recipe is not valid`, with `issues`.',
+            z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
+          ),
           404: NOT_FOUND,
           409: error(
             '`{id} v{version} is already published`, `publish {id} from the Workbench ' +
@@ -378,6 +548,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
+      const body = PublishLabelSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
       const { id } = req.params;
       const version = versionOf(req.params);
       const existing = await repo().get(id, version);
@@ -393,6 +565,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         await templateIssues(app.deps, existing.definition, { draft: true }),
       );
       if (issues.length) return reply.code(400).send({ error: 'recipe is not valid', issues });
+      await labelFirst(id, version, body.data, req.auth?.label ?? null);
       return await withIssues((await repo().publish(id, version))!);
     },
   );

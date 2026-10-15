@@ -197,6 +197,11 @@ describe('the mapping stage (ADR 0011)', () => {
       (await app.inject('/api/workbench/projects/letter/overview')).json() as {
         stages: { stage: string; state: string; status: string; metrics: { value: string }[] }[];
       };
+    // RDF on (Outputs tab), so what is missing is the vocabulary.
+    await templates.updateDraft('letter', 1, {
+      ...letter(1),
+      delivery: { formats: ['csv', 'json', 'rdf'] },
+    });
     let item = (await overview()).stages.find((i) => i.stage === 'mapping')!;
     expect(item).toMatchObject({
       state: 'skipped',

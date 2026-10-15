@@ -207,6 +207,20 @@ const PATHS = {
       <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
     </>
   ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20a8 8 0 0 1 16 0" />
+    </>
+  ),
+  gitBranch: (
+    <>
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="18" cy="7" r="2" />
+      <path d="M6 7v10M18 9a6 6 0 0 1-6 6H8" />
+    </>
+  ),
   userOff: (
     <>
       <circle cx="10" cy="8" r="4" />

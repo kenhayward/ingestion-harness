@@ -1022,6 +1022,12 @@ label.inline.list-select {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+.delivery-targets {
+  margin: 0 0 16px;
+}
+.delivery-targets .chips {
+  align-items: center;
+}
 .outputs-card {
   margin-bottom: 16px;
   padding: 0;
@@ -3438,4 +3444,48 @@ label.inline.list-select {
 }
 .survey-tab > .survey-decision {
   margin-top: 16px;
+}
+
+/* Recipe editor: Versions sub-tab (#144). */
+.versions-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.versions-list > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--ih-border);
+}
+.version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+.version-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.version-when {
+  margin-left: auto;
+}
+.version-note,
+.version-by {
+  margin: 4px 0 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.version-actions,
+.version-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.version-form {
+  display: grid;
+  gap: 4px;
+  max-width: 560px;
+  margin-top: 8px;
 }

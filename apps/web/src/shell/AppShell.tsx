@@ -7,7 +7,8 @@ import type { Route } from '../router.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
-import { attentionCount, initials, sectionOf } from './derive.js';
+import { Avatar } from './Avatar.js';
+import { attentionCount, sectionOf } from './derive.js';
 
 /** The API reference (served by the API, public: docs/design/api-docs.md). */
 export const API_DOCS = '/api/docs/';
@@ -100,19 +101,22 @@ function NotifyBell({ notify }: { notify: NotifySetting }) {
 const INSTALL_LABEL = 'Install CT Studio';
 
 /**
- * The signed-in name opens the account menu: for admins Models, Linked data and Access (ADR
- * 0010); Install CT Studio while the browser offers it (admins); Change password for everyone
- * with a password of their own (not the admin from the log, ADR 0013); Sign out. It closes on
- * Escape (focus back on the name), a click outside, or a choice.
+ * The signed-in name, beside their picture (the linked GitHub account's, else initials), opens
+ * the account menu: for admins Models, Linked data and Access (ADR 0010); Install CT Studio while
+ * the browser offers it (admins); Profile for everyone with an email (not the admin from the log,
+ * ADR 0013; docs/design/profile.md); Sign out. It closes on Escape (focus back on the name), a
+ * click outside, or a choice.
  */
 function AccountMenu({
   me,
   onInstall,
+  onProfile,
   onSignOut,
 }: {
   me: Me;
   /** Set while the browser offers install. */
   onInstall: (() => void) | null;
+  onProfile: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -156,9 +160,7 @@ function AccountMenu({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span className="avatar" aria-hidden="true">
-          {initials(me.label)}
-        </span>
+        <Avatar name={me.label} url={me.avatarUrl} />
         <span className="who" aria-hidden="true">
           <span>{me.label}</span>
           <small>{me.role}</small>
@@ -184,10 +186,17 @@ function AccountMenu({
             </>
           )}
           {me.email !== null && (
-            <a role="menuitem" href="#/account/password" onClick={() => setOpen(false)}>
-              <Icon name="lock" />
-              Change password
-            </a>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onProfile();
+              }}
+            >
+              <Icon name="user" />
+              Profile
+            </button>
           )}
           {admin && onInstall && (
             <button
@@ -229,6 +238,7 @@ export function AppShell({
   install,
   notify,
   onUpload,
+  onProfile,
   onSignOut,
   children,
 }: {
@@ -242,6 +252,8 @@ export function AppShell({
   /** Toasts for your jobs: the bell's state and toggle. */
   notify: NotifySetting;
   onUpload: () => void;
+  /** The account menu's Profile: opens the Profile dialog. */
+  onProfile: () => void;
   onSignOut: () => void;
   children: ReactNode;
 }) {
@@ -320,7 +332,7 @@ export function AppShell({
             <Icon name="upload" />
             Upload document
           </button>
-          <AccountMenu me={me} onInstall={onInstall} onSignOut={onSignOut} />
+          <AccountMenu me={me} onInstall={onInstall} onProfile={onProfile} onSignOut={onSignOut} />
         </div>
       </header>
       <div className="app-body">

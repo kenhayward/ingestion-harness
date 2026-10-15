@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { GITHUB_LINK_RESULTS, type GitHubLinkResult } from '@ih/shared';
 
 export const PROJECT_TABS = [
   'overview',
@@ -25,6 +26,11 @@ export type Route =
   | { name: 'templates' }
   | { name: 'access' }
   | { name: 'password' }
+  /**
+   * Home with the Profile dialog open: where GitHub sends the browser back to after a link
+   * (`#/account/profile/github?github=<result>`), and `#/account/profile[/password]`.
+   */
+  | { name: 'profile'; tab: 'details' | 'password'; github?: GitHubLinkResult }
   | { name: 'models' }
   | { name: 'linked-data' }
   | { name: 'ontologies' }
@@ -66,6 +72,12 @@ export function parseHash(hash: string): Route {
   if (hash === '#/templates') return { name: 'templates' };
   if (hash === '#/access') return { name: 'access' };
   if (hash === '#/account/password') return { name: 'password' };
+  const profile = /^#\/account\/profile(?:\/([a-z]+))?(?:\?github=([a-z]+))?$/.exec(hash);
+  if (profile) {
+    const tab = profile[1] === 'password' ? 'password' : 'details';
+    const github = GITHUB_LINK_RESULTS.find((r) => r === profile[2]);
+    return github ? { name: 'profile', tab, github } : { name: 'profile', tab };
+  }
   if (hash === '#/models') return { name: 'models' };
   if (hash === '#/linked-data') return { name: 'linked-data' };
   if (hash === '#/ontologies') return { name: 'ontologies' };
