@@ -13,6 +13,7 @@ import type {
   ReviewEdit,
   StepRun,
   OutputFormat,
+  SuggestParams,
 } from '@ih/shared';
 import { DELETABLE_STATUSES, modelRef, sourceContentType } from '@ih/shared';
 import {
@@ -467,6 +468,40 @@ export class PgRepo implements IngestionRepo {
       [id, projectId],
     );
     return rows[0] ? toSegmentJob(rows[0]) : null;
+  }
+  async createSuggestJob(projectId: string, params: SuggestParams) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serialized with the project's segment and graph previews: one lock per project.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
+      const removed = await client.query<{ id: string }>(
+        `DELETE FROM jobs WHERE project_id = $1 AND task = 'suggest' RETURNING id`,
+        [projectId],
+      );
+      const { rows } = await client.query<SegmentRow>(
+        `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+         VALUES ($1, 'suggest', true, $2, 3, $3)
+         RETURNING id, project_id, status, error, created_at, updated_at`,
+        [projectId, SEGMENT_PRIORITY, JSON.stringify(params)],
+      );
+      await client.query('COMMIT');
+      return { job: toSegmentJob(rows[0]!), removed: removed.rows.map((r) => r.id) };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async latestSuggestJob(projectId: string) {
+    const { rows } = await this.pool.query<SegmentRow & { params: SuggestParams }>(
+      `SELECT id, project_id, status, error, created_at, updated_at, params FROM jobs
+        WHERE project_id = $1 AND task = 'suggest' ORDER BY created_at DESC LIMIT 1`,
+      [projectId],
+    );
+    return rows[0] ? { ...toSegmentJob(rows[0]), params: rows[0].params } : null;
   }
 
   async getSegmentJob(projectId: string, id: string) {
