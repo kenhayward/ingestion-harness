@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { OntologySummary, OntologyVersionView } from '@ih/shared';
-import type { Api } from '../api/client.js';
+import { ontologySourceUrl, type Api } from '../api/client.js';
 import { matchesQuery } from '../shell/derive.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { KIND_LABEL, isImporting, versionStatusText } from './derive.js';
+import { DeleteVersionDialog } from './DeleteVersionDialog.js';
+import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { ImportOntologyDialog } from './ImportOntologyDialog.js';
 
 /** The ontology library's view, remembered per browser. */
@@ -45,6 +47,9 @@ export function OntologiesPage({
   /** What the last folder import did (versions queued, files skipped). */
   const [note, setNote] = useState<string | null>(null);
   const [view, setView] = useState<View>(loadView);
+  /** A list row's Edit… and Delete… (the detail page's dialogs). */
+  const [editing, setEditing] = useState<OntologySummary | null>(null);
+  const [deleting, setDeleting] = useState<OntologySummary | null>(null);
   const pick = (next: View) => {
     setView(next);
     saveView(next);
@@ -131,7 +136,12 @@ export function OntologiesPage({
             ))}
           </div>
         ) : (
-          <OntologyTable ontologies={shown} />
+          <OntologyTable
+            ontologies={shown}
+            admin={role === 'admin'}
+            onEdit={setEditing}
+            onDelete={setDeleting}
+          />
         ))}
       {importing && (
         <ImportOntologyDialog
@@ -141,6 +151,30 @@ export function OntologiesPage({
           onImported={(done) => {
             setImporting(false);
             setNote(done ?? null);
+            void load();
+          }}
+        />
+      )}
+      {editing && (
+        <EditOntologyDialog
+          api={api}
+          ontology={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
+      )}
+      {deleting?.latest && (
+        <DeleteVersionDialog
+          api={api}
+          ontology={deleting}
+          version={deleting.latest.version}
+          versionCount={deleting.versionCount}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
             void load();
           }}
         />
@@ -195,7 +229,93 @@ function OntologyCard({ ontology: o }: { ontology: OntologySummary }) {
 }
 
 /** One row per ontology: name, id, pills, version and contents, each on one line. */
-function OntologyTable({ ontologies }: { ontologies: readonly OntologySummary[] }) {
+/** Why the latest version's file cannot be downloaded from a row, or null when it can. */
+function downloadBlocker(v: OntologyVersionView | null): string | null {
+  if (!v) return 'No versions';
+  if (v.sourceFiles) {
+    return `Imported from ${v.sourceFiles.length} files: open the ontology to see them`;
+  }
+  if (!v.sha256) return 'Not fetched yet';
+  return null;
+}
+
+/** Download, Edit… and Delete…, as on the detail page (the latest version; admins edit). */
+function RowActions({
+  ontology: o,
+  admin,
+  onEdit,
+  onDelete,
+}: {
+  ontology: OntologySummary;
+  admin: boolean;
+  onEdit: (o: OntologySummary) => void;
+  onDelete: (o: OntologySummary) => void;
+}) {
+  const latest = o.latest;
+  const noDownload = downloadBlocker(latest);
+  const noDelete = !latest ? 'No versions' : isImporting(latest.status) ? 'Still importing' : null;
+  return (
+    <div className="ontology-row-actions">
+      {latest && !noDownload ? (
+        <a
+          className="button icon-button"
+          href={ontologySourceUrl(o.id, latest.version)}
+          aria-label={`Download ${latest.fileName}`}
+          title={`Download ${latest.fileName}`}
+        >
+          <Icon name="download" />
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="icon-button"
+          disabled
+          aria-label={`Download ${o.label}`}
+          title={noDownload ?? undefined}
+        >
+          <Icon name="download" />
+        </button>
+      )}
+      {admin && (
+        <>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Edit ${o.label}`}
+            title="Edit…"
+            onClick={() => onEdit(o)}
+          >
+            <Icon name="pencil" />
+          </button>
+          <button
+            type="button"
+            className="icon-button danger"
+            disabled={noDelete !== null}
+            aria-label={
+              latest ? `Delete version ${latest.version} of ${o.label}` : `Delete ${o.label}`
+            }
+            title={noDelete ?? `Delete version ${latest?.version ?? ''}…`}
+            onClick={() => onDelete(o)}
+          >
+            <Icon name="trash" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OntologyTable({
+  ontologies,
+  admin,
+  onEdit,
+  onDelete,
+}: {
+  ontologies: readonly OntologySummary[];
+  admin: boolean;
+  onEdit: (o: OntologySummary) => void;
+  onDelete: (o: OntologySummary) => void;
+}) {
   return (
     <div className="ontology-table-wrap">
       <table className="ontology-table" aria-label="Ontologies">
@@ -206,6 +326,9 @@ function OntologyTable({ ontologies }: { ontologies: readonly OntologySummary[] 
             <th scope="col">Format and tags</th>
             <th scope="col">Version</th>
             <th scope="col">Contents</th>
+            <th scope="col">
+              <span className="visually-hidden">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -251,6 +374,9 @@ function OntologyTable({ ontologies }: { ontologies: readonly OntologySummary[] 
                   >
                     {contents}
                   </span>
+                </td>
+                <td>
+                  <RowActions ontology={o} admin={admin} onEdit={onEdit} onDelete={onDelete} />
                 </td>
               </tr>
             );

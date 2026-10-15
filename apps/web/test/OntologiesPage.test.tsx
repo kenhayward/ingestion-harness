@@ -365,7 +365,7 @@ describe('OntologiesPage layout (handoff: header row, Cards / List)', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((c) => c.textContent),
-    ).toEqual(['Ontology', 'Id', 'Format and tags', 'Version', 'Contents']);
+    ).toEqual(['Ontology', 'Id', 'Format and tags', 'Version', 'Contents', 'Actions']);
     expect(screen.queryByRole('region', { name: /^Ontology / })).toBeNull();
     expect(table.querySelector('.ontology-card-icon')).toBeNull();
     // Long values are kept whole in a title.
@@ -421,5 +421,136 @@ describe('OntologiesPage layout (handoff: header row, Cards / List)', () => {
     await userEvent.type(search, 'nothing like this');
     expect(screen.getByText('No ontology matches “nothing like this”.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
+  });
+});
+
+describe('OntologiesPage list row actions (Download, Edit, Delete as on the detail page)', () => {
+  beforeEach(() => localStorage.setItem('ih.ontologyView', 'list'));
+  afterEach(() => localStorage.clear());
+
+  const rowOf = async (label: string) =>
+    (await screen.findByRole('link', { name: label })).closest('tr')!;
+
+  it('downloads the latest version file, or says why there is none', async () => {
+    page([
+      ontologySummary(),
+      ontologySummary({
+        id: 'idmp-o',
+        label: 'IDMP-O',
+        latest: ontologyVersion({
+          ontologyId: 'idmp-o',
+          sourceKind: 'files',
+          fileName: 'idmp',
+          sourceFiles: [
+            { fileName: 'idmp/a.ttl', sha256: 'a', bytes: 1 },
+            { fileName: 'idmp/b.ttl', sha256: 'b', bytes: 1 },
+          ],
+        }),
+      }),
+      ontologySummary({
+        id: 'fetched',
+        label: 'Fetched',
+        latest: ontologyVersion({
+          ontologyId: 'fetched',
+          sourceKind: 'url',
+          sha256: null,
+          status: 'queued',
+        }),
+      }),
+    ]);
+    const pv = await rowOf('Process validation');
+    expect(within(pv).getByRole('link', { name: 'Download pv.ttl' })).toHaveAttribute(
+      'href',
+      '/api/ontologies/pv/versions/1/source',
+    );
+    const idmp = await rowOf('IDMP-O');
+    const many = within(idmp).getByRole('button', { name: 'Download IDMP-O' });
+    expect(many).toBeDisabled();
+    expect(many).toHaveAttribute('title', 'Imported from 2 files: open the ontology to see them');
+    const fetched = await rowOf('Fetched');
+    expect(within(fetched).getByRole('button', { name: 'Download Fetched' })).toHaveAttribute(
+      'title',
+      'Not fetched yet',
+    );
+  });
+
+  it('edits an ontology from its row (admins)', async () => {
+    const api = page([ontologySummary()], 'admin', {
+      updateOntology: vi.fn(async () => ontologySummary({ label: 'PV' })),
+    });
+    const row = await rowOf('Process validation');
+    await userEvent.click(within(row).getByRole('button', { name: 'Edit Process validation' }));
+    const dialog = screen.getByRole('dialog');
+    const name = within(dialog).getByLabelText('Name');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'PV');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.updateOntology).toHaveBeenCalledWith(
+        'pv',
+        expect.objectContaining({ label: 'PV' }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.listOntologies).toHaveBeenCalledTimes(2); // reloaded
+  });
+
+  it('deletes the latest version after the same confirm as the detail page', async () => {
+    const api = page(
+      [ontologySummary({ versionCount: 2, latest: ontologyVersion({ version: 2 }) })],
+      'admin',
+      { deleteOntologyVersion: vi.fn(async () => undefined) },
+    );
+    const row = await rowOf('Process validation');
+    await userEvent.click(
+      within(row).getByRole('button', { name: 'Delete version 2 of Process validation' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Delete version 2' });
+    expect(dialog).toHaveTextContent(
+      'Deletes version 2 of Process validation, its terms and its file.',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete version' }));
+    await waitFor(() => expect(api.deleteOntologyVersion).toHaveBeenCalledWith('pv', 2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.listOntologies).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a refused delete in the dialog, and cannot delete while importing', async () => {
+    page(
+      [
+        ontologySummary(),
+        ontologySummary({
+          id: 'busy',
+          label: 'Busy',
+          latest: ontologyVersion({ ontologyId: 'busy', status: 'parsing' }),
+        }),
+      ],
+      'admin',
+      {
+        deleteOntologyVersion: vi.fn(async () => {
+          throw new Error('version 1 of pv is still being imported');
+        }),
+      },
+    );
+    const busy = await rowOf('Busy');
+    const blocked = within(busy).getByRole('button', { name: 'Delete version 1 of Busy' });
+    expect(blocked).toBeDisabled();
+    expect(blocked).toHaveAttribute('title', 'Still importing');
+    const pv = await rowOf('Process validation');
+    await userEvent.click(
+      within(pv).getByRole('button', { name: 'Delete version 1 of Process validation' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Delete version 1' });
+    expect(dialog).toHaveTextContent('It is the only version, so the ontology goes too.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete version' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('still being imported');
+  });
+
+  it('offers users only Download, as the detail page does', async () => {
+    page([ontologySummary()], 'user');
+    const row = await rowOf('Process validation');
+    expect(within(row).getByRole('link', { name: 'Download pv.ttl' })).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: /^Edit / })).toBeNull();
+    expect(within(row).queryByRole('button', { name: /^Delete / })).toBeNull();
   });
 });
