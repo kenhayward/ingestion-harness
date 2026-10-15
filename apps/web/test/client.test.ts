@@ -72,6 +72,34 @@ describe('http api: workbench', () => {
     expect([...(init.body as FormData).keys()]).toEqual(['id', 'name', 'bundle']);
   });
 
+  it('imports an ontology folder: fields, then the paths, then one part per file', async () => {
+    const fetchMock = vi.fn(async () => respond(202, { versions: [], skipped: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const core = new File(['x'], 'core.ttl');
+    const prod = new File(['y'], 'prod.ttl');
+    await createHttpApi('/api').importOntologyBatch(
+      [
+        { file: core, path: 'idmp/core.ttl' },
+        { file: prod, path: 'idmp/sub/prod.ttl' },
+      ],
+      { mode: 'separate', idPrefix: 'idmp-', tags: ['industry:pharma'], localOnly: true },
+    );
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/ontologies/batch');
+    const form = init.body as FormData;
+    expect([...form.keys()]).toEqual([
+      'mode',
+      'idPrefix',
+      'tags',
+      'localOnly',
+      'paths',
+      'file',
+      'file',
+    ]);
+    expect(form.get('paths')).toBe('["idmp/core.ttl","idmp/sub/prod.ttl"]');
+    expect(form.get('tags')).toBe('industry:pharma');
+  });
+
   it("explains a proxy 413 on import, and keeps the API's own 413 message", async () => {
     const file = new File(['PK'], 'b.zip', { type: 'application/zip' });
     const html = '<html><body><h1>413 Request Entity Too Large</h1></body></html>';

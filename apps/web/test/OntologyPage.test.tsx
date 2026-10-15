@@ -237,6 +237,50 @@ describe('OntologyPage', () => {
     );
   });
 
+  it('lists the files of a folder version, and imports between them as included', async () => {
+    view('user', {
+      getOntology: vi.fn(async () =>
+        ontologyDetail({
+          versions: [
+            ontologyVersion({
+              sourceKind: 'files',
+              fileName: 'idmp',
+              sourceFiles: [
+                { fileName: 'idmp/core.ttl', sha256: 'a', bytes: 1200 },
+                { fileName: 'idmp/sub/prod.ttl', sha256: 'b', bytes: 3400 },
+              ],
+              imports: [
+                {
+                  iri: 'https://w3id.org/idmp/core',
+                  resolution: 'included',
+                  ontologyId: null,
+                  version: null,
+                  reason: null,
+                },
+                {
+                  iri: 'https://nope.org/x',
+                  resolution: 'unresolved',
+                  ontologyId: null,
+                  version: null,
+                  reason: 'not in the library',
+                },
+              ],
+            }),
+          ],
+        }),
+      ),
+    });
+    expect(await screen.findByText('Imports: 1 resolved, 1 not')).toBeInTheDocument();
+    expect(screen.getByText(/one of this version's files/)).toBeInTheDocument();
+    const source = screen.getByText('2 files from idmp');
+    expect(source).toBeInTheDocument();
+    const files = screen.getByRole('list', { name: 'Files of this version' });
+    expect(files).toHaveTextContent('idmp/core.ttl');
+    expect(files).toHaveTextContent('idmp/sub/prod.ttl');
+    // No single file to download for a folder version.
+    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
+  });
+
   it('marks terms that come from an import', async () => {
     view('user', {
       getOntologyTerm: vi.fn(async () =>

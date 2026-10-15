@@ -110,7 +110,7 @@ export function OntologyPage({
                   ))}
                 </select>
               )}
-              {current?.sha256 && (
+              {current?.sha256 && !current.sourceFiles && (
                 <a className="button" href={ontologySourceUrl(detail.id, current.version)}>
                   <Icon name="download" />
                   Download {current.fileName}
@@ -178,6 +178,17 @@ export function OntologyPage({
                     <a className="mono" href={current.sourceUrl} rel="noreferrer" target="_blank">
                       {current.sourceUrl}
                     </a>
+                  ) : current.sourceFiles ? (
+                    <details>
+                      <summary>
+                        {current.sourceFiles.length} files from {current.fileName}
+                      </summary>
+                      <ul className="mono" aria-label="Files of this version">
+                        {current.sourceFiles.map((f) => (
+                          <li key={f.fileName}>{f.fileName}</li>
+                        ))}
+                      </ul>
+                    </details>
                   ) : (
                     'Uploaded file'
                   )}
@@ -252,6 +263,8 @@ function ImportsPanel({ imports }: { imports: readonly OntologyImport[] }) {
             {' — '}
             {i.resolution === 'unresolved' ? (
               <span className="muted">{i.reason ?? 'not resolved'}</span>
+            ) : i.resolution === 'included' ? (
+              <span className="muted">one of this version&apos;s files</span>
             ) : (
               <>
                 <a href={`#/ontologies/${encodeURIComponent(i.ontologyId ?? '')}`}>
