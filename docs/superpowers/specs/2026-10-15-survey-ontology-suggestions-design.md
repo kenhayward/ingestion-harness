@@ -1,6 +1,6 @@
 # Ontology suggestions in the survey, and pinning on the Survey tab
 
-Date: 2026-10-15 · ADR 0011 follow-up · Status: approved design
+Date: 2026-10-15 · ADR 0011 follow-up · Status: implemented
 
 ## Goal
 
