@@ -1075,22 +1075,27 @@ class PgOntologyStore:
             raise ValueError("query vectors of different dimensions")
         # One pass over the asked versions' embeddings for every query vector (a small inner
         # relation), exact like `semantic`: no approximate index to crowd versions out.
+        # q is MATERIALIZED so each query vector is parsed from text once: inlined, the cast ran
+        # for every (embedding, vector) pair, 99% of the time (EXPLAIN ANALYZE: 93 s -> 5 s for
+        # 3 vectors against 148k embeddings). Only the matches above the threshold are joined
+        # with their terms.
         query = sql.SQL(
-            """WITH q AS (
+            """WITH q AS MATERIALIZED (
                  SELECT x.i, x.v::vector AS vec, string_to_array(x.k, ',') AS kinds
                    FROM unnest(%(idx)s::int[], %(vecs)s::text[], %(ks)s::text[]) AS x(i, v, k)),
-               s AS (
-                 SELECT q.i, t.ontology_id, t.version, {cols},
+               s AS MATERIALIZED (
+                 SELECT q.i, e.ontology_id, e.version, e.kind, e.iri,
                         1 - (e.embedding <=> q.vec) AS sim
                    FROM ontology_term_embeddings e
-                   JOIN ontology_terms t USING (ontology_id, version, kind, iri)
                    JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
                      ON e.ontology_id = p.id AND e.version = p.v
                    JOIN q ON e.kind = ANY(q.kinds)
-                  WHERE e.model_ref = {ref} AND e.dims = {dims})
-               SELECT DISTINCT ON (i, ontology_id, version) * FROM s
-                WHERE sim >= %(min)s
-                ORDER BY i, ontology_id, version, sim DESC, label, iri"""
+                  WHERE e.model_ref = {ref} AND e.dims = {dims}
+                    AND 1 - (e.embedding <=> q.vec) >= %(min)s)
+               SELECT DISTINCT ON (s.i, s.ontology_id, s.version)
+                      s.i, s.ontology_id, s.version, {cols}, s.sim
+                 FROM s JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+                ORDER BY s.i, s.ontology_id, s.version, s.sim DESC, t.label, t.iri"""
         ).format(
             cols=sql.SQL(_READ_COLUMNS),
             ref=sql.Literal(model_ref),

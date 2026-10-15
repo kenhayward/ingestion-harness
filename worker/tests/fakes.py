@@ -106,6 +106,10 @@ class FakeQueue:
     step_runs: list[dict[str, Any]] = field(default_factory=list)
     #: Draft outputs recorded as soon as they were written (job id, outputs).
     drafts: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
+    #: `suggest` jobs queued (project, params); suggest_removed: the ids each one replaced.
+    suggested: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    suggest_removed: list[str] = field(default_factory=list)
+    suggest_error: Exception | None = None
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
@@ -167,6 +171,12 @@ class FakeQueue:
 
     def reap_stale(self, older_than_s: float) -> int:
         return 0
+
+    def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
+        if self.suggest_error is not None:
+            raise self.suggest_error
+        self.suggested.append((project_id, params))
+        return f"suggest-{len(self.suggested)}", list(self.suggest_removed)
 
 
 @dataclass

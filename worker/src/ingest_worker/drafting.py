@@ -20,10 +20,9 @@ from .extract import ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
-from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, run_suggestions
+from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
 from .pipeline import (
     DocumentError,
-    JobCancelled,
     PipelineDeps,
     check_cancelled,
     enforce_data_policy,
@@ -391,21 +390,18 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         body = resolve_answers(body, labels)
     if stage.id == "survey":
         body = clamp_seen_in(body, len(samples))
-        if params.library:  # the ontology library's suggestions (advisory)
+        if params.library:  # the ontology library's suggestions (advisory): a job of their own
             try:
-                run_suggestions(
+                suggest_id = queue_suggestions(
                     job,
                     deps,
                     queue,
-                    survey_proposal_id=job.id,
                     candidates=[SuggestCandidate.model_validate(c) for c in body["candidates"]],
                     library=params.library,
                     pinned=params.pinned,
                     data_policy=params.data_policy,
-                    stage="survey",
                 )
-            except JobCancelled:
-                raise
+                log.info("job %s queued its ontology suggestions as job %s", job.id, suggest_id)
             except Exception as exc:  # advisory: the survey stands without suggestions
                 log.warning("job %s: ontology suggestions failed: %s", job.id, exc)
                 queue.event(job.id, "warn", "ontology suggestions failed", {"error": str(exc)})

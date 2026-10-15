@@ -113,6 +113,11 @@ class JobQueue(Protocol):
         """Re-queue running jobs whose heartbeat stopped (their worker died)."""
         ...
 
+    def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
+        """Queue the project's `suggest` job (SuggestParams), replacing its earlier one like the
+        API's createSuggestJob; the new job's id and the ids it replaced."""
+        ...
+
 
 # Project-scoped jobs (task segment) have no document: its columns come back as ''/0.
 CLAIM_SQL = """
@@ -136,6 +141,9 @@ SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.proj
   FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 
+
+#: A `suggest` job's priority: the API's SEGMENT_PRIORITY, like the Survey tab's Refresh.
+SUGGEST_PRIORITY = -5
 
 #: Guard for every worker status write: the row is still running under *this* claim.
 _MINE = "id = %(id)s AND status = 'running' AND locked_at IS NOT DISTINCT FROM %(claimed)s"
@@ -311,6 +319,22 @@ class PgJobQueue:
                              discovered_at = now()""",
                     (m.provider, m.provider_kind, m.model_id, m.display_name),
                 )
+
+    def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
+        # As PgRepo.createSuggestJob (TS): one per project, serialized with its previews.
+        with self._conn.transaction():
+            self._conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (project_id,))
+            removed = self._conn.execute(
+                "DELETE FROM jobs WHERE project_id = %s AND task = 'suggest' RETURNING id::text",
+                (project_id,),
+            ).fetchall()
+            row = self._conn.execute(
+                """INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+                   VALUES (%s, 'suggest', true, %s, 3, %s) RETURNING id::text""",
+                (project_id, SUGGEST_PRIORITY, json.dumps(params)),
+            ).fetchone()
+        assert row is not None
+        return str(row[0]), [str(r[0]) for r in removed]
 
     def reap_stale(self, older_than_s: float) -> int:
         """Re-queue jobs whose worker died mid-run: no heartbeat (heartbeat.py) for
