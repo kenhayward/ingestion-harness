@@ -13,6 +13,7 @@ import {
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Segmented } from '../ui/Segmented.js';
+import { formatBytes } from '../workbench/samples.js';
 import { slugify, splitTags } from './derive.js';
 
 type Source = 'file' | 'folder' | 'url';
@@ -60,6 +61,35 @@ function pickFolder(list: FileList | null): PickedFolder | null {
   };
 }
 
+/** Why a selection cannot be uploaded (`maxUploadBytes`), naming what to leave out; else null. */
+export function uploadProblem(
+  files: readonly { path: string; size: number }[],
+  limit: number | undefined,
+): string | null {
+  const total = files.reduce((n, f) => n + f.size, 0);
+  if (!limit || total <= limit) return null;
+  if (files.length === 1) {
+    return `${files[0]!.path} is ${formatBytes(total)}; the upload limit is ${formatBytes(limit)}`;
+  }
+  const largest = [...files]
+    .sort((a, b) => b.size - a.size)
+    .slice(0, 2)
+    .map((f) => `${f.path} (${formatBytes(f.size)})`);
+  return (
+    `These files total ${formatBytes(total)}; the upload limit is ${formatBytes(limit)}. ` +
+    `Largest: ${largest.join(', ')}`
+  );
+}
+
+/**
+ * A release folder (AFO's for one) may hold merged copies of an ontology beside the modules
+ * they combine: imported together, the ontology would be there twice.
+ */
+const hasMergedCopies = (paths: readonly string[]) => {
+  const merged = (p: string) => p.split('/').includes('merged');
+  return paths.some(merged) && paths.some((p) => !merged(p));
+};
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** What a folder import did, for the page: versions queued, and why files were skipped. */
@@ -97,6 +127,7 @@ export function ImportOntologyDialog({
   const formId = useId();
   const idErrorId = useId();
   const urlErrorId = useId();
+  const sizeErrorId = useId();
   const reasonId = useId();
   const previewId = useId();
   const [source, setSource] = useState<Source>('file');
@@ -116,9 +147,12 @@ export function ImportOntologyDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // On open: URL imports need the hosts; every import checks the upload limit before sending.
   useEffect(() => {
-    if (source !== 'url' || settings) return;
-    api.getOntologySettings().then(setSettings, (err: Error) => setError(err.message));
+    if (settings) return;
+    api.getOntologySettings().then(setSettings, (err: Error) => {
+      if (source === 'url') setError(err.message);
+    });
   }, [api, source, settings]);
 
   const separate = source === 'folder' && mode === 'separate';
@@ -137,16 +171,32 @@ export function ImportOntologyDialog({
         )
       : [];
 
+  // What would be uploaded, against the upload limit (unknown until the settings load).
+  const limit = settings?.maxUploadBytes;
+  const sizeProblem =
+    source === 'file' && file
+      ? uploadProblem([{ path: file.name, size: file.size }], limit)
+      : source === 'folder' && zip
+        ? uploadProblem([{ path: zip.name, size: zip.size }], limit)
+        : source === 'folder' && folder
+          ? uploadProblem(
+              folder.files.map((f) => ({ path: f.path, size: f.file.size })),
+              limit,
+            )
+          : null;
+
   // The first thing missing, said on the disabled Import button (hover) and in the dialog.
   const blocker = (() => {
     if (source === 'file') {
       if (!file) return 'Choose an ontology file';
+      if (sizeProblem) return sizeProblem;
     } else if (source === 'folder') {
       if (!folder && !zip) return 'Choose a folder or a .zip';
       if (folder && !folder.files.length) return 'The folder has no ontology files';
       if (folder && folder.files.length > ONTOLOGY_MAX_FILES) {
         return `At most ${ONTOLOGY_MAX_FILES} ontology files per import`;
       }
+      if (sizeProblem) return sizeProblem;
       if (separate) return prefixProblem;
     } else {
       if (settings === null) return 'Loading the allowed hosts…';
@@ -167,8 +217,11 @@ export function ImportOntologyDialog({
         ? idErrorId
         : blocker === urlProblem
           ? urlErrorId
-          : reasonId;
+          : blocker === sizeProblem
+            ? sizeErrorId
+            : reasonId;
   const touched =
+    sizeProblem !== null ||
     file !== null ||
     folder !== null ||
     zip !== null ||
@@ -255,6 +308,11 @@ export function ImportOntologyDialog({
               />
             </label>
             <p className="muted">Turtle, RDF/XML, JSON-LD, N-Triples or N3 ({ONTOLOGY_ACCEPT}).</p>
+            {sizeProblem && (
+              <p className="field-error" id={sizeErrorId}>
+                {sizeProblem}
+              </p>
+            )}
           </>
         )}
         {source === 'folder' && (
@@ -283,6 +341,18 @@ export function ImportOntologyDialog({
               </p>
             )}
             {zip && <p className="muted">{zip.name}: its ontology files are read on import.</p>}
+            {sizeProblem && (
+              <p className="field-error" id={sizeErrorId}>
+                {sizeProblem}
+              </p>
+            )}
+            {folder && hasMergedCopies(folder.files.map((f) => f.path)) && (
+              <p className="tone-warn">
+                This folder has merged copies (merged/) beside the modules they combine: imported
+                together, the ontology is there twice. Import the merged file on its own (From a
+                file), or choose a folder without merged/.
+              </p>
+            )}
             <Segmented
               label="Import as"
               options={[

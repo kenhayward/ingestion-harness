@@ -740,7 +740,23 @@ export function createHttpApi(base = '/api'): Api {
       form.append('paths', JSON.stringify(files.map((f) => f.path)));
       for (const { file } of files) form.append('file', file);
       return apiFetch(`${base}/ontologies/batch`, { method: 'POST', body: form }).then(
-        json<OntologyBatchResult>,
+        async (res) => {
+          // A proxy in front of the API (the app's nginx, NGINX Proxy Manager) refuses with its
+          // own page, not the API's JSON.
+          if (res.status === 413) {
+            const body: unknown = await res
+              .clone()
+              .json()
+              .catch(() => null);
+            if (body === null || typeof body !== 'object') {
+              throw new ApiError(
+                'the files are over the upload limit of the proxy in front of CT Studio',
+                413,
+              );
+            }
+          }
+          return json<OntologyBatchResult>(res);
+        },
       );
     },
     updateOntology: (id, patch) =>

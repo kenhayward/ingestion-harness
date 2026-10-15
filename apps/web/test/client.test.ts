@@ -100,6 +100,29 @@ describe('http api: workbench', () => {
     expect(form.get('tags')).toBe('industry:pharma');
   });
 
+  it("explains a proxy 413 on an ontology folder import, keeping the API's own message", async () => {
+    const html = '<html><body><h1>413 Request Entity Too Large</h1></body></html>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(html, { status: 413, headers: { 'content-type': 'text/html' } }),
+      ),
+    );
+    const files = [{ file: new File(['x'], 'a.ttl'), path: 'a/a.ttl' }];
+    const fields = { mode: 'merge' as const, id: 'afo', label: 'AFO' };
+    await expect(createHttpApi('/api').importOntologyBatch(files, fields)).rejects.toMatchObject({
+      message: 'the files are over the upload limit of the proxy in front of CT Studio',
+      status: 413,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(413, { error: 'the files are over the upload limit' })),
+    );
+    await expect(createHttpApi('/api').importOntologyBatch(files, fields)).rejects.toThrow(
+      'the files are over the upload limit',
+    );
+  });
+
   it("explains a proxy 413 on import, and keeps the API's own 413 message", async () => {
     const file = new File(['PK'], 'b.zip', { type: 'application/zip' });
     const html = '<html><body><h1>413 Request Entity Too Large</h1></body></html>';

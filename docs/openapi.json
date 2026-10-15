@@ -41508,7 +41508,7 @@
         "tags": [
           "Ontologies"
         ],
-        "description": "The hosts ontologies may be imported from by URL (`ONTOLOGY_FETCH_ALLOW`; empty\nmeans URL imports are off) and the size limit of a fetched file, for the import\ndialog.",
+        "description": "The hosts ontologies may be imported from by URL (`ONTOLOGY_FETCH_ALLOW`; empty\nmeans URL imports are off), the size limit of a fetched file (`maxBytes`) and of\nan upload, one file or a folder's files together (`maxUploadBytes`), so the import\ndialog can refuse a selection over it before sending it.",
         "responses": {
           "200": {
             "description": "The settings.",
@@ -41525,11 +41525,15 @@
                     },
                     "maxBytes": {
                       "type": "integer"
+                    },
+                    "maxUploadBytes": {
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "fetchHosts",
-                    "maxBytes"
+                    "maxBytes",
+                    "maxUploadBytes"
                   ],
                   "additionalProperties": true,
                   "description": "The settings."
