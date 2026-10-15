@@ -18,7 +18,15 @@ from pydantic import BaseModel, ValidationError
 from .draft_changes import apply_changes
 from .normalize import ValueType
 from .specs import CopySelection, Section
-from .template import RESERVED_OUTPUT_IDS, CheckStep, ExtractStep, TableDef, Template, ValueDef
+from .template import (
+    RESERVED_OUTPUT_IDS,
+    CheckStep,
+    ExtractStep,
+    Semantics,
+    TableDef,
+    Template,
+    ValueDef,
+)
 
 Converter = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]]]
 Checker = Callable[[dict[str, Any], dict[str, Any]], list[str]]
@@ -251,6 +259,18 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     return {"notes": notes, "changes": changes}, errors
 
 
+def _unfinished_mapping(draft: dict[str, Any]) -> bool:
+    """The draft's ontology mapping does not parse on its own, e.g. it was started without a
+    document class yet (applyChanges' `mapping()`, the Mapping editor): the Mapping stage's job."""
+    if not draft.get("semantics"):
+        return False
+    try:
+        Semantics.model_validate(draft["semantics"])
+    except ValidationError:
+        return True
+    return False
+
+
 def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
     errors = [
         f"changes[{i}]: removeStep {c['id']!r}: no such step in the draft at that point"
@@ -261,8 +281,13 @@ def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
             s.get("id") for s in apply_changes(draft, body["changes"][:i]).get("pipeline") or []
         }
     ]
+    applied = apply_changes(draft, body["changes"])
+    if _unfinished_mapping(draft):
+        # No step or revise op can fix it, and while it fails to parse, Template's own checks
+        # (every output filled, sections known) never run: judge the pipeline without it.
+        applied = {k: v for k, v in applied.items() if k not in ("semantics", "delivery")}
     try:
-        Template.model_validate(apply_changes(draft, body["changes"]))
+        Template.model_validate(applied)
     except ValidationError as exc:
         for e in exc.errors():
             msg = str(e["msg"])
