@@ -1986,7 +1986,7 @@ label.inline.list-select {
 /* Survey (handoff §3) */
 .survey-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -2139,6 +2139,12 @@ label.inline.list-select {
 .survey-candidates .table-scroll td {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+/* Kind, Name and In brief take the width of their contents; What and Where wrap. */
+.survey-candidates .table-scroll .fit {
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .survey-found,
 .survey-questions,
