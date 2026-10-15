@@ -201,3 +201,65 @@ def test_the_database_times_a_claimed_extraction(
     started_after, finished_after = times()
     assert started_after == started
     assert finished_after is not None and finished_after >= started  # type: ignore[operator]
+
+
+def status_of(q: PgJobQueue, job_id: str) -> tuple[object, ...]:
+    row = q._conn.execute(
+        "SELECT status, updated_at, heartbeat_at FROM jobs WHERE id = %s", (job_id,)
+    ).fetchone()
+    assert row is not None
+    return tuple(row)
+
+
+def test_a_running_job_that_beats_is_never_reaped_and_one_that_stops_is(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    """Migration 0042: the reaper goes by the heartbeat, not the claim time, so a long job
+    whose worker is alive keeps its claim; a job whose beats stopped goes back in the queue."""
+    import time
+
+    from ingest_worker.heartbeat import PgJobHeartbeat
+
+    q, job_id = queue_with_queued_job
+    heartbeat = PgJobHeartbeat(os.environ["DATABASE_URL"])
+    try:
+        claimed = q.claim("w1")
+        assert claimed is not None and claimed.id == job_id
+        time.sleep(1.2)
+        assert heartbeat.beat(claimed)
+        q.reap_stale(1.0)  # claimed over a second ago, but it beat just now
+        assert status_of(q, job_id)[0] == "running"
+        time.sleep(1.2)
+        q.reap_stale(1.0)  # no beat for over a second: its worker stopped
+        assert status_of(q, job_id)[0] == "queued"
+        assert not heartbeat.beat(claimed)  # no longer this run's job
+    finally:
+        heartbeat.close()
+
+
+def test_a_beat_neither_moves_updated_at_nor_notifies_job_watchers(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    import psycopg
+
+    from ingest_worker.heartbeat import PgJobHeartbeat
+
+    q, job_id = queue_with_queued_job
+    url = os.environ["DATABASE_URL"]
+    heartbeat = PgJobHeartbeat(url)
+    listener = psycopg.connect(url, autocommit=True)
+    try:
+        claimed = q.claim("w1")
+        assert claimed is not None
+        _, updated, beat_before = status_of(q, job_id)
+        listener.execute("LISTEN ih_job_changed")
+        assert heartbeat.beat(claimed)
+        _, updated_after, beat_after = status_of(q, job_id)
+        assert updated_after == updated
+        assert beat_after is not None and beat_before is not None and beat_after > beat_before
+        assert list(listener.notifies(timeout=0.5, stop_after=1)) == []
+        q.complete(claimed, [], "outputs")  # a real change still notifies
+        assert [n.payload for n in listener.notifies(timeout=2.0, stop_after=1)] == [job_id]
+    finally:
+        listener.close()
+        heartbeat.close()

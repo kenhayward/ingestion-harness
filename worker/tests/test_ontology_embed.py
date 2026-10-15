@@ -14,7 +14,7 @@ from ingest_worker.llm.base import LLMError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.ontology import parse_ontology
-from ingest_worker.pipeline import Buckets, PipelineDeps
+from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
@@ -97,6 +97,38 @@ def test_embeds_in_batches(fixture_specs_dir: Path) -> None:
     saved(ontologies, b"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" + classes)
     assert embed_version(deps, FakeQueue(), "j", "pv", 1) == EMBED_BATCH + 5
     assert [len(t) for _, t in provider.embed_calls] == [EMBED_BATCH, 5]
+
+
+def test_embedding_stops_between_batches_once_its_job_is_lost(fixture_specs_dir: Path) -> None:
+    """A run whose job was cancelled or taken over stops at the next batch, keeping what it
+    stored, instead of embedding the rest alongside the run that now owns the job."""
+    deps, provider, ontologies = make(fixture_specs_dir)
+    classes = "".join(
+        f"<https://ex.org/C{i}> a owl:Class .\n" for i in range(EMBED_BATCH * 2)
+    ).encode()
+    saved(ontologies, b"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" + classes)
+    with pytest.raises(JobCancelled):
+        embed_version(deps, FakeQueue(), "j", "pv", 1, stop=lambda: len(provider.embed_calls) > 0)
+    assert len(provider.embed_calls) == 1
+    assert len(ontologies.embeddings[("pv", 1, "emb/nomic")]) == EMBED_BATCH
+
+
+def test_an_import_whose_job_is_lost_mid_embedding_is_not_completed(
+    fixture_specs_dir: Path,
+) -> None:
+    deps, provider, ontologies = make(fixture_specs_dir)
+    classes = "".join(
+        f"<https://ex.org/C{i}> a owl:Class .\n" for i in range(EMBED_BATCH * 2)
+    ).encode()
+    deps.store.put(
+        "runs", SOURCE, b"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" + classes,
+        "text/turtle",
+    )  # fmt: skip
+    queue = FakeQueue(jobs=[ontology_job()])
+    queue.cancel_when = lambda: len(provider.embed_calls) > 0
+    run_once(queue, deps, "w1")
+    assert not queue.completed and not queue.failed
+    assert ontologies.status[("pv", 1)] == "ready"  # its terms were saved: a retry resumes
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  embeddingText,
   slugify,
   splitTags,
   statsLine,
@@ -9,6 +10,24 @@ import {
 import { ontologyTerm, ontologyVersion } from './fake-api.js';
 
 describe('ontology helpers', () => {
+  const progress = (embedded: number, terms: number) => ({
+    model: 'm',
+    version: 1,
+    embedded,
+    terms,
+  });
+  it.each([
+    [null, null],
+    [progress(0, 0), null], // nothing to embed
+    [progress(0, 12), 'Embedded 0 of 12 terms (0%)'],
+    [progress(125568, 238190), 'Embedded 125,568 of 238,190 terms (52%)'],
+    [progress(999, 1000), 'Embedded 999 of 1,000 terms (99%)'], // never rounds up to 100%
+    [progress(5427, 5427), 'All 5,427 terms embedded'],
+    [progress(1, 1), 'All 1 term embedded'],
+  ])('embeddingText(%j) = %j', (e, text) => {
+    expect(embeddingText(e)).toBe(text);
+  });
+
   it.each([
     [
       { triples: 9, classes: 1, properties: 2, concepts: 0, schemes: 0, shapes: 0, imported: 0 },

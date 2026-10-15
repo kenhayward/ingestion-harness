@@ -42323,7 +42323,7 @@
         "tags": [
           "Ontologies"
         ],
-        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`.",
+        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`. `embedding` is how far the worker has embedded the newest\nready version under the embedding model (Models page), counted when listed; null\nwithout an embedding model or a ready version.",
         "parameters": [
           {
             "schema": {
@@ -42636,6 +42636,37 @@
                       },
                       "versionCount": {
                         "type": "integer"
+                      },
+                      "embedding": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "terms": {
+                                "type": "integer"
+                              },
+                              "embedded": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "model",
+                              "version",
+                              "terms",
+                              "embedded"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -42648,7 +42679,8 @@
                       "createdBy",
                       "createdAt",
                       "latest",
-                      "versionCount"
+                      "versionCount",
+                      "embedding"
                     ],
                     "additionalProperties": true
                   },

@@ -31,7 +31,7 @@ In CI/CD, `.github/workflows/deploy.yml` runs this on the deploy host's self-hos
 ```bash
 deploy/scripts/compose.sh ps
 deploy/scripts/compose.sh logs -f worker
-deploy/scripts/compose.sh up -d --scale worker=4 worker   # or WORKER_REPLICAS in .env
+deploy/scripts/compose.sh up -d --scale worker=4 worker   # or WORKER_REPLICAS in .env (each job runs on one worker: heartbeats, migration 0042)
 deploy/scripts/compose.sh exec postgres psql -U ingest ingest
 deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 ```

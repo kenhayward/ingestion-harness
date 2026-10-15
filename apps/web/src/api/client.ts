@@ -9,6 +9,7 @@ import type {
   OntologyFromUrlBody,
   OntologySettings,
   OntologyPatch,
+  OntologyListItem,
   OntologySummary,
   OntologyBatchResult,
   OntologyVersionView,
@@ -333,7 +334,7 @@ export interface Api {
   /** LLM endpoints and their models (admins; ADR 0010). */
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
-  listOntologies(opts?: { retired?: boolean }): Promise<OntologySummary[]>;
+  listOntologies(opts?: { retired?: boolean }): Promise<OntologyListItem[]>;
   /** One ontology with every version, newest first. */
   getOntology(id: string): Promise<OntologyDetail>;
   /** Admin: import a file as the next version of `fields.id`. */
@@ -789,7 +790,7 @@ export function createHttpApi(base = '/api'): Api {
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
     listOntologies: (opts = {}) =>
       apiFetch(`${base}/ontologies${opts.retired ? '?retired=include' : ''}`).then(
-        json<OntologySummary[]>,
+        json<OntologyListItem[]>,
       ),
     getOntology: (id) =>
       apiFetch(`${base}/ontologies/${encodeURIComponent(id)}`).then(json<OntologyDetail>),

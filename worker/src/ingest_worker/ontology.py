@@ -1423,7 +1423,7 @@ def _finish(
         "application/n-triples",
     )
     store.save(oid, version, parsed)
-    embed_after_import(deps, queue, job.id, oid, version)
+    embed_after_import(deps, queue, job, oid, version)
     queue.event(
         job.id,
         "info",
@@ -1447,7 +1447,7 @@ def run_ontology_batch(
     for m in members:
         if not store.start(m.ontology_id, m.version):
             if store.ready(m.ontology_id, m.version):
-                embed_after_import(deps, queue, job.id, m.ontology_id, m.version)
+                embed_after_import(deps, queue, job, m.ontology_id, m.version)
             continue
         try:
             graphs[(m.ontology_id, m.version)] = read_graph(
@@ -1493,7 +1493,7 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
     oid, version = params.ontology_id, params.version
     assert oid is not None and version is not None  # the params validator guarantees them
     if not store.start(oid, version) and store.ready(oid, version):
-        embed_after_import(deps, queue, job.id, oid, version)
+        embed_after_import(deps, queue, job, oid, version)
         return ParsedOntology(0, None, None, None, [], [])
     try:
         max_triples = deps.ontology_max_triples

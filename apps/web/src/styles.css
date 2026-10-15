@@ -3540,7 +3540,18 @@ tr.confirming td {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.ontology-card .ontology-version {
+.ontology-card .ontology-embedding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.ontology-embedding .meter {
+  flex: none;
+  width: 84px;
+}
+.ontology-version {
   border-top: 1px solid var(--ih-border-soft);
   padding-top: 10px;
 }

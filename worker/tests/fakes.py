@@ -582,6 +582,8 @@ class MemoryOntologyStore:
             del self.embeddings[key]
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
+        if self.status.get((ontology_id, version)) == "ready":
+            return  # like Postgres: a ready version never fails
         self.status[(ontology_id, version)] = "failed"
         self.errors[(ontology_id, version)] = error
 
