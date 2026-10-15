@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from ingest_worker.config import REPO_ROOT
 from ingest_worker.ontology import parse_ontology, trigram_similarity
+from ingest_worker.ontology_suggest import (
+    LibraryVersion,
+    SuggestCandidate,
+    SuggestionRecord,
+    SuggestParams,
+    SuggestPin,
+    library_key,
+    suggest_ontologies,
+)
 
 from .fakes import MemoryOntologyStore, fake_vector
 
@@ -68,3 +80,159 @@ def test_semantic_best_uses_cosine_similarity() -> None:
     hits = s.semantic_best([("pharma", 1)], "emb/fake", vector, ["datatype_property"], 0.6)
     assert hits[0].term.iri.endswith("#expiryDate")
     assert hits[0].similarity == pytest.approx(1.0)
+
+
+SUGGEST = Path(__file__).parent / "fixtures" / "ontology-suggest"
+SHARED = json.loads(
+    (
+        REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "ontology-suggestions.json"
+    ).read_text(encoding="utf-8")
+)
+
+
+def library_store() -> tuple[MemoryOntologyStore, list[LibraryVersion]]:
+    s = MemoryOntologyStore()
+    library = []
+    for name, terms in [("domain", 3), ("merged", 4), ("units", 3)]:
+        s.saved[(name, 1)] = parse_ontology(
+            (SUGGEST / f"{name}.ttl").read_bytes(), "text/turtle", f"{name}.ttl"
+        )
+        library.append(LibraryVersion(id=name, version=1, label=name.title(), terms=terms))
+    return s, library
+
+
+def cand(name: str, kind: str = "field", description: str = "") -> SuggestCandidate:
+    return SuggestCandidate(name=name, description=description, kind=kind)  # type: ignore[arg-type]
+
+
+CANDIDATES = [
+    cand("active_substance", "table"),
+    cand("batch_number"),
+    cand("expiry_date"),
+    cand("unit_of_measure"),
+    cand("strength"),
+    cand("signatory_name"),
+]
+
+
+@pytest.mark.parametrize(
+    "case", SHARED["libraryKeys"], ids=[c["name"] for c in SHARED["libraryKeys"]]
+)
+def test_library_key_matches_the_shared_fixture(case: dict[str, Any]) -> None:
+    versions = [(v["id"], v["version"]) for v in case["versions"]]
+    assert library_key(versions, case["model"]) == case["key"]
+
+
+def test_shared_params_and_record_parse() -> None:
+    assert (
+        SuggestParams.model_validate(SHARED["params"]).model_dump(by_alias=True) == SHARED["params"]
+    )
+    assert (
+        SuggestionRecord.model_validate(SHARED["record"]).model_dump(by_alias=True)
+        == SHARED["record"]
+    )
+
+
+def test_set_cover_picks_the_module_then_units_and_lists_the_merged_copy() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(s, CANDIDATES, library, [], vectors=None, model_ref=None)
+    assert [x["ontologyId"] for x in out["suggestions"]] == ["domain", "units"]
+    assert out["suggestions"][0]["covers"] == ["active_substance", "batch_number", "expiry_date"]
+    assert [x["ontologyId"] for x in out["alsoMatched"]] == ["merged"]
+    assert out["uncovered"] == ["signatory_name"]
+    ev = out["suggestions"][0]["evidence"][0]
+    assert ev == {
+        "candidate": "active_substance",
+        "iri": "https://ex.example/domain#ActiveSubstance",
+        "label": "Active substance",
+        "kind": "class",
+        "via": "lexical",
+        "similarity": 1.0,
+    }
+
+
+def test_a_generic_label_does_not_cover_a_longer_name() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(
+        s, [cand("expiry_date")], library[2:], [], vectors=None, model_ref=None
+    )
+    # units' "date" vs "expiry date" is 5/12 < MIN_LEXICAL.
+    assert out["suggestions"] == [] and out["uncovered"] == ["expiry_date"]
+
+
+def test_pins_count_first_and_are_never_suggested() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(
+        s,
+        CANDIDATES,
+        library,
+        [SuggestPin(ontology_id="domain", version=1)],
+        vectors=None,
+        model_ref=None,
+    )
+    assert out["pinned"] == [
+        {
+            "ontologyId": "domain",
+            "version": 1,
+            "label": "Domain",
+            "covers": ["active_substance", "batch_number", "expiry_date"],
+        }
+    ]
+    assert [x["ontologyId"] for x in out["suggestions"]] == ["units"]
+    # merged adds nothing beyond the pin: not even "also matched" (it covers only pinned ground).
+    assert out["alsoMatched"] == []
+
+
+def test_a_pin_missing_from_the_store_covers_nothing() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(
+        s,
+        CANDIDATES,
+        library,
+        [SuggestPin(ontology_id="gone", version=4)],
+        vectors=None,
+        model_ref=None,
+    )
+    assert out["pinned"] == [{"ontologyId": "gone", "version": 4, "label": "gone", "covers": []}]
+    assert [x["ontologyId"] for x in out["suggestions"]] == ["domain", "units"]
+
+
+def test_min_gain_stops_a_single_candidate_ontology() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(s, [cand("strength")], library, [], vectors=None, model_ref=None)
+    assert out["suggestions"] == [] and out["uncovered"] == ["strength"]
+
+
+def test_blank_candidate_names_are_uncovered_not_errors() -> None:
+    s, library = library_store()
+    out = suggest_ontologies(
+        s, [cand(""), cand("___"), *CANDIDATES[:3]], library, [], vectors=None, model_ref=None
+    )
+    assert out["candidates"] == 5
+    assert "" in out["uncovered"] and "___" in out["uncovered"]
+
+
+def test_semantic_hits_count_and_say_how_they_were_found() -> None:
+    from ingest_worker.embeddings import term_text
+
+    s, library = library_store()
+    for name in ("domain", "units"):
+        s.store_embeddings(
+            name, 1, "emb/fake",
+            [(t.kind, t.iri, "sha", fake_vector(term_text(t.label, t.alt_labels, t.definition, t.parents)))
+             for t in s.embedding_terms(name, 1)],
+        )  # fmt: skip
+    # "signatory" shares no trigram-similar label, but its vector equals the strength term's.
+    candidates = [
+        cand("signatory", description="strength"),
+        cand("strength"),
+        cand("unit_of_measure"),
+    ]
+    vectors = [fake_vector("strength"), fake_vector("strength"), fake_vector("unit of measure")]
+    out = suggest_ontologies(
+        s, candidates, library[:1] + library[2:], [], vectors=vectors, model_ref="emb/fake"
+    )
+    units = next(x for x in out["suggestions"] if x["ontologyId"] == "units")
+    assert "signatory" in units["covers"]
+    vias = {e["candidate"]: e["via"] for e in units["evidence"]}
+    assert vias["signatory"] == "semantic" and vias["strength"] == "both"

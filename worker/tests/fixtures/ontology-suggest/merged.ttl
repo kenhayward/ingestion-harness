@@ -1,0 +1,8 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix d: <https://ex.example/merged#> .
+<https://ex.example/merged> a owl:Ontology .
+d:ActiveSubstance a owl:Class ; rdfs:label "Active substance" .
+d:batchNumber a owl:DatatypeProperty ; rdfs:label "batch number" .
+d:expiryDate a owl:DatatypeProperty ; rdfs:label "expiry date" .
+d:Organisation a owl:Class ; rdfs:label "Organisation" .
