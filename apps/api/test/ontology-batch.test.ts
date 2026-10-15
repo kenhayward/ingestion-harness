@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { readOntologyZip } from '../src/ontologies/batch.js';
 import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
 import { accessApp, multipart, testApp } from './helpers.js';
 
@@ -288,5 +289,83 @@ describe('deleting versions of folder imports', () => {
         .statusCode,
     ).toBe(204);
     expect((await ontologies.get('idmp-prod'))!.versions[0]!.status).toBe('queued');
+  });
+});
+
+describe('ids and caps of folder imports (review fixes)', () => {
+  it('gives the same ids whatever the order of the files or other files beside them', async () => {
+    const { batch, ontologies } = await setup();
+    const a = ttl('a');
+    const b = ttl('b');
+    await batch(
+      { mode: 'separate', idPrefix: 'x-' },
+      [part('core.md', Buffer.from('# notes')), part('core.ttl', a), part('core.ttl', b)],
+      ['a/core.md', 'a/core.ttl', 'b/core.ttl'],
+    );
+    expect(ontologies.jobs[0]!.params).toMatchObject({
+      members: [
+        { ontologyId: 'x-core', fileName: 'a/core.ttl' },
+        { ontologyId: 'x-core-2', fileName: 'b/core.ttl' },
+      ],
+    });
+    // The same files as a zip whose entries come in the other order: nothing new.
+    const zip = Buffer.from(zipSync({ 'b/core.ttl': b, 'a/core.ttl': a }));
+    const again = await batch(
+      { mode: 'separate', idPrefix: 'x-' },
+      [part('x.zip', zip)],
+      undefined,
+    );
+    expect(again.json().versions).toEqual([]);
+    expect(again.json().skipped.map((s: { reason: string }) => s.reason)).toEqual([
+      'already version 1 of x-core',
+      'already version 1 of x-core-2',
+    ]);
+  });
+
+  it('refuses a zip that unpacks past ONTOLOGY_MAX_BYTES, before storing anything', async () => {
+    const ontologies = new MemoryOntologyRepo();
+    const ctx = await testApp({ ontologies, ontologyFetch: { hosts: [], maxBytes: 10_000 } });
+    const bomb = Buffer.from(zipSync({ 'big.ttl': new Uint8Array(50_000) }));
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/ontologies/batch',
+      ...multipart({ mode: 'merge', id: 'bomb', label: 'x' }, [part('bomb.zip', bomb)]),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('the zip unpacks to more than 10000 bytes');
+    expect(ctx.store.objects.size).toBe(0);
+    expect(bomb.length).toBeLessThan(1000);
+  });
+});
+
+describe('readOntologyZip caps', () => {
+  it.each([
+    [
+      'too many entries',
+      { 'a.ttl': strToU8('x'), 'b.ttl': strToU8('y'), 'c.md': strToU8('z') },
+      { maxInflated: 1000, maxEntries: 2 },
+      'the zip has more than 2 entries',
+    ],
+    [
+      'too large unpacked',
+      { 'a.ttl': new Uint8Array(5000) },
+      { maxInflated: 100 },
+      'the zip unpacks to more than 100 bytes',
+    ],
+  ])('refuses %s', (_name, entries, opts, message) => {
+    expect(() => readOntologyZip(zipSync(entries), opts)).toThrow(message);
+  });
+
+  it('refuses a corrupt zip and never inflates other entries', () => {
+    const zip = zipSync({ 'a.ttl': strToU8('x'.repeat(100)), 'big.bin': new Uint8Array(5000) });
+    expect(readOntologyZip(zip, { maxInflated: 1000 }).map((f) => f.path)).toEqual(['a.ttl']);
+    // An RDF entry whose compressed bytes are damaged (its name is kept).
+    const text = strToU8(
+      Array.from({ length: 400 }, (_, i) => `<x:${i * 7919}> a <y:${i}> .`).join('\n'),
+    );
+    const damaged = zipSync({ 'a.ttl': text });
+    const corrupt = Uint8Array.from(damaged);
+    corrupt.fill(0xff, 30 + 'a.ttl'.length + 8, 30 + 'a.ttl'.length + 40);
+    expect(() => readOntologyZip(corrupt, { maxInflated: 100_000 })).toThrow('not a valid zip');
   });
 });

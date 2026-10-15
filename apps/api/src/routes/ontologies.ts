@@ -356,24 +356,32 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
         sourceName = folderName(paths);
       }
       files = files.filter((f) => !leftOut(f.path));
+      // Ids depend only on the ontology files' paths, sorted: the same files get the same ids
+      // whatever their order (a zip's entries, a folder's parts) or the other files beside them.
+      files.sort((a, b) => a.path.localeCompare(b.path));
+      const skipped: { fileName: string; ontologyId: string; reason: string }[] = [];
+      const kept: { file: BatchFile; ext: string; mediaType: string }[] = [];
+      const idOf = (path: string) => (mode === 'merge' ? id : fileOntologyIds([path], prefix)[0]!);
+      for (const file of files) {
+        const format = ontologyFormat(file.path);
+        if (!format) {
+          skipped.push({
+            fileName: file.path,
+            ontologyId: idOf(file.path),
+            reason: 'not an ontology file',
+          });
+        } else if (file.body.length === 0) {
+          skipped.push({ fileName: file.path, ontologyId: idOf(file.path), reason: 'empty file' });
+        } else kept.push({ file, ext: format.ext, mediaType: format.mediaType });
+      }
       const ids =
         mode === 'separate'
           ? fileOntologyIds(
-              files.map((f) => f.path),
+              kept.map((k) => k.file.path),
               prefix,
             )
           : [];
-      const skipped: { fileName: string; ontologyId: string; reason: string }[] = [];
-      const rdf: { file: BatchFile; ontologyId: string; ext: string; mediaType: string }[] = [];
-      files.forEach((file, i) => {
-        const ontologyId = mode === 'merge' ? id : ids[i]!;
-        const format = ontologyFormat(file.path);
-        if (!format)
-          skipped.push({ fileName: file.path, ontologyId, reason: 'not an ontology file' });
-        else if (file.body.length === 0) {
-          skipped.push({ fileName: file.path, ontologyId, reason: 'empty file' });
-        } else rdf.push({ file, ontologyId, ext: format.ext, mediaType: format.mediaType });
-      });
+      const rdf = kept.map((k, i) => ({ ...k, ontologyId: mode === 'merge' ? id : ids[i]! }));
       if (!rdf.length) {
         return reply.code(400).send({ error: `no ontology files (${ONTOLOGY_ACCEPT})` });
       }
@@ -382,7 +390,6 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           .code(400)
           .send({ error: `at most ${ONTOLOGY_MAX_FILES} ontology files per import` });
       }
-      rdf.sort((a, b) => a.file.path.localeCompare(b.file.path));
 
       const stored: (StoredSourceFile & { ontologyId: string })[] = [];
       for (const { file, ontologyId, ext, mediaType } of rdf) {
