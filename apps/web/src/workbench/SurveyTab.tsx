@@ -443,11 +443,17 @@ export function SurveyTab({
               <table aria-label="Candidate data">
                 <thead>
                   <tr>
-                    <th scope="col">Kind</th>
-                    <th scope="col">Name</th>
+                    <th scope="col" className="fit">
+                      Kind
+                    </th>
+                    <th scope="col" className="fit">
+                      Name
+                    </th>
                     <th scope="col">What</th>
                     <th scope="col">Where</th>
-                    <th scope="col">In brief</th>
+                    <th scope="col" className="fit">
+                      In brief
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -456,12 +462,12 @@ export function SurveyTab({
                     const inBrief = candidateInBrief(c.name, brief?.body ?? null);
                     return (
                       <tr key={`${i}:${c.name}`}>
-                        <td>
+                        <td className="fit">
                           <span className={`kind-tag tone-${c.kind === 'table' ? 'ok' : 'info'}`}>
                             {c.kind === 'table' ? 'TABLE' : 'FIELD'}
                           </span>
                         </td>
-                        <td>
+                        <td className="fit">
                           <code>{c.name}</code>
                         </td>
                         <td>{c.description}</td>
@@ -469,7 +475,7 @@ export function SurveyTab({
                           {c.where}
                           {seen && ` — ${seen}`}
                         </td>
-                        <td className={inBrief ? 'tone-text-ok' : 'tone-text-warn'}>
+                        <td className={`fit ${inBrief ? 'tone-text-ok' : 'tone-text-warn'}`}>
                           <StageStatusIcon
                             state={inBrief ? 'accepted' : 'proposed'}
                             size={14}
