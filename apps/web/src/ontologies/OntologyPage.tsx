@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { OntologyDetail, OntologyImport } from '@ih/shared';
 import { ontologySourceUrl, type Api } from '../api/client.js';
 import { navigate } from '../router.js';
-import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { KIND_LABEL, isImporting, versionStatusText } from './derive.js';
+import { DeleteVersionDialog } from './DeleteVersionDialog.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { VersionLine } from './OntologiesPage.js';
 import type { GraphRenderer } from './graphRenderer.js';
@@ -32,7 +32,6 @@ export function OntologyPage({
   const [version, setVersion] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -65,19 +64,12 @@ export function OntologyPage({
     return () => clearInterval(timer);
   }, [importing, load, pollMs]);
 
-  const remove = async () => {
-    if (!detail || !current) return;
-    setDeleteError(null);
-    try {
-      await api.deleteOntologyVersion(detail.id, current.version);
-      setDeleting(false);
-      if (detail.versions.length === 1) navigate('#/ontologies');
-      else {
-        setVersion(null);
-        await load();
-      }
-    } catch (err) {
-      setDeleteError((err as Error).message);
+  const deleted = () => {
+    setDeleting(false);
+    if (detail && detail.versions.length === 1) navigate('#/ontologies');
+    else {
+      setVersion(null);
+      void load();
     }
   };
 
@@ -224,23 +216,14 @@ export function OntologyPage({
             />
           )}
           {deleting && current && (
-            <Dialog
-              title={`Delete version ${current.version}`}
+            <DeleteVersionDialog
+              api={api}
+              ontology={detail}
+              version={current.version}
+              versionCount={detail.versions.length}
               onClose={() => setDeleting(false)}
-              actions={
-                <button type="button" className="danger" onClick={() => void remove()}>
-                  Delete version
-                </button>
-              }
-            >
-              <p>
-                Deletes version {current.version} of {detail.label}, its terms and its file.
-                {detail.versions.length === 1
-                  ? ' It is the only version, so the ontology goes too.'
-                  : ''}
-              </p>
-              {deleteError && <p role="alert">{deleteError}</p>}
-            </Dialog>
+              onDeleted={deleted}
+            />
           )}
         </>
       )}

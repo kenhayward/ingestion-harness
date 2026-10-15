@@ -3539,7 +3539,7 @@ tr.confirming td {
 }
 .ontology-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 980px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
@@ -3558,6 +3558,9 @@ tr.confirming td {
 }
 .ontology-table th:nth-child(5) {
   width: 23%;
+}
+.ontology-table th:nth-child(6) {
+  width: 132px;
 }
 .ontology-table th {
   padding: 11px 16px;
@@ -3827,4 +3830,24 @@ tr.confirming td {
 }
 .field-warning {
   color: var(--ih-warn-fg);
+}
+
+/* A list row's Download, Edit… and Delete… (the detail page's actions, as icons). */
+.ontology-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.ontology-row-actions .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--ih-radius-sm);
+}
+.ontology-row-actions .icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
