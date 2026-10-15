@@ -1411,6 +1411,62 @@ label.inline.list-select {
 .holdout-note {
   color: var(--ih-skip-fg);
 }
+/* Preparation progress (#142): a bar per preparing sample, and the batch strip with uploads. */
+.sample-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: var(--ih-text-sm);
+}
+.sample-progress .meter {
+  flex: 1;
+  max-width: 240px;
+}
+.batch-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.batch-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.batch-progress-head h3 {
+  margin: 0;
+}
+.upload-rows {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.upload-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(84px, 160px);
+  align-items: center;
+  gap: 12px;
+  font-size: var(--ih-text-sm);
+}
+.upload-name {
+  overflow: hidden;
+  font-family: var(--ih-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .upload-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .upload-row .meter {
+    grid-column: 1 / -1;
+  }
+}
 .sample-actions {
   display: flex;
   flex-wrap: wrap;

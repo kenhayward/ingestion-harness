@@ -731,6 +731,7 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     createdAt: '2026-10-12T00:00:00.000Z',
     state: 'ready',
     prepareJobId: crypto.randomUUID(),
+    prepareStatus: null,
     error: null,
     prepare: null,
     prepareError: null,
