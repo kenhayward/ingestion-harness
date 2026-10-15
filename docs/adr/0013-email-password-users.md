@@ -9,7 +9,7 @@ new one. People expect to sign in with an email address and a password they chos
 has to stay inside the stack: no external identity provider and no email service.
 
 ## Decision
-- **Users** (`users`, migration 0039) replace `access_tokens`. A user has a name, an email
+- **Users** (`users`, migration 0040) replace `access_tokens`. A user has a name, an email
   address (unique, any case, stored in lower case) and a role, `admin` or `user`. Names are
   unique too, whatever the case, because jobs, changes and publications record who did them by
   name (`req.auth.label`), and "My jobs" matches on it.
@@ -85,13 +85,13 @@ has to stay inside the stack: no external identity provider and no email service
   - **TLS** is the proxy's job, as before.
 
 ## Consequences
-- Migration 0039 drops the access tokens and their sessions and empties the Workbench pins (their
+- Migration 0040 drops the access tokens and their sessions and empties the Workbench pins (their
   owners were token ids; they are user ids now): everyone signs in again, and an admin adds the
   users.
 - The deploy and smoke scripts sign in as `admin` with the logged token as the password. The
   smoke test leaves a disabled `Smoke test …` user with an `@example.invalid` address each run.
 - Jobs record their creator's user id as well as the name (`jobs.created_by_user`, migration
-  0040): "My jobs", Home's latest job and job notifications match the id (`isMine`), so renaming
+  0041): "My jobs", Home's latest job and job notifications match the id (`isMine`), so renaming
   a user keeps their jobs theirs and a later user given the same name never inherits them. Jobs
   from before it have no id and still match by name.
 - `sign_in_events` holds IP addresses and user agents for 90 days, which belongs in any privacy

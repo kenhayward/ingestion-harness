@@ -1,5 +1,5 @@
 /**
- * Opt-in Postgres integration test for PgAccessRepo (users, migration 0039): the shared access
+ * Opt-in Postgres integration test for PgAccessRepo (users, migration 0040): the shared access
  * contract plus the concurrency the memory adapter cannot show.
  *
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies db/migrations

@@ -129,7 +129,7 @@ function taken(err: unknown): UserProblem | null {
 
 type Client = pg.PoolClient;
 
-/** Users, sessions and the sign-in log in Postgres (migration 0039). Semantics match MemoryAccessRepo. */
+/** Users, sessions and the sign-in log in Postgres (migration 0040). Semantics match MemoryAccessRepo. */
 export class PgAccessRepo implements AccessRepo {
   constructor(private readonly pool: pg.Pool) {}
 

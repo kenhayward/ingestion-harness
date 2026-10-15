@@ -3871,3 +3871,61 @@ tr.confirming td {
   max-width: 440px;
   margin: 24px auto;
 }
+
+/* Survey tab: ontology suggestions and the moved picker (ADR 0011 follow-up). */
+.survey-ontologies {
+  display: grid;
+  gap: var(--ih-space-3);
+  margin-top: var(--ih-space-4);
+}
+.survey-ontologies > button {
+  justify-self: start;
+}
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ih-space-3);
+}
+.suggestion-card {
+  display: grid;
+  gap: var(--ih-space-2);
+  align-content: start;
+  padding: var(--ih-space-3);
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface2);
+}
+.suggestion-card h4 {
+  margin: 0;
+}
+.suggestion-card p {
+  margin: 0;
+}
+.suggestion-card > button {
+  justify-self: start;
+}
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ih-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.suggestion-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface);
+  font-family: var(--ih-font-mono, monospace);
+  font-size: var(--ih-text-sm, 12px);
+}
+.suggestion-evidence {
+  margin: 0;
+  padding-left: var(--ih-space-4);
+}
+.brief-ontology-summary {
+  display: grid;
+  gap: var(--ih-space-2);
+  justify-items: start;
+}

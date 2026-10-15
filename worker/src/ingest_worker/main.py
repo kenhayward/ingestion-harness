@@ -26,6 +26,7 @@ from .llm.registry import load_llm_config
 from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
 from .ontology_fetch import FetchPolicy, fetch_rdf
+from .ontology_suggest import run_suggest
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -122,6 +123,11 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             preview = run_graph_preview(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
+            return True
+        if job.task == "suggest":
+            suggested = run_suggest(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s suggested %d ontologies", job.id, len(suggested["suggestions"]))
             return True
         if job.task == "embed":
             embedded = run_embed(job, deps, queue)

@@ -15,7 +15,7 @@ const RECOMPUTE_CONCURRENCY = 8;
  * Salts every cached fingerprint: bump it when the list row's shape or the code deriving it
  * (the overview, `listItemFrom`) changes, so a deploy invalidates every cached row.
  */
-export const LIST_CACHE_VERSION = 6;
+export const LIST_CACHE_VERSION = 7;
 
 /**
  * Every project's list row, recomputing only those whose fingerprint moved (or whose cached row

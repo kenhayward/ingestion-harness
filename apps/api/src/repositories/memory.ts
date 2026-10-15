@@ -11,6 +11,7 @@ import type {
   ResultSummary,
   ReviewEdit,
   StepRun,
+  SuggestParams,
 } from '@ih/shared';
 import { DELETABLE_STATUSES, isMine, sourceContentType, type Creator } from '@ih/shared';
 import {
@@ -52,6 +53,8 @@ export class MemoryRepo implements IngestionRepo {
   readonly graphJobs = new Map<string, ProjectJob & { params: GraphJobParams }>();
   /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
+  /** Ontology suggestion refreshes (document-less, one per project). */
+  readonly suggestJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** Export jobs (document-less, one per project): kept apart like draft jobs. */
   readonly exportJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** jobs.params of workbench jobs. */
@@ -280,6 +283,31 @@ export class MemoryRepo implements IngestionRepo {
     if (stored?.projectId !== projectId) return null;
     const { id: jobId, status, error, createdAt, updatedAt } = stored;
     return { id: jobId, projectId, status, error, createdAt, updatedAt };
+  }
+  async createSuggestJob(projectId: string, params: SuggestParams) {
+    const removed = [...this.suggestJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .map((j) => j.id);
+    for (const id of removed) this.suggestJobs.delete(id);
+    const now = new Date().toISOString();
+    const job: ProjectJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.suggestJobs.set(job.id, { ...job, params });
+    this.priorities.set(job.id, SEGMENT_PRIORITY);
+    return { job, removed };
+  }
+
+  async latestSuggestJob(projectId: string) {
+    const stored = [...this.suggestJobs.values()].find((j) => j.projectId === projectId);
+    if (!stored) return null;
+    const { id, status, error, createdAt, updatedAt, params } = stored;
+    return { id, projectId, status, error, createdAt, updatedAt, params: params as SuggestParams };
   }
 
   async getSegmentJob(projectId: string, id: string) {

@@ -1,5 +1,6 @@
 import type {
   GraphPreviewView,
+  OntologySuggestionsView,
   ShaclReport,
   LinkedDataBody,
   LinkedDataView,
@@ -363,6 +364,8 @@ export interface Api {
   /** Render the open draft's mapping over the newest finished run of each dev sample. */
   startGraphPreview(projectId: string, sampleIds?: string[]): Promise<GraphPreviewView>;
   getGraphPreview(projectId: string, jobId: string): Promise<GraphPreviewView>;
+  getOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
+  refreshOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
   /** A term and what it is related to, for the graph view. */
   getNeighbourhood(id: string, version: number, iri: string, depth?: 1 | 2): Promise<Neighbourhood>;
   createLlmEndpoint(body: EndpointCreateInput): Promise<LlmEndpointView>;
@@ -871,6 +874,15 @@ export function createHttpApi(base = '/api'): Api {
       post<GraphPreviewView>(
         `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews`,
         sampleIds ? { sampleIds } : {},
+      ),
+    getOntologySuggestions: (projectId) =>
+      apiFetch(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/ontology-suggestions`,
+      ).then(json<OntologySuggestionsView>),
+    refreshOntologySuggestions: (projectId) =>
+      post<OntologySuggestionsView>(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/ontology-suggestions`,
+        {},
       ),
     getGraphPreview: (projectId, jobId) =>
       apiFetch(

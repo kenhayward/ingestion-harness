@@ -602,7 +602,13 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
       repo.jobs.delete(job.id);
     }
-    for (const map of [repo.draftJobs, repo.exportJobs, repo.segmentJobs, repo.graphJobs]) {
+    for (const map of [
+      repo.draftJobs,
+      repo.exportJobs,
+      repo.segmentJobs,
+      repo.graphJobs,
+      repo.suggestJobs,
+    ]) {
       for (const job of [...map.values()].filter((j) => j.projectId === id)) {
         removed.push({ jobId: job.id, draftObjects: [], inboxObject: null });
         map.delete(job.id);
@@ -694,6 +700,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       ...repo.exportJobs.values(),
       ...repo.segmentJobs.values(),
       ...repo.graphJobs.values(),
+      ...repo.suggestJobs.values(),
     ];
     return (await this.listProjects()).map((project) => {
       const id = project.id;

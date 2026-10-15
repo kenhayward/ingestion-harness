@@ -491,6 +491,29 @@ needs (id, version, `version_iri`, sha256) but does not carry the ontologies the
 Import accepts the bundle when the library has those versions (matched by sha256). Otherwise it
 lists the missing ones as a 400 `bundle needs ontologies not in the library: …`.
 
+### As built: chosen on the Survey tab, with suggestions (2026-10-15)
+
+The picker moved from the Brief tab to the Survey tab
+([spec](../superpowers/specs/2026-10-15-survey-ontology-suggestions-design.md)); the selection
+is still stored in the brief, so the mapping stage, its staleness and bundles are unchanged. The
+Brief tab shows a summary line with *Change on Survey*.
+
+The survey suggests vocabularies. After its model call the survey job looks each candidate up
+in the term index of the library's newest ready versions, one best term per version: lexically
+(pg_trgm `similarity` of the candidate's name against labels and synonyms, whole strings, at
+least 0.45) and, when the embedding model may see the samples' wording, semantically (name and
+description, cosine at least 0.6). A greedy set cover starting from the brief's pins then picks
+at most five ontologies, each adding at least two covered candidates; ties go to the smaller
+ontology, so a module beats its merged copy, which is listed under *Also matched*. The record
+(`ontology-suggestions/{project}/{job}.json`) carries the evidence, the uncovered candidates and
+the library it was computed against; *Refresh suggestions* runs the same code as a `suggest` job
+when the library or the survey changed. Pin writes the brief.
+
+Consequence for the limits: vocabularies are only ever used through the term index (suggestions
+and the mapping stage's retrieval), never loaded whole. Only shapes pins are loaded as graphs per
+job (`shacl.load_graphs`). Raising the import limits for large vocabularies is therefore a
+question of index size, decided separately.
+
 ## The mapping in the recipe
 
 A recipe gains an optional top-level `semantics` block: `SemanticsSchema` in

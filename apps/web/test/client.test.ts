@@ -931,3 +931,19 @@ describe('http api: error messages', () => {
     await expect(api.createProject('letter')).rejects.toThrow('502 Bad Gateway');
   });
 });
+
+describe('http api: ontology suggestions', () => {
+  it('reads and refreshes the suggestions of a project', async () => {
+    const view = { record: null, running: false, failed: null, stale: null };
+    const fetch = vi.fn(async () => respond(200, view));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    expect(await api.getOntologySuggestions('letter')).toEqual(view);
+    await api.refreshOntologySuggestions('letter');
+    const calls = fetch.mock.calls as unknown as [string, RequestInit | undefined][];
+    expect(calls[0]![0]).toBe('/api/workbench/projects/letter/ontology-suggestions');
+    expect(calls[0]![1]?.method ?? 'GET').toBe('GET');
+    expect(calls[1]![0]).toBe('/api/workbench/projects/letter/ontology-suggestions');
+    expect(calls[1]![1]?.method).toBe('POST');
+  });
+});

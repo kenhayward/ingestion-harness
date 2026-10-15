@@ -82,7 +82,7 @@ export const JobSummarySchema = z.object({
    */
   createdBy: z.string().nullable(),
   /**
-   * Id of the user who queued the job (migration 0040): what "mine" means, since a name can
+   * Id of the user who queued the job (migration 0041): what "mine" means, since a name can
    * change or pass to someone else. Null for jobs from before it and without access control.
    */
   createdByUser: z.string().nullable(),
@@ -115,7 +115,7 @@ export interface Creator {
 
 /**
  * Whether `me` queued the job: by user id when the job has one (a name can change or pass to
- * someone else), else by name (jobs from before migration 0040).
+ * someone else), else by name (jobs from before migration 0041).
  */
 export function isMine(job: Pick<JobSummary, 'createdBy' | 'createdByUser'>, me: Creator): boolean {
   if (job.createdByUser !== null) return job.createdByUser === me.userId;
