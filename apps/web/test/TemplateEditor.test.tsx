@@ -881,7 +881,7 @@ describe('TemplateEditor', () => {
       within(grid)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['#', 'Section ID', 'Anchor', 'Required', 'Repeats', '']);
+    ).toEqual(['#', 'Section ID', 'Anchor', 'Required', '']);
     const row = within(grid).getAllByRole('row')[1]!;
     expect(within(row).getByLabelText('Section 1 id')).toHaveValue('all');
     await userEvent.clear(within(row).getByLabelText('Section 1 anchor'));
@@ -890,6 +890,28 @@ describe('TemplateEditor', () => {
     expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
       document: { sections: [{ id: 'all', anchor: '^Intro' }] },
     });
+  });
+
+  it('explains sections from a help button above the table', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Sections/));
+    await userEvent.click(screen.getByRole('button', { name: 'Help: How sections work' }));
+    expect(screen.getByRole('dialog', { name: 'How sections work' })).toBeInTheDocument();
+  });
+
+  it('gives each section a second line for repeating, with visible labels', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Sections/));
+    const grid = screen.getByRole('table', { name: 'Sections' });
+    const detail = within(grid).getByRole('group', { name: 'Section 1 repeating' });
+    expect(detail).toHaveTextContent('Repeats');
+    expect(detail).toHaveTextContent('every match of the anchor starts an occurrence');
+    expect(within(detail).queryByText('Key')).not.toBeInTheDocument();
+    await userEvent.click(within(detail).getByRole('checkbox', { name: 'Section 1 repeats' }));
+    expect(within(detail).getByText('Key')).toBeInTheDocument();
+    expect(within(detail).getByText('Key from')).toBeInTheDocument();
+    expect(detail).toHaveTextContent('names each occurrence');
+    expect(detail).toHaveTextContent("takes another repeating section's key");
   });
 
   it('marks a section as repeating with a key, and clears both when unticked', async () => {

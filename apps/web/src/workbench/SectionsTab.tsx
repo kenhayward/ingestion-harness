@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnchorSuggestion, SampleView, SegmentDocument } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { sectionTone, TONE_COLOR } from '../ui/stageStyle.js';
@@ -356,6 +357,7 @@ export function SectionsTab({
           <section className="card anchors-card" aria-labelledby="anchors-title">
             <div className="anchors-head">
               <h3 id="anchors-title">Anchors</h3>
+              <HelpButton topic="sections" />
               <span className="muted" aria-live="polite">
                 {running
                   ? 'Updating the preview…'
