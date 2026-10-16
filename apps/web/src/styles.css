@@ -510,6 +510,24 @@ html {
   margin-top: auto;
   color: var(--ih-muted);
 }
+/* The build's version (ADR 0014), below API docs; at the bottom on its own for operators. */
+.side-nav .nav-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding: 4px 12px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+  text-decoration: none;
+}
+.side-nav a.nav-foot + .nav-version {
+  margin-top: 0;
+}
+.side-nav.compact .nav-version {
+  justify-content: center;
+  padding: 4px 0;
+}
 /* Collapse / expand the nav (any page; remembered except on project pages). */
 .nav-toggle {
   align-self: flex-end;

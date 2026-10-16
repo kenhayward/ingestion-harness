@@ -61,6 +61,12 @@ describe('app shell', () => {
     },
   );
 
+  it('shows the build version at the bottom of the nav', async () => {
+    render(<App api={fakeApi()} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByText('dev')).toBeInTheDocument();
+  });
+
   it('badges Jobs with the number of jobs needing attention', async () => {
     window.location.hash = '#/jobs';
     const api = fakeApi({
