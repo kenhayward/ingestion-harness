@@ -129,7 +129,7 @@ export function modelRefProblem(
   aliases: Record<string, string>,
   { unknownAliases = 'refuse' }: { unknownAliases?: 'refuse' | 'allow' } = {},
 ): string | null {
-  const notOffered = 'is not offered: add it on the Models page';
+  const notOffered = 'is not offered: add it under Administration > Models';
   if (ref in aliases) {
     const resolved = resolveAlias(ref, aliases);
     if (resolved === null) return `model choice ${ref} does not resolve to a model`;

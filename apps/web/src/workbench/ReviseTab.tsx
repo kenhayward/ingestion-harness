@@ -265,7 +265,7 @@ export function ReviseTab({
         : !preview.feedback.length
           ? 'Add feedback first: a revision answers your feedback'
           : preview.model === null
-            ? 'Set the drafting model on the Models page first'
+            ? 'Set the drafting model under Administration > Models first'
             : null);
   const evaluateBlocked = evaluateBlocker({
     retired,

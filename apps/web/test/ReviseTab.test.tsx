@@ -319,7 +319,10 @@ describe('ReviseTab', () => {
     tab({ getRevisePreview: vi.fn(async () => revisePreview({ model: null })) });
     const ask = await screen.findByRole('button', { name: 'Ask the model for a revision' });
     expect(ask).toBeDisabled();
-    expect(ask).toHaveAttribute('title', 'Set the drafting model on the Models page first');
+    expect(ask).toHaveAttribute(
+      'title',
+      'Set the drafting model under Administration > Models first',
+    );
   });
 
   it('says how many failing dev samples are left out, and when every sample scored 100%', async () => {

@@ -112,7 +112,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
             Every ontology in the library by name, with its newest version (whatever its
             status) and how many versions it has. Retired ontologies are left out unless
             \`retired=include\`. \`embedding\` is how far the worker has embedded the newest
-            ready version under the embedding model (Models page), counted when listed; null
+            ready version under the embedding model (Administration > Models), counted when listed; null
             without an embedding model or a ready version.
           `,
         ),

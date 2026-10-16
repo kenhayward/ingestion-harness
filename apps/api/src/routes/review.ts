@@ -320,7 +320,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
           200: res('The job, queued to re-run the step.', JobSummarySchema),
           400: error(
             'Zod issues for an invalid body, `no extract step "{step}"`, or a `model` that may ' +
-              'not run: `model {ref} is not offered: add it on the Models page`, `alias {name} ' +
+              'not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} ' +
               'uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).',
           ),
           404: error('`not found`, or `job did not run a recipe`.'),

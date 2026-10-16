@@ -2894,7 +2894,7 @@
                         "string",
                         "null"
                       ],
-                      "description": "Changed by an admin on the Access page."
+                      "description": "Changed by an admin under Administration > Access."
                     },
                     "jobTitle": {
                       "type": [
@@ -3137,7 +3137,7 @@
                         "string",
                         "null"
                       ],
-                      "description": "Changed by an admin on the Access page."
+                      "description": "Changed by an admin under Administration > Access."
                     },
                     "jobTitle": {
                       "type": [
@@ -3798,7 +3798,7 @@
                         "string",
                         "null"
                       ],
-                      "description": "Changed by an admin on the Access page."
+                      "description": "Changed by an admin under Administration > Access."
                     },
                     "jobTitle": {
                       "type": [
@@ -9329,7 +9329,7 @@
         "tags": [
           "Models"
         ],
-        "description": "The labelled model choices an admin set up on the Models page\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, recipe steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
+        "description": "The labelled model choices an admin set up under Administration > Models\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, recipe steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
         "responses": {
           "200": {
             "description": "The choices.",
@@ -12334,7 +12334,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it on the Models page`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
+            "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
             "content": {
               "application/json": {
                 "schema": {
@@ -12360,7 +12360,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it on the Models page`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
+                  "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
                 }
               }
             }
@@ -39699,7 +39699,7 @@
             }
           },
           "409": {
-            "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.",
+            "description": "`set the customer under Administration > Linked data`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -39725,7 +39725,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`."
+                  "description": "`set the customer under Administration > Linked data`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`."
                 }
               }
             }
@@ -44905,7 +44905,7 @@
             }
           },
           "409": {
-            "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`.",
+            "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44931,7 +44931,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`."
+                  "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -45195,7 +45195,7 @@
             }
           },
           "409": {
-            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "description": "`model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -45221,7 +45221,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`model {ref} is not offered: add it on the Models page`."
+                  "description": "`model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -45681,7 +45681,7 @@
             }
           },
           "409": {
-            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "description": "`model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -45707,7 +45707,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`model {ref} is not offered: add it on the Models page`."
+                  "description": "`model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -45722,7 +45722,7 @@
         "tags": [
           "Ontologies"
         ],
-        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`. `embedding` is how far the worker has embedded the newest\nready version under the embedding model (Models page), counted when listed; null\nwithout an embedding model or a ready version.",
+        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`. `embedding` is how far the worker has embedded the newest\nready version under the embedding model (Administration > Models), counted when listed; null\nwithout an embedding model or a ready version.",
         "parameters": [
           {
             "schema": {
@@ -51058,7 +51058,7 @@
         "tags": [
           "Linked data"
         ],
-        "description": "The effective base IRI, for showing example IRIs while mapping a recipe. Null until\nan admin sets the customer on the Linked data page (RDF is skipped until then).",
+        "description": "The effective base IRI, for showing example IRIs while mapping a recipe. Null until\nan admin sets the customer under Administration > Linked data (RDF is skipped until then).",
         "responses": {
           "200": {
             "description": "The effective base.",

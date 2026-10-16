@@ -189,7 +189,7 @@ def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
     [(_, reason)] = queue.reviewed
     assert reason == (
         "The drafting model's reply was cut off at its output limit (16,000 tokens). "
-        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
         "can be run again with less to propose."
     )
     assert "chunkPages" not in reason

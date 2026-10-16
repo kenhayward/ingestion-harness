@@ -222,7 +222,7 @@ class MemoryLlmConfigStore:
         self.settings: dict[str, tuple[str, bool]] = {}
         #: (provider, model_id) disabled by an admin: not offered even when curated
         self.disabled: set[tuple[str, str]] = set()
-        #: (provider, model_id) -> an admin's output limit (Models page)
+        #: (provider, model_id) -> an admin's output limit (Administration > Models)
         self.limits: dict[tuple[str, str], int] = {}
         self._version = 0
         if seed is not None:

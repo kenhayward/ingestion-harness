@@ -100,6 +100,8 @@ const PATHS = {
   plus: <path d="M12 5v14M5 12h14" />,
   chevronUp: <path d="M18 15l-6-6-6 6" />,
   chevronDown: <path d="M6 9l6 6 6-6" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  refresh: <path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 3.5v5h-5" />,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
   archive: (
     <>

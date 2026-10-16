@@ -40,7 +40,7 @@ MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
 log = logging.getLogger(__name__)
 
-#: Output budget of one drafting call when its model sets none (Models page: Max output
+#: Output budget of one drafting call when its model sets none (Administration > Models: Max output
 #: tokens; TS DEFAULT_MAX_OUTPUT_TOKENS).
 DRAFT_MAX_TOKENS = 16_000
 
@@ -55,7 +55,7 @@ def truncated_reason(limit: int) -> str:
     people other than admins read it)."""
     return (
         f"The drafting model's reply was cut off at its output limit ({limit:,} tokens). "
-        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
         "can be run again with less to propose."
     )
 

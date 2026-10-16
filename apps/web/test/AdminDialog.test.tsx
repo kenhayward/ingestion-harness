@@ -1,0 +1,100 @@
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AdminDialog } from '../src/access/AdminDialog.js';
+import { fakeApi } from './fake-api.js';
+
+const admin = {
+  role: 'admin' as const,
+  label: 'Ken',
+  email: null,
+  mustChangePassword: false,
+  userId: 'u-test',
+};
+
+function open(onClose = vi.fn()) {
+  const { unmount } = render(<AdminDialog api={fakeApi()} me={admin} onClose={onClose} />);
+  return { dialog: screen.getByRole('dialog', { name: 'Administration' }), onClose, unmount };
+}
+
+const header = (dialog: HTMLElement) => dialog.querySelector('header')!;
+
+describe('AdminDialog', () => {
+  afterEach(() => localStorage.removeItem('ih.adminTab'));
+
+  it('opens on Models, with Add endpoint in the header', async () => {
+    const { dialog } = open();
+    const tabs = within(dialog).getByRole('tablist', { name: 'Administration sections' });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((t) => t.textContent),
+    ).toEqual(['Models', 'Linked data', 'Access']);
+    expect(within(tabs).getByRole('tab', { name: 'Models' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(dialog).getByRole('tabpanel')).toHaveAccessibleName('Models');
+    expect(
+      await within(header(dialog)).findByRole('button', { name: 'Add endpoint' }),
+    ).toBeInTheDocument();
+    // The page's own heading is gone: the dialog's title names the tab.
+    expect(within(dialog).queryByRole('heading', { level: 1 })).toBeNull();
+  });
+
+  it('switches tabs, and the header action with them', async () => {
+    const { dialog } = open();
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Linked data' }));
+    expect(within(dialog).getByRole('tabpanel')).toHaveAccessibleName('Linked data');
+    expect(within(header(dialog)).queryByRole('button')).toBeNull();
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Access' }));
+    expect(
+      await within(header(dialog)).findByRole('button', { name: 'Add user' }),
+    ).toBeInTheDocument();
+    expect(await within(dialog).findByRole('table', { name: 'Users' })).toBeInTheDocument();
+  });
+
+  it('moves between tabs with the arrow keys', async () => {
+    const { dialog } = open();
+    within(dialog).getByRole('tab', { name: 'Models' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(within(dialog).getByRole('tab', { name: 'Linked data' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}');
+    expect(within(dialog).getByRole('tab', { name: 'Access' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('remembers the last tab in this browser', async () => {
+    const first = open();
+    await userEvent.click(within(first.dialog).getByRole('tab', { name: 'Access' }));
+    expect(localStorage.getItem('ih.adminTab')).toBe('access');
+    first.unmount();
+    const { dialog } = open();
+    expect(within(dialog).getByRole('tab', { name: 'Access' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('closes only with Close: not Escape, not a click outside', async () => {
+    const { dialog, onClose } = open();
+    await userEvent.keyboard('{Escape}');
+    fireEvent.mouseDown(dialog.parentElement!);
+    expect(onClose).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('opens Add user above it, and Escape closes only that', async () => {
+    const { dialog, onClose } = open();
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Access' }));
+    await userEvent.click(await within(header(dialog)).findByRole('button', { name: 'Add user' }));
+    expect(screen.getByRole('dialog', { name: 'Add user' })).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Add user' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Administration' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

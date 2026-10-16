@@ -122,7 +122,7 @@ def test_a_missing_document_is_left_out(fixture_specs_dir: Path) -> None:
 @pytest.mark.parametrize(
     ("base", "params", "message"),
     [
-        (None, {}, "set the customer on the Linked data page"),
+        (None, {}, "set the customer under Administration > Linked data"),
         (BASE, {"definition": {**DEFINITION, "semantics": None}}, "no ontology mapping"),
         (BASE, {"definition": {"id": "letter"}}, "invalid graph preview parameters"),
     ],

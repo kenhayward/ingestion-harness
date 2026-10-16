@@ -398,7 +398,7 @@ def test_a_document_iri_template_that_names_nothing_is_a_graph_failure(tmp_path:
 def test_rdf_only_delivery_without_a_base_goes_to_review(tmp_path: Path) -> None:
     _, target, queue = run_mapped(tmp_path, mapped(delivery={"formats": ["rdf"]}), None)
     [(_, reason)] = queue.reviewed
-    assert "set the customer on the Linked data page" in reason
+    assert "set the customer under Administration > Linked data" in reason
     assert not target.objects and not queue.completed
 
 

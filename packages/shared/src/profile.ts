@@ -80,7 +80,7 @@ export type GitHubLink = z.infer<typeof GitHubLinkSchema>;
 
 export const ProfileSchema = z.object({
   name: z.string(),
-  email: z.string().nullable().describe('Changed by an admin on the Access page.'),
+  email: z.string().nullable().describe('Changed by an admin under Administration > Access.'),
   jobTitle: z.string().nullable(),
   company: z.string().nullable(),
   linkedin: z.string().nullable().describe('The name in `linkedin.com/in/<name>`.'),
