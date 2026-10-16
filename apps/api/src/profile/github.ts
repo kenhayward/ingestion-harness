@@ -159,20 +159,9 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
     return body.access_token;
   }
 
-  private async get(token: string, url: string): Promise<Response> {
-    const res = await this.fetch(url, {
-      headers: { ...API_HEADERS, authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (res.status === 401) {
-      throw new GitHubError('GitHub no longer accepts this link: link the account again');
-    }
-    if (!res.ok) throw new GitHubError(`GitHub answered HTTP ${res.status}`);
-    return res;
-  }
-
   async user(token: string): Promise<GitHubUser> {
-    const body = (await (await this.get(token, `${API}/user`)).json()) as {
+    const { data } = await this.call(token, 'GET', `${API}/user`);
+    const body = data as {
       id: number;
       login: string;
       avatar_url: string;
@@ -201,8 +190,8 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
     const repos: GitHubRepo[] = [];
     let url: string | null = first.toString();
     for (let page = 0; url && page < MAX_PAGES; page++) {
-      const res = await this.get(token, url);
-      const items = (await res.json()) as {
+      const { res, data } = await this.call(token, 'GET', url);
+      const items = data as {
         full_name: string;
         private: boolean;
         permissions?: { push?: boolean };
@@ -249,7 +238,7 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
     if (res.status === 404) throw new NotFoundError(`GitHub could not find it (${message})`);
     if (
       (res.status === 403 || res.status === 422) &&
-      /protected branch|protected ref|changes must be made through a pull request|required status check/i.test(
+      /protected branch|protected ref|repository rule violations|changes must be made through a pull request|required status check/i.test(
         message,
       )
     ) {
@@ -354,6 +343,13 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
     },
   ): Promise<string> {
     const base = repoUrl(input.repo);
+    // `base_tree` is a tree sha: read the parent commit's.
+    const parentCommit = await this.call(
+      token,
+      'GET',
+      `${base}/git/commits/${encodeURIComponent(input.parent)}`,
+    );
+    const baseTree = (parentCommit.data as { tree: { sha: string } }).tree.sha;
     const tree: { path: string; mode: string; type: string; sha: string }[] = [];
     for (const file of input.files) {
       const { data } = await this.call(token, 'POST', `${base}/git/blobs`, {
@@ -368,7 +364,7 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
       });
     }
     const made = await this.call(token, 'POST', `${base}/git/trees`, {
-      base_tree: input.parent,
+      base_tree: baseTree,
       tree,
     });
     const commit = await this.call(token, 'POST', `${base}/git/commits`, {

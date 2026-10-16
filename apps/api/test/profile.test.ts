@@ -320,6 +320,8 @@ describe('the YAML repository', () => {
     ctx.github.repoLists.delete(token);
     const res = await get(ctx, '/api/profile/github/repos');
     expect(res.statusCode).toBe(502);
-    expect(res.json().error).toBe('GitHub no longer accepts this link: link the account again');
+    expect(res.json().error).toBe(
+      'GitHub no longer accepts this link: link the account again in Profile',
+    );
   });
 });

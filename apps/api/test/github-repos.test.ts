@@ -66,6 +66,7 @@ describe('HttpGitHub repository calls', () => {
 
   it('commits through blobs, tree, commit and a non-forced ref update', async () => {
     const fetch = stubFetch(
+      json({ sha: 'parent0', tree: { sha: 'ptree' } }),
       json({ sha: 'blob1' }, { status: 201 }),
       json({ sha: 'blob2' }, { status: 201 }),
       json({ sha: 'tree1' }, { status: 201 }),
@@ -83,29 +84,30 @@ describe('HttpGitHub repository calls', () => {
       message: 'msg',
     });
     expect(sha).toBe('commit1');
-    expect(call(fetch, 0)).toMatchObject({
+    expect(call(fetch, 0)).toMatchObject({ url: `${R}/git/commits/parent0`, method: 'GET' });
+    expect(call(fetch, 1)).toMatchObject({
       url: `${R}/git/blobs`,
       method: 'POST',
       body: { content: 'one', encoding: 'utf-8' },
     });
-    expect(call(fetch, 1).body).toEqual({ content: 'two', encoding: 'utf-8' });
-    expect(call(fetch, 2)).toMatchObject({
+    expect(call(fetch, 2).body).toEqual({ content: 'two', encoding: 'utf-8' });
+    expect(call(fetch, 3)).toMatchObject({
       url: `${R}/git/trees`,
       method: 'POST',
       body: {
-        base_tree: 'parent0',
+        base_tree: 'ptree',
         tree: [
           { path: 'a/b.yaml', mode: '100644', type: 'blob', sha: 'blob1' },
           { path: 'c.yaml', mode: '100644', type: 'blob', sha: 'blob2' },
         ],
       },
     });
-    expect(call(fetch, 3)).toMatchObject({
+    expect(call(fetch, 4)).toMatchObject({
       url: `${R}/git/commits`,
       method: 'POST',
       body: { message: 'msg', tree: 'tree1', parents: ['parent0'] },
     });
-    expect(call(fetch, 4)).toMatchObject({
+    expect(call(fetch, 5)).toMatchObject({
       url: `${R}/git/refs/heads/main`,
       method: 'PATCH',
       body: { sha: 'commit1', force: false },
@@ -114,6 +116,7 @@ describe('HttpGitHub repository calls', () => {
 
   const failingRef = (res: Response) =>
     stubFetch(
+      json({ tree: { sha: 'pt' } }),
       json({ sha: 'b' }, { status: 201 }),
       json({ sha: 't' }, { status: 201 }),
       json({ sha: 'c' }, { status: 201 }),
@@ -135,6 +138,8 @@ describe('HttpGitHub repository calls', () => {
   it.each([
     [422, 'Cannot update this protected branch'],
     [403, 'Protected branch update failed for refs/heads/main'],
+    [422, 'Repository rule violations found. Changes must be made through a pull request.'],
+    [403, 'Repository rule violations found'],
   ])('reports a protected branch (%s)', async (status, message) => {
     const fetch = failingRef(json({ message }, { status }));
     await expect(gh(fetch).commit(TOKEN, input)).rejects.toBeInstanceOf(ProtectedBranchError);
@@ -353,6 +358,7 @@ describe('FakeGitHubRepos', () => {
 
   it('refuses a protected branch, a stale parent and a missing permission', async () => {
     const fake = seeded();
+    fake.grant(repo, 'reader', 'read');
     const parent = await fake.head('tok', repo, 'main');
     const base = { repo, parent, files: [{ path: 'x', content: 'x' }], message: 'm' };
     fake.protect(repo, 'main');
@@ -366,6 +372,11 @@ describe('FakeGitHubRepos', () => {
     );
     fake.beforeRefUpdate = null;
     await expect(fake.head('nobody', repo, 'main')).rejects.toBeInstanceOf(NotFoundError);
+    const readOnly = await fake
+      .commit('reader', { ...base, branch: 'main' })
+      .catch((e: unknown) => e);
+    expect(readOnly).toBeInstanceOf(GitHubError);
+    expect(readOnly).not.toBeInstanceOf(NotFoundError);
     await expect(fake.commit('tok', { ...base, branch: 'main' })).rejects.toBeInstanceOf(
       StaleRefError,
     );

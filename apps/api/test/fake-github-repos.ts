@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { GitHubRepo } from '@ih/shared';
 import {
+  GitHubError,
   NotFoundError,
   ProtectedBranchError,
   StaleRefError,
@@ -52,9 +53,9 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   private counter = 0;
   /** Every commit made through `commit`, in order. */
   readonly commits: FakeCommit[] = [];
-  /** Switches `listFiles` to the per-directory path, as for a tree GitHub truncates. */
+  /** Observation hook only: `listFiles` always returns the full, correct listing (HttpGitHub's fallback guarantees that); with this on, `treeReads` records 'truncated'. */
   truncateTrees = false;
-  /** How `listFiles` read the tree each time: 'recursive' or 'truncated' (directory by directory). */
+  /** How GitHub would have been read for each `listFiles`: 'recursive' or 'truncated'. */
   readonly treeReads: ('recursive' | 'truncated')[] = [];
   /** Runs after a commit is built and before the branch moves: move the head here to race it. */
   beforeRefUpdate: (() => void) | null = null;
@@ -172,7 +173,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   ): Promise<string> {
     const repo = this.readable(token, input.repo);
     if (repo.permissions.get(token) !== 'push') {
-      throw new NotFoundError(`${input.repo} not found`);
+      throw new GitHubError('GitHub answered HTTP 403: Resource not accessible');
     }
     const parent = this.commitOf(repo, input.parent);
     const files = new Map(parent.files);
