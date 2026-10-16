@@ -1434,7 +1434,9 @@ function PublishToPicker({
   value: string | undefined;
   onChange: (id: string) => void;
 }) {
-  const defaultLabel = choices.find((c) => c.id === DEFAULT_TARGET_ID)?.label ?? 'Default';
+  const describe = (c: TargetChoice) => `${c.label} · ${c.kind} · ${c.bucket}`;
+  const def = choices.find((c) => c.id === DEFAULT_TARGET_ID);
+  const defaultLabel = def ? describe(def) : 'Default';
   const stored = value && value !== DEFAULT_TARGET_ID ? value : '';
   // Loading: a stored id is not yet known to be missing, so it is not flagged until choices arrive.
   const missing = stored && choices.length > 0 && !choices.some((c) => c.id === stored);
@@ -1445,7 +1447,7 @@ function PublishToPicker({
         .filter((c) => c.id !== DEFAULT_TARGET_ID)
         .map((c) => (
           <option key={c.id} value={c.id}>
-            {c.label}
+            {describe(c)}
           </option>
         ))}
       {missing && <option value={stored}>{`${stored} (not on this deployment)`}</option>}

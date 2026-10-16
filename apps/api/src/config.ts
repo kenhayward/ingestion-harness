@@ -107,27 +107,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return parsed.data;
 }
 
-export interface TargetConfig {
-  endpoint: string;
-  region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  bucket: string;
-  prefix: string;
-}
-
-/** The publish target, resolved exactly like worker/src/ingest_worker/config.py. */
-export function targetConfig(c: Config): TargetConfig {
-  return {
-    endpoint: c.TARGET_S3_ENDPOINT ?? c.S3_ENDPOINT,
-    region: c.TARGET_S3_REGION ?? c.S3_REGION,
-    accessKeyId: c.TARGET_S3_ACCESS_KEY ?? c.S3_ACCESS_KEY,
-    secretAccessKey: c.TARGET_S3_SECRET_KEY ?? c.S3_SECRET_KEY,
-    bucket: c.TARGET_S3_BUCKET,
-    prefix: c.TARGET_S3_PREFIX,
-  };
-}
-
 /**
  * Read-only S3 keys (ADR 0008) are issued through the local SeaweedFS's IAM, for the internal
  * publishing targets; whether any can be issued depends on whether one exists.

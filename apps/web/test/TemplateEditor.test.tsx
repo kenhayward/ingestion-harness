@@ -1606,7 +1606,14 @@ describe('Publish to (publishing targets)', () => {
     const { api } = setup(view(validDefinition()), withChoices);
     await userEvent.click(await tab(/General/));
     const pick = await screen.findByRole('combobox', { name: 'Publish to' });
-    expect(within(pick).getByRole('option', { name: 'Default (Main store)' })).toBeTruthy();
+    expect(
+      within(pick).getByRole('option', {
+        name: 'Default (Main store · internal · ingest-published)',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(pick).getByRole('option', { name: 'Finance lake · internal · fin' }),
+    ).toBeTruthy();
     await userEvent.selectOptions(pick, 'finance-lake');
     await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());

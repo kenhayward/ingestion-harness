@@ -41,8 +41,8 @@ const BAD_TARGETS = error(
 );
 const ADMINS_ONLY = error('`admins only`.');
 const NOT_HERE = error(
-  '`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or ' +
-    '`not found`.',
+  '`not found` (no such consumer or key), or `S3 keys are not available on this deployment` ' +
+    '(an API built without the key service).',
 );
 const UNREACHABLE = error('`SeaweedFS could not be reached: …`.');
 const base = (operationId: string, summary: string, description: string) => ({
@@ -54,8 +54,7 @@ const base = (operationId: string, summary: string, description: string) => ({
 });
 const ConsumerParams = z.object({ id: z.string().uuid().describe('The consumer id.') });
 
-const NOT_AVAILABLE =
-  'S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)';
+const NOT_AVAILABLE = 'S3 keys are not available on this deployment';
 const unreachable = (err: unknown) =>
   `SeaweedFS could not be reached: ${err instanceof Error ? err.message : String(err)}`;
 

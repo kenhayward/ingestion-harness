@@ -217,14 +217,11 @@ describe('S3KeysSection', () => {
 
   it('explains when keys are not available, without a form', async () => {
     const listS3Keys = vi.fn(async () => {
-      throw new ApiError(
-        'S3 keys are not available: the publish target is not the local SeaweedFS',
-        404,
-      );
+      throw new ApiError('S3 keys are not available on this deployment', 404);
     });
     render(<S3KeysSection api={fakeApi({ listS3Keys })} />);
     expect(
-      await screen.findByText(/publish target is not the local SeaweedFS/),
+      await screen.findByText('S3 keys are not available on this deployment'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: 'Issue an S3 key' })).toBeNull();
   });

@@ -23,6 +23,10 @@ class FlakyIssuer extends MemoryS3KeyIssuer {
     this.check('deleteKey');
     return super.deleteKey(userName, accessKeyId);
   }
+  override async listUsers(prefix: string) {
+    this.check('listUsers');
+    return super.listUsers(prefix);
+  }
 }
 
 const newTarget = (over: Partial<NewTarget>): NewTarget => ({
@@ -179,6 +183,31 @@ describe('S3 read keys (ADR 0008)', () => {
     expect(await service.reconcile()).toEqual({ deletedKeys: 1, deletedUsers: 0 });
     expect(issuer.secretOf(short.key.accessKeyId)).toBeUndefined();
     expect(issuer.secretOf(forever.key.accessKeyId)).toBeDefined();
+    expect(await service.reconcile()).toEqual({ deletedKeys: 0, deletedUsers: 0 });
+  });
+
+  // A deployment delivering only to external targets has no SeaweedFS IAM to keep in step; an
+  // IAM-read-only SeaweedFS would otherwise log a warning every minute.
+  it('skips reconciling, quietly, when there is no internal target', async () => {
+    const issuer = new FlakyIssuer();
+    issuer.failing.add('listUsers');
+    const targets = new MemoryPublishTargetRepo();
+    await targets.seedDefault({
+      kind: 'external',
+      bucket: 'lake',
+      prefix: '',
+      endpoint: 'https://s3.example.com',
+      region: 'eu-west-2',
+      accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
+      secretKeyEnv: 'TARGET_S3_SECRET_KEY',
+      forcePathStyle: true,
+    });
+    const service = new S3KeyService({
+      repo: new MemoryS3KeyRepo(),
+      issuer,
+      targets,
+      endpoint: null,
+    });
     expect(await service.reconcile()).toEqual({ deletedKeys: 0, deletedUsers: 0 });
   });
 

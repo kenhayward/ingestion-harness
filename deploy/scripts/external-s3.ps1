@@ -87,5 +87,10 @@ function Start-ExternalS3 {
 switch ($Action) {
   'up' { Start-ExternalS3 }
   'env' { Set-TestEnv }
-  'down' { docker stop $Name 2>$null | Out-Null; $global:LASTEXITCODE = 0 }
+  'down' {
+    # Absent already is fine: under 'Stop', Windows PowerShell 5.1 turns docker's stderr into a
+    # terminating NativeCommandError, so swallow it.
+    try { docker stop $Name 2>$null | Out-Null } catch {}
+    $global:LASTEXITCODE = 0
+  }
 }

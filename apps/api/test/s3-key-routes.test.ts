@@ -71,8 +71,12 @@ async function setup(targets: MemoryPublishTargetRepo = new MemoryPublishTargetR
   });
   const { app } = await testApp({ access, s3Keys });
   const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
-  const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, cookie = admin) =>
-    app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
+  const call = (
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    url: string,
+    payload?: object,
+    cookie = admin,
+  ) => app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
   return { app, access, issuer, admin, call };
 }
 
@@ -148,7 +152,11 @@ describe('S3 key routes (ADR 0008)', () => {
     async (payload) => {
       const { call } = await setup();
       const issued = (
-        await call('POST', '/api/access/s3-keys', { label: 'x', expiresInDays: 30, targets: ['default'] })
+        await call('POST', '/api/access/s3-keys', {
+          label: 'x',
+          expiresInDays: 30,
+          targets: ['default'],
+        })
       ).json();
       const res = await call('POST', `/api/access/s3-keys/${issued.consumer.id}/rotate`, payload);
       expect(res.statusCode).toBe(400);
@@ -171,11 +179,19 @@ describe('S3 key routes (ADR 0008)', () => {
   it('reports an unreachable SeaweedFS as 502, and a revocation still sticks', async () => {
     const { issuer, call } = await setup();
     const issued = (
-      await call('POST', '/api/access/s3-keys', { label: 'x', expiresInDays: 30, targets: ['default'] })
+      await call('POST', '/api/access/s3-keys', {
+        label: 'x',
+        expiresInDays: 30,
+        targets: ['default'],
+      })
     ).json();
     issuer.down = true;
 
-    const create = await call('POST', '/api/access/s3-keys', { label: 'y', expiresInDays: 30, targets: ['default'] });
+    const create = await call('POST', '/api/access/s3-keys', {
+      label: 'y',
+      expiresInDays: 30,
+      targets: ['default'],
+    });
     expect(create.statusCode).toBe(502);
     expect(create.json().error).toMatch(/SeaweedFS/);
 
@@ -256,12 +272,12 @@ describe('S3 key routes (ADR 0008)', () => {
     expect(res.json().error).toBe('add an internal publishing target first');
   });
 
-  it('says so when keys are not available (publish target is not the local SeaweedFS)', async () => {
+  it('says so when the API was built without the key service', async () => {
     const access = new MemoryAccessRepo();
     const { app } = await testApp({ access, s3Keys: null });
     const admin = await signIn(app, 'admin', await access.rotateAdminPassword());
     const res = await app.inject({ url: '/api/access/s3-keys', headers: { cookie: admin } });
     expect(res.statusCode).toBe(404);
-    expect(res.json().error).toMatch(/not available/);
+    expect(res.json().error).toBe('S3 keys are not available on this deployment');
   });
 });

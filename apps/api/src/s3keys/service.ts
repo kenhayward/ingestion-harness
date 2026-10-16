@@ -165,6 +165,9 @@ export class S3KeyService {
   reconcile(): Promise<{ deletedKeys: number; deletedUsers: number }> {
     return this.serial(async () => {
       const { repo, issuer } = this.opts;
+      // No internal target: no key can be granted, so SeaweedFS's IAM is not ours to keep in
+      // step (and may be read-only there). Grants pin their targets, so none is left behind.
+      if ((await this.internalTargets()).length === 0) return { deletedKeys: 0, deletedUsers: 0 };
       const wanted = new Map<string, Set<string>>();
       const consumers = await repo.listConsumers();
       for (const c of consumers) {

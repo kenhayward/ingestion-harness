@@ -190,41 +190,49 @@ describe.skipIf(!endpoint)('external publishing target on a real S3 server', () 
     it('reads and lists under the prefix and is refused outside it', async () => {
       const inside = `ingest/it-${run}/in.json`;
       const outside = `other/it-${run}/out.json`;
-      for (const Key of [inside, outside]) {
-        await admin.send(new PutObjectCommand({ Bucket: ext.bucket, Key, Body: Key }));
-      }
-      await issuer.createUser(user, [{ bucket: ext.bucket, prefix: 'ingest/' }]);
-      const secret = await issuer.createKey(user);
-      const lake = new S3Client(s3ClientConfig({ ...ext, ...secret }));
+      // A sibling sharing the prefix's letters: `ingest/` must not grant `ingestx/`.
+      const sibling = `ingestx/it-${run}/sib.json`;
+      try {
+        for (const Key of [inside, outside, sibling]) {
+          await admin.send(new PutObjectCommand({ Bucket: ext.bucket, Key, Body: Key }));
+        }
+        await issuer.createUser(user, [{ bucket: ext.bucket, prefix: 'ingest/' }]);
+        const secret = await issuer.createKey(user);
+        const lake = new S3Client(s3ClientConfig({ ...ext, ...secret }));
 
-      await eventually(async () => {
-        const got = await lake.send(new GetObjectCommand({ Bucket: ext.bucket, Key: inside }));
-        expect(await got.Body!.transformToString()).toBe(inside);
-      });
-      const listed = await lake.send(
-        new ListObjectsV2Command({ Bucket: ext.bucket, Prefix: `ingest/it-${run}/` }),
-      );
-      expect(listed.Contents?.map((o) => o.Key)).toEqual([inside]);
+        await eventually(async () => {
+          const got = await lake.send(new GetObjectCommand({ Bucket: ext.bucket, Key: inside }));
+          expect(await got.Body!.transformToString()).toBe(inside);
+        });
+        const listed = await lake.send(
+          new ListObjectsV2Command({ Bucket: ext.bucket, Prefix: `ingest/it-${run}/` }),
+        );
+        expect(listed.Contents?.map((o) => o.Key)).toEqual([inside]);
 
-      expect(
-        await status(lake.send(new GetObjectCommand({ Bucket: ext.bucket, Key: outside }))),
-      ).toBe(403);
-      expect(
-        await status(
-          lake.send(new ListObjectsV2Command({ Bucket: ext.bucket, Prefix: `other/it-${run}/` })),
-        ),
-      ).toBe(403);
-      expect(await status(lake.send(new ListObjectsV2Command({ Bucket: ext.bucket })))).toBe(403);
-      expect(
-        await status(
-          lake.send(
-            new PutObjectCommand({ Bucket: ext.bucket, Key: `ingest/x-${run}`, Body: 'x' }),
+        for (const Key of [outside, sibling]) {
+          expect([
+            Key,
+            await status(lake.send(new GetObjectCommand({ Bucket: ext.bucket, Key }))),
+          ]).toEqual([Key, 403]);
+        }
+        for (const Prefix of [`other/it-${run}/`, `ingestx/it-${run}/`]) {
+          expect([
+            Prefix,
+            await status(lake.send(new ListObjectsV2Command({ Bucket: ext.bucket, Prefix }))),
+          ]).toEqual([Prefix, 403]);
+        }
+        expect(await status(lake.send(new ListObjectsV2Command({ Bucket: ext.bucket })))).toBe(403);
+        expect(
+          await status(
+            lake.send(
+              new PutObjectCommand({ Bucket: ext.bucket, Key: `ingest/x-${run}`, Body: 'x' }),
+            ),
           ),
-        ),
-      ).toBe(403);
-
-      for (const Key of [inside, outside]) {
-        await admin.send(new DeleteObjectCommand({ Bucket: ext.bucket, Key }));
+        ).toBe(403);
+      } finally {
+        for (const Key of [inside, outside, sibling, `ingest/x-${run}`]) {
+          await admin.send(new DeleteObjectCommand({ Bucket: ext.bucket, Key })).catch(() => {});
+        }
       }
     });
   });
