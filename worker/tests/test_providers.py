@@ -583,3 +583,156 @@ def test_openai_responses_stream_without_a_final_response_is_retryable() -> None
     client: Any = SimpleNamespace(responses=StreamingRecorder(None, events))
     with pytest.raises(LLMError, match="ended without"):
         OpenAIResponsesProvider("o", client).complete_json("m", REQ, on_tokens=lambda _n: None)
+
+
+# --- a request that does not fit the model's loaded context window ---------------------------
+
+#: (HTTP status, error message, body) as servers answer a request too long for the context.
+CONTEXT_EXCEEDED = [
+    pytest.param(
+        400,
+        "Error code: 400 - {'error': 'Engine protocol predict stream returned an error: "
+        '{"code":500,"message":"Context size has been exceeded.","type":"server_error"}\'}',
+        {
+            "error": 'Engine protocol predict stream returned an error: {"code":500,'
+            '"message":"Context size has been exceeded.","type":"server_error"}'
+        },
+        id="lm-studio",
+    ),
+    pytest.param(
+        400,
+        "This model's maximum context length is 8192 tokens. However, you requested 9500 tokens.",
+        {"error": {"code": "context_length_exceeded", "type": "invalid_request_error"}},
+        id="openai",
+    ),
+    pytest.param(
+        400,
+        "This model's maximum context length is 8192 tokens. However, you requested 9500 tokens "
+        "(1500 in the messages, 8000 in the completion).",
+        None,
+        id="vllm",
+    ),
+    pytest.param(
+        400,
+        "the request exceeds the available context size, try increasing it",
+        {"error": {"type": "exceed_context_size_error", "n_ctx": 8192}},
+        id="llama.cpp",
+    ),
+    pytest.param(500, "Context size has been exceeded.", None, id="lm-studio-500"),
+    pytest.param(400, "input length exceeds the context length", None, id="ollama"),
+]
+
+#: 400s that are not about the context window keep their old routing.
+NOT_CONTEXT = [
+    pytest.param("streaming is not supported with response_format", id="no-stream"),
+    pytest.param("max_tokens must be at most 4096", id="max-tokens"),
+    pytest.param("Invalid image: could not decode", id="image"),
+]
+
+
+def openai_status_error(status: int, message: str, body: Any) -> Exception:
+    import httpx
+    import openai
+
+    response = httpx.Response(status, request=httpx.Request("POST", "http://local/v1"))
+    if status == 400:
+        return openai.BadRequestError(message, response=response, body=body)
+    return openai.InternalServerError(message, response=response, body=body)
+
+
+class Raising:
+    """Completions stub whose every call raises `error`."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls = 0
+
+    def create(self, **_kwargs: Any) -> Any:
+        self.calls += 1
+        raise self.error
+
+
+VISION_REQ = VisionRequest(prompt="read", image_png=b"\x89PNG")
+
+
+@pytest.mark.parametrize(("status", "message", "body"), CONTEXT_EXCEEDED)
+def test_openai_chat_context_exceeded_raises_its_own_error(
+    status: int, message: str, body: Any
+) -> None:
+    from ingest_worker.llm.base import ContextExceededError
+
+    error = openai_status_error(status, message, body)
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=Raising(error)))
+    provider = OpenAIChatProvider("local", client)
+    with pytest.raises(ContextExceededError):
+        provider.complete_vision("olmocr", VISION_REQ)
+    with pytest.raises(ContextExceededError):
+        provider.complete_json("m", REQ)
+    calls = client.chat.completions.calls
+    with pytest.raises(ContextExceededError):  # streamed: not retried whole
+        provider.complete_json("m", REQ, on_tokens=lambda _n: None)
+    assert client.chat.completions.calls == calls + 1
+
+
+@pytest.mark.parametrize(("status", "message", "body"), CONTEXT_EXCEEDED)
+def test_openai_responses_context_exceeded_raises_its_own_error(
+    status: int, message: str, body: Any
+) -> None:
+    from ingest_worker.llm.base import ContextExceededError
+
+    error = openai_status_error(status, message, body)
+    client: Any = SimpleNamespace(responses=Raising(error))
+    provider = OpenAIResponsesProvider("local", client)
+    with pytest.raises(ContextExceededError):
+        provider.complete_vision("olmocr", VISION_REQ)
+    with pytest.raises(ContextExceededError):
+        provider.complete_json("m", REQ, on_tokens=lambda _n: None)
+
+
+def test_lm_studio_context_error_names_the_nested_server_message() -> None:
+    from ingest_worker.llm.base import ContextExceededError
+
+    [(status, message, body)] = [p.values for p in CONTEXT_EXCEEDED if p.id == "lm-studio"]
+    error = openai_status_error(cast(int, status), cast(str, message), body)
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=Raising(error)))
+    with pytest.raises(ContextExceededError) as caught:
+        OpenAIChatProvider("local", client).complete_vision("olmocr", VISION_REQ)
+    assert str(caught.value) == "openai 400: Context size has been exceeded."
+
+
+@pytest.mark.parametrize("message", NOT_CONTEXT)
+def test_other_400s_are_not_context_errors(message: str) -> None:
+    import openai
+
+    from ingest_worker.llm.base import ContextExceededError
+
+    error = openai_status_error(400, message, None)
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=Raising(error)))
+    with pytest.raises(openai.BadRequestError) as caught:
+        OpenAIChatProvider("local", client).complete_vision("m", VISION_REQ)
+    assert not isinstance(caught.value, ContextExceededError)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "prompt is too long: 210000 tokens > 200000 maximum",
+        "input length and `max_tokens` exceed context limit: 190000 + 64000 > 200000",
+    ],
+)
+def test_anthropic_context_exceeded_raises_its_own_error(message: str) -> None:
+    import anthropic
+    import httpx
+
+    from ingest_worker.llm.base import ContextExceededError
+
+    response = httpx.Response(400, request=httpx.Request("POST", "https://api.anthropic.com"))
+    error = anthropic.BadRequestError(message, response=response, body=None)
+
+    class RaisingStream:
+        def stream(self, **_kwargs: Any) -> Any:
+            raise error
+
+    client: Any = SimpleNamespace(messages=RaisingStream())
+    with pytest.raises(ContextExceededError, match=r"too long|context limit"):
+        AnthropicProvider("a", client, server_fallbacks=False).complete_json("m", REQ)

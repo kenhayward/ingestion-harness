@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .draft_stages import Stage
 from .extract import ExtractionFailedError, OutputTruncatedError, run_extraction
-from .llm.base import RefusalError
+from .llm.base import ContextExceededError, RefusalError
 from .llm.registry import ModelResolutionError
 from .pipeline import DocumentError, PipelineDeps, check_cancelled
 from .queue import ClaimedJob, JobQueue
@@ -761,6 +761,8 @@ def run_mapping(
         raise DocumentError(str(exc)) from exc
     except RefusalError as exc:
         raise DocumentError(f"drafting model refused: {exc}") from exc
+    except ContextExceededError as exc:  # a retry would repeat it
+        raise DocumentError(drafting.context_reason(limit)) from exc
     drafting._audit(deps, job, label, result.attempts)
     body, _ = convert_mapping(
         result.data, draft, inputs, shortlists, local_namespace=local_namespace

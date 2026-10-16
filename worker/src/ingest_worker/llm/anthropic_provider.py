@@ -9,12 +9,14 @@ from .base import (
     DISCOVERY_TIMEOUT_S,
     CompletionRequest,
     CompletionResult,
+    ContextExceededError,
     LLMError,
     ModelDescriptor,
     RefusalError,
     TokenCallback,
     TokenCounter,
     VisionRequest,
+    is_context_exceeded,
 )
 
 #: Beta enabling server-side refusal fallbacks (`fallbacks="default"`).
@@ -120,6 +122,8 @@ class AnthropicProvider:
                             counter.add(getattr(delta, "thinking", None))
                 message: Any = s.get_final_message()
         except anthropic.APIStatusError as exc:
+            if is_context_exceeded(exc.message, exc.body):
+                raise ContextExceededError(f"anthropic {exc.status_code}: {exc.message}") from exc
             if exc.status_code in (408, 409, 429) or exc.status_code >= 500:
                 raise LLMError(f"anthropic {exc.status_code}: {exc.message}") from exc
             raise
