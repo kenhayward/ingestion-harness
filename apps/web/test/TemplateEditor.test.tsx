@@ -881,7 +881,7 @@ describe('TemplateEditor', () => {
       within(grid)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['#', 'Section ID', 'Anchor', 'Required', '']);
+    ).toEqual(['#', 'Section ID', 'Anchor', 'Required', 'Repeats', '']);
     const row = within(grid).getAllByRole('row')[1]!;
     expect(within(row).getByLabelText('Section 1 id')).toHaveValue('all');
     await userEvent.clear(within(row).getByLabelText('Section 1 anchor'));
@@ -890,6 +890,25 @@ describe('TemplateEditor', () => {
     expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
       document: { sections: [{ id: 'all', anchor: '^Intro' }] },
     });
+  });
+
+  it('marks a section as repeating with a key, and clears both when unticked', async () => {
+    const { api } = setup(view(skeleton));
+    await userEvent.click(await tab(/Sections/));
+    expect(screen.queryByLabelText('Section 1 key')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Section 1 repeats' }));
+    await userEvent.type(screen.getByLabelText('Section 1 key'), 'Batch (.+)');
+    expect(
+      within(screen.getByRole('combobox', { name: 'Section 1 key from' }))
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['None']);
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(vi.mocked(api.saveTemplate).mock.calls[0]![2]).toMatchObject({
+      document: { sections: [{ id: 'all', repeat: true, key: 'Batch (.+)' }] },
+    });
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Section 1 repeats' }));
+    expect(screen.queryByLabelText('Section 1 key')).not.toBeInTheDocument();
   });
 
   it('lays out fields one per row under column headings', async () => {

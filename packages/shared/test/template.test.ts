@@ -287,7 +287,9 @@ describe('repeating sections (shared with the worker)', () => {
   });
 
   it('parses a recipe without repeat to itself', () => {
-    const plain = TemplateSchema.parse(definition(fx.cases.find((c) => c.name === 'no repeat anywhere')!));
+    const plain = TemplateSchema.parse(
+      definition(fx.cases.find((c) => c.name === 'no repeat anywhere')!),
+    );
     for (const s of plain.document.sections) {
       expect(Object.keys(s)).not.toContain('repeat');
       expect(Object.keys(s)).not.toContain('key');

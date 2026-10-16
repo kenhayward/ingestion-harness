@@ -10,8 +10,10 @@ import { plural } from './samples.js';
 import {
   hitTone,
   initialSelection,
+  keyFromOptions,
   landingText,
   move,
+  repeatHint,
   sectionHits,
   suggestionFor,
   type Selection,
@@ -20,7 +22,57 @@ import { useSegmentPreview } from './useSegmentPreview.js';
 
 export const PREVIEW_DEBOUNCE_MS = 600;
 
-type Row = { key: number; id: string; anchor: string; required: boolean; description?: string };
+type Row = {
+  key: number;
+  id: string;
+  anchor: string;
+  required: boolean;
+  description?: string;
+  /** Repeating section (spec 2026-10-16): every match starts an occurrence. */
+  repeat?: boolean;
+  /** Regex naming an occurrence (`key` in the recipe; `key` is the React row key here). */
+  occurrenceKey?: string;
+  keyFrom?: string;
+};
+type SectionDef = {
+  id: string;
+  anchor: string;
+  required?: boolean;
+  description?: string;
+  repeat?: boolean;
+  key?: string;
+  keyFrom?: string;
+};
+
+/** A row's recipe section: the repeat keys only on a repeating section, and only when set. */
+function sectionOf(r: Row): SegmentDocument['sections'][number] {
+  return {
+    id: r.id,
+    anchor: r.anchor,
+    required: r.required,
+    ...(r.description !== undefined ? { description: r.description } : {}),
+    ...(r.repeat
+      ? {
+          repeat: true,
+          ...(r.occurrenceKey ? { key: r.occurrenceKey } : {}),
+          ...(r.keyFrom ? { keyFrom: r.keyFrom } : {}),
+        }
+      : {}),
+  };
+}
+
+function rowOf(s: SectionDef, key: number): Row {
+  return {
+    key,
+    id: s.id,
+    anchor: s.anchor,
+    required: s.required ?? true,
+    ...(s.description !== undefined ? { description: s.description } : {}),
+    ...(s.repeat ? { repeat: true } : {}),
+    ...(s.key !== undefined ? { occurrenceKey: s.key } : {}),
+    ...(s.keyFrom !== undefined ? { keyFrom: s.keyFrom } : {}),
+  };
+}
 type Copies = { anchor: string; select: 'first' | 'last' } | null;
 
 /** Every row has a filled anchor and a non-empty id, and ids are unique. */
@@ -34,12 +86,7 @@ function isComplete(rows: Row[]): boolean {
 
 function candidate(rows: Row[], copies: Copies, pageMarkers: boolean): SegmentDocument {
   return {
-    sections: rows.map((r) => ({
-      id: r.id,
-      anchor: r.anchor,
-      required: r.required,
-      ...(r.description !== undefined ? { description: r.description } : {}),
-    })),
+    sections: rows.map(sectionOf),
     ...(copies && copies.anchor ? { copies } : {}),
     pageMarkers,
   };
@@ -94,13 +141,7 @@ export function SectionsTab({
   const [restored, setRestored] = useState<{ stale: boolean } | null>(null);
   const draftKey = `ih.sectionsDraft.${projectId}.${draft}`;
   const toRows = (doc: SegmentDocument): Row[] =>
-    doc.sections.map((s) => ({
-      key: nextKey.current++,
-      id: s.id,
-      anchor: s.anchor,
-      required: s.required ?? true,
-      ...(s.description !== undefined ? { description: s.description } : {}),
-    }));
+    doc.sections.map((s) => rowOf(s, nextKey.current++));
 
   useEffect(() => {
     if (draft === null) return;
@@ -113,17 +154,11 @@ export function SectionsTab({
         ]);
         if (cancelled) return;
         const block = (record.definition.document ?? {}) as {
-          sections?: { id: string; anchor: string; required?: boolean; description?: string }[];
+          sections?: SectionDef[];
           copies?: Copies;
           pageMarkers?: boolean;
         };
-        const loaded = (block.sections ?? []).map((s) => ({
-          key: nextKey.current++,
-          id: s.id,
-          anchor: s.anchor,
-          required: s.required ?? true,
-          ...(s.description !== undefined ? { description: s.description } : {}),
-        }));
+        const loaded = (block.sections ?? []).map((s) => rowOf(s, nextKey.current++));
         const savedJson = JSON.stringify(
           candidate(loaded, block.copies ?? null, block.pageMarkers ?? true),
         );
@@ -297,6 +332,13 @@ export function SectionsTab({
     cellOf(selectedSection.id)?.found === false;
   const suggestion =
     result && selected ? suggestionFor(result, selected.sampleId, selected.sectionId) : null;
+  const selectedCell = selected ? cellOf(selected.sectionId) : undefined;
+  const repeatNote =
+    selectedSection && !selectedSection.repeat && selectedCell ? repeatHint(selectedCell) : null;
+  const makeRepeat = (id: string) => {
+    const i = indexOf(id);
+    if (i >= 0) setRow(i, { repeat: true });
+  };
   const applySuggestion = (s: AnchorSuggestion) => {
     const i = indexOf(s.section);
     if (i >= 0) setRow(i, { anchor: s.anchor });
@@ -405,6 +447,22 @@ export function SectionsTab({
                       />{' '}
                       Required
                     </label>
+                    <label className="inline anchor-repeat">
+                      <input
+                        type="checkbox"
+                        aria-label={`Section ${i + 1} repeats`}
+                        checked={r.repeat === true}
+                        onChange={(e) =>
+                          setRow(
+                            i,
+                            e.target.checked
+                              ? { repeat: true }
+                              : { repeat: false, occurrenceKey: undefined, keyFrom: undefined },
+                          )
+                        }
+                      />{' '}
+                      Repeats
+                    </label>
                     <span className="anchor-tools">
                       <button
                         type="button"
@@ -433,6 +491,38 @@ export function SectionsTab({
                         <Icon name="trash" />
                       </button>
                     </span>
+                    {r.repeat && (
+                      <span className="anchor-repeat-keys">
+                        <input
+                          className="mono anchor-key"
+                          aria-label={`Key of section ${i + 1}`}
+                          placeholder="Key regex, e.g. Batch\s+(\w+)"
+                          aria-invalid={result?.anchorErrors[`${r.id}.key`] !== undefined}
+                          value={r.occurrenceKey ?? ''}
+                          onChange={(e) => setRow(i, { occurrenceKey: e.target.value })}
+                        />
+                        <label className="inline">
+                          Key from{' '}
+                          <select
+                            aria-label={`Key from of section ${i + 1}`}
+                            value={r.keyFrom ?? ''}
+                            onChange={(e) => setRow(i, { keyFrom: e.target.value || undefined })}
+                          >
+                            <option value="">None</option>
+                            {keyFromOptions(rows.map(sectionOf), r.id).map((id) => (
+                              <option key={id} value={id}>
+                                {id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {result?.anchorErrors[`${r.id}.key`] !== undefined && (
+                          <span className="tone-text-danger" role="alert">
+                            Key: {result.anchorErrors[`${r.id}.key`]}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {selectedSample && selectedRow?.error === null && (
                       <p
                         className={`anchor-landing${tone === 'danger' && cellOf(r.id)?.found === false ? ' tone-text-danger' : ''}`}
@@ -491,7 +581,11 @@ export function SectionsTab({
               </div>
               <SegmentationGrid
                 result={result}
-                sections={rows.map((r) => ({ id: r.id, required: r.required }))}
+                sections={rows.map((r) => ({
+                  id: r.id,
+                  required: r.required,
+                  ...(r.keyFrom ? { keyFrom: r.keyFrom } : {}),
+                }))}
                 samples={samples}
                 selected={selected}
                 onOpen={(sampleId, sectionId) => setSelected({ sampleId, sectionId })}
@@ -518,6 +612,20 @@ export function SectionsTab({
                 {suggestion && !settling && (
                   <button type="button" onClick={() => applySuggestion(suggestion)}>
                     Use <code>{suggestion.anchor}</code>
+                  </button>
+                )}
+              </div>
+            )}
+            {repeatNote && selectedSection && (
+              <div
+                className="anchor-hint"
+                role="note"
+                aria-label={`${selectedSection.id} matches more than once`}
+              >
+                <p>{repeatNote}</p>
+                {!settling && (
+                  <button type="button" onClick={() => makeRepeat(selectedSection.id)}>
+                    Make {selectedSection.id} repeat
                   </button>
                 )}
               </div>

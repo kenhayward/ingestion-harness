@@ -389,3 +389,120 @@ describe('SectionsTab', () => {
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
   });
 });
+
+describe('SectionsTab repeating sections', () => {
+  const repeatDefinition = {
+    ...definition,
+    document: {
+      ...definition.document,
+      sections: [
+        { id: 'front', anchor: '\\A' },
+        { id: 'batch', anchor: '^\\d+\\. STUDY', repeat: true, key: 'BATCH\\s+(\\w+)' },
+        {
+          id: 'appearance',
+          anchor: '^Table \\d+:.*Appearance',
+          repeat: true,
+          key: 'Batch\\s+(\\w+)',
+          keyFrom: 'batch',
+        },
+        { id: 'tables', anchor: '^Table' },
+      ],
+    },
+  };
+  const repeatGrid = {
+    anchorErrors: {},
+    suggestions: [],
+    samples: [
+      {
+        sampleId: 's1',
+        firstPage: 1,
+        pageCount: 4,
+        error: null,
+        missingRequired: [],
+        sections: [
+          { id: 'front', found: true, page: 1, line: 'STABILITY', chars: 20 },
+          { id: 'batch', found: true, page: 2, line: '1. STUDY', chars: 20 },
+          { id: 'appearance', found: true, page: 2, line: 'Table 1', chars: 20 },
+          { id: 'tables', found: true, page: 2, line: 'Table 1', chars: 20, matches: 3 },
+        ],
+      },
+    ],
+  };
+  const repeatSetup = () =>
+    setup({
+      getTemplate: vi.fn(async () => templateView(repeatDefinition)),
+      getSegmentation: vi.fn(async () => segmentationView({ jobId: 'j1', result: repeatGrid })),
+    });
+
+  it('keeps repeat, key and keyFrom when anchors are saved', async () => {
+    const api = repeatSetup();
+    const anchor = await screen.findByLabelText('Anchor of section 4');
+    await userEvent.clear(anchor);
+    await userEvent.type(anchor, '^TABLE');
+    const save = screen.getByRole('button', { name: 'Save to draft v2' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.click(save);
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    const saved = vi.mocked(api.saveTemplate).mock.calls[0]![2] as {
+      document: { sections: Record<string, unknown>[] };
+    };
+    expect(saved.document.sections.slice(1, 3)).toEqual([
+      {
+        id: 'batch',
+        anchor: '^\\d+\\. STUDY',
+        required: true,
+        repeat: true,
+        key: 'BATCH\\s+(\\w+)',
+      },
+      {
+        id: 'appearance',
+        anchor: '^Table \\d+:.*Appearance',
+        required: true,
+        repeat: true,
+        key: 'Batch\\s+(\\w+)',
+        keyFrom: 'batch',
+      },
+    ]);
+  });
+
+  it('shows Key and Key from once Repeats is ticked, and previews them', async () => {
+    const api = repeatSetup();
+    const repeats = await screen.findByRole('checkbox', { name: 'Section 4 repeats' });
+    expect(screen.queryByLabelText('Key of section 4')).not.toBeInTheDocument();
+    await userEvent.click(repeats);
+    await userEvent.type(screen.getByLabelText('Key of section 4'), 'Batch (.+)');
+    const from = screen.getByRole('combobox', { name: 'Key from of section 4' });
+    expect(
+      within(from)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['None', 'batch']);
+    await userEvent.selectOptions(from, 'batch');
+    await waitFor(() =>
+      expect(api.startSegmentation).toHaveBeenLastCalledWith(
+        'letter',
+        expect.objectContaining({
+          sections: expect.arrayContaining([
+            {
+              id: 'tables',
+              anchor: '^Table',
+              required: true,
+              repeat: true,
+              key: 'Batch (.+)',
+              keyFrom: 'batch',
+            },
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it('Make it repeat ticks Repeats on a section whose anchor matches more than once', async () => {
+    repeatSetup();
+    await userEvent.click(await screen.findByRole('button', { name: 'a.pdf · tables' }));
+    expect(screen.getByText('matches 3×, only the first is used')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Make tables repeat' }));
+    expect(screen.getByRole('checkbox', { name: 'Section 4 repeats' })).toBeChecked();
+    expect(screen.getByText('Unsaved anchors')).toBeInTheDocument();
+  });
+});

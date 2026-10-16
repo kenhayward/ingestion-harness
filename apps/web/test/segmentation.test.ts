@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { SectionCell, SegmentationResult, SegmentedSample } from '@ih/shared';
 import {
+  keyFromOptions,
+  occurrenceSummary,
+  repeatHint,
   cellFlag,
   cellShare,
   hitTone,
@@ -147,5 +150,57 @@ describe('anchor helpers', () => {
     expect(move(['a', 'b', 'c'], 0, 2)).toEqual(['b', 'c', 'a']);
     expect(move(['a', 'b', 'c'], 2, 1)).toEqual(['a', 'c', 'b']);
     expect(move(['a', 'b'], 0, -1)).toEqual(['a', 'b']);
+  });
+});
+
+describe('repeating sections', () => {
+  const occurrence = (key: string | null, keySource: 'own' | 'inherited' | null = 'own') => ({
+    page: 2,
+    line: 'Table 1',
+    chars: 10,
+    key,
+    keySource,
+  });
+  const cellWith = (extra: Partial<SectionCell>): SectionCell => ({
+    id: 'appearance',
+    found: true,
+    page: 2,
+    line: 'Table 1',
+    chars: 30,
+    ...extra,
+  });
+
+  it.each([
+    ['no occurrences', cellWith({}), null],
+    ['an older grid', cellWith({ occurrences: [] }), null],
+    [
+      'three occurrences, one without a key',
+      cellWith({
+        occurrences: [occurrence('4586783'), occurrence('4586784'), occurrence(null, null)],
+      }),
+      '×3 · 4586783 · 4586784 · no key',
+    ],
+  ])('occurrenceSummary: %s', (_, cell, text) => {
+    expect(occurrenceSummary(cell)).toBe(text);
+  });
+
+  it.each([
+    [undefined, null],
+    [0, null],
+    [1, null],
+    [3, 'matches 3×, only the first is used'],
+  ])('repeatHint(matches %s)', (matches, text) => {
+    expect(repeatHint(cellWith(matches === undefined ? {} : { matches }))).toBe(text);
+  });
+
+  it('offers repeating sections with their own key, never itself or one with keyFrom', () => {
+    const sections = [
+      { id: 'front' },
+      { id: 'batch', repeat: true, key: 'BATCH (.+)' },
+      { id: 'plain_repeat', repeat: true },
+      { id: 'appearance', repeat: true, key: 'Batch (.+)', keyFrom: 'batch' },
+    ];
+    expect(keyFromOptions(sections, 'appearance')).toEqual(['batch']);
+    expect(keyFromOptions(sections, 'batch')).toEqual([]);
   });
 });

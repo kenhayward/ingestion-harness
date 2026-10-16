@@ -15,6 +15,7 @@ import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { RETIRED_REASON } from '../ui/retired.js';
 import { RetiredBanner } from '../ui/RetiredBanner.js';
 import { YamlEditor } from '../ui/YamlEditor.js';
+import { keyFromOptions } from '../workbench/segmentation.js';
 import { TabHeader } from '../workbench/TabHeader.js';
 import { EditorHeader } from './EditorHeader.js';
 import { ChecksPanel } from './ChecksPanel.js';
@@ -665,6 +666,7 @@ export function TemplateEditor({
                     ['Section ID', '16rem'],
                     ['Anchor', undefined],
                     ['Required', '6rem'],
+                    ['Repeats', '16rem'],
                   ]}
                   items={sections}
                   onChange={(items) => update(['document', 'sections'], items)}
@@ -695,6 +697,56 @@ export function TemplateEditor({
                         update(['document', 'sections', i, 'required'], e.target.checked)
                       }
                     />,
+                    <div key="repeat" className="section-repeat">
+                      <input
+                        type="checkbox"
+                        aria-label={`Section ${i + 1} repeats`}
+                        checked={getIn(s, ['repeat']) === true}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            update(['document', 'sections', i, 'repeat'], true);
+                            return;
+                          }
+                          const rest = Object.fromEntries(
+                            Object.entries(s as Record<string, unknown>).filter(
+                              ([k]) => !['repeat', 'key', 'keyFrom'].includes(k),
+                            ),
+                          );
+                          update(['document', 'sections', i], rest);
+                        }}
+                      />
+                      {getIn(s, ['repeat']) === true && (
+                        <>
+                          <Text
+                            bare
+                            className="code"
+                            label={`Section ${i + 1} key`}
+                            hint="Regex naming each occurrence, e.g. Batch\s+(\w+)"
+                            value={getIn(s, ['key']) ?? ''}
+                            onChange={(v) =>
+                              update(['document', 'sections', i, 'key'], v || undefined)
+                            }
+                          />
+                          <select
+                            aria-label={`Section ${i + 1} key from`}
+                            value={getIn(s, ['keyFrom']) ?? ''}
+                            onChange={(e) =>
+                              update(
+                                ['document', 'sections', i, 'keyFrom'],
+                                e.target.value || undefined,
+                              )
+                            }
+                          >
+                            <option value="">None</option>
+                            {keyFromOptions(sections, getIn(s, ['id'])).map((id) => (
+                              <option key={id} value={id}>
+                                {id}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>,
                   ]}
                 />
                 {stageLink('sections', 'Ask the model in Sections')}
