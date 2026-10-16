@@ -104,3 +104,19 @@ def test_check_failing_every_attempt_raises() -> None:
             max_attempts=2,
             check=lambda data: ["n must be 2"],
         )
+
+
+def test_a_counted_reply_reports_its_tokens_through_the_provider() -> None:
+    provider = FakeProvider(responses=[{"total": 1}])
+    provider.token_stream = [3, 9]
+    seen: list[int] = []
+    run_extraction(
+        extraction_id="totals",
+        provider=provider,
+        model_id="m1",
+        prompt="extract",
+        schema=SCHEMA,
+        max_attempts=1,
+        on_tokens=seen.append,
+    )
+    assert seen == [3, 9]

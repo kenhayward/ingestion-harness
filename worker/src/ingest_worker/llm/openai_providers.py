@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Callable
 from typing import Any, Literal
 
 import openai
@@ -14,6 +15,8 @@ from .base import (
     ModelDescriptor,
     ProviderKind,
     RefusalError,
+    TokenCallback,
+    TokenCounter,
     VisionRequest,
 )
 
@@ -76,6 +79,27 @@ class _OpenAIBase:
         self._max_tokens_param = max_tokens_param
         #: Extraction temperature (None = server default). 0 makes local models deterministic.
         self._temperature = temperature
+        #: False once the server refused a streamed request that it then answered whole: some
+        #: local servers cannot stream with a JSON schema. Progress then has no token count.
+        self._streams = True
+
+    def _counted(
+        self,
+        params: dict[str, Any],
+        on_tokens: TokenCallback | None,
+        stream: Callable[[dict[str, Any], TokenCounter], CompletionResult],
+        whole: Callable[[dict[str, Any]], CompletionResult],
+    ) -> CompletionResult:
+        """A call that streams when counting, else (or once the server refused to stream)
+        one whole reply."""
+        if on_tokens is None or not self._streams:
+            return whole(params)
+        try:
+            return stream(params, TokenCounter(on_tokens))
+        except openai.BadRequestError:
+            result = whole(params)  # the same request whole: a real 400 raises again here
+            self._streams = False
+            return result
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         """Embeddings in input order (`/v1/embeddings`; LM Studio, vLLM and OpenAI serve it)."""
@@ -103,7 +127,9 @@ class OpenAIChatProvider(_OpenAIBase):
 
     kind: Literal["openai-chat"] = "openai-chat"
 
-    def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
+    def complete_json(
+        self, model: str, request: CompletionRequest, on_tokens: TokenCallback | None = None
+    ) -> CompletionResult:
         params: dict[str, Any] = {
             "model": model,
             "messages": [
@@ -127,7 +153,7 @@ class OpenAIChatProvider(_OpenAIBase):
         if self._temperature is not None:
             params["temperature"] = self._temperature
 
-        return self._create(params)
+        return self._counted(params, on_tokens, self._stream, self._create)
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
         params: dict[str, Any] = {
@@ -164,13 +190,67 @@ class OpenAIChatProvider(_OpenAIBase):
             raw={"id": resp.id},
         )
 
+    def _stream(self, params: dict[str, Any], counter: TokenCounter) -> CompletionResult:
+        """The same call streamed: the reply assembled from its chunks, the content and any
+        reasoning (`reasoning_content` or `reasoning`, as local servers name it) counted."""
+        chunks = self._client.chat.completions.create(
+            **params, stream=True, stream_options={"include_usage": True}
+        )
+        content: list[str] = []
+        refusal: list[str] = []
+        finish: str | None = None
+        model = rid = ""
+        usage: Any = None
+        try:
+            for chunk in chunks:
+                model, rid = model or chunk.model, rid or chunk.id
+                usage = chunk.usage or usage
+                for choice in chunk.choices or []:
+                    delta = choice.delta
+                    if delta.content:
+                        content.append(delta.content)
+                    counter.add(delta.content)
+                    counter.add(getattr(delta, "reasoning_content", None))
+                    counter.add(getattr(delta, "reasoning", None))
+                    if getattr(delta, "refusal", None):
+                        refusal.append(delta.refusal)
+                    finish = choice.finish_reason or finish
+        except openai.BadRequestError:
+            raise
+        except Exception as exc:
+            raise _wrap_errors(exc) from exc
+        if refusal:
+            raise RefusalError("model refused the request: " + "".join(refusal))
+        return CompletionResult(
+            text="".join(content),
+            model=model,
+            stop_reason=finish,
+            truncated=finish == "length",
+            input_tokens=usage.prompt_tokens if usage else None,
+            output_tokens=usage.completion_tokens if usage else None,
+            raw={"id": rid},
+        )
+
+
+#: Responses API stream events whose `delta` is reply text, reasoning or a refusal (counted).
+_COUNTED_DELTAS = frozenset(
+    {
+        "response.output_text.delta",
+        "response.reasoning_text.delta",
+        "response.reasoning_summary_text.delta",
+        "response.refusal.delta",
+    }
+)
+
 
 class OpenAIResponsesProvider(_OpenAIBase):
     """Responses API — OpenAI, or compatible servers that implement /v1/responses."""
 
     kind: Literal["openai-responses"] = "openai-responses"
 
-    def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
+    def complete_json(
+        self, model: str, request: CompletionRequest, on_tokens: TokenCallback | None = None
+    ) -> CompletionResult:
         params: dict[str, Any] = {
             "model": model,
             "instructions": request.system,
@@ -191,7 +271,7 @@ class OpenAIResponsesProvider(_OpenAIBase):
         if self._temperature is not None:
             params["temperature"] = self._temperature
 
-        return self._create(params)
+        return self._counted(params, on_tokens, self._stream, self._create)
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
         params: dict[str, Any] = {
@@ -208,7 +288,31 @@ class OpenAIResponsesProvider(_OpenAIBase):
             resp = self._client.responses.create(**params)
         except Exception as exc:
             raise _wrap_errors(exc) from exc
+        return self._result(resp)
 
+    def _stream(self, params: dict[str, Any], counter: TokenCounter) -> CompletionResult:
+        """The same call streamed: text and reasoning deltas counted, the result read from the
+        final `response.completed` or `response.incomplete` event's response."""
+        events = self._client.responses.create(**params, stream=True)
+        final: Any = None
+        try:
+            for event in events:
+                kind = getattr(event, "type", "")
+                if kind in _COUNTED_DELTAS:
+                    counter.add(event.delta)
+                elif kind in ("response.completed", "response.incomplete"):
+                    final = event.response
+                elif kind in ("response.failed", "error"):
+                    raise LLMError(f"openai stream failed: {kind}")
+        except (openai.BadRequestError, LLMError):
+            raise
+        except Exception as exc:
+            raise _wrap_errors(exc) from exc
+        if final is None:
+            raise LLMError("openai stream ended without a final response")
+        return self._result(final)
+
+    def _result(self, resp: Any) -> CompletionResult:
         for item in resp.output or []:
             for part in getattr(item, "content", None) or []:
                 if getattr(part, "type", None) == "refusal":

@@ -670,6 +670,7 @@ describe('drafting progress (issue #151)', () => {
     ['an unknown phase', { phase: 'thinking' }],
     ['a zero attempt', { attempt: 0 }],
     ['a missing round', { round: undefined }],
+    ['negative tokens', { tokens: -1 }],
   ])('refuses %s', (_name, over) => {
     const base = progressFixture.surveyRetried![1] as Record<string, unknown>;
     expect(DraftProgressSchema.safeParse({ ...base, ...over }).success).toBe(false);

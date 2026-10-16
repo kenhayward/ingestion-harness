@@ -145,7 +145,9 @@ export type ChangeBody = z.infer<typeof ChangeBodySchema>;
  * A running drafting stage's progress (issue #151): the worker's `drafting progress` job events
  * (worker drafting.DRAFT_PROGRESS; shared fixture draft-progress.json), one per phase and per
  * model call. `samples` = dev samples whose text is sent; `attempt` of `of` for a model call;
- * `round` 2 = the sections stage's anchor round. Advisory: a run may have none.
+ * `round` 2 = the sections stage's anchor round; `tokens` = a streamed reply's estimated tokens
+ * so far (model phase; about four characters each, thinking included; absent from workers
+ * before streaming, null when not counted). Advisory: a run may have none.
  */
 export const DRAFT_PROGRESS_EVENT = 'drafting progress';
 export const DRAFT_PHASES = ['reading', 'model', 'anchors', 'suggestions'] as const;
@@ -157,6 +159,7 @@ export const DraftProgressSchema = z.object({
   attempt: z.number().int().positive().nullable(),
   of: z.number().int().positive().nullable(),
   round: z.number().int().positive(),
+  tokens: z.number().int().nonnegative().nullable().optional(),
 });
 export type DraftProgress = z.infer<typeof DraftProgressSchema>;
 

@@ -290,6 +290,20 @@ def test_a_survey_reports_reading_the_samples_and_each_model_call(
     assert progress(queue) == expected_progress("surveyRetried")
 
 
+def test_a_streamed_reply_reports_the_tokens_received_now_and_then(
+    fixture_specs_dir: Path,
+) -> None:
+    """The model's reply streams: its growing token count is reported on the model phase,
+    the first at once, then every 500 tokens (or 5 s), never every token."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+    provider.token_stream = [10, 600, 700, 1300]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyStreamed")
+
+
 def test_progress_is_advisory_a_failed_write_never_fails_the_survey(
     fixture_specs_dir: Path,
 ) -> None:
@@ -939,3 +953,24 @@ def test_survey_without_a_library_writes_no_suggestions(fixture_specs_dir: Path)
     run_once(queue, deps, "w1")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
     assert queue.suggested == []
+
+
+@pytest.mark.parametrize(
+    ("calls", "reported"),
+    [
+        # (seconds, tokens): the first at once, then +500 tokens or 5 s later, never twice.
+        ([(0, 10), (1, 300), (2, 510), (3, 600)], [10, 510]),
+        ([(0, 10), (6, 40)], [10, 40]),
+        ([(0, 10), (6, 10)], [10]),  # no new tokens: nothing new to say
+    ],
+)
+def test_token_throttle(calls: list[tuple[float, int]], reported: list[int]) -> None:
+    from ingest_worker.drafting import TokenThrottle
+
+    now = [0.0]
+    seen: list[int] = []
+    throttle = TokenThrottle(seen.append, clock=lambda: now[0])
+    for at, tokens in calls:
+        now[0] = at
+        throttle(tokens)
+    assert seen == reported
