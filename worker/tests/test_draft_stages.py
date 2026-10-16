@@ -633,6 +633,79 @@ def test_steps_keep_a_key_column_whose_section_the_same_body_gives_a_key() -> No
     assert fitted["notes"] == ""
 
 
+CHECK_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "outputs": {
+        "fields": [],
+        "tables": [
+            {"id": "batches", "columns": [{"id": "batch_number"}]},
+            {"id": "assay", "columns": [{"id": "batch_number"}]},
+            {"id": "nir", "columns": [{"id": "batch_number"}]},
+        ],
+    },
+    "pipeline": [
+        {"type": "extract", "id": t, "table": t, "sections": ["all"]}
+        for t in ("batches", "assay", "nir")
+    ],
+}
+
+
+def check_item(values: str, reference: str) -> dict[str, Any]:
+    return step_item(
+        id="check_batch_consistency",
+        type="check",
+        fields=None,
+        sections=None,
+        instructions=None,
+        values=values,
+        reference=reference,
+        description="Batch numbers match the batch headings",
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "reference"),
+    [
+        ('["assay.batch_number","nir.batch_number"]', '"batches.batch_number'),
+        ("assay.batch_number, nir.batch_number", "batches.batch_number"),
+        ("['assay.batch_number', 'nir.batch_number']", "'batches.batch_number'"),
+    ],
+)
+def test_a_check_listing_several_paths_becomes_one_check_per_path(
+    values: str, reference: str
+) -> None:
+    """The model packed every table into one check's values (a JSON list, with a stray quote on
+    the reference): a check compares one path with its reference, so it is split."""
+    body, errors = run(
+        STEPS, {"notes": "", "changes": [check_item(values, reference)]}, CHECK_DRAFT
+    )
+    assert errors == []
+    steps = [c["step"] for c in body["changes"]]
+    assert [(s["id"], s["values"], s["reference"]) for s in steps] == [
+        ("check_batch_consistency_1", "assay.batch_number", "batches.batch_number"),
+        ("check_batch_consistency_2", "nir.batch_number", "batches.batch_number"),
+    ]
+    assert all(s["description"] == "Batch numbers match the batch headings" for s in steps)
+    assert "Split check 'check_batch_consistency' into 2 checks" in body["notes"]
+
+
+def test_a_check_with_one_quoted_path_is_cleaned_not_split() -> None:
+    item = check_item('"assay.batch_number"', '"batches.batch_number"')
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, CHECK_DRAFT)
+    assert errors == []
+    [change] = body["changes"]
+    assert (change["step"]["id"], change["step"]["values"], change["step"]["reference"]) == (
+        "check_batch_consistency",
+        "assay.batch_number",
+        "batches.batch_number",
+    )
+    assert body["notes"] == ""
+
+
+def test_the_steps_prompt_says_a_check_compares_one_path() -> None:
+    assert "one path each" in STEPS.instructions
+
+
 def test_revise_sentinels_mean_no_repeat_keys() -> None:
     assert REVISE.convert is not None
     section = {**section_item(), "repeat": False, "key": "", "keyFrom": ""}
