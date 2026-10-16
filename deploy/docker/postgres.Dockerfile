@@ -3,7 +3,7 @@
 # Built on the same postgres:17-alpine image the stack has always run, so an existing data
 # volume keeps its musl collations: moving to the Debian-based pgvector image would change them
 # and call for a REINDEX of every text index. pgvector is compiled from a pinned release.
-FROM postgres:17-alpine
+FROM postgres:18-alpine
 
 ARG PGVECTOR_VERSION=0.8.0
 
