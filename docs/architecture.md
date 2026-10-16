@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `app` | React 19 + Vite, served by nginx | Upload UI, job list, retry, output download. nginx proxies `/api`. |
 | `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs and Word documents (`.docx`), enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
-| `worker` | Python 3.13, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
+| `worker` | Python 3.14, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
 | `postgres` | Postgres 17 | `documents`, `jobs` (queue), `job_events`, `job_outputs`, `llm_models`. |
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`. |
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the worker writes ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md)). |
