@@ -29691,6 +29691,9 @@
                                     },
                                     "at": {
                                       "type": "string"
+                                    },
+                                    "phaseAt": {
+                                      "type": "string"
                                     }
                                   },
                                   "required": [
@@ -29700,7 +29703,8 @@
                                     "attempt",
                                     "of",
                                     "round",
-                                    "at"
+                                    "at",
+                                    "phaseAt"
                                   ],
                                   "additionalProperties": true
                                 },
@@ -33768,6 +33772,9 @@
                                       },
                                       "at": {
                                         "type": "string"
+                                      },
+                                      "phaseAt": {
+                                        "type": "string"
                                       }
                                     },
                                     "required": [
@@ -33777,7 +33784,8 @@
                                       "attempt",
                                       "of",
                                       "round",
-                                      "at"
+                                      "at",
+                                      "phaseAt"
                                     ],
                                     "additionalProperties": true
                                   },
@@ -35580,6 +35588,9 @@
                                     },
                                     "at": {
                                       "type": "string"
+                                    },
+                                    "phaseAt": {
+                                      "type": "string"
                                     }
                                   },
                                   "required": [
@@ -35589,7 +35600,8 @@
                                     "attempt",
                                     "of",
                                     "round",
-                                    "at"
+                                    "at",
+                                    "phaseAt"
                                   ],
                                   "additionalProperties": true
                                 },

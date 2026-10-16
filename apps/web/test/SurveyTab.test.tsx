@@ -72,6 +72,7 @@ describe('SurveyTab', () => {
           of: 2,
           round: 1,
           at,
+          phaseAt: at,
         },
       },
     });
