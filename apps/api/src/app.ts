@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { JobWatch } from './jobs/watch.js';
+import type { GitHubSyncRepo } from './github-sync/repo.js';
 import type { GitHubOAuth } from './profile/github.js';
 import type { ProfileRepo } from './profile/repo.js';
 import { registerOpenApi } from './openapi/plugin.js';
@@ -54,6 +55,8 @@ export interface AppDeps {
   access: AccessRepo | null;
   /** Users' own profiles (docs/design/profile.md). */
   profiles: ProfileRepo;
+  /** GitHub recipe sync: settings, links and push records (migration 0046). */
+  githubSync: GitHubSyncRepo;
   /** The GitHub OAuth app (`GITHUB_CLIENT_ID`/`_SECRET`); null/absent: GitHub cannot be linked. */
   github?: GitHubOAuth | null;
   /** `GITHUB_REDIRECT_URL`: the callback registered with GitHub; absent: from the request. */

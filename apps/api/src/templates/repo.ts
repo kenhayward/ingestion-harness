@@ -22,6 +22,8 @@ export const TemplateRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   publishedAt: z.string().nullable(),
+  /** Who published it (migration 0046); null for older versions and unattributed publishes. */
+  publishedBy: z.string().nullable(),
   ...VersionLabelSchema.shape,
 });
 export type TemplateRecord = z.infer<typeof TemplateRecordSchema>;
@@ -59,7 +61,7 @@ export interface TemplateRepo {
     definition: Record<string, unknown>,
     write?: DraftWrite,
   ): Promise<TemplateRecord | null>;
-  publish(id: string, version: number): Promise<TemplateRecord | null>;
+  publish(id: string, version: number, by?: string | null): Promise<TemplateRecord | null>;
   /**
    * Sets the version's label and note (#144; a field left out is kept, null clears it), draft or
    * published, leaving `updatedAt` alone. Null when the version does not exist.
@@ -140,6 +142,7 @@ export class MemoryTemplateRepo implements TemplateRepo {
       createdAt: now,
       updatedAt: now,
       publishedAt: status === 'published' ? now : null,
+      publishedBy: null,
       label: null,
       note: null,
       labelSetBy: null,
@@ -167,7 +170,7 @@ export class MemoryTemplateRepo implements TemplateRepo {
     return updated;
   }
 
-  async publish(id: string, version: number) {
+  async publish(id: string, version: number, by: string | null = null) {
     const record = await this.get(id, version);
     if (record?.status !== 'draft') return null;
     const now = this.now();
@@ -176,6 +179,7 @@ export class MemoryTemplateRepo implements TemplateRepo {
       status: 'published',
       updatedAt: now,
       publishedAt: now,
+      publishedBy: by,
     };
     this.records.set(this.key(id, version), updated);
     return updated;
@@ -246,6 +250,7 @@ interface Row {
   created_at: Date;
   updated_at: Date;
   published_at: Date | null;
+  published_by: string | null;
   label: string | null;
   note: string | null;
   label_set_by: string | null;
@@ -260,6 +265,7 @@ const toRecord = (r: Row): TemplateRecord => ({
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
   publishedAt: r.published_at ? r.published_at.toISOString() : null,
+  publishedBy: r.published_by,
   label: r.label,
   note: r.note,
   labelSetBy: r.label_set_by,
@@ -449,11 +455,12 @@ export class PgTemplateRepo implements TemplateRepo {
     return (rowCount ?? 0) > 0;
   }
 
-  async publish(id: string, version: number) {
+  async publish(id: string, version: number, by: string | null = null) {
     return this.one(
-      `UPDATE templates SET status = 'published', published_at = now(), updated_at = now()
+      `UPDATE templates SET status = 'published', published_at = now(), updated_at = now(),
+              published_by = $3
         WHERE id = $1 AND version = $2 AND status = 'draft' RETURNING *`,
-      [id, version],
+      [id, version, by],
     );
   }
 
