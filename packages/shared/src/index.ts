@@ -21,3 +21,4 @@ export * from './ontology-suggestions.js';
 export * from './linked-data.js';
 export * from './version-labels.js';
 export * from './profile.js';
+export * from './github-sync.js';
