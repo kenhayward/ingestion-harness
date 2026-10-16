@@ -29262,6 +29262,121 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running"
+                              ]
+                            },
+                            "since": {
+                              "type": "string"
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "survey",
+                                        "outputs",
+                                        "sections",
+                                        "steps",
+                                        "references",
+                                        "revise",
+                                        "mapping"
+                                      ]
+                                    },
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reading",
+                                        "model",
+                                        "anchors",
+                                        "suggestions"
+                                      ]
+                                    },
+                                    "samples": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "attempt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "of": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "phase",
+                                    "samples",
+                                    "attempt",
+                                    "of",
+                                    "round",
+                                    "at"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "since",
+                            "progress"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -29274,7 +29389,8 @@
                     "body",
                     "acceptedChanges",
                     "createdAt",
-                    "decidedAt"
+                    "decidedAt",
+                    "run"
                   ],
                   "additionalProperties": true,
                   "description": "The proposal, running."
@@ -31672,7 +31788,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes.",
+        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes. While its job is queued or running,\n`run` says since when and, once the worker reports it, what it is doing (its latest\n`drafting progress` event of this attempt: reading the samples, each model call,\ntesting anchors, queuing ontology suggestions).",
         "parameters": [
           {
             "schema": {
@@ -33145,6 +33261,121 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "run": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running"
+                                ]
+                              },
+                              "since": {
+                                "type": "string"
+                              },
+                              "progress": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "stage": {
+                                        "type": "string",
+                                        "enum": [
+                                          "survey",
+                                          "outputs",
+                                          "sections",
+                                          "steps",
+                                          "references",
+                                          "revise",
+                                          "mapping"
+                                        ]
+                                      },
+                                      "phase": {
+                                        "type": "string",
+                                        "enum": [
+                                          "reading",
+                                          "model",
+                                          "anchors",
+                                          "suggestions"
+                                        ]
+                                      },
+                                      "samples": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "attempt": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "of": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "round": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "tokens": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "stage",
+                                      "phase",
+                                      "samples",
+                                      "attempt",
+                                      "of",
+                                      "round",
+                                      "at"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "since",
+                              "progress"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -33157,7 +33388,8 @@
                       "body",
                       "acceptedChanges",
                       "createdAt",
-                      "decidedAt"
+                      "decidedAt",
+                      "run"
                     ],
                     "additionalProperties": true
                   },
@@ -34763,6 +34995,121 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running"
+                              ]
+                            },
+                            "since": {
+                              "type": "string"
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "survey",
+                                        "outputs",
+                                        "sections",
+                                        "steps",
+                                        "references",
+                                        "revise",
+                                        "mapping"
+                                      ]
+                                    },
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reading",
+                                        "model",
+                                        "anchors",
+                                        "suggestions"
+                                      ]
+                                    },
+                                    "samples": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "attempt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "of": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "phase",
+                                    "samples",
+                                    "attempt",
+                                    "of",
+                                    "round",
+                                    "at"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "since",
+                            "progress"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -34775,7 +35122,8 @@
                     "body",
                     "acceptedChanges",
                     "createdAt",
-                    "decidedAt"
+                    "decidedAt",
+                    "run"
                   ],
                   "additionalProperties": true,
                   "description": "The decided proposal."
