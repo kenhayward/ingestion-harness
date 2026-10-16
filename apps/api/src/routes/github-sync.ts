@@ -1,10 +1,15 @@
 import {
+  DEFAULT_SYNC_ROOT,
   GitHubLinkBodySchema,
   GitHubLinkViewSchema,
+  GitHubRepoSchema,
   ID_PATTERN,
+  parseRecipePath,
   PushOutcomeSchema,
+  RemoteListingSchema,
   RemoteListingViewSchema,
   SyncNameSchema,
+  SyncRootSchema,
   VersionLabelBodySchema,
   describeDefinitionChange,
   type RecipeFile,
@@ -17,6 +22,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { definitionSha256, labelSha } from '../github-sync/file.js';
+import { ImportConflict, importRecipeFile } from '../github-sync/import.js';
 import { cannotPush, NOT_LINKED_TO_PUSH, pushVersion, SyncConflict } from '../github-sync/push.js';
 import { compareWith, githubAuthor, listRemote, readRemoteVersion } from '../github-sync/remote.js';
 import { userToken } from '../github-sync/token.js';
@@ -61,6 +67,38 @@ const UseAsDraftBody = z
       .datetime()
       .optional()
       .describe('The open draft `updatedAt` the user saw: a draft written since is a 409.'),
+  })
+  .strict();
+
+const BrowseQuery = z.object({
+  repo: z.string().describe('`owner/name`.'),
+  branch: z.string().min(1).describe('The branch to read.'),
+  root: SyncRootSchema.default(DEFAULT_SYNC_ROOT).describe(
+    'The folder recipes are stored under (default `ct-studio`).',
+  ),
+});
+const ImportFromGitHubBody = z
+  .object({
+    repo: z.string().describe('`owner/name`.'),
+    branch: z.string().min(1).describe('The branch the file was listed on.'),
+    path: z
+      .string()
+      .min(1)
+      .describe('A listed version `path`: `<root>/<instance>/<type-id>/v<N>.yaml`.'),
+    commit: Commit,
+    id: z
+      .string()
+      .regex(ID_PATTERN, 'a document type id')
+      .optional()
+      .describe("The new type id; default the file's."),
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("The new type name; default the definition's."),
+    link: z.boolean().describe('Also link the new type to this repository (admins only).'),
   })
   .strict();
 
@@ -379,6 +417,157 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
       } catch (err) {
         if (err instanceof SyncConflict) return reply.code(409).send({ error: err.message });
         throw err;
+      }
+    },
+  );
+
+  app.get(
+    '/api/github/repos',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'listReadableGitHubRepos',
+        summary: 'List the repositories your GitHub account can read',
+        description: md`
+          Every repository **your** linked GitHub account can read (private ones too), for
+          choosing where to import recipes from. Not admin-only.
+        `,
+        response: {
+          200: res('The repositories, by name.', z.array(GitHubRepoSchema)),
+          409: error(
+            '`' +
+              NOT_LINKED_TO_PULL +
+              '`, GitHub is not set up, or GitHub no longer accepts your link.',
+          ),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const api = deps.githubRepos ?? null;
+        if (!api) throw new SyncConflict('GitHub is not set up on this deployment');
+        const token = await userToken(deps, req.auth!.userId);
+        if (token === 'not_linked') throw new SyncConflict(NOT_LINKED_TO_PULL);
+        return await api.listRepos(token);
+      } catch (err) {
+        return pullFailure(reply, err);
+      }
+    },
+  );
+
+  app.get(
+    '/api/github/browse',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'browseGitHubRecipes',
+        summary: 'List the recipe versions under a folder of a repository',
+        description: md`
+          Reads the head of \`branch\` with **your** linked GitHub account and lists every
+          recipe version under \`<root>/<instance>/<type-id>/\` there, from any deployment
+          (\`mine\` marks this deployment's own). Files that cannot be used are listed in
+          \`skipped\` with the reason. Each version's \`commit\` is the head read; send it, with
+          its \`path\`, to \`POST /api/github/import\`.
+        `,
+        querystring: BrowseQuery,
+        response: {
+          200: res('The versions.', RemoteListingSchema),
+          400: error('Zod issues.'),
+          409: error(
+            '`' +
+              NOT_LINKED_TO_PULL +
+              '`, the branch or repository is gone, or GitHub no longer accepts your link.',
+          ),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const q = BrowseQuery.safeParse(req.query ?? {});
+      if (!q.success) return reply.code(400).send({ error: q.error.issues });
+      try {
+        const token = await userToken(deps, req.auth!.userId);
+        if (token === 'not_linked') throw new SyncConflict(NOT_LINKED_TO_PULL);
+        return await listRemote(deps, { token, ...q.data });
+      } catch (err) {
+        return pullFailure(reply, err);
+      }
+    },
+  );
+
+  app.post(
+    '/api/github/import',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'importRecipeFromGitHub',
+        summary: 'Import a recipe version from GitHub as a new document type',
+        description: md`
+          Reads the file at \`path\` (\`<root>/<instance>/<type-id>/v<N>.yaml\`) at \`commit\`
+          with **your** linked GitHub account and creates a new document type from it: a v1
+          **draft**, never published. \`id\` defaults to the file's type id and \`name\` to the
+          definition's name. The file's label and note are copied. An id that exists already is
+          a 409 (pull into it from its Versions tab, or import under another id), and so is a
+          retired one. With \`link: true\` an admin also links the new type to the repository
+          (this repo, branch and root; it pushes each published version, without pull
+          requests); for anyone else the type is created and \`linked\` is false.
+        `,
+        body: ImportFromGitHubBody,
+        response: {
+          201: res('The new draft.', RecordView.extend({ linked: z.boolean() })),
+          400: error('Zod issues, or a path that is not `<root>/<instance>/<type-id>/v<N>.yaml`.'),
+          409: error(
+            '`<id> already exists: pull into it from its Versions tab, or import under another id`, ' +
+              RETIRED_DOC +
+              ', the file is missing or not usable at that commit, or ' +
+              PULL_409,
+          ),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = ImportFromGitHubBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { repo, branch, path, commit } = body.data;
+      const root = path.split('/').slice(0, -3).join('/');
+      const at = SyncRootSchema.safeParse(root).success ? parseRecipePath(root, path) : null;
+      if (!at || at.draft) {
+        return reply
+          .code(400)
+          .send({ error: 'path must be <root>/<instance>/<type-id>/v<N>.yaml' });
+      }
+      const id = body.data.id ?? at.typeId;
+      const by = req.auth?.label ?? null;
+      try {
+        const retired = await retiredProblem(deps, id);
+        if (retired) return reply.code(409).send({ error: retired });
+        if ((await versionsOf(id)).length) {
+          throw new SyncConflict(
+            `${id} already exists: pull into it from its Versions tab, or import under another id`,
+          );
+        }
+        const api = deps.githubRepos ?? null;
+        if (!api) throw new SyncConflict('GitHub is not set up on this deployment');
+        const token = await userToken(deps, req.auth!.userId);
+        if (token === 'not_linked') throw new SyncConflict(NOT_LINKED_TO_PULL);
+        const { file } = await readRemoteVersion(api, { token, repo, root, commit }, at);
+        const record = await importRecipeFile(deps, file, { id, name: body.data.name, commit, by });
+        let linked = false;
+        if (body.data.link && req.auth?.role === 'admin') {
+          await sync.setLink(
+            id,
+            { repo, branch, root, alwaysPr: false, pushOnPublish: true },
+            by ?? 'admin',
+          );
+          linked = true;
+        }
+        req.log.info({ templateId: id, linked }, 'recipe imported from GitHub');
+        return reply.code(201).send({ ...(await withIssues(record)), linked });
+      } catch (err) {
+        if (err instanceof ImportConflict) return reply.code(409).send({ error: err.message });
+        return pullFailure(reply, err);
       }
     },
   );

@@ -4,12 +4,15 @@ import { z } from 'zod';
 import {
   PublishLabelSchema,
   PushOutcomeSchema,
+  RECIPE_FILE_FORMAT,
   RetirementSchema,
   VersionLabelBodySchema,
   VersionLabelSchema,
   versionName,
 } from '@ih/shared';
 import { pushAfterPublish } from '../github-sync/auto.js';
+import { parseRecipeFile } from '../github-sync/file.js';
+import { ImportConflict, importRecipeFile } from '../github-sync/import.js';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import {
@@ -757,6 +760,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           Creates the version named by the definition's \`id\` and \`version\` (a new document
           type, or a new version of one): a draft, or published when \`publish\` is true and the
           definition is valid. A draft may be imported invalid and fixed in the editor. A
+          **CT Studio recipe file** (\`format: ct-recipe\`, as pushed to GitHub) is always
+          imported as a draft: a new document type's v1, or an existing type's next free
+          version (409 while a draft is open); its label and note are copied, and
+          \`publish: true\` is a 400. A
           Workbench document type can be imported as a draft but not published. See the
           [recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).
         `,
@@ -765,11 +772,13 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           201: res('The imported version.', RecordView),
           400: res(
             'Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id ' +
-              'and version`, or `recipe is not valid` (with `issues`) when publishing.',
+              'and version`, `recipe is not valid` (with `issues`) when publishing, an unusable ' +
+              'recipe file, or `a CT Studio recipe file is always imported as a draft`.',
             z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
           ),
           409: error(
-            'The version already exists, `publish {id} from the Workbench (holdout gate)`, or ' +
+            'The version already exists, `a draft already exists; edit or delete it first` (a ' +
+              'recipe file), `publish {id} from the Workbench (holdout gate)`, or ' +
               RETIRED_DOC +
               '.',
           ),
@@ -784,6 +793,32 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         definition = parseYaml(body.data.yaml);
       } catch (err) {
         return reply.code(400).send({ error: `not valid YAML: ${(err as Error).message}` });
+      }
+      if ((definition as { format?: unknown } | null)?.format === RECIPE_FILE_FORMAT) {
+        // A CT Studio recipe file (as pushed to GitHub): always a draft, at a free version.
+        if (body.data.publish) {
+          return reply
+            .code(400)
+            .send({ error: 'a CT Studio recipe file is always imported as a draft' });
+        }
+        const file = parseRecipeFile(body.data.yaml);
+        if ('error' in file) return reply.code(400).send({ error: file.error });
+        const target = typeof file.definition.id === 'string' ? file.definition.id : null;
+        if (!target || !Id.safeParse(target).success) {
+          return reply.code(400).send({ error: 'definition needs a valid id and version' });
+        }
+        const gone = await retiredProblem(app.deps, target);
+        if (gone) return reply.code(409).send({ error: gone });
+        try {
+          const record = await importRecipeFile(app.deps, file, {
+            commit: null,
+            by: req.auth?.label ?? null,
+          });
+          return reply.code(201).send(await withIssues(record));
+        } catch (err) {
+          if (err instanceof ImportConflict) return reply.code(409).send({ error: err.message });
+          throw err;
+        }
       }
       const ident = z
         .object({ id: Id, version: z.number().int().positive() })

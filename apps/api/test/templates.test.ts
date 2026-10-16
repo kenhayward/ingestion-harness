@@ -281,3 +281,81 @@ describe('uploads against database templates', () => {
     ]);
   });
 });
+
+describe('import of a CT Studio recipe file', () => {
+  const wrapper = (over: Record<string, unknown> = {}, id = 'letter', version = 7) =>
+    stringifyYaml({
+      format: 'ct-recipe',
+      formatVersion: 1,
+      instance: 'prod',
+      version: {
+        number: version,
+        status: 'published',
+        label: 'Q3 layout',
+        note: 'third quarter',
+        labelSetBy: 'Pat',
+        labelSetAt: '2026-10-02T00:00:00.000Z',
+        publishedBy: 'Pat',
+        publishedAt: '2026-10-01T00:00:00.000Z',
+        basedOn: null,
+        importedFrom: null,
+        definitionSha256: 'a'.repeat(64),
+      },
+      definition: definition(id, version),
+      ...over,
+    });
+
+  it('creates a new type as a v1 draft with the label and a logged source', async () => {
+    const { app, templates } = await testApp();
+    const res = await app.inject(json('POST', '/api/templates/import', { yaml: wrapper() }));
+    expect(res.statusCode).toBe(201);
+    expect(res.json().record).toMatchObject({
+      id: 'letter',
+      version: 1,
+      status: 'draft',
+      label: 'Q3 layout',
+      note: 'third quarter',
+    });
+    expect(res.json().record.definition).toMatchObject({ id: 'letter', version: 1 });
+    const [change] = await templates.listChanges('letter', 1);
+    expect(change).toMatchObject({
+      source: 'import',
+      summary: 'Imported from YAML (prod/letter v7)',
+    });
+  });
+
+  it("creates an existing type's next free version as a draft", async () => {
+    const { app, templates } = await testApp();
+    await templates.create('letter', 1, definition(), 'published');
+    await templates.create('letter', 2, definition('letter', 2), 'published');
+    const res = await app.inject(json('POST', '/api/templates/import', { yaml: wrapper() }));
+    expect(res.statusCode).toBe(201);
+    expect(res.json().record).toMatchObject({ version: 3, status: 'draft', label: 'Q3 layout' });
+    const again = await app.inject(json('POST', '/api/templates/import', { yaml: wrapper() }));
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toBe('a draft already exists; edit or delete it first');
+  });
+
+  it('refuses publish: true for a wrapper', async () => {
+    const { app, templates } = await testApp();
+    const res = await app.inject(
+      json('POST', '/api/templates/import', { yaml: wrapper(), publish: true }),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('a CT Studio recipe file is always imported as a draft');
+    expect(await templates.list()).toEqual([]);
+  });
+
+  it('refuses a wrapper that is not a usable recipe file, and a retired type', async () => {
+    const { app, templates } = await testApp();
+    const bad = await app.inject(
+      json('POST', '/api/templates/import', { yaml: wrapper({ formatVersion: 2 }) }),
+    );
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toContain('format');
+    await templates.create('letter', 1, definition(), 'published');
+    await templates.retire('letter', 'Admin');
+    const retired = await app.inject(json('POST', '/api/templates/import', { yaml: wrapper() }));
+    expect(retired.statusCode).toBe(409);
+  });
+});

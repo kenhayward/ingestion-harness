@@ -24,6 +24,18 @@ interface Where {
   repo: string;
 }
 
+/** At most this many file reads are in flight at once while listing a root. */
+export const MAX_READS = 8;
+
+/** Runs `work` over `items`, at most `limit` at a time. */
+async function pool<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>) {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) await work(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+}
+
 /** The branch's head; a missing branch or repository is a `SyncConflict` naming it. */
 export async function branchHead(
   api: GitHubRepoApi,
@@ -111,41 +123,39 @@ export async function listRemote(
 
   const versions: RemoteVersion[] = [];
   const skipped: RemoteListing['skipped'] = [];
-  await Promise.all(
-    files.map(async ({ path }) => {
-      const at = parseRecipePath(root, path);
-      if (!at) return; // instance.yaml, READMEs and anything else
-      if (typeId !== undefined && at.typeId !== typeId) return;
-      if (!SyncNameSchema.safeParse(at.instance).success || !ID_PATTERN.test(at.typeId)) {
-        skipped.push({ path, reason: MISMATCH });
-        return;
-      }
-      if (at.draft) {
-        skipped.push({ path, reason: DRAFTS_SKIPPED });
-        return;
-      }
-      const read = await api.readFile(token, repo, head, path);
-      if (!read) return; // listed but gone: nothing to show
-      const file = readRecipe(read.content, at);
-      if ('error' in file) {
-        skipped.push({ path, reason: file.error });
-        return;
-      }
-      versions.push({
-        instance: at.instance,
-        typeId: at.typeId,
-        version: at.version,
-        label: file.version.label,
-        note: file.version.note,
-        publishedBy: file.version.publishedBy,
-        publishedAt: file.version.publishedAt,
-        definitionSha256: definitionSha256(file.definition),
-        commit: head,
-        path,
-        mine: (await instanceId(at.instance)) === settings.instanceId,
-      });
-    }),
-  );
+  await pool(files, MAX_READS, async ({ path }) => {
+    const at = parseRecipePath(root, path);
+    if (!at) return; // instance.yaml, READMEs and anything else
+    if (typeId !== undefined && at.typeId !== typeId) return;
+    if (!SyncNameSchema.safeParse(at.instance).success || !ID_PATTERN.test(at.typeId)) {
+      skipped.push({ path, reason: MISMATCH });
+      return;
+    }
+    if (at.draft) {
+      skipped.push({ path, reason: DRAFTS_SKIPPED });
+      return;
+    }
+    const read = await api.readFile(token, repo, head, path);
+    if (!read) return; // listed but gone: nothing to show
+    const file = readRecipe(read.content, at);
+    if ('error' in file) {
+      skipped.push({ path, reason: file.error });
+      return;
+    }
+    versions.push({
+      instance: at.instance,
+      typeId: at.typeId,
+      version: at.version,
+      label: file.version.label,
+      note: file.version.note,
+      publishedBy: file.version.publishedBy,
+      publishedAt: file.version.publishedAt,
+      definitionSha256: definitionSha256(file.definition),
+      commit: head,
+      path,
+      mine: (await instanceId(at.instance)) === settings.instanceId,
+    });
+  });
   versions.sort(
     (a, b) =>
       Number(b.mine) - Number(a.mine) ||
