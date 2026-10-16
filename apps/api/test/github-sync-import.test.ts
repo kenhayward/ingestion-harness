@@ -112,6 +112,51 @@ describe('GET /api/github/repos and /browse', () => {
   });
 });
 
+describe('repository and branch names', () => {
+  it.each([
+    ['repo', '../..'],
+    ['branch', '../..'],
+    ['branch', '../tags/v1'],
+  ])('browse refuses the %s %j', async (key, value) => {
+    const c = await setup();
+    const q = new URLSearchParams({ repo: REPO, branch: 'main', root: ROOT, [key]: value });
+    const res = await c.call(c.ken.cookie, 'GET', `/api/github/browse?${q}`);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it.each([
+    ['repo', '../..'],
+    ['branch', '../tags/v1'],
+  ])('import refuses the %s %j', async (key, value) => {
+    const c = await setup();
+    const res = await c.call(
+      c.ken.cookie,
+      'POST',
+      '/api/github/import',
+      body(c.head, { [key]: value }),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(await c.templates.list()).toEqual([]);
+  });
+});
+
+describe('a GitHub that cannot be reached', () => {
+  it('is a 502 for repositories, browsing and importing', async () => {
+    const c = await setup();
+    c.github.unreachable = true;
+    for (const [method, url, payload] of [
+      ['GET', '/api/github/repos', undefined],
+      ['GET', `/api/github/browse?repo=${REPO}&branch=main&root=${ROOT}`, undefined],
+      ['POST', '/api/github/import', body(c.head)],
+    ] as const) {
+      const res = await c.call(c.ken.cookie, method, url, payload);
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toBe('GitHub could not be reached: fetch failed');
+    }
+    expect(await c.templates.list()).toEqual([]);
+  });
+});
+
 describe('POST /api/github/import', () => {
   it('creates a v1 draft with the label and a change entry naming the commit', async () => {
     const c = await setup();

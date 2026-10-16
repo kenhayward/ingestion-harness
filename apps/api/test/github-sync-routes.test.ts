@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
 import { MemoryProfileRepo } from '../src/profile/repo.js';
 import { FakeGitHubRepos } from './fake-github-repos.js';
@@ -26,12 +26,12 @@ const link = {
   pushOnPublish: false,
 };
 
-async function setup() {
+async function setup(over: { githubAutoPushDeadlineMs?: number } = {}) {
   const github = new FakeGitHubRepos();
   github.addRepo(REPO, { token: ADMIN_TOKEN, permission: 'push' });
   github.addRepo(REPO, { token: USER_TOKEN, permission: 'push' });
   const profiles = new MemoryProfileRepo();
-  const ctx = await accessApp({ githubRepos: github, profiles, llmSecrets: keys });
+  const ctx = await accessApp({ githubRepos: github, profiles, llmSecrets: keys, ...over });
   const admin = await signInNewUser(ctx.app, ctx.access, 'Alice Admin', 'admin');
   const user = await signInNewUser(ctx.app, ctx.access, 'Ursula User');
   const linkAccount = (id: string, login: string, token: string, ghId: number) =>
@@ -216,6 +216,105 @@ describe('push and status', () => {
   });
 });
 
+describe('a GitHub that cannot be reached', () => {
+  it('fails a push and keeps the status, with the reason', async () => {
+    const c = await setup();
+    await linkIt(c, { alwaysPr: true });
+    const pr = (await pushV1(c)).json();
+    expect(pr.kind).toBe('pr');
+    c.github.unreachable = true;
+    const res = await pushV1(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      kind: 'failed',
+      reason: 'GitHub could not be reached: fetch failed',
+    });
+    const status = await c.call('GET', STATUS, c.user.cookie);
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      canPush: false,
+      reason: 'GitHub could not be reached: fetch failed',
+    });
+    expect(row(status.json(), 1).state).toBe('pr');
+  });
+
+  it('is a 502 when linking', async () => {
+    const c = await setup();
+    c.github.unreachable = true;
+    const res = await linkIt(c);
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('GitHub could not be reached: fetch failed');
+  });
+});
+
+describe('status after the link moved', () => {
+  it('reads a push to another repository or folder as absent', async () => {
+    const c = await setup();
+    c.github.addRepo('acme/moved', { token: ADMIN_TOKEN, permission: 'push' });
+    c.github.addRepo('acme/moved', { token: USER_TOKEN, permission: 'push' });
+    await linkIt(c);
+    await pushV1(c);
+    expect(row(await statusOf(c), 1).state).toBe('on');
+    await linkIt(c, { repo: 'acme/moved' });
+    expect(row(await statusOf(c), 1)).toMatchObject({ state: 'absent', commit: null });
+    await linkIt(c, { root: 'data/ct' });
+    expect(row(await statusOf(c), 1).state).toBe('absent');
+    await linkIt(c);
+    expect(row(await statusOf(c), 1).state).toBe('on');
+  });
+});
+
+describe('link body', () => {
+  it.each(['../..', '../tags/v1', 'a b', '-x', '/main', 'main/', 'x.lock', 'a~1', 'a:b'])(
+    'refuses the branch %j',
+    async (branch) => {
+      const c = await setup();
+      expect((await linkIt(c, { branch })).statusCode).toBe(400);
+    },
+  );
+
+  it('refuses a repository that is not owner/name', async () => {
+    const c = await setup();
+    expect((await linkIt(c, { repo: '../..' })).statusCode).toBe(400);
+    expect((await linkIt(c, { branch: 'feature/recipes' })).statusCode).toBe(200);
+  });
+});
+
+describe('deleting the last version of a type', () => {
+  it('forgets its link and push records', async () => {
+    const c = await setup();
+    await c.templates.create('memo', 1, { ...invoice(1), id: 'memo' }, 'draft');
+    await c.call('PUT', '/api/templates/memo/github', c.admin.cookie, link);
+    await c.githubSync.recordPush({
+      typeId: 'memo',
+      version: 1,
+      repo: REPO,
+      branch: 'main',
+      path: 'ct-studio/default/memo/v1.yaml',
+      commit: 'c1',
+      blobSha: 'b1',
+      labelSha: 'l1',
+      prNumber: null,
+      prUrl: null,
+      prState: null,
+      pushedBy: 'Ken',
+      pushedAt: '2026-10-16T10:00:00.000Z',
+    });
+    expect(await c.githubSync.link('memo')).not.toBeNull();
+    // Deleting invoice's draft v2 leaves its published v1: the link stays.
+    await linkIt(c);
+    expect(
+      (await c.call('DELETE', '/api/templates/invoice/versions/2', c.admin.cookie)).statusCode,
+    ).toBe(204);
+    expect(await c.githubSync.link('invoice')).not.toBeNull();
+    expect(
+      (await c.call('DELETE', '/api/templates/memo/versions/1', c.admin.cookie)).statusCode,
+    ).toBe(204);
+    expect(await c.githubSync.link('memo')).toBeNull();
+    expect(await c.githubSync.pushes('memo')).toEqual([]);
+  });
+});
+
 describe('automatic push at publish', () => {
   const publishV2 = (c: Ctx, cookie = c.user.cookie) =>
     c.call('POST', '/api/templates/invoice/versions/2/publish', cookie, {});
@@ -275,6 +374,27 @@ describe('automatic push at publish', () => {
       reason: expect.stringContaining('link the account again in Profile'),
     });
     expect((await d.templates.get('invoice', 2))!.status).toBe('published');
+  });
+
+  it('answers after the deadline when GitHub is slow, and records the push later', async () => {
+    const c = await setup({ githubAutoPushDeadlineMs: 20 });
+    await linkIt(c, { pushOnPublish: true });
+    let release!: () => void;
+    c.github.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toEqual({
+      kind: 'failed',
+      reason: 'GitHub is slow: check Versions for the result.',
+    });
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+    c.github.gate = null;
+    release();
+    await vi.waitFor(async () => {
+      expect((await c.githubSync.pushes('invoice')).map((p) => p.version)).toEqual([2]);
+    });
   });
 
   it('does the same from the Workbench publish route, and records who published', async () => {

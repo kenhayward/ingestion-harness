@@ -495,3 +495,67 @@ describe('pushVersion', () => {
     );
   });
 });
+
+describe('pushVersion after the file changed on GitHub', () => {
+  it('adopts a file whose label was taken from GitHub, then pushes only the label', async () => {
+    const ctx = await setup();
+    await ctx.push();
+    // Someone labels v1 on GitHub; the label is taken here (who set it reads `GitHub: …`).
+    const record = (await ctx.templates.get('invoice', 1))!;
+    const edited = recipeFileYaml(
+      recipeFileFor(
+        { ...record, label: 'Q3', note: 'from GitHub', labelSetBy: 'Bob', labelSetAt: null },
+        { instanceName: 'production' },
+        { basedOn: null, importedFrom: null },
+      ),
+    );
+    ctx.github.seed(REPO, 'main', { [v(1)]: edited });
+    await ctx.templates.setLabel('invoice', 1, { label: 'Q3', note: 'from GitHub' }, 'GitHub: Bob');
+    const out = await ctx.push();
+    expect(out.kind).toBe('pushed');
+    expect(ctx.github.commits).toHaveLength(2);
+    expect(ctx.github.commits[1]!.message).toBe('invoice v1: Q3 (CT Studio production)');
+    expect(parseRecipeFile(ctx.github.files(REPO, 'main')[v(1)]!)).toMatchObject({
+      version: { label: 'Q3', note: 'from GitHub', labelSetBy: 'GitHub: Bob' },
+    });
+    const [pushed] = await ctx.githubSync.pushes('invoice');
+    expect(pushed!.blobSha).toBe(fakeBlobSha(ctx.github.files(REPO, 'main')[v(1)]!));
+  });
+
+  it('adopts a commit that landed without its push record, writing nothing', async () => {
+    const ctx = await setup();
+    await ctx.push();
+    const labelled = (await ctx.templates.setLabel('invoice', 1, { label: 'Q3' }, 'Ken'))!;
+    // The label push's commit landed on GitHub but recording it failed.
+    const text = recipeFileYaml(
+      recipeFileFor(
+        labelled,
+        { instanceName: 'production' },
+        { basedOn: null, importedFrom: null },
+      ),
+    );
+    const head = ctx.github.seed(REPO, 'main', { [v(1)]: text });
+    const out = await ctx.push();
+    expect(out).toEqual({
+      kind: 'pushed',
+      commit: head,
+      commitUrl: `https://github.com/${REPO}/commit/${head}`,
+    });
+    expect(ctx.github.commits).toHaveLength(1);
+    expect((await ctx.githubSync.pushes('invoice'))[0]).toMatchObject({
+      commit: head,
+      blobSha: fakeBlobSha(text),
+      labelSha: labelSha(labelled),
+    });
+  });
+
+  it('a GitHub that cannot be reached is a failed outcome and records nothing', async () => {
+    const ctx = await setup();
+    ctx.github.unreachable = true;
+    expect(await ctx.push()).toEqual({
+      kind: 'failed',
+      reason: 'GitHub could not be reached: fetch failed',
+    });
+    expect(await ctx.githubSync.pushes('invoice')).toEqual([]);
+  });
+});

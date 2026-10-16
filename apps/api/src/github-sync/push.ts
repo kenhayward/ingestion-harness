@@ -131,14 +131,27 @@ async function plan(job: Job): Promise<Plan> {
     files.push({ path: job.path, content: job.content });
     return { head, files, existing: null };
   }
-  if (tracked && current.blobSha !== tracked.blobSha) {
-    throw new SyncConflict('changed on GitHub: pull first');
-  }
   const remote = parseRecipeFile(current.content);
-  if (
-    'error' in remote ||
-    definitionSha256(remote.definition) !== definitionSha256(record.definition)
-  ) {
+  const sameRecipe =
+    !('error' in remote) &&
+    definitionSha256(remote.definition) === definitionSha256(record.definition);
+  // A file that is no longer the one last pushed but holds this version as it is here (the
+  // same recipe, label and note: its label was taken from GitHub, or a push's commit landed
+  // but was never recorded) is adopted as what GitHub holds; any other change is the user's
+  // to resolve.
+  const asHere =
+    sameRecipe &&
+    !('error' in remote) &&
+    remote.version.label === record.label &&
+    remote.version.note === record.note;
+  const adopted =
+    !tracked || current.blobSha === tracked.blobSha
+      ? tracked
+      : asHere
+        ? { ...tracked, commit: currentCommit, blobSha: current.blobSha, labelSha: job.labelSha }
+        : null;
+  if (tracked && !adopted) throw new SyncConflict('changed on GitHub: pull first');
+  if (!sameRecipe || 'error' in remote) {
     throw new SyncConflict(`v${record.version} on GitHub is a different recipe: see Pull`);
   }
   if (!sameLabel(remote.version, record)) {
@@ -152,7 +165,7 @@ async function plan(job: Job): Promise<Plan> {
   return {
     head,
     files,
-    existing: tracked ?? {
+    existing: adopted ?? {
       typeId: record.id,
       version: record.version,
       repo: link.repo,

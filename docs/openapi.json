@@ -4398,7 +4398,7 @@
         "tags": [
           "GitHub"
         ],
-        "description": "The type's repository link (null without one) and, for every version, newest first,\nwhether GitHub has it: `on`, `label` (its label or note changed since the push),\n`pr` (waiting in an open pull request) or `absent` (never pushed, a closed pull\nrequest, and every draft: drafts stay in CT Studio). `differs` is reported by Pull\nonly. When you have a linked GitHub account, open pull requests are checked and a\nmerge shows as `on`; if GitHub cannot be reached the stored state is kept.\n`canPush` and `reason` say whether you can push now and, if not, why.",
+        "description": "The type's repository link (null without one) and, for every version, newest first,\nwhether GitHub has it: `on`, `label` (its label or note changed since the push),\n`pr` (waiting in an open pull request) or `absent` (never pushed, a closed pull\nrequest, and every draft: drafts stay in CT Studio; also a push to another repository\nor folder than the link names now). `differs` is reported by Pull only. When you have a linked GitHub account, open pull requests are checked and a\nmerge shows as `on`; if GitHub cannot be reached the stored state is kept.\n`canPush` and `reason` say whether you can push now and, if not, why.",
         "parameters": [
           {
             "schema": {
@@ -4429,8 +4429,6 @@
                             },
                             "branch": {
                               "type": "string",
-                              "minLength": 1,
-                              "maxLength": 250,
                               "description": "The branch recipes are stored on."
                             },
                             "root": {
@@ -4668,8 +4666,6 @@
                   },
                   "branch": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 250,
                     "description": "The branch recipes are stored on."
                   },
                   "root": {
@@ -4723,8 +4719,6 @@
                     },
                     "branch": {
                       "type": "string",
-                      "minLength": 1,
-                      "maxLength": 250,
                       "description": "The branch recipes are stored on."
                     },
                     "root": {
@@ -5522,8 +5516,7 @@
           },
           {
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "string"
             },
             "in": "query",
             "name": "branch",
@@ -5591,6 +5584,13 @@
                           "definitionSha256": {
                             "type": "string"
                           },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The definition's name; null when it has none."
+                          },
                           "commit": {
                             "type": [
                               "string",
@@ -5614,6 +5614,7 @@
                           "publishedBy",
                           "publishedAt",
                           "definitionSha256",
+                          "name",
                           "commit",
                           "path",
                           "mine"
@@ -5815,7 +5816,6 @@
                   },
                   "branch": {
                     "type": "string",
-                    "minLength": 1,
                     "description": "The branch the file was listed on."
                   },
                   "path": {
@@ -6258,6 +6258,13 @@
                           "definitionSha256": {
                             "type": "string"
                           },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The definition's name; null when it has none."
+                          },
                           "commit": {
                             "type": [
                               "string",
@@ -6298,6 +6305,7 @@
                           "publishedBy",
                           "publishedAt",
                           "definitionSha256",
+                          "name",
                           "commit",
                           "path",
                           "mine",
@@ -6486,7 +6494,7 @@
         "tags": [
           "GitHub"
         ],
-        "description": "Sets the version's label and note to those of this deployment's file for it on\nGitHub at `commit`, when the recipe there is the same as here. `labelSetBy`\nbecomes `GitHub: <name>`, the name being the file's own `labelSetBy` (who set the\nlabel where it was pushed from; GitHub's commit author is not looked up), or plain\n`GitHub` without one. Allowed for retired types.",
+        "description": "Sets the version's label and note to those of this deployment's file for it on\nGitHub at `commit`, when the recipe there is the same as here. `labelSetBy`\nbecomes `GitHub: <name>`, the name being the file's own `labelSetBy` (who set the\nlabel where it was pushed from; GitHub's commit author is not looked up), or plain\n`GitHub` without one. The version's push record then follows the file read, so\npushing again is not refused as changed on GitHub. Allowed for retired types.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17072,7 +17080,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Deletes a draft version. Published versions cannot be deleted: jobs and references\nrecord the version they ran with.",
+        "description": "Deletes a draft version. Published versions cannot be deleted: jobs and references\nrecord the version they ran with. Deleting a type's only version (a never-published\ntype) also removes its GitHub link and push records.",
         "parameters": [
           {
             "schema": {
@@ -18465,7 +18473,7 @@
                           "type": "null"
                         }
                       ],
-                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish."
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish. A push still going after 15 s is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards."
                     }
                   },
                   "required": [
@@ -25634,7 +25642,7 @@
                           "type": "null"
                         }
                       ],
-                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish."
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish. A push still going after 15 s is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards."
                     }
                   },
                   "required": [

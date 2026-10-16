@@ -30,10 +30,48 @@ export const SyncRootSchema = z
   })
   .describe('A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`.');
 
-const RepoName = z
+/** A repository named `owner/name`, as GitHub allows them. */
+export const GitHubRepoNameSchema = z
   .string()
   .refine((v) => githubRepoProblem(v) === null, 'name the repository as owner/name')
   .describe('`owner/name`.');
+const RepoName = GitHubRepoNameSchema;
+
+/**
+ * Why a branch name is not one git allows (`git check-ref-format`), or null. The name goes into
+ * GitHub API paths, so `..` and the like must never reach them.
+ */
+export function branchProblem(name: string): string | null {
+  if (!name) return 'name the branch';
+  if (name.length > 250) return 'a branch name is at most 250 characters';
+  if (
+    [...name].some((c) => c.charCodeAt(0) <= 0x20 || c.charCodeAt(0) === 0x7f) ||
+    /[~^:?*[\\]/.test(name) ||
+    name.includes('..') ||
+    name.includes('//') ||
+    name.includes('@{') ||
+    name === '@' ||
+    /^[-/]/.test(name) ||
+    /(?:\/|\.lock|\.)$/.test(name) ||
+    name.split('/').some((part) => part.startsWith('.') || part.endsWith('.lock'))
+  ) {
+    return 'not a branch name git allows';
+  }
+  return null;
+}
+
+/**
+ * A branch name git allows: no `..`, whitespace or any of `~^:?*[\`, no leading `/` or `-`,
+ * no trailing `/` or `.lock`.
+ */
+export const GitHubBranchSchema = z
+  .string()
+  .trim()
+  .superRefine((v, ctx) => {
+    const problem = branchProblem(v);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem });
+  })
+  .describe('A branch name git allows.');
 
 export const RecipeFileSchema = z
   .object({
@@ -96,7 +134,7 @@ export function parseRecipePath(
   return { instance, typeId, version: Number(m[1]), draft: m[2] !== undefined };
 }
 
-const Branch = z.string().trim().min(1).max(250);
+const Branch = GitHubBranchSchema;
 
 export const GitHubLinkBodySchema = z
   .object({
@@ -160,6 +198,7 @@ export const RemoteVersionSchema = z.object({
   publishedBy: z.string().nullable(),
   publishedAt: z.string().nullable(),
   definitionSha256: z.string(),
+  name: z.string().nullable().describe("The definition's name; null when it has none."),
   commit: z.string().nullable(),
   path: z.string(),
   mine: z.boolean().describe('Written by this deployment.'),

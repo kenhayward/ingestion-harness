@@ -100,6 +100,19 @@ export function githubSyncContract(name: string, make: MakeGitHubSync) {
       expect(rows[0]).toMatchObject({ commit: 'c2', prNumber: 7, prState: 'open' });
     });
 
+    it('forgets a type: its link and push records, no other type', async () => {
+      const { repo } = await make();
+      await repo.setLink('invoice', link, 'Ken');
+      await repo.setLink('other', link, 'Ken');
+      await repo.recordPush(push());
+      await repo.recordPush(push({ typeId: 'other' }));
+      await repo.forgetType('invoice');
+      expect(await repo.link('invoice')).toBeNull();
+      expect(await repo.pushes('invoice')).toEqual([]);
+      expect(await repo.link('other')).not.toBeNull();
+      expect(await repo.pushes('other')).toHaveLength(1);
+    });
+
     it('records who published a version', async () => {
       const id = `invoice_gh_${Date.now()}`;
       const { templates } = await make();

@@ -652,7 +652,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     this.listCacheRows.delete(id);
     for (const pins of this.pins.values()) pins.delete(id);
     // The type's repository link and push records go with it (migration 0046).
-    this.githubSync?.forgetType(id);
+    await this.githubSync?.forgetType(id);
     for (const t of versions) await this.templates.deleteDraft(id, t.version);
     return { jobs, documents };
   }

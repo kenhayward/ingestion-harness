@@ -99,7 +99,8 @@ export const RecordView = z.object({
 const PublishedView = RecordView.extend({
   github: PushOutcomeSchema.nullable().describe(
     'The automatic push to GitHub: null when the document type is not linked or pushes only on ' +
-      'request. A skipped or failed push never fails the publish.',
+      'request. A skipped or failed push never fails the publish. A push still going after 15 s ' +
+      'is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards.',
   ),
 });
 
@@ -703,7 +704,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Delete a draft',
         description: md`
           Deletes a draft version. Published versions cannot be deleted: jobs and references
-          record the version they ran with.
+          record the version they ran with. Deleting a type's only version (a never-published
+          type) also removes its GitHub link and push records.
         `,
         params: VersionParams,
         response: {
@@ -713,7 +715,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const deleted = await repo().deleteDraft(req.params.id, versionOf(req.params));
+      const { id } = req.params;
+      const deleted = await repo().deleteDraft(id, versionOf(req.params));
+      // A never-published type's only draft is the type: its GitHub link and pushes go with it.
+      if (deleted && !(await repo().list()).some((r) => r.id === id)) {
+        await app.deps.githubSync.forgetType(id);
+      }
       return deleted
         ? reply.code(204).send()
         : reply.code(409).send({ error: 'only existing drafts can be deleted' });

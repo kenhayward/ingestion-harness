@@ -66,6 +66,10 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   beforeRefUpdate: (() => void) | null = null;
   /** Tokens GitHub no longer accepts: every call with one is a 401 (`UnauthorizedError`). */
   readonly revoked = new Set<string>();
+  /** Every call waits for this first: a GitHub that hangs until the test resolves it. */
+  gate: Promise<void> | null = null;
+  /** Every call fails as a transport error does through HttpGitHub (no answer from GitHub). */
+  unreachable = false;
 
   addRepo(
     fullName: string,
@@ -143,11 +147,13 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   // --- GitHubRepoApi -------------------------------------------------------------------
 
   async permission(token: string, repo: string): Promise<Permission> {
+    await this.enter();
     if (this.revoked.has(token)) throw new UnauthorizedError();
     return this.repos.get(repo)?.permissions.get(token) ?? 'none';
   }
 
   async head(token: string, repo: string, branch: string): Promise<string> {
+    await this.enter();
     const found = this.readable(token, repo);
     const sha = found.branches.get(branch);
     if (!sha) throw new NotFoundError(`${repo} has no branch ${branch}`);
@@ -155,6 +161,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   async listFiles(token: string, repo: string, commit: string, prefix: string) {
+    await this.enter();
     const found = this.readable(token, repo);
     this.treeReads.push(this.truncateTrees ? 'truncated' : 'recursive');
     const dir = prefix.replace(/^\/+|\/+$/g, '');
@@ -165,6 +172,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   async readFile(token: string, repo: string, commit: string, path: string) {
+    await this.enter();
     const content = this.commitOf(this.readable(token, repo), commit).files.get(path);
     return content === undefined ? null : { content, blobSha: fakeBlobSha(content) };
   }
@@ -179,6 +187,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
       message: string;
     },
   ): Promise<string> {
+    await this.enter();
     const repo = this.readable(token, input.repo);
     if (repo.permissions.get(token) !== 'push') {
       throw new GitHubError('GitHub answered HTTP 403: Resource not accessible');
@@ -204,6 +213,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   async createBranch(token: string, repo: string, name: string, fromCommit: string) {
+    await this.enter();
     const found = this.readable(token, repo);
     this.commitOf(found, fromCommit);
     if (!found.branches.has(name)) found.branches.set(name, fromCommit);
@@ -213,6 +223,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
     token: string,
     input: { repo: string; head: string; base: string; title: string; body: string },
   ) {
+    await this.enter();
     const repo = this.readable(token, input.repo);
     const existing = repo.pulls.find((p) => p.head === input.head && p.state === 'open');
     if (existing) return { number: existing.number, url: existing.url };
@@ -234,12 +245,14 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   async pullRequestState(token: string, repo: string, number: number) {
+    await this.enter();
     const pull = this.readable(token, repo).pulls.find((p) => p.number === number);
     if (!pull) throw new NotFoundError(`${repo} has no pull request ${number}`);
     return pull.state;
   }
 
   async listRepos(token: string): Promise<GitHubRepo[]> {
+    await this.enter();
     return [...this.repos.entries()]
       .filter(([, r]) => (r.permissions.get(token) ?? 'none') !== 'none')
       .map(([fullName, r]) => ({ fullName, private: r.private }))
@@ -247,6 +260,11 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   // --- internals -----------------------------------------------------------------------
+
+  private async enter() {
+    if (this.gate) await this.gate;
+    if (this.unreachable) throw new GitHubError('GitHub could not be reached: fetch failed');
+  }
 
   private repo(fullName: string): FakeRepo {
     const repo = this.repos.get(fullName);

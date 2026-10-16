@@ -114,6 +114,25 @@ const byName = (a: GitHubRepo, b: GitHubRepo) =>
 const seg = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 const repoUrl = (repo: string) => `${API}/repos/${seg(repo)}`;
 
+/**
+ * `fetch`, with a request that never got an answer (network, DNS, TLS, the timeout) as a
+ * `GitHubError` the user can read, like any refusal.
+ */
+async function send(
+  fetch: typeof globalThis.fetch,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (err) {
+    const timedOut =
+      err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    const why = timedOut ? 'it did not answer in time' : (err as Error)?.message || String(err);
+    throw new GitHubError(`GitHub could not be reached: ${why}`);
+  }
+}
+
 interface TreeBody {
   tree: { path: string; type: string; sha: string }[];
   truncated?: boolean;
@@ -138,7 +157,7 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
   }
 
   async exchange(code: string, redirectUri: string): Promise<string> {
-    const res = await this.fetch('https://github.com/login/oauth/access_token', {
+    const res = await send(this.fetch, 'https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: { ...BASE_HEADERS, accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -147,7 +166,6 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
         code,
         redirect_uri: redirectUri,
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const body = (await res.json().catch(() => ({}))) as {
       access_token?: string;
@@ -212,7 +230,7 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
     body?: unknown,
     allow: number[] = [],
   ): Promise<{ res: Response; data: unknown }> {
-    const res = await this.fetch(url, {
+    const res = await send(this.fetch, url, {
       method,
       headers: {
         ...API_HEADERS,
@@ -220,7 +238,6 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const data: unknown = await res.json().catch(() => ({}));
     if (res.ok || allow.includes(res.status)) return { res, data };
@@ -432,7 +449,8 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
 
   async revoke(token: string): Promise<void> {
     const basic = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`);
-    const res = await this.fetch(
+    const res = await send(
+      this.fetch,
       `${API}/applications/${encodeURIComponent(this.config.clientId)}/token`,
       {
         method: 'DELETE',
@@ -442,7 +460,6 @@ export class HttpGitHub implements GitHubOAuth, GitHubRepoApi {
           'content-type': 'application/json',
         },
         body: JSON.stringify({ access_token: token }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
       },
     );
     if (!res.ok && res.status !== 404) throw new GitHubError(`GitHub answered HTTP ${res.status}`);

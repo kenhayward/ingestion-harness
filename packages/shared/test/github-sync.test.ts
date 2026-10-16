@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GitHubBranchSchema,
+  GitHubRepoNameSchema,
+  RemoteVersionSchema,
   GitHubLinkBodySchema,
   PushOutcomeSchema,
   RecipeFileSchema,
@@ -93,6 +96,43 @@ describe('schemas', () => {
     expect(GitHubLinkBodySchema.safeParse(ok).success).toBe(true);
     expect(GitHubLinkBodySchema.safeParse({ ...ok, repo: 'nope' }).success).toBe(false);
     expect(GitHubLinkBodySchema.safeParse({ ...ok, root: '/x' }).success).toBe(false);
+  });
+  it.each(['main', 'feature/recipes', 'release-1.2', 'ken@work', 'v1.x'])(
+    'accepts branch %j',
+    (b) => expect(GitHubBranchSchema.safeParse(b).success).toBe(true),
+  );
+  it.each([
+    '../..',
+    '../tags/v1',
+    'a b',
+    'tab	here',
+    '-x',
+    '/main',
+    'main/',
+    'a//b',
+    'x.lock',
+    'a~1',
+    'a^1',
+    'a:b',
+    'a?',
+    'a*',
+    'a[b',
+    'a\b',
+    '.hidden',
+    'a/.b',
+    'a.',
+    'a@{1}',
+    '@',
+    '',
+  ])('refuses branch %j', (b) => expect(GitHubBranchSchema.safeParse(b).success).toBe(false));
+  it.each(['acme/recipes', 'a/b.c', 'Acme-1/x_y'])('accepts repo %j', (r) =>
+    expect(GitHubRepoNameSchema.safeParse(r).success).toBe(true),
+  );
+  it.each(['../..', 'acme', 'acme/re/cipes', '/x', 'acme/', '-a/b'])('refuses repo %j', (r) =>
+    expect(GitHubRepoNameSchema.safeParse(r).success).toBe(false),
+  );
+  it('remote versions carry the definition name', () => {
+    expect(RemoteVersionSchema.shape.name).toBeDefined();
   });
   it('push outcome is discriminated on kind', () => {
     expect(

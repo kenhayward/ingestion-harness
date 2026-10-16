@@ -141,6 +141,14 @@ export class PgGitHubSyncRepo implements GitHubSyncRepo {
     return (rowCount ?? 0) > 0;
   }
 
+  async forgetType(typeId: string) {
+    await this.pool.query(
+      `WITH pushes AS (DELETE FROM template_github_pushes WHERE type_id = $1)
+       DELETE FROM template_github_links WHERE type_id = $1`,
+      [typeId],
+    );
+  }
+
   async pushes(typeId: string) {
     const { rows } = await this.pool.query<PushRow>(
       `SELECT * FROM template_github_pushes WHERE type_id = $1 ORDER BY version`,

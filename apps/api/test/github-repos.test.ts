@@ -416,3 +416,34 @@ describe('FakeGitHubRepos', () => {
     expect(fake.treeReads.some((r) => r === 'truncated')).toBe(true);
   });
 });
+
+describe('HttpGitHub transport errors', () => {
+  const down = () =>
+    vi.fn(async (_url: string | URL | Request, _init?: RequestInit): Promise<Response> => {
+      throw new TypeError('fetch failed');
+    });
+  const timeout = () =>
+    vi.fn(async (_url: string | URL | Request, _init?: RequestInit): Promise<Response> => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    });
+
+  it.each([
+    ['a network failure', down, 'GitHub could not be reached: fetch failed'],
+    ['a timeout', timeout, 'GitHub could not be reached: it did not answer in time'],
+  ])('reads %s as a GitHubError on every call', async (_name, make, message) => {
+    const github = new HttpGitHub(config, make());
+    const calls: (() => Promise<unknown>)[] = [
+      () => github.permission(TOKEN, 'ken/recipes'),
+      () => github.head(TOKEN, 'ken/recipes', 'main'),
+      () => github.readFile(TOKEN, 'ken/recipes', 'abc', 'a.yaml'),
+      () => github.listRepos(TOKEN),
+      () => github.exchange('c0de', 'https://ct.example/cb'),
+      () => github.revoke(TOKEN),
+    ];
+    for (const run of calls) {
+      const err = await run().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(GitHubError);
+      expect((err as Error).message).toBe(message);
+    }
+  });
+});

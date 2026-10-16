@@ -151,6 +151,7 @@ export async function listRemote(
       publishedBy: file.version.publishedBy,
       publishedAt: file.version.publishedAt,
       definitionSha256: definitionSha256(file.definition),
+      name: typeof file.definition.name === 'string' ? file.definition.name : null,
       commit: head,
       path,
       mine: (await instanceId(at.instance)) === settings.instanceId,
@@ -185,10 +186,10 @@ export async function readRemoteVersion(
   api: GitHubRepoApi,
   where: Where & { root: string; commit: string },
   at: { instance: string; typeId: string; version: number },
-): Promise<{ file: RecipeFile; path: string; instanceId: string | null }> {
+): Promise<{ file: RecipeFile; path: string; blobSha: string; instanceId: string | null }> {
   const path = recipeFilePath(where.root, at.instance, at.typeId, at.version);
   const short = where.commit.slice(0, 7);
-  let read: { content: string } | null;
+  let read: { content: string; blobSha: string } | null;
   let instance: { content: string } | null;
   try {
     [read, instance] = await Promise.all([
@@ -209,5 +210,5 @@ export async function readRemoteVersion(
   if (!read) throw new SyncConflict(`${path} is not on GitHub at ${short}`);
   const file = readRecipe(read.content, at);
   if ('error' in file) throw new SyncConflict(`${path}: ${file.error}`);
-  return { file, path, instanceId: instanceIdOf(instance?.content) };
+  return { file, path, blobSha: read.blobSha, instanceId: instanceIdOf(instance?.content) };
 }

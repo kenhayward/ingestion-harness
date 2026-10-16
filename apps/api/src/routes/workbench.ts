@@ -1601,7 +1601,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
               project: ProjectViewSchema,
               github: PushOutcomeSchema.nullable().describe(
                 'The automatic push to GitHub: null when the document type is not linked or ' +
-                  'pushes only on request. A skipped or failed push never fails the publish.',
+                  'pushes only on request. A skipped or failed push never fails the publish. A ' +
+                  'push still going after 15 s is `failed` with `GitHub is slow: check Versions ' +
+                  'for the result.` and finishes afterwards.',
               ),
             }),
           ),

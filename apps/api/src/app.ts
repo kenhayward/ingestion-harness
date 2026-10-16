@@ -61,6 +61,8 @@ export interface AppDeps {
   github?: GitHubOAuth | null;
   /** GitHub repositories for recipe sync (the same `HttpGitHub`); null/absent: sync is unavailable. */
   githubRepos?: GitHubRepoApi | null;
+  /** How long a publish waits for its automatic GitHub push (default 15 s; tests shorten it). */
+  githubAutoPushDeadlineMs?: number;
   /** `GITHUB_REDIRECT_URL`: the callback registered with GitHub; absent: from the request. */
   githubRedirectUrl?: string | null;
   /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */

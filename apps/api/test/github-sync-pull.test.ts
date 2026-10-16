@@ -6,7 +6,7 @@ import { MemoryGitHubSyncRepo } from '../src/github-sync/repo.js';
 import { listRemote } from '../src/github-sync/remote.js';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
 import { MemoryProfileRepo } from '../src/profile/repo.js';
-import { FakeGitHubRepos } from './fake-github-repos.js';
+import { FakeGitHubRepos, fakeBlobSha } from './fake-github-repos.js';
 import { accessApp, signInNewUser } from './helpers.js';
 
 const keys: SecretsKeys = { current: Buffer.alloc(32, 7), previous: null };
@@ -224,6 +224,14 @@ describe('GET /api/templates/:id/github/remote', () => {
     expect((await c.call('GET', '/api/templates/nope/github/remote')).statusCode).toBe(404);
   });
 
+  it('is a 502 when GitHub cannot be reached', async () => {
+    const c = await setup();
+    c.github.unreachable = true;
+    const res = await c.call('GET', '/api/templates/invoice/github/remote');
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('GitHub could not be reached: fetch failed');
+  });
+
   it('says when GitHub no longer accepts the token', async () => {
     const c = await setup();
     c.github.revoked.add(TOKEN);
@@ -259,6 +267,42 @@ describe('take GitHub’s label', () => {
       'v3 on GitHub is a different recipe: published versions never change',
     );
     expect((await c.templates.get('invoice', 3))!.labelSetBy).toBe(null);
+  });
+
+  it('records the push against the file it read, so pushing again is not a conflict', async () => {
+    const c = await setup();
+    const v2 = path('ken-dev', 'invoice', 'v2.yaml');
+    // v2 was pushed from here, then its label was edited on GitHub.
+    await c.githubSync.recordPush({
+      typeId: 'invoice',
+      version: 2,
+      repo: REPO,
+      branch: 'main',
+      path: v2,
+      commit: 'before-the-edit',
+      blobSha: 'blob-before-the-edit',
+      labelSha: 'label-before-the-edit',
+      prNumber: null,
+      prUrl: null,
+      prState: null,
+      pushedBy: 'Ken Hayward',
+      pushedAt: '2026-10-01T00:00:00.000Z',
+    });
+    expect((await take(c, 2)).statusCode).toBe(200);
+    const [record] = (await c.githubSync.pushes('invoice')).filter((p) => p.version === 2);
+    expect(record).toMatchObject({
+      commit: c.head,
+      blobSha: fakeBlobSha(c.github.files(REPO, 'main')[v2]!),
+    });
+    const status = await c.call('GET', '/api/templates/invoice/github');
+    expect(
+      (status.json() as { versions: { version: number; state: string }[] }).versions.find(
+        (v) => v.version === 2,
+      )!.state,
+    ).toBe('on');
+    const pushed = await c.call('POST', '/api/templates/invoice/versions/2/github/push');
+    expect(pushed.statusCode).toBe(200);
+    expect(pushed.json().kind).toBe('pushed');
   });
 
   it('is allowed for a retired type', async () => {

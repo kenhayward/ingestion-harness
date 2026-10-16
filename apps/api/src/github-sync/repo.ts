@@ -48,6 +48,8 @@ export interface GitHubSyncRepo {
   link(typeId: string): Promise<GitHubLinkView | null>;
   setLink(typeId: string, body: GitHubLinkBody, by: string): Promise<GitHubLinkView>;
   removeLink(typeId: string): Promise<boolean>;
+  /** The type is gone (its last version was deleted): its link and push records go too. */
+  forgetType(typeId: string): Promise<void>;
   pushes(typeId: string): Promise<VersionPush[]>;
   /** Upserts by type and version: the newest push wins. */
   recordPush(push: VersionPush): Promise<void>;
@@ -99,8 +101,7 @@ export class MemoryGitHubSyncRepo implements GitHubSyncRepo {
     return this.links.delete(typeId);
   }
 
-  /** The type is gone (a deleted, never-published project): its link and push records go too. */
-  forgetType(typeId: string): void {
+  async forgetType(typeId: string): Promise<void> {
     this.links.delete(typeId);
     for (const [key, p] of this.records) if (p.typeId === typeId) this.records.delete(key);
   }

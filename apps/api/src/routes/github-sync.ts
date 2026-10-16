@@ -1,7 +1,10 @@
 import {
   DEFAULT_SYNC_ROOT,
+  GitHubBranchSchema,
   GitHubLinkBodySchema,
   GitHubLinkViewSchema,
+  GitHubRepoNameSchema,
+  recipeFilePath,
   GitHubRepoSchema,
   ID_PATTERN,
   parseRecipePath,
@@ -76,16 +79,16 @@ const UseAsDraftBody = z
   .strict();
 
 const BrowseQuery = z.object({
-  repo: z.string().describe('`owner/name`.'),
-  branch: z.string().min(1).describe('The branch to read.'),
+  repo: GitHubRepoNameSchema,
+  branch: GitHubBranchSchema.describe('The branch to read.'),
   root: SyncRootSchema.default(DEFAULT_SYNC_ROOT).describe(
     'The folder recipes are stored under (default `ct-studio`).',
   ),
 });
 const ImportFromGitHubBody = z
   .object({
-    repo: z.string().describe('`owner/name`.'),
-    branch: z.string().min(1).describe('The branch the file was listed on.'),
+    repo: GitHubRepoNameSchema,
+    branch: GitHubBranchSchema.describe('The branch the file was listed on.'),
     path: z
       .string()
       .min(1)
@@ -234,8 +237,8 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
           The type's repository link (null without one) and, for every version, newest first,
           whether GitHub has it: \`on\`, \`label\` (its label or note changed since the push),
           \`pr\` (waiting in an open pull request) or \`absent\` (never pushed, a closed pull
-          request, and every draft: drafts stay in CT Studio). \`differs\` is reported by Pull
-          only. When you have a linked GitHub account, open pull requests are checked and a
+          request, and every draft: drafts stay in CT Studio; also a push to another repository
+          or folder than the link names now). \`differs\` is reported by Pull only. When you have a linked GitHub account, open pull requests are checked and a
           merge shows as \`on\`; if GitHub cannot be reached the stored state is kept.
           \`canPush\` and \`reason\` say whether you can push now and, if not, why.
         `,
@@ -269,8 +272,18 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
         );
       }
 
+      // Only a push to where the link points now counts: one to another repository or folder
+      // (the link was changed since) is not on GitHub as far as this link is concerned.
+      const settings = link ? await sync.settings() : null;
       const versions: VersionSync[] = records.map((r) => {
-        const p = pushes.find((x) => x.version === r.version);
+        const p = pushes.find(
+          (x) =>
+            x.version === r.version &&
+            link !== null &&
+            settings !== null &&
+            x.repo === link.repo &&
+            x.path === recipeFilePath(link.root, settings.instanceName, id, r.version),
+        );
         const base = {
           version: r.version,
           commit: p?.commit ?? null,
@@ -661,7 +674,8 @@ imported yet\`, \`the file does not match its path\`, also for folder names that
           GitHub at \`commit\`, when the recipe there is the same as here. \`labelSetBy\`
           becomes \`GitHub: <name>\`, the name being the file's own \`labelSetBy\` (who set the
           label where it was pushed from; GitHub's commit author is not looked up), or plain
-          \`GitHub\` without one. Allowed for retired types.
+          \`GitHub\` without one. The version's push record then follows the file read, so
+          pushing again is not refused as changed on GitHub. Allowed for retired types.
         `,
         params: VersionParams,
         body: TakeLabelBody,
@@ -688,7 +702,7 @@ imported yet\`, \`the file does not match its path\`, also for folder names that
       try {
         const { api, link, token } = await pullFrom(req, id);
         const settings = await sync.settings();
-        const { file, instanceId } = await readRemoteVersion(
+        const { file, path, blobSha, instanceId } = await readRemoteVersion(
           api,
           { token, repo: link.repo, root: link.root, commit: body.data.commit },
           { instance: settings.instanceName, typeId: id, version },
@@ -712,6 +726,23 @@ imported yet\`, \`the file does not match its path\`, also for folder names that
         if (!label) throw new SyncConflict(`the label of v${version} on GitHub is not valid here`);
         const updated = await deps.templates.setLabel(id, version, label, githubAuthor(file));
         if (!updated) return reply.code(404).send({ error: 'recipe not found' });
+        // GitHub holds this version as it is here now: the push record follows the file read,
+        // so the next push is not refused as `changed on GitHub`.
+        const tracked = (await sync.pushes(id)).find((p) => p.version === version);
+        if (
+          tracked &&
+          tracked.repo === link.repo &&
+          tracked.path === path &&
+          tracked.prState !== 'open'
+        ) {
+          await sync.recordPush({
+            ...tracked,
+            branch: link.branch,
+            commit: body.data.commit,
+            blobSha,
+            labelSha: labelSha(updated),
+          });
+        }
         req.log.info({ templateId: id, version }, 'label taken from GitHub');
         return await withIssues(updated);
       } catch (err) {

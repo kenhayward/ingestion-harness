@@ -14,6 +14,7 @@ const rv = (o: Partial<RemoteVersionView>): RemoteVersionView => ({
   publishedBy: 'Ken',
   publishedAt: '2026-10-01T09:00:00.000Z',
   definitionSha256: 'abc',
+  name: 'Invoice',
   commit: 'deadbeefcafe',
   path: 'ct-studio/production/invoice/v1.yaml',
   mine: true,
