@@ -307,7 +307,9 @@ describe('repeating sections (shared with the worker)', () => {
 
 describe('delivery.publishTo (publishing targets, shared with the worker)', () => {
   const cases = (
-    JSON.parse(readFileSync(new URL('./fixtures/publish-targets.json', import.meta.url), 'utf8')) as {
+    JSON.parse(
+      readFileSync(new URL('./fixtures/publish-targets.json', import.meta.url), 'utf8'),
+    ) as {
       delivery: { name: string; definition: object; formats: string[]; publishTo: string }[];
     }
   ).delivery;

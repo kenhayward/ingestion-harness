@@ -48,9 +48,17 @@ describe('SeaweedIamIssuer', () => {
     expect(JSON.parse(input.PolicyDocument)).toEqual({
       Version: '2012-10-17',
       Statement: [
-        { Effect: 'Allow', Action: ['s3:GetBucketLocation'], Resource: ['arn:aws:s3:::ingest-published'] },
+        {
+          Effect: 'Allow',
+          Action: ['s3:GetBucketLocation'],
+          Resource: ['arn:aws:s3:::ingest-published'],
+        },
         { Effect: 'Allow', Action: ['s3:ListBucket'], Resource: ['arn:aws:s3:::ingest-published'] },
-        { Effect: 'Allow', Action: ['s3:GetObject'], Resource: ['arn:aws:s3:::ingest-published/*'] },
+        {
+          Effect: 'Allow',
+          Action: ['s3:GetObject'],
+          Resource: ['arn:aws:s3:::ingest-published/*'],
+        },
         { Effect: 'Allow', Action: ['s3:GetBucketLocation'], Resource: ['arn:aws:s3:::finance'] },
         {
           Effect: 'Allow',

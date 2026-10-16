@@ -53757,7 +53757,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -53783,7 +53783,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -54209,7 +54209,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -54235,7 +54235,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -54628,7 +54628,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -54654,7 +54654,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -55119,7 +55119,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -55145,7 +55145,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -55393,7 +55393,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -55419,7 +55419,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -55635,7 +55635,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -55661,7 +55661,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -66904,13 +66904,18 @@
                               "consumers": {
                                 "type": "integer",
                                 "minimum": 0
+                              },
+                              "pendingJobs": {
+                                "type": "integer",
+                                "minimum": 0
                               }
                             },
                             "required": [
                               "publishedVersions",
                               "documentTypes",
                               "deliveredOutputs",
-                              "consumers"
+                              "consumers",
+                              "pendingJobs"
                             ],
                             "additionalProperties": true
                           }
@@ -67320,13 +67325,18 @@
                         "consumers": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "pendingJobs": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "publishedVersions",
                         "documentTypes",
                         "deliveredOutputs",
-                        "consumers"
+                        "consumers",
+                        "pendingJobs"
                       ],
                       "additionalProperties": true
                     }
@@ -67359,7 +67369,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, or `default is reserved`.",
+            "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -67385,7 +67395,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues, or `default is reserved`."
+                  "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
                 }
               }
             }
@@ -67614,7 +67624,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Fields left out are kept. While the target is in use (a published\nrecipe version names it, an output or graph copy was delivered to it, or an S3 key\nconsumer is granted it) its bucket, prefix, endpoint and region cannot change (409):\nadd a new target and publish a version naming it instead. The label, credentials,\npath style, encryption and storage class may always change, so a key is rotated\nwithout a new version. Keys read from `.env` are replaced only as a pair.",
+        "description": "**Admins only.** Fields left out are kept; `null` clears the endpoint, KMS key or\nstorage class, and the KMS key is cleared whenever the encryption is not\n`aws:kms`. An internal target cannot move onto CT Studio's own inbox, outputs or\nruns bucket (400). While the target is in use (a published recipe version names it,\nan output or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket, prefix, endpoint and region cannot\nchange (409):\nadd a new target and publish a version naming it instead. The label, credentials,\npath style, encryption and storage class may always change, so a key is rotated\nwithout a new version. Keys read from `.env` are replaced only as a pair.",
         "requestBody": {
           "required": true,
           "content": {
@@ -67640,8 +67650,15 @@
                     "default": ""
                   },
                   "endpoint": {
-                    "type": "string",
-                    "format": "uri"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "region": {
                     "type": "string",
@@ -67669,17 +67686,31 @@
                     "default": "none"
                   },
                   "kmsKeyId": {
-                    "type": "string",
-                    "minLength": 1
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "storageClass": {
-                    "type": "string",
-                    "enum": [
-                      "STANDARD",
-                      "STANDARD_IA",
-                      "ONEZONE_IA",
-                      "INTELLIGENT_TIERING",
-                      "GLACIER_IR"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   }
                 },
@@ -67837,13 +67868,18 @@
                         "consumers": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "pendingJobs": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
                         "publishedVersions",
                         "documentTypes",
                         "deliveredOutputs",
-                        "consumers"
+                        "consumers",
+                        "pendingJobs"
                       ],
                       "additionalProperties": true
                     }
@@ -67876,7 +67912,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, or `set the access key and the secret together`.",
+            "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -67902,7 +67938,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues, or `set the access key and the secret together`."
+                  "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
                 }
               }
             }
@@ -68161,7 +68197,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it and no S3 key consumer is granted it. The `default`\ntarget is never removed.",
+        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default`\ntarget is never removed.",
         "parameters": [
           {
             "schema": {
@@ -68402,7 +68438,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** For an external target, checks the bucket exists (a missing one\nfails at `connect`: some servers would create it on the first write), then writes\na small file under the target's prefix, reads it back and deletes it. With an `id`,\nthe stored target's settings overlaid with the body (its stored secret when the body\nhas none); without one, a full set of new settings (before saving). Always 200 for a\ntest that ran: `ok: false` names the step that failed in plain words. A secret sent\nhere is never stored, logged or echoed.",
+        "description": "**Admins only.** For an external target, checks the bucket exists (a missing one\nfails at `connect`: some servers would create it on the first write), then writes\na small file under the target's prefix, reads it back and deletes it. With an `id`,\nthe stored target's settings overlaid with the body as a save would overlay them\n(`null` clears, its stored secret when the body has none); without one, a full set\nof new settings (before saving). An internal target on CT Studio's own inbox, outputs\nor runs bucket is refused (400). Always 200 for a test that ran: `ok: false` names\nthe step that failed in plain words. A secret sent here is never stored, logged or\nechoed.",
         "requestBody": {
           "required": true,
           "content": {
@@ -68439,8 +68475,15 @@
                     "default": ""
                   },
                   "endpoint": {
-                    "type": "string",
-                    "format": "uri"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "region": {
                     "type": "string",
@@ -68468,17 +68511,31 @@
                     "default": "none"
                   },
                   "kmsKeyId": {
-                    "type": "string",
-                    "minLength": 1
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "storageClass": {
-                    "type": "string",
-                    "enum": [
-                      "STANDARD",
-                      "STANDARD_IA",
-                      "ONEZONE_IA",
-                      "INTELLIGENT_TIERING",
-                      "GLACIER_IR"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   }
                 },
@@ -68531,7 +68588,7 @@
             }
           },
           "400": {
-            "description": "Zod issues of the body or of the merged settings.",
+            "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -68557,7 +68614,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues of the body or of the merged settings."
+                  "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
                 }
               }
             }

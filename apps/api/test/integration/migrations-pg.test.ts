@@ -116,10 +116,9 @@ describe.skipIf(!url)('migrations over existing data', { timeout: 60_000 }, () =
         );
         ids[name] = r.rows[0]!.id;
       }
-      await db.query(
-        `INSERT INTO jobs (task, status, params) VALUES ('republish', 'queued', $1)`,
-        [JSON.stringify({ templateId: 't' })],
-      );
+      await db.query(`INSERT INTO jobs (task, status, params) VALUES ('republish', 'queued', $1)`, [
+        JSON.stringify({ templateId: 't' }),
+      ]);
       await db.query(
         `INSERT INTO s3_consumers (id, label, user_name)
          VALUES ('00000000-0000-0000-0000-000000000001', 'Lake', 'lake-1')`,

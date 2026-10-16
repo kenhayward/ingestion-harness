@@ -51,7 +51,7 @@ export function usageText(u: TargetUsage): string {
 
 const issuesOf = (e: z.ZodError) => e.issues;
 
-const OWN_BUCKET = '`{bucket} is CT Studio\'s own {inbox|outputs|runs} bucket: pick another`';
+const OWN_BUCKET = "`{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`";
 
 /** Which of the deployment's own buckets an internal target would name, else null. */
 function ownBucketProblem(
