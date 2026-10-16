@@ -252,7 +252,7 @@ describe('email and password access', () => {
     const admin = (await login(app, 'admin', adminPassword)).cookie;
     const { password } = await addUser(app, admin, { name: 'Ken', email: 'ken@example.com' });
     const { res, cookie } = await login(app, 'ken@example.com', password);
-    expect(res.json()).toMatchObject({ mustChangePassword: true, label: 'Ken', role: 'user' });
+    expect(res.json()).toMatchObject({ mustChangePassword: true, label: 'Ken', role: 'designer' });
     expect((await app.inject({ url: '/api/specs', headers: { cookie } })).json()).toEqual({
       error: 'change your one-time password first',
     });
@@ -437,7 +437,7 @@ describe('email and password access', () => {
     expect(user).toMatchObject({
       name: 'Ken Hayward',
       email: 'ken@example.com',
-      role: 'user',
+      role: 'designer',
       status: 'must-change',
       createdBy: 'Admin',
     });
@@ -534,7 +534,7 @@ describe('email and password access', () => {
       method: 'PATCH',
       url: `/api/users/${user.id}`,
       headers: { cookie: ann },
-      payload: { role: 'user' },
+      payload: { role: 'designer' },
     });
     expect(demote.json()).toEqual({ error: 'you cannot remove your own admin role' });
     // Reissuing your own would sign you out before you could read the new password.

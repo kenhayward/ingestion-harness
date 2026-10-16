@@ -1,5 +1,6 @@
 import type {
   GitHubRepo,
+  Role,
   MaintenanceBody,
   MaintenanceNotice,
   MaintenanceView,
@@ -646,7 +647,7 @@ export interface User {
   name: string;
   /** null only for the admin from the log, who signs in as `admin`. */
   email: string | null;
-  role: 'admin' | 'user';
+  role: Role;
   /** `locked` = temporarily, until `lockedUntil`. */
   status: 'admin-from-log' | 'active' | 'must-change' | 'locked' | 'disabled';
   createdAt: string;
@@ -728,7 +729,7 @@ export interface IssuedS3Key {
 export interface Me {
   /** The user id: what jobs record as `createdByUser`. */
   userId: string;
-  role: 'admin' | 'user';
+  role: Role;
   label: string;
   /** null for the admin from the log. */
   email: string | null;

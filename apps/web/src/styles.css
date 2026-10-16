@@ -4692,3 +4692,13 @@ img.avatar {
   margin: 8px 0;
   font-size: var(--ih-text-md);
 }
+
+/* An operator opening a design page (Document types, Ontologies, Workbench). */
+.not-for-operators {
+  max-width: 560px;
+  padding: 24px;
+}
+.not-for-operators h1 {
+  margin-top: 0;
+  font-size: var(--ih-text-xl, 1.25rem);
+}

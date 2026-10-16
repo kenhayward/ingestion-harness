@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { randomUUID } from 'node:crypto';
 import { DISABLE_AFTER, LOCK_AFTER, lockFor } from './lockout.js';
 import {
@@ -12,7 +13,7 @@ import { newSessionId, newToken, sha256 } from './tokens.js';
 
 export { DISABLE_AFTER, LOCK_AFTER };
 
-export type AccessRole = 'admin' | 'user';
+export type AccessRole = Role;
 /** The reserved sign-in name of the admin from the log (ADR 0013, D1). */
 export const ADMIN_LOGIN = 'admin';
 export const ADMIN_NAME = 'Admin';

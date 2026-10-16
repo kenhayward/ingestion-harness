@@ -289,7 +289,7 @@ describe('ModelsPage: endpoints', () => {
     render(
       <ModelsPage
         api={fakeApi()}
-        me={{ role: 'user', label: 'Ann', email: null, mustChangePassword: false, userId: 'u' }}
+        me={{ role: 'designer', label: 'Ann', email: null, mustChangePassword: false, userId: 'u' }}
       />,
     );
     expect(screen.getByText('Admins only.')).toBeInTheDocument();

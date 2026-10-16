@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { GitHubLinkResult, MaintenanceNotice } from '@ih/shared';
+import { operatorMayOpen, type GitHubLinkResult, type MaintenanceNotice } from '@ih/shared';
 import { maintenanceOf, type Api, type Me } from './api/client.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { OntologyPage } from './ontologies/OntologyPage.js';
@@ -288,7 +288,16 @@ function SignedInApp({
     setQuery('');
   }
   let page: ReactNode;
-  if (route.name === 'review') {
+  if (me.role === 'operator' && !operatorMayOpen(route.name)) {
+    // Document types, Ontologies and the Workbench are for designers (the API refuses them too).
+    page = (
+      <section className="card not-for-operators">
+        <h1>Not available to operators</h1>
+        <p>Operators upload documents, follow and review jobs, and read results.</p>
+        <a href="#/">Go to Home</a>
+      </section>
+    );
+  } else if (route.name === 'review') {
     // Keyed: Next document must start fresh (no reason, note or page carried over).
     page = (
       <ReviewPage
@@ -296,6 +305,7 @@ function SignedInApp({
         api={api}
         jobId={route.jobId}
         jobs={jobs}
+        role={me.role}
         onDone={() => navigate('#/jobs')}
       />
     );

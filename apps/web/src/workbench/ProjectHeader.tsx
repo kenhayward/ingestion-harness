@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import type { GateView, ProjectView } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 import { RETIRED_REASON, retiredNote } from '../ui/retired.js';
@@ -15,7 +16,7 @@ export function ProjectHeader({
   view: ProjectView;
   /** Null while the overview is unknown: Publish is hidden until then; its reason is the tooltip. */
   gate: GateView | null;
-  role: 'admin' | 'user';
+  role: Role;
   onTogglePolicy: () => void;
 }) {
   const { project, draft, published } = view;

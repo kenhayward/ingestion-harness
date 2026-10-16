@@ -1,3 +1,4 @@
+import { ROLE_LABELS } from '@ih/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Api, Me, User } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
@@ -264,7 +265,7 @@ function UserRow({
       </td>
       <td>
         <span className={`tag tone-${u.role === 'admin' ? 'info' : 'neutral'}`}>
-          {u.role === 'admin' ? 'Admin' : 'User'}
+          {ROLE_LABELS[u.role]}
         </span>
       </td>
       <td>
