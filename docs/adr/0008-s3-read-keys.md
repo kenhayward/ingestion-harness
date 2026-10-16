@@ -2,6 +2,11 @@
 
 **Status:** accepted · 2026-10-12
 
+**Update (migration 0050):** the publish bucket is now an admin-managed *publishing target*. A key
+consumer is granted one or more *internal* targets (`s3_consumer_targets`; existing consumers keep
+`default`) and its read-only policy covers each target's bucket and prefix; external targets are not
+grantable. `TARGET_S3_*` only seeds the `default` target on first start.
+
 ## Context
 An external data lake will ingest approved outputs into a semantic index. It reads S3, and it can
 be configured with only an endpoint URL, a bucket name and an access key pair. The publish target
