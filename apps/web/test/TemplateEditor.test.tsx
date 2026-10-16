@@ -892,6 +892,13 @@ describe('TemplateEditor', () => {
     });
   });
 
+  it('explains sections from a help button above the table', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Sections/));
+    await userEvent.click(screen.getByRole('button', { name: 'Help: How sections work' }));
+    expect(screen.getByRole('dialog', { name: 'How sections work' })).toBeInTheDocument();
+  });
+
   it('gives each section a second line for repeating, with visible labels', async () => {
     setup(view(skeleton));
     await userEvent.click(await tab(/Sections/));

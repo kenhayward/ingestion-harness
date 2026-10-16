@@ -10,6 +10,7 @@ import {
   type Retirement,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
+import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { RETIRED_REASON } from '../ui/retired.js';
@@ -659,6 +660,12 @@ export function TemplateEditor({
 
             {tab === 'sections' && (
               <>
+                <div className="sub-tab-head">
+                  <span className="muted">
+                    Where each part of the document starts, and which parts repeat
+                  </span>
+                  <HelpButton topic="sections" />
+                </div>
                 <RowTable
                   label="Sections"
                   noun="section"

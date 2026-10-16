@@ -4585,3 +4585,44 @@ img.avatar {
     padding-right: 16px;
   }
 }
+
+/* Help: the "?" beside a heading (HelpButton) and the topic in its dialog. */
+.help-button {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--ih-muted);
+  vertical-align: middle;
+}
+.help-button:hover,
+.help-button:focus-visible {
+  color: var(--ih-accent);
+}
+/* The dialog body scrolls; the topic only sets its reading width. */
+.help-body {
+  max-width: 44rem;
+  line-height: 1.5;
+}
+.help-body h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 1.05em;
+  font-weight: 600;
+}
+.help-body p,
+.help-body ul {
+  margin: 0.25rem 0;
+}
+.help-body ul {
+  padding-left: 1.25rem;
+}
+.sub-tab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}

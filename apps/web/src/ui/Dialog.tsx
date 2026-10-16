@@ -50,6 +50,7 @@ export function Dialog({
   actions,
   icon,
   description,
+  closeLabel = 'Cancel',
 }: {
   title: string;
   onClose: () => void;
@@ -60,6 +61,8 @@ export function Dialog({
   icon?: ReactNode;
   /** Under the title; it describes the dialog to assistive technology. */
   description?: ReactNode;
+  /** The closing button's text: Cancel, or Close for a dialog with nothing to cancel (help). */
+  closeLabel?: string;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -119,7 +122,7 @@ export function Dialog({
         )}
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
-            Cancel
+            {closeLabel}
           </button>
           {actions}
         </div>

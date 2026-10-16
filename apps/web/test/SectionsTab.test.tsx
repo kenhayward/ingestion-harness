@@ -105,6 +105,12 @@ function setup(overrides = {}, onDirtyChange?: (dirty: boolean) => void) {
 }
 
 describe('SectionsTab', () => {
+  it('explains sections from the help button by the Anchors heading', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Help: How sections work' }));
+    expect(screen.getByRole('dialog', { name: 'How sections work' })).toBeInTheDocument();
+  });
+
   it('previews the draft anchors on load', async () => {
     const api = setup();
     expect(await screen.findByRole('button', { name: 'a.pdf · all' })).toHaveTextContent(
