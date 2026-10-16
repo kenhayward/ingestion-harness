@@ -518,6 +518,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     ),
     publishTemplate: vi.fn(async () => templateView({ id: 'x', version: 1 }, 'published')),
     newDraft: vi.fn(async () => templateView({ id: 'x', version: 2 })),
+    renameTemplate: vi.fn(async (id: string, name: string) =>
+      templateView({ id, version: 2, name }),
+    ),
     listVersions: vi.fn(async () => []),
     setVersionLabel: vi.fn(async (id: string, version: number) => templateView({ id, version })),
     restoreVersion: vi.fn(async (id: string, version: number) => templateView({ id, version })),

@@ -53,6 +53,11 @@ const DraftBody = z
       .describe('The version to copy. Default: the latest.'),
   })
   .strict();
+const RenameBody = z
+  .object({
+    name: z.string().trim().min(1).max(200).describe('The new name, trimmed; 1 to 200 characters.'),
+  })
+  .strict();
 const RestoreBody = z
   .object({
     from: z.number().int().positive().describe('The version whose definition to write.'),
@@ -602,6 +607,75 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({ error: 'a draft already exists; edit or delete it first' });
       }
       return reply.code(201).send(await withIssues(created));
+    },
+  );
+
+  /** Rename a document type: its open draft (started when none is) and its Workbench project. */
+  app.put<{ Params: { id: string } }>(
+    '/templates/:id/name',
+    {
+      preHandler: notRetired,
+      schema: {
+        tags: ['Recipes'],
+        operationId: 'renameTemplate',
+        summary: 'Rename a document type',
+        description: md`
+          Sets the document type's name in its open draft, recorded in the draft's change log as
+          a hand edit. Published versions keep the name they were published with, so when no
+          draft is open one is started from the latest version (as \`POST …/drafts\`) and
+          renamed; the new name reaches uploads and jobs once that draft is published. A
+          Workbench project of the type is renamed at once. The same name as now changes
+          nothing and starts no draft.
+        `,
+        params: TypeParams,
+        body: RenameBody,
+        response: {
+          200: res('The renamed draft (or, when nothing changed, the version shown).', RecordView),
+          400: error('Zod issues: a blank name or one over 200 characters.'),
+          404: NOT_FOUND,
+          409: error('`the draft changed while renaming; try again`, or ' + RETIRED_DOC + '.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = RenameBody.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id } = req.params;
+      const { name } = body.data;
+      const by = req.auth?.label ?? null;
+      const versions = (await repo().list()).filter((r) => r.id === id);
+      if (!versions.length) return notFound(reply);
+      const open = versions.find((v) => v.status === 'draft');
+      const shown = open ?? versions.at(-1)!;
+      const before = shown.definition.name;
+      let record = shown;
+      if (before !== name) {
+        let draft = open;
+        if (!draft) {
+          const created = await createNextDraft(repo(), id, undefined, by);
+          if (typeof created === 'string') {
+            return reply.code(409).send({ error: 'the draft changed while renaming; try again' });
+          }
+          draft = created;
+        }
+        const definition = { ...draft.definition, name };
+        const change = draftChange(draft.definition, definition, byHand(by));
+        const saved = await repo().updateDraft(id, draft.version, definition, {
+          expectedUpdatedAt: draft.updatedAt,
+          change: change && {
+            ...change,
+            summary: `Renamed “${String(before ?? id)}” to “${name}”`,
+          },
+        });
+        if (!saved) {
+          return reply.code(409).send({ error: 'the draft changed while renaming; try again' });
+        }
+        record = saved;
+      }
+      if (await app.deps.workbench.renameProject(id, name)) {
+        req.log.info({ projectId: id, by }, 'workbench project renamed');
+      }
+      return await withIssues(record);
     },
   );
 

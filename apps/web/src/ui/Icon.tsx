@@ -95,6 +95,7 @@ const PATHS = {
     <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
   ),
   pencil: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
+  text: <path d="M5 7V5h14v2M12 5v14M9 19h6" />,
   flag: <path d="M5 21V4h11l-2 4 2 4H5" />,
   plus: <path d="M12 5v14M5 12h14" />,
   chevronUp: <path d="M18 15l-6-6-6 6" />,

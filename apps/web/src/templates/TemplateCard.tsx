@@ -14,11 +14,14 @@ export function TemplateCard({
   api,
   item,
   onNavigate,
+  onRename,
   onRetire,
 }: {
   api: Api;
   item: TemplateListItem;
   onNavigate: (hash: string) => void;
+  /** Opens the rename dialog. */
+  onRename?: () => void;
   /** Admins only: opens the retire confirm. */
   onRetire?: () => void;
 }) {
@@ -138,6 +141,17 @@ export function TemplateCard({
               <Icon name="download" />
             </a>
           </>
+        )}
+        {onRename && (
+          <button
+            type="button"
+            className="icon bordered"
+            aria-label={`Rename ${item.name}…`}
+            title="Rename…"
+            onClick={onRename}
+          >
+            <Icon name="text" />
+          </button>
         )}
         {onRetire && (
           <button
