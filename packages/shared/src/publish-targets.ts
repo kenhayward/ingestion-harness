@@ -41,14 +41,14 @@ export const TargetUsageSchema = z.object({
   documentTypes: z.array(z.string()),
   deliveredOutputs: z.number().int().nonnegative(),
   consumers: z.number().int().nonnegative(),
-  /** Queued or running `withdraw`/`republish` jobs whose params name the target. */
+  /** Queued or running `withdraw` jobs whose params name the target. */
   pendingJobs: z.number().int().nonnegative(),
 });
 export type TargetUsage = z.infer<typeof TargetUsageSchema>;
 
 /**
  * In use: a published version, a recorded output or graph version, a consumer grant, or an
- * unfinished withdrawal or republish names it.
+ * queued or running withdrawal names it.
  */
 export function targetInUse(u: TargetUsage): boolean {
   return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0 || u.pendingJobs > 0;

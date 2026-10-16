@@ -73,10 +73,10 @@ INSERT INTO s3_consumer_targets (consumer_id, target_id) SELECT id, 'default' FR
 -- history and stay as they ran.
 UPDATE jobs
    SET params = jsonb_build_object(
-         'objects', coalesce((SELECT jsonb_agg(e || '{"target": "default"}'::jsonb ORDER BY n)
+         'objects', coalesce((SELECT jsonb_agg('{"target": "default"}'::jsonb || e ORDER BY n)
                                 FROM jsonb_array_elements(params->'objects') WITH ORDINALITY o(e, n)),
                              '[]'::jsonb),
-         'graphs', coalesce((SELECT jsonb_agg(e || '{"target": "default"}'::jsonb ORDER BY n)
+         'graphs', coalesce((SELECT jsonb_agg('{"target": "default"}'::jsonb || e ORDER BY n)
                                FROM jsonb_array_elements(params->'graphs') WITH ORDINALITY g(e, n)),
                             '[]'::jsonb))
  WHERE task = 'withdraw' AND status <> 'succeeded';
