@@ -404,11 +404,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           'testPublishTarget',
           'Test a publishing target',
           md`
-            **Admins only.** Writes a small file under the target's prefix, reads it back and
-            deletes it. With an \`id\`, the stored target's settings overlaid with the body (its
-            stored secret when the body has none); without one, a full set of new settings
-            (before saving). Always 200 for a test that ran: \`ok: false\` names the step that
-            failed in plain words. A secret sent here is never stored, logged or echoed.
+            **Admins only.** For an external target, checks the bucket exists (a missing one
+            fails at \`connect\`: some servers would create it on the first write), then writes
+            a small file under the target's prefix, reads it back and deletes it. With an \`id\`,
+            the stored target's settings overlaid with the body (its stored secret when the body
+            has none); without one, a full set of new settings (before saving). Always 200 for a
+            test that ran: \`ok: false\` names the step that failed in plain words. A secret sent
+            here is never stored, logged or echoed.
           `,
         ),
         body: TargetTestBodySchema,
@@ -438,7 +440,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         if (!(err instanceof TargetUnavailableError)) throw err;
         return { ok: false, step: 'connect', message: err.message };
       }
-      return probeTarget(store, settings.bucket, settings.prefix);
+      return probeTarget(store, settings.bucket, settings.prefix, {
+        checkBucket: settings.kind === 'external',
+      });
     },
   );
 }

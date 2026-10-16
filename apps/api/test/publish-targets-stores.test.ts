@@ -183,10 +183,13 @@ describe('TargetStores', () => {
 
 class Failing extends MemoryObjectStore {
   constructor(
-    private readonly at: 'put' | 'get' | 'delete' | 'wrong',
+    private readonly at: 'ping' | 'put' | 'get' | 'delete' | 'wrong',
     private readonly err: Error,
   ) {
     super();
+  }
+  override async ping(): Promise<void> {
+    if (this.at === 'ping') throw this.err;
   }
   override async put(b: string, k: string, body: Buffer, ct: string): Promise<void> {
     if (this.at === 'put') throw this.err;
@@ -203,6 +206,9 @@ class Failing extends MemoryObjectStore {
   }
 }
 const named = (name: string): Error => Object.assign(new Error('secret-ish detail'), { name });
+/** An error as the S3 client reports a HEAD answer (no body, so the name is generic). */
+const headAnswer = (name: string, httpStatusCode: number): Error =>
+  Object.assign(new Error('secret-ish detail'), { name, $metadata: { httpStatusCode } });
 
 describe('probeTarget', () => {
   it('passes and leaves nothing behind', async () => {
@@ -222,6 +228,37 @@ describe('probeTarget', () => {
     const r = await probeTarget(new Failing('put', named(name)), 'b', '');
     expect(r).toEqual({ ok: false, step, message });
     expect(JSON.stringify(r)).not.toContain('secret-ish');
+  });
+
+  // SeaweedFS creates a missing bucket on the first put (an Admin identity's), so the bucket is
+  // checked before writing; HEAD of a missing bucket answers 404 NotFound (AWS and SeaweedFS).
+  it('says no such bucket, writing nothing, when the bucket check answers 404', async () => {
+    const store = new Failing('ping', headAnswer('NotFound', 404));
+    const put = vi.spyOn(store, 'put');
+    expect(await probeTarget(store, 'b', '')).toEqual({
+      ok: false,
+      step: 'connect',
+      message: 'no such bucket',
+    });
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('reports an unreachable endpoint at the bucket check as connect', async () => {
+    const err = Object.assign(new Error('x'), { name: 'Error', code: 'ECONNREFUSED' });
+    expect(await probeTarget(new Failing('ping', err), 'b', '')).toEqual({
+      ok: false,
+      step: 'connect',
+      message: 'could not reach the endpoint',
+    });
+  });
+
+  // Keys that may write but not list (a drop zone) get 403 on HEAD; the write step decides.
+  it.each([
+    ['Unknown', 403],
+    ['Forbidden', 403],
+  ])('carries on past a %s %s bucket check', async (name, code) => {
+    const r = await probeTarget(new Failing('ping', headAnswer(name, code)), 'b', 'ingest/');
+    expect(r).toMatchObject({ ok: true, step: null });
   });
 
   it('reports a network failure code as connect', async () => {

@@ -384,6 +384,16 @@ class FailingStore extends MemoryObjectStore {
   }
 }
 
+/** A bucket HEAD answers 404 for, as AWS and SeaweedFS do for a missing bucket. */
+class MissingBucketStore extends MemoryObjectStore {
+  override async ping(): Promise<void> {
+    throw Object.assign(new Error('not found'), {
+      name: 'NotFound',
+      $metadata: { httpStatusCode: 404 },
+    });
+  }
+}
+
 describe('POST /api/publish-targets/test', () => {
   it('tests settings before saving', async () => {
     const c = await setup();
@@ -435,6 +445,26 @@ describe('POST /api/publish-targets/test', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: false, step: 'write', message: 'access denied' });
     expect(res.body).not.toContain(SECRET);
+  });
+
+  it('says no such bucket for an external target whose bucket is missing', async () => {
+    const c = await setup();
+    const store = new MissingBucketStore();
+    c.endpointStores.set(FINANCE_ENDPOINT, store);
+    const res = await c.call('POST', '/publish-targets/test', externalBody());
+    expect(res.json()).toEqual({ ok: false, step: 'connect', message: 'no such bucket' });
+    expect(store.objects.size).toBe(0);
+  });
+
+  // Saving an internal target creates its bucket, so testing it first must not fail on that.
+  it('does not check the bucket of an internal target (saving creates it)', async () => {
+    const c = await testApp({ llmSecrets: keys, targetStore: new MissingBucketStore() });
+    const res = await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets/test',
+      payload: { label: 'Archive', kind: 'internal', bucket: 'new-archive', prefix: '' },
+    });
+    expect(res.json()).toMatchObject({ ok: true });
   });
 
   it('tests the internal default', async () => {

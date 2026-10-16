@@ -68402,7 +68402,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Writes a small file under the target's prefix, reads it back and\ndeletes it. With an `id`, the stored target's settings overlaid with the body (its\nstored secret when the body has none); without one, a full set of new settings\n(before saving). Always 200 for a test that ran: `ok: false` names the step that\nfailed in plain words. A secret sent here is never stored, logged or echoed.",
+        "description": "**Admins only.** For an external target, checks the bucket exists (a missing one\nfails at `connect`: some servers would create it on the first write), then writes\na small file under the target's prefix, reads it back and deletes it. With an `id`,\nthe stored target's settings overlaid with the body (its stored secret when the body\nhas none); without one, a full set of new settings (before saving). Always 200 for a\ntest that ran: `ok: false` names the step that failed in plain words. A secret sent\nhere is never stored, logged or echoed.",
         "requestBody": {
           "required": true,
           "content": {
