@@ -94,15 +94,10 @@ export function LinkedDataPage({ api, me }: { api: Api; me: Me }) {
 
   return (
     <div className="linked-data-page">
-      <div className="page-header">
-        <div>
-          <h1>Linked data</h1>
-          <p className="muted">
-            Published RDF belongs to the customer: its IRIs live under their base. One customer per
-            deployment.
-          </p>
-        </div>
-      </div>
+      <p className="muted admin-lead">
+        Published RDF belongs to the customer: its IRIs live under their base. One customer per
+        deployment.
+      </p>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {view && (

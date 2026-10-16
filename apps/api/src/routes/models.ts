@@ -45,7 +45,7 @@ export const modelRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listModelChoicesToPick',
         summary: 'List the model choices people pick',
         description: md`
-          The labelled model choices an admin set up on the Models page
+          The labelled model choices an admin set up under Administration > Models
           ([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),
           as every model picker shows them: the default first, then by label. Each names the
           model it runs and where that runs (\`location\`; a local-only project cannot use an

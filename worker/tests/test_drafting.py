@@ -13,6 +13,7 @@ from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
 from ingest_worker.drafting import (
     DRAFT_MAX_TOKENS,
+    DRAFT_PROGRESS,
     MAX_CONTEXT_SAMPLES,
     MAX_SAMPLE_CHARS,
     SURVEY,
@@ -189,7 +190,7 @@ def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
     [(_, reason)] = queue.reviewed
     assert reason == (
         "The drafting model's reply was cut off at its output limit (16,000 tokens). "
-        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
         "can be run again with less to propose."
     )
     assert "chunkPages" not in reason
@@ -262,6 +263,64 @@ def test_invalid_output_is_fed_back_then_needs_review(fixture_specs_dir: Path) -
     assert "previous response was rejected" in provider.calls[1][1].prompt
     [(_, reason)] = queue.reviewed
     assert "draft-survey" in reason
+
+
+PROGRESS_FIXTURE = REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "draft-progress.json"
+
+
+def progress(queue: FakeQueue) -> list[dict[str, Any]]:
+    return [d for _, _, msg, d in queue.event_details if msg == DRAFT_PROGRESS]
+
+
+def expected_progress(case: str) -> list[dict[str, Any]]:
+    cases: dict[str, list[dict[str, Any]]] = json.loads(PROGRESS_FIXTURE.read_text("utf-8"))
+    return cases[case]
+
+
+def test_a_survey_reports_reading_the_samples_and_each_model_call(
+    fixture_specs_dir: Path,
+) -> None:
+    """Issue #151: a running survey says what it is doing (TS DraftProgressSchema, shared
+    fixture draft-progress.json): the samples read, then each model call with its attempt."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = ["not json", SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyRetried")
+
+
+def test_a_streamed_reply_reports_the_tokens_received_now_and_then(
+    fixture_specs_dir: Path,
+) -> None:
+    """The model's reply streams: its growing token count is reported on the model phase,
+    the first at once, then every 500 tokens (or 5 s), never every token."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+    provider.token_stream = [10, 600, 700, 1300]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyStreamed")
+
+
+def test_progress_is_advisory_a_failed_write_never_fails_the_survey(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+
+    class Flaky(FakeQueue):
+        def event(
+            self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+        ) -> None:
+            if message == DRAFT_PROGRESS:
+                raise RuntimeError("database blip")
+            super().event(job_id, level, message, data)
+
+    queue = Flaky(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed == [("job-d", [])]
 
 
 def test_transient_provider_errors_retry_the_job(fixture_specs_dir: Path) -> None:
@@ -415,6 +474,7 @@ def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
     [row] = body["anchorCheck"]["samples"]
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
     assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+    assert progress(queue) == expected_progress("sectionsAnchorRound")
 
 
 TIMEOUT = "preview took longer than 10s; an anchor may backtrack catastrophically"
@@ -489,6 +549,40 @@ def test_anchor_check_misses(changes: list[dict[str, Any]], expected: list[str])
         DraftSample("s2", "b.pdf", "dev", ["nothing"]),
     ]
     draft = {"document": {"sections": [{"id": "all", "anchor": "\\A"}]}}
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    assert len(misses) == len(expected)
+    assert all(e in m for m, e in zip(misses, expected, strict=True))
+
+
+REPEATED = [
+    "1. BATCH 101\nAssay Results\nrows\nDissolution Results\nrows\n",
+    "2. BATCH 102\nAssay Results\nrows\nDissolution Results\nrows\n",
+]
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        # Two sections that each start once per batch: later batches fall into the last one.
+        (
+            [put("assay", "^Assay"), put("dissolution", "^Dissolution")],
+            [
+                'sections "assay", "dissolution" each match 2 times in a.pdf: the document '
+                "repeats a block"
+            ],
+        ),
+        # One anchor that happens to match twice is not a repeated block.
+        ([put("assay", "^Assay"), put("first", r"^1\. BATCH")], []),
+        # One section over every block is what the feedback asks for.
+        ([put("batches", r"^1\. BATCH")], []),
+    ],
+)
+def test_anchor_check_reports_repeated_blocks(
+    changes: list[dict[str, Any]], expected: list[str]
+) -> None:
+    samples = [DraftSample("s1", "a.pdf", "dev", REPEATED)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
     grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
     assert grid is not None
     assert len(misses) == len(expected)
@@ -818,6 +912,7 @@ def test_a_survey_queues_its_ontology_suggestions_and_finishes(fixture_specs_dir
     run_once(queue, deps, "w1")
 
     assert queue.completed and searched == []  # nothing matched while the survey ran
+    assert progress(queue) == expected_progress("surveyWithLibrary")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
     [(project, params)] = queue.suggested
     assert project == "letter"
@@ -892,3 +987,24 @@ def test_survey_without_a_library_writes_no_suggestions(fixture_specs_dir: Path)
     run_once(queue, deps, "w1")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
     assert queue.suggested == []
+
+
+@pytest.mark.parametrize(
+    ("calls", "reported"),
+    [
+        # (seconds, tokens): the first at once, then +500 tokens or 5 s later, never twice.
+        ([(0, 10), (1, 300), (2, 510), (3, 600)], [10, 510]),
+        ([(0, 10), (6, 40)], [10, 40]),
+        ([(0, 10), (6, 10)], [10]),  # no new tokens: nothing new to say
+    ],
+)
+def test_token_throttle(calls: list[tuple[float, int]], reported: list[int]) -> None:
+    from ingest_worker.drafting import TokenThrottle
+
+    now = [0.0]
+    seen: list[int] = []
+    throttle = TokenThrottle(seen.append, clock=lambda: now[0])
+    for at, tokens in calls:
+        now[0] = at
+        throttle(tokens)
+    assert seen == reported

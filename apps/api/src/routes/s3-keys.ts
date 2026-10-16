@@ -48,7 +48,7 @@ const unreachable = (err: unknown) =>
   `SeaweedFS could not be reached: ${err instanceof Error ? err.message : String(err)}`;
 
 /**
- * Read-only S3 keys for the data lake (ADR 0008), on the Access page. Admins only; the access
+ * Read-only S3 keys for the data lake (ADR 0008), under Administration > Access. Admins only; the access
  * hook has already required a session (and `deps.access === null` disables both in unit tests).
  */
 export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {

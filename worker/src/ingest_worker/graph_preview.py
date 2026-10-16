@@ -20,7 +20,7 @@ from .shacl import load_graphs, outputs_by_property, validate_with_timeout
 from .storage import graph_preview_key, reviewed_document_key
 from .template import Template
 
-NO_BASE = "set the customer on the Linked data page"
+NO_BASE = "set the customer under Administration > Linked data"
 
 
 class PreviewSample(BaseModel):

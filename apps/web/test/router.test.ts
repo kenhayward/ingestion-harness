@@ -7,8 +7,10 @@ describe('parseHash', () => {
     ['#/results', { name: 'results' }],
     ['#/results/abc-123', { name: 'result', jobId: 'abc-123' }],
     ['#/templates', { name: 'templates' }],
-    ['#/models', { name: 'models' }],
-    ['#/linked-data', { name: 'linked-data' }],
+    // Models, Linked data and Access live in the Administration dialog: no address of their own.
+    ['#/models', { name: 'home' }],
+    ['#/linked-data', { name: 'home' }],
+    ['#/access', { name: 'home' }],
     ['#/ontologies', { name: 'ontologies' }],
     ['#/ontologies/idmp-o', { name: 'ontology', ontologyId: 'idmp-o' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],

@@ -58,7 +58,7 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 const linkedData = new PgLinkedDataRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
 );
-// .env seeds the customer and base once; the Linked data page wins afterwards.
+// .env seeds the customer and base once; Administration > Linked data wins afterwards.
 if (config.LINKED_DATA_CUSTOMER) {
   const [slug, ...name] = config.LINKED_DATA_CUSTOMER.split('=');
   await linkedData.seed({

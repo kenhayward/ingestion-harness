@@ -57,6 +57,8 @@ class FakeProvider:
         self.vision_calls: list[tuple[str, VisionRequest]] = []
         self.list_models_error: Exception | None = None
         self.embed_calls: list[tuple[str, list[str]]] = []
+        #: Token estimates a streamed reply reports, in order, when the caller counts them.
+        self.token_stream: list[int] = []
 
     def list_models(self) -> list[ModelDescriptor]:
         if self.list_models_error:
@@ -71,8 +73,16 @@ class FakeProvider:
         self.embed_calls.append((model, list(texts)))
         return [fake_vector(t) for t in texts]
 
-    def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
+    def complete_json(
+        self,
+        model: str,
+        request: CompletionRequest,
+        on_tokens: Callable[[int], None] | None = None,
+    ) -> CompletionResult:
         self.calls.append((model, request))
+        if on_tokens is not None:
+            for n in self.token_stream:
+                on_tokens(n)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -222,7 +232,7 @@ class MemoryLlmConfigStore:
         self.settings: dict[str, tuple[str, bool]] = {}
         #: (provider, model_id) disabled by an admin: not offered even when curated
         self.disabled: set[tuple[str, str]] = set()
-        #: (provider, model_id) -> an admin's output limit (Models page)
+        #: (provider, model_id) -> an admin's output limit (Administration > Models)
         self.limits: dict[tuple[str, str], int] = {}
         self._version = 0
         if seed is not None:

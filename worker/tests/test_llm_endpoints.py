@@ -647,7 +647,7 @@ def test_models_not_offered_never_run(ref: str, message: str) -> None:
     registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
     with pytest.raises(ModelResolutionError, match=message):
         registry.resolve(ref)
-    with pytest.raises(ModelResolutionError, match="Models page"):
+    with pytest.raises(ModelResolutionError, match="Administration > Models"):
         registry.resolve_ocr(ref)
 
 
@@ -670,7 +670,7 @@ def test_a_disabled_model_is_not_offered(harness: StoreHarness) -> None:
     assert local.models == ["a"]
 
 
-# --- a model's output limit (Models page) ---------------------------------------------------
+# --- a model's output limit (Administration > Models) ---------------------------------------
 
 
 def test_an_offered_models_output_limit_loads_and_moves_the_version(

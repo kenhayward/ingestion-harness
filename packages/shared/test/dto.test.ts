@@ -218,6 +218,20 @@ const proposal = {
   acceptedChanges: null,
   createdAt: at,
   decidedAt: null,
+  // A ready proposal's job has finished (run null); the schema's run is exercised here anyway.
+  run: {
+    status: 'running',
+    since: at,
+    progress: {
+      stage: 'outputs',
+      phase: 'model',
+      samples: 2,
+      attempt: 1,
+      of: 2,
+      round: 1,
+      at,
+    },
+  },
 };
 
 const referenceRow = {

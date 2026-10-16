@@ -47,7 +47,7 @@ class ProviderConfig(BaseModel):
     #: Where requests go (ADR 0007 data policy). Undeclared providers count as external.
     location: Location = "external"
     options: dict[str, Any] = Field(default_factory=dict)
-    #: An admin's output limit per offered model id (Models page, migration 0043): the most
+    #: An admin's output limit per offered model id (Administration > Models, migration 0043): the most
     #: tokens one reply may use where the step does not say (drafting, mapping).
     max_output_tokens: dict[str, int] = Field(default_factory=dict, alias="maxOutputTokens")
 
@@ -231,7 +231,7 @@ class ModelRegistry:
         return ref
 
     def max_output_tokens(self, ref: str) -> int | None:
-        """The model's output limit an admin set (Models page), or None: the caller's default."""
+        """The model's output limit an admin set (Administration > Models), or None: the caller's default."""
         try:
             provider_name, _, model_id = self._follow(ref).partition("/")
         except ModelResolutionError:
@@ -252,7 +252,7 @@ class ModelRegistry:
             )
         if self._offered_only and model_id not in self._configs[provider_name].models:
             raise ModelResolutionError(
-                f"model {ref} is not offered on endpoint {provider_name}: add it on the Models page"
+                f"model {ref} is not offered on endpoint {provider_name}: add it under Administration > Models"
             )
         return provider, model_id
 
