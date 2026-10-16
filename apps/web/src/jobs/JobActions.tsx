@@ -4,6 +4,7 @@ import type { Api } from '../api/client.js';
 import { isWordDocument } from '../documents.js';
 import { Icon } from '../ui/Icon.js';
 import { typeModelLabel } from '../ui/ModelPicker.js';
+import { jobHash } from '../router.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { menuPosition, primaryAction } from './derive.js';
 
@@ -57,6 +58,9 @@ export function JobActions({
   /** Fixed position under the ⋯ button: the list box scrolls, so an absolute menu would be clipped. */
   const [menuAt, setMenuAt] = useState<ReturnType<typeof menuPosition> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Copy link: `copied` briefly after a copy; `manualLink` when the browser cannot copy. */
+  const [copied, setCopied] = useState(false);
+  const [manualLink, setManualLink] = useState<string | null>(null);
   const menuId = useId();
   const promptId = useId();
   const wrapper = useRef<HTMLDivElement>(null);
@@ -95,7 +99,29 @@ export function JobActions({
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
   const file = job.filename;
+
+  /** A link to this job's page to send someone; shown to copy by hand when the browser cannot
+   * (the clipboard API needs HTTPS: on plain-HTTP LAN access it doesn't exist). */
+  const copyLink = () => {
+    setMenuOpen(false);
+    setManualLink(null);
+    const url = `${window.location.origin}${window.location.pathname}${jobHash(job.id)}`;
+    if (!navigator.clipboard) {
+      setManualLink(url);
+      return;
+    }
+    navigator.clipboard.writeText(url).then(
+      () => setCopied(true),
+      () => setManualLink(url),
+    );
+  };
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -121,6 +147,25 @@ export function JobActions({
     <div role="alert" className="error">
       {error}
     </div>
+  );
+  const linkNote = (
+    <>
+      {copied && (
+        <span role="status" className="muted copy-note">
+          Link copied
+        </span>
+      )}
+      {manualLink && (
+        <input
+          className="mono copy-link"
+          readOnly
+          aria-label={`Link to ${file}`}
+          value={manualLink}
+          onFocus={(e) => e.target.select()}
+          autoFocus
+        />
+      )}
+    </>
   );
 
   if (confirm) {
@@ -199,6 +244,9 @@ export function JobActions({
           Open PDF
         </a>
       )}
+      <button type="button" aria-label={`Copy link to ${file}`} onClick={copyLink}>
+        Copy link
+      </button>
       {DELETABLE.has(job.status) && (
         <button
           type="button"
@@ -236,6 +284,7 @@ export function JobActions({
       <div className="panel-actions">
         {main}
         {secondary}
+        {linkNote}
         {alert}
         {reprocess}
       </div>
@@ -281,6 +330,7 @@ export function JobActions({
           {secondary}
         </div>
       )}
+      {linkNote}
       {alert}
       {reprocess}
     </div>

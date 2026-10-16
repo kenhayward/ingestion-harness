@@ -262,6 +262,7 @@ function SignedInApp({
     page = (
       <JobsPage
         api={api}
+        {...(route.jobId ? { jobId: route.jobId } : {})}
         jobs={jobs}
         error={error}
         refresh={refresh}

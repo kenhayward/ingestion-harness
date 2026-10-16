@@ -42,8 +42,11 @@ export function JobsPage({
   refresh: refreshAll,
   query,
   pollMs,
+  jobId,
 }: {
   api: Api;
+  /** A shared link's job (#/jobs/<id>): opened in the panel, from the full list. */
+  jobId?: string;
   jobs: JobSummary[];
   /** The last poll failed with this message (the list shows the previous result). */
   error: string | null;
@@ -54,7 +57,8 @@ export function JobsPage({
   pollMs: number;
 }) {
   const [chip, setChip] = useState<Chip>('all');
-  const [mine, setMine] = useState(loadMine);
+  // A shared link opens on every job, not only the reader's own (not saved).
+  const [mine, setMine] = useState(() => (jobId ? false : loadMine()));
   const mineJobs = useJobs(api, pollMs, { mine: true, enabled: mine });
   const jobs = mine ? mineJobs.jobs : allJobs;
   const error = mine ? mineJobs.error : allError;
@@ -66,7 +70,11 @@ export function JobsPage({
     saveMine(!mine);
     setMine(!mine);
   };
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(jobId ?? null);
+  // A new link while the page is open selects its job.
+  useEffect(() => {
+    if (jobId) setSelectedId(jobId);
+  }, [jobId]);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
@@ -112,6 +120,7 @@ export function JobsPage({
     if (shownId !== null && shownId !== selectedId) setSelectedId(shownId);
   }, [shownId, selectedId]);
   const now = Date.now();
+  const linkedMissing = jobId !== undefined && jobs.length > 0 && !jobs.some((j) => j.id === jobId);
 
   return (
     <div className="jobs-page">
@@ -129,6 +138,12 @@ export function JobsPage({
           </span>
         )}
       </div>
+      {linkedMissing && (
+        <p role="status" aria-label="Linked job" className="kept-note">
+          The linked job is not in this list: it may have been deleted, or be older than the list
+          shows.
+        </p>
+      )}
       {error && <p role="alert">Failed to load jobs: {error}</p>}
       <div className="jobs-layout">
         <section className="jobs-main" aria-label="Job list">

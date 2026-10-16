@@ -2,7 +2,7 @@ import type { JobStatus, JobSummary } from '@ih/shared';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobList } from '../src/jobs/JobList.js';
 import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
 
@@ -59,14 +59,14 @@ describe('JobList main action', () => {
   });
 
   it.each<[JobStatus, string[]]>([
-    ['queued', ['Open PDF']],
-    ['running', ['Open PDF']],
-    ['awaiting_review', ['Open PDF']],
-    ['succeeded', ['Re-process…', 'Open PDF', 'Delete']],
-    ['failed', ['Open PDF', 'Delete']],
-    ['needs_review', ['Open PDF', 'Delete']],
-    ['cancelled', ['Open PDF', 'Delete']],
-    ['rejected', ['Open PDF', 'Delete']],
+    ['queued', ['Open PDF', 'Copy link']],
+    ['running', ['Open PDF', 'Copy link']],
+    ['awaiting_review', ['Open PDF', 'Copy link']],
+    ['succeeded', ['Re-process…', 'Open PDF', 'Copy link', 'Delete']],
+    ['failed', ['Open PDF', 'Copy link', 'Delete']],
+    ['needs_review', ['Open PDF', 'Copy link', 'Delete']],
+    ['cancelled', ['Open PDF', 'Copy link', 'Delete']],
+    ['rejected', ['Open PDF', 'Copy link', 'Delete']],
   ])('%s jobs offer %j in the menu', async (status, expected) => {
     renderList([job({ filename: 'a.pdf', status })]);
     await openMenu('a.pdf');
@@ -96,7 +96,7 @@ describe('JobList main action', () => {
     expect(link).toHaveAttribute('href', '/api/jobs/w/document');
     expect(link).not.toHaveAttribute('target');
     expect(screen.queryByRole('link', { name: 'Open PDF' })).not.toBeInTheDocument();
-    expect(menuItems('r.docx')).toEqual(['Download original (.docx)', 'Delete']);
+    expect(menuItems('r.docx')).toEqual(['Download original (.docx)', 'Copy link', 'Delete']);
   });
 
   it('closes the menu on Escape', async () => {
@@ -351,5 +351,42 @@ describe('JobList confirmations', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     rerender(listElement([{ ...j, updatedAt: '2026-10-12T00:00:01Z' }]));
     expect(screen.getByRole('button', { name: 'Confirm delete a.pdf' })).toBeInTheDocument();
+  });
+});
+
+describe('JobList Copy link', () => {
+  const link = () => `${window.location.origin}${window.location.pathname}#/jobs/a`;
+  const setClipboard = (value: unknown) =>
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true });
+  afterEach(() => setClipboard(undefined));
+
+  it("copies a link to the job's page and says so", async () => {
+    const writeText = vi.fn(async () => {});
+    setClipboard({ writeText });
+    renderList([job({ id: 'a', filename: 'a.pdf', status: 'failed' })]);
+    await openMenu('a.pdf');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link to a.pdf' }));
+    expect(writeText).toHaveBeenCalledWith(link());
+    expect(await within(row('a.pdf')).findByRole('status')).toHaveTextContent('Link copied');
+    expect(screen.queryByRole('group', { name: 'Actions for a.pdf' })).not.toBeInTheDocument();
+  });
+
+  it('shows the link to copy by hand when the browser has no clipboard (plain HTTP)', async () => {
+    setClipboard(undefined);
+    renderList([job({ id: 'a', filename: 'a.pdf', status: 'failed' })]);
+    await openMenu('a.pdf');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link to a.pdf' }));
+    const field = await within(row('a.pdf')).findByRole('textbox', { name: 'Link to a.pdf' });
+    expect(field).toHaveValue(link());
+  });
+
+  it('shows the link to copy by hand when copying is refused', async () => {
+    setClipboard({ writeText: vi.fn(async () => Promise.reject(new Error('denied'))) });
+    renderList([job({ id: 'a', filename: 'a.pdf', status: 'failed' })]);
+    await openMenu('a.pdf');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link to a.pdf' }));
+    expect(await within(row('a.pdf')).findByRole('textbox', { name: 'Link to a.pdf' })).toHaveValue(
+      link(),
+    );
   });
 });

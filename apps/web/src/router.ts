@@ -21,7 +21,8 @@ export type ProjectTab = (typeof PROJECT_TABS)[number];
 export type Route =
   /** `focusUpload`: #/upload (the installed app's Upload documents shortcut, docs/design/pwa.md). */
   | { name: 'home'; focusUpload?: true }
-  | { name: 'jobs' }
+  /** `jobId`: #/jobs/<id>, the Jobs page with that job open (a link someone shared). */
+  | { name: 'jobs'; jobId?: string }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
   | { name: 'password' }
@@ -39,7 +40,12 @@ export type Route =
   /** `view`: a tab within the project tab (`#/workbench/<id>/survey/ontologies`). */
   | { name: 'project'; projectId: string; tab: ProjectTab; view?: string };
 
+/** The Jobs page with one job open: what *Copy link* shares. */
+export const jobHash = (jobId: string) => `#/jobs/${encodeURIComponent(jobId)}`;
+
 export function parseHash(hash: string): Route {
+  const jobLink = /^#\/jobs\/([^/]+)$/.exec(hash);
+  if (jobLink) return { name: 'jobs', jobId: decodeURIComponent(jobLink[1]!) };
   const review = /^#\/review\/([^/]+)$/.exec(hash);
   if (review) return { name: 'review', jobId: decodeURIComponent(review[1]!) };
   const template = /^#\/templates\/([^/]+)\/(\d+)$/.exec(hash);
@@ -79,7 +85,7 @@ export function parseHash(hash: string): Route {
 }
 
 /**
- * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs,
+ * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs, #/jobs/<jobId>,
  * #/review/<jobId>, #/results, #/results/<jobId>, #/templates, #/templates/<id>/<version>,
  * #/ontologies, #/ontologies/<id>, #/workbench, #/workbench/<id>[/<tab>[/<view>]] (Overview by
  * default; a view is a tab within that tab, e.g. survey/ontologies).
