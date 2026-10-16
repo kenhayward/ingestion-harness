@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { GitHubLinkResult } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
-import { ModelsPage } from './models/ModelsPage.js';
-import { LinkedDataPage } from './linked-data/LinkedDataPage.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { OntologyPage } from './ontologies/OntologyPage.js';
-import { AccessPage } from './access/AccessPage.js';
+import { AdminDialog } from './access/AdminDialog.js';
 import { ChangePassword } from './access/ChangePassword.js';
 import { FailedSignInsNotice, type FailedSignIns } from './access/FailedSignInsNotice.js';
 import { ProfileDialog, type ProfileTab } from './access/ProfileDialog.js';
@@ -158,6 +156,8 @@ function SignedInApp({
     tab: ProfileTab;
     github?: GitHubLinkResult;
   } | null>(null);
+  /** Administration (admins): Models, Linked data and Access, over whatever page is open. */
+  const [admin, setAdmin] = useState(false);
   // Back from GitHub (or a link to #/account/profile): open the dialog over Home, and leave the
   // address so a reload or Back does not open it again.
   useEffect(() => {
@@ -224,18 +224,12 @@ function SignedInApp({
         />
       </div>
     );
-  } else if (route.name === 'access') {
-    page = <AccessPage api={api} me={me} query={query} />;
   } else if (route.name === 'ontologies') {
     page = <OntologiesPage api={api} role={me.role} />;
   } else if (route.name === 'ontology') {
     page = (
       <OntologyPage key={route.ontologyId} api={api} role={me.role} ontologyId={route.ontologyId} />
     );
-  } else if (route.name === 'models') {
-    page = <ModelsPage api={api} me={me} />;
-  } else if (route.name === 'linked-data') {
-    page = <LinkedDataPage api={api} me={me} />;
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} query={query} role={me.role} />;
   } else if (route.name === 'template') {
@@ -298,6 +292,7 @@ function SignedInApp({
       onQuery={setQuery}
       install={install}
       notify={notify}
+      onAdmin={() => setAdmin(true)}
       onProfile={() => setProfile({ tab: 'details' })}
       onSignOut={onSignOut}
     >
@@ -314,6 +309,7 @@ function SignedInApp({
           onSignOut={onSignOut}
         />
       )}
+      {admin && <AdminDialog api={api} me={me} onClose={() => setAdmin(false)} />}
     </AppShell>
   );
 }

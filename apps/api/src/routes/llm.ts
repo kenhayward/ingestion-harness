@@ -27,7 +27,7 @@ const IN_USE = error(
   '`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / ' +
     '`the OCR model …`.',
 );
-const NOT_OFFERED = '{ref} is not offered: add it on the Models page';
+const NOT_OFFERED = '{ref} is not offered: add it under Administration > Models';
 const ChoiceParams = z.object({ id: z.string().describe('The model choice id.') });
 const NameParams = z.object({ name: z.string().describe('The endpoint name (model-ref prefix).') });
 const base = (operationId: string, summary: string, description: string) => ({
@@ -39,7 +39,7 @@ const base = (operationId: string, summary: string, description: string) => ({
 });
 
 /**
- * LLM endpoints and their curated models (ADR 0010), for the Models page. Admins only; the
+ * LLM endpoints and their curated models (ADR 0010), for Administration > Models. Admins only; the
  * access hook has already required a session (`deps.access === null` disables both in unit
  * tests). Keys are encrypted here and never returned.
  */
@@ -65,7 +65,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
   /** Choices and pipeline models may only point at offered models; null when `ref` is one. */
   const notOffered = async (ref: string) => {
     const offered = (await app.deps.repo.listModels()).some((m) => isOffered(m) && m.ref === ref);
-    return offered ? null : `model ${ref} is not offered: add it on the Models page`;
+    return offered ? null : `model ${ref} is not offered: add it under Administration > Models`;
   };
   const choicesView = async () => {
     const [choices, settings] = await Promise.all([repo.listChoices(), repo.getSettings()]);

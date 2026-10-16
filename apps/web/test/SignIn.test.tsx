@@ -237,15 +237,17 @@ describe('sign-in gate', () => {
     expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
   });
 
-  it('shows the Access link to admins only', async () => {
+  it('offers Administration to admins only', async () => {
     const { unmount } = render(<App api={fakeApi()} pollMs={0} />);
-    expect(await screen.findByRole('link', { name: 'Access' })).toHaveAttribute('href', '#/access');
-    expect(screen.getByRole('button', { name: 'admin (admin): account menu' })).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'admin (admin): account menu' }),
+    );
+    expect(screen.getByRole('menuitem', { name: 'Administration' })).toBeInTheDocument();
     unmount();
     const user = fakeApi({ me: vi.fn(async () => signedIn({ label: 'Ken' })) });
     render(<App api={user} pollMs={0} />);
-    await screen.findByRole('button', { name: 'Ken (user): account menu' });
-    expect(screen.queryByRole('link', { name: 'Access' })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Ken (user): account menu' }));
+    expect(screen.queryByRole('menuitem', { name: 'Administration' })).not.toBeInTheDocument();
   });
 
   it('says the server is unreachable (not "sign in") when the check fails, and retries', async () => {

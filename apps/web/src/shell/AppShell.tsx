@@ -102,20 +102,23 @@ const INSTALL_LABEL = 'Install CT Studio';
 
 /**
  * The signed-in name, beside their picture (the linked GitHub account's, else initials), opens
- * the account menu: for admins Models, Linked data and Access (ADR 0010); Install CT Studio while
- * the browser offers it (admins); Profile for everyone with an email (not the admin from the log,
+ * the account menu: for admins Administration first (Models, Linked data and Access in one dialog);
+ * Install CT Studio while the browser offers it (admins); Profile for everyone with an email (not
+ * the admin from the log,
  * ADR 0013; docs/design/profile.md); Sign out. It closes on Escape (focus back on the name), a
  * click outside, or a choice.
  */
 function AccountMenu({
   me,
   onInstall,
+  onAdmin,
   onProfile,
   onSignOut,
 }: {
   me: Me;
   /** Set while the browser offers install. */
   onInstall: (() => void) | null;
+  onAdmin: () => void;
   onProfile: () => void;
   onSignOut: () => void;
 }) {
@@ -170,20 +173,18 @@ function AccountMenu({
       {open && (
         <div role="menu" aria-label={name} className="menu-popover">
           {admin && (
-            <>
-              <a role="menuitem" href="#/models" onClick={() => setOpen(false)}>
-                <Icon name="chip" />
-                Models
-              </a>
-              <a role="menuitem" href="#/linked-data" onClick={() => setOpen(false)}>
-                <Icon name="link" />
-                Linked data
-              </a>
-              <a role="menuitem" href="#/access" onClick={() => setOpen(false)}>
-                <Icon name="key" />
-                Access
-              </a>
-            </>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                // Focus on the name first: the dialog gives it back there when it closes.
+                close();
+                onAdmin();
+              }}
+            >
+              <Icon name="shieldCheck" />
+              Administration
+            </button>
           )}
           {me.email !== null && (
             <button
@@ -237,6 +238,7 @@ export function AppShell({
   onQuery,
   install,
   notify,
+  onAdmin,
   onProfile,
   onSignOut,
   children,
@@ -250,6 +252,8 @@ export function AppShell({
   install: InstallPrompt;
   /** Toasts for your jobs: the bell's state and toggle. */
   notify: NotifySetting;
+  /** The account menu's Administration (admins): opens the Administration dialog. */
+  onAdmin: () => void;
   /** The account menu's Profile: opens the Profile dialog. */
   onProfile: () => void;
   onSignOut: () => void;
@@ -326,7 +330,13 @@ export function AppShell({
           )}
           <NotifyBell notify={notify} />
           <ThemeSwitch />
-          <AccountMenu me={me} onInstall={onInstall} onProfile={onProfile} onSignOut={onSignOut} />
+          <AccountMenu
+            me={me}
+            onInstall={onInstall}
+            onAdmin={onAdmin}
+            onProfile={onProfile}
+            onSignOut={onSignOut}
+          />
         </div>
       </header>
       <div className="app-body">
@@ -392,32 +402,6 @@ export function AppShell({
             current={section === 'workbench'}
             compact={compact}
           />
-          {me.role === 'admin' && (
-            <>
-              <span className="nav-heading">Admin</span>
-              <NavLink
-                href="#/models"
-                icon="chip"
-                label="Models"
-                current={section === 'models'}
-                compact={compact}
-              />
-              <NavLink
-                href="#/linked-data"
-                icon="link"
-                label="Linked data"
-                current={section === 'linked-data'}
-                compact={compact}
-              />
-              <NavLink
-                href="#/access"
-                icon="key"
-                label="Access"
-                current={section === 'access'}
-                compact={compact}
-              />
-            </>
-          )}
           <a
             className="nav-foot"
             href={API_DOCS}

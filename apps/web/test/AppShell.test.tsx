@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { fakeApi, job, projectView, user } from './fake-api.js';
+import { fakeApi, job, projectView } from './fake-api.js';
 
 const SEARCH = 'Search jobs, results and document types';
 
@@ -122,7 +122,7 @@ describe('app shell', () => {
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect(nav).toHaveClass('compact');
-    for (const name of ['Jobs', 'Results', 'Document types', 'Workbench', 'Access']) {
+    for (const name of ['Jobs', 'Results', 'Document types', 'Workbench', 'Ontologies']) {
       const link = within(nav).getByRole('link', { name });
       expect(link).toHaveAttribute('title', name);
     }
@@ -235,22 +235,6 @@ describe('search', () => {
     expect(screen.getByText('No document types match “invoice zzz”.')).toBeInTheDocument();
   });
 
-  it('filters users by name or email', async () => {
-    window.location.hash = '#/access';
-    const api = fakeApi({
-      listUsers: vi.fn(async () => [
-        user({ id: '1', name: 'Ken Hayward', email: 'ken@example.com' }),
-        user({ id: '2', name: 'Ops station', email: 'ops@example.com' }),
-      ]),
-    });
-    render(<App api={api} pollMs={0} />);
-    const users = within(await screen.findByRole('table', { name: 'Users' }));
-    await users.findByText('Ops station');
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'ken@');
-    expect(users.getByText('Ken Hayward')).toBeInTheDocument();
-    expect(users.queryByText('Ops station')).not.toBeInTheDocument();
-  });
-
   it('sends the search to the server as the results file name filter', async () => {
     window.location.hash = '#/results';
     const listResults = vi.fn(async (query?: { q?: string }) =>
@@ -281,8 +265,8 @@ describe('search scope', () => {
     );
     const search = await screen.findByRole('searchbox', { name: SEARCH });
     await userEvent.type(search, 'invoice');
-    window.location.hash = '#/access';
-    await screen.findByRole('table', { name: 'Users' });
+    window.location.hash = '#/templates';
+    await screen.findByRole('heading', { level: 1, name: 'Document types' });
     expect(search).toHaveValue('');
   });
 
@@ -295,19 +279,10 @@ describe('search scope', () => {
     await vi.waitFor(() => expect(window.location.hash).toBe('#/templates/x/1'));
     expect(search).toHaveValue('invoice');
   });
-
-  it('says when no users match', async () => {
-    window.location.hash = '#/access';
-    const api = fakeApi({ listUsers: vi.fn(async () => [user({ name: 'Ken Hayward' })]) });
-    render(<App api={api} pollMs={0} />);
-    await within(await screen.findByRole('table', { name: 'Users' })).findByText('Ken Hayward');
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'zzz');
-    expect(screen.getByText('No users match “zzz”.')).toBeInTheDocument();
-  });
 });
 
 describe('the admin name menu', () => {
-  it('opens Models, Access and Sign out from the name of an admin', async () => {
+  it('opens Administration and Sign out from the name of an admin', async () => {
     const onSignOut = vi.fn();
     const api = fakeApi({
       me: vi.fn(async () => ({
@@ -329,21 +304,23 @@ describe('the admin name menu', () => {
     await userEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const menu = within(banner).getByRole('menu', { name: 'Ken (admin): account menu' });
-    expect(within(menu).getByRole('menuitem', { name: 'Models' })).toHaveAttribute(
-      'href',
-      '#/models',
-    );
-    expect(within(menu).getByRole('menuitem', { name: 'Access' })).toHaveAttribute(
-      'href',
-      '#/access',
-    );
+    // Administration first; Models, Linked data and Access are no longer links of their own.
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items[0]).toHaveAccessibleName('Administration');
+    for (const gone of ['Models', 'Linked data', 'Access']) {
+      expect(within(menu).queryByRole('menuitem', { name: gone })).toBeNull();
+    }
     await userEvent.keyboard('{Escape}');
     expect(within(banner).queryByRole('menu')).toBeNull();
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
-    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Models' }));
-    expect(window.location.hash).toBe('#/models');
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Administration' }));
     expect(within(banner).queryByRole('menu')).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Administration' });
+    expect(window.location.hash).toBe('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
     await userEvent.click(within(banner).getByRole('menuitem', { name: 'Sign out' }));
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
@@ -466,7 +443,7 @@ describe('the admin name menu', () => {
     expect(me.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('lists Models in the admin nav', async () => {
+  it('has no admin links in the nav', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'admin' as const,
@@ -478,7 +455,11 @@ describe('the admin name menu', () => {
     });
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    expect(within(nav).getByRole('link', { name: 'Models' })).toHaveAttribute('href', '#/models');
+    await within(nav).findByRole('link', { name: 'Workbench' });
+    for (const gone of ['Models', 'Linked data', 'Access']) {
+      expect(within(nav).queryByRole('link', { name: gone })).toBeNull();
+    }
+    expect(within(nav).queryByText('Admin')).toBeNull();
   });
 });
 

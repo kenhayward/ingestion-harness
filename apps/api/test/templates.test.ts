@@ -103,7 +103,7 @@ describe('template lifecycle', () => {
       {
         path: 'pipeline.0.model',
         message:
-          'step "head": model choice gone uses ryzen/other, which is not offered: add it on the Models page',
+          'step "head": model choice gone uses ryzen/other, which is not offered: add it under Administration > Models',
       },
     ]);
     expect(repo.models.some((m) => m.ref === 'ryzen/other')).toBe(false);

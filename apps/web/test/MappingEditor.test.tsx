@@ -181,12 +181,12 @@ describe('MappingEditor', () => {
 
   it('shows why a preview could not start', async () => {
     const startGraphPreview = vi.fn(async () => {
-      throw new Error('set the customer on the Linked data page');
+      throw new Error('set the customer under Administration > Linked data');
     });
     setup(mapped, fakeApi({ startGraphPreview }), { projectId: 'letter' });
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'set the customer on the Linked data page',
+      'set the customer under Administration > Linked data',
     );
   });
 });

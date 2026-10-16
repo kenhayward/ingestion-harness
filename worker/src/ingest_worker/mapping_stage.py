@@ -389,7 +389,7 @@ def convert_mapping(
                 errors.append(f"{where}: {iri} is not a valid IRI")
             if local_namespace is None:
                 errors.append(
-                    f"{where}: local terms need a base IRI: set the customer on the Linked data page"
+                    f"{where}: local terms need a base IRI: set the customer under Administration > Linked data"
                 )
             elif not iri.startswith(local_namespace) or iri == local_namespace:
                 errors.append(f"{where}: local terms live under {local_namespace}, not {iri}")

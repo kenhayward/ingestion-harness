@@ -3,6 +3,7 @@ import type { Api, Me, User } from '../api/client.js';
 import { relativeTime } from '../jobs/derive.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
+import { InSlot } from '../ui/InSlot.js';
 import { userCounts, userGroup, userMatches, userStatusView, type UserGroup } from './derive.js';
 import { S3KeysSection } from './S3KeysSection.js';
 import { SignInsPanel } from './SignInsPanel.js';
@@ -24,11 +25,14 @@ export function AccessPage({
   api,
   me,
   query = '',
+  actions,
 }: {
   api: Api;
   me: Me;
-  /** Top-bar search: shows only matching users (name or email). */
+  /** Shows only matching users (name or email). */
   query?: string;
+  /** Where Add user goes (the Administration dialog's header); in place without one. */
+  actions?: HTMLElement | null;
 }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -91,19 +95,16 @@ export function AccessPage({
 
   return (
     <div className="access-page">
-      <div className="page-header">
-        <div>
-          <h1>Access</h1>
-          <p className="muted">
-            People sign in with their email address and a password. Add each person here: they get a
-            one-time password and choose their own at first sign-in.
-          </p>
-        </div>
+      <p className="muted admin-lead">
+        People sign in with their email address and a password. Add each person here: they get a
+        one-time password and choose their own at first sign-in.
+      </p>
+      <InSlot slot={actions}>
         <button type="button" className="primary" onClick={() => setDialog({})}>
           <Icon name="plus" />
           Add user
         </button>
-      </div>
+      </InSlot>
       <aside className="note-card tone-info">
         <Icon name="key" size={18} />
         <div>

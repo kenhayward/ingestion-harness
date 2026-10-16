@@ -131,7 +131,12 @@ describe('graph previews', () => {
   });
 
   it.each<[string, object, number, string]>([
-    ['without a base IRI', { base: false }, 409, 'set the customer on the Linked data page'],
+    [
+      'without a base IRI',
+      { base: false },
+      409,
+      'set the customer under Administration > Linked data',
+    ],
     [
       'without a mapping',
       { definition: letter(1) },

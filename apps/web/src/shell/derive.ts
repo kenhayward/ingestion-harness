@@ -3,16 +3,7 @@ import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
 export type Section =
-  | 'home'
-  | 'jobs'
-  | 'results'
-  | 'templates'
-  | 'ontologies'
-  | 'workbench'
-  | 'access'
-  | 'account'
-  | 'models'
-  | 'linked-data';
+  'home' | 'jobs' | 'results' | 'templates' | 'ontologies' | 'workbench' | 'account';
 
 const SECTION: Record<Route['name'], Section> = {
   home: 'home',
@@ -24,12 +15,9 @@ const SECTION: Record<Route['name'], Section> = {
   template: 'templates',
   workbench: 'workbench',
   project: 'workbench',
-  access: 'access',
   password: 'account',
   // The way back from GitHub: Home with the Profile dialog open.
   profile: 'home',
-  models: 'models',
-  'linked-data': 'linked-data',
   ontologies: 'ontologies',
   ontology: 'ontologies',
 };
@@ -90,11 +78,8 @@ const PAGE: Record<Route['name'], string> = {
   template: 'Document types',
   workbench: 'Workbench',
   project: 'Workbench',
-  access: 'Access',
   password: 'Change password',
   profile: 'Home',
-  models: 'Models',
-  'linked-data': 'Linked data',
   ontologies: 'Ontologies',
   ontology: 'Ontologies',
 };

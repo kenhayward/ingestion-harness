@@ -1,4 +1,4 @@
-import type { LlmChoicesView, LlmEndpointView } from '@ih/shared';
+import type { LlmChoicesView, LlmEndpointView, LlmModelView } from '@ih/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -14,6 +14,15 @@ const admin = {
   userId: 'u-test',
 };
 
+const model = (modelId: string, over: Partial<LlmModelView> = {}): LlmModelView => ({
+  modelId,
+  displayName: null,
+  curated: true,
+  enabled: true,
+  maxOutputTokens: null,
+  ...over,
+});
+
 function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
   return {
     name: 'local',
@@ -26,16 +35,7 @@ function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
     updatedBy: null,
     apiKeyEnv: 'LOCAL_LLM_API_KEY',
     keySet: false,
-    models: [
-      {
-        modelId: 'llama-3',
-        displayName: 'Llama 3',
-        curated: false,
-        enabled: true,
-        maxOutputTokens: null,
-      },
-      { modelId: 'qwen', displayName: null, curated: true, enabled: true, maxOutputTokens: null },
-    ],
+    models: [model('llama-3', { displayName: 'Llama 3', curated: false }), model('qwen')],
     ...over,
   };
 }
@@ -46,52 +46,96 @@ function page(endpoints: LlmEndpointView[] = [endpoint()], overrides = {}) {
   return api;
 }
 
-const card = (name: string) => screen.findByRole('region', { name: `Endpoint ${name}` });
+const row = (name: string) => screen.findByRole('region', { name: `Endpoint ${name}` });
 
-describe('ModelsPage', () => {
-  it("sets an offered model's output limit, and clears it back to the default", async () => {
-    const api = page([endpoint()], {
-      setLlmModelSettings: vi.fn(async () => endpoint()),
-    });
-    const local = await card('local');
-    // Only offered models have a limit: a suggestion does not run.
-    expect(within(local).queryByRole('spinbutton', { name: /llama-3/ })).toBeNull();
+/** An endpoint's row, opened. */
+async function opened(name: string) {
+  const r = await row(name);
+  await userEvent.click(within(r).getByRole('button', { expanded: false }));
+  return r;
+}
+
+describe('ModelsPage: endpoints', () => {
+  it('lists each endpoint collapsed: kind, where it sends data and came from, models offered', async () => {
+    page([
+      endpoint(),
+      endpoint({
+        name: 'claude',
+        kind: 'anthropic',
+        baseUrl: null,
+        location: 'external',
+        enabled: false,
+        source: 'ui',
+        editedAt: '2026-10-13T10:00:00.000Z',
+        updatedBy: 'Ken',
+        apiKeyEnv: null,
+        keySet: true,
+        models: [],
+      }),
+    ]);
+    const local = await row('local');
+    const toggle = within(local).getByRole('button', { expanded: false });
+    expect(toggle).toHaveTextContent('local');
+    expect(toggle).toHaveTextContent('OpenAI-compatible (chat)');
+    expect(toggle).toHaveTextContent('Local · from .env');
+    expect(toggle).toHaveTextContent('1 of 2 offered');
+    expect(toggle).toHaveTextContent('Enabled');
+    expect(within(local).queryByText('http://host:1234/v1')).toBeNull();
+    const claude = await row('claude');
+    expect(claude).toHaveTextContent('External · added here by Ken');
+    expect(claude).toHaveTextContent('0 of 0 offered');
+    expect(claude).toHaveTextContent('Disabled');
+  });
+
+  it('opens an endpoint on its connection and the models it offers', async () => {
+    page([endpoint({ keySet: true, apiKeyEnv: null })]);
+    const local = await opened('local');
+    expect(within(local).getByRole('button', { expanded: true })).toBeInTheDocument();
+    expect(within(local).getByText('http://host:1234/v1')).toBeInTheDocument();
+    expect(
+      within(within(local).getByRole('group', { name: 'Location' })).getByRole('button', {
+        name: 'Local',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(within(local).getByText('Key stored (encrypted)')).toBeInTheDocument();
+    const offered = within(local).getByRole('list', { name: 'Models offered on local' });
+    expect(
+      within(offered)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([expect.stringContaining('qwen')]);
+    await userEvent.click(within(local).getByRole('button', { expanded: true }));
+    expect(within(local).queryByText('http://host:1234/v1')).toBeNull();
+  });
+
+  it("sets an offered model's output limit", async () => {
+    const api = page([endpoint()], { setLlmModelSettings: vi.fn(async () => endpoint()) });
+    const local = await opened('local');
     const limit = within(local).getByRole('spinbutton', { name: 'Max output tokens for qwen' });
-    expect(limit).toHaveAttribute('placeholder', '16,000 (default)');
-    const set = within(local).getByRole('button', { name: 'Set the output limit of qwen' });
-    expect(set).toBeDisabled(); // nothing changed
+    expect(limit).toHaveAttribute('placeholder', '16,000');
+    // Set shows once something changed, and only accepts a number in range.
+    expect(
+      within(local).queryByRole('button', { name: 'Set the output limit of qwen' }),
+    ).toBeNull();
     await userEvent.type(limit, '500');
+    const set = within(local).getByRole('button', { name: 'Set the output limit of qwen' });
     expect(set).toBeDisabled();
     expect(set).toHaveAttribute(
       'title',
       'Between 1,024 and 1,000,000 tokens, or empty for the default',
     );
     await userEvent.clear(limit);
-    await userEvent.type(limit, '32000');
-    await userEvent.click(set);
+    await userEvent.type(limit, '32000{Enter}');
     expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
       maxOutputTokens: 32000,
     });
   });
 
   it('clears a set limit back to the default', async () => {
-    const api = page(
-      [
-        endpoint({
-          models: [
-            {
-              modelId: 'qwen',
-              displayName: null,
-              curated: true,
-              enabled: true,
-              maxOutputTokens: 48000,
-            },
-          ],
-        }),
-      ],
-      { setLlmModelSettings: vi.fn(async () => endpoint()) },
-    );
-    const local = await card('local');
+    const api = page([endpoint({ models: [model('qwen', { maxOutputTokens: 48000 })] })], {
+      setLlmModelSettings: vi.fn(async () => endpoint()),
+    });
+    const local = await opened('local');
     const limit = within(local).getByRole('spinbutton', { name: 'Max output tokens for qwen' });
     expect(limit).toHaveValue(48000);
     await userEvent.clear(limit);
@@ -103,55 +147,50 @@ describe('ModelsPage', () => {
     });
   });
 
-  it('shows each endpoint with where it sends data, where it came from and its key', async () => {
-    page([
-      endpoint(),
-      endpoint({
-        name: 'claude',
-        kind: 'anthropic',
-        baseUrl: null,
-        location: 'external',
-        source: 'ui',
-        editedAt: '2026-10-13T10:00:00.000Z',
-        updatedBy: 'Ken',
-        apiKeyEnv: null,
-        keySet: true,
-        models: [],
-      }),
-    ]);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeInTheDocument();
-    const local = await card('local');
-    expect(within(local).getByText('http://host:1234/v1')).toBeInTheDocument();
-    const where = (c: HTMLElement, name: string) =>
-      within(within(c).getByRole('group', { name: 'Location' })).getByRole('button', { name });
-    expect(where(local, 'Local')).toHaveAttribute('aria-pressed', 'true');
-    expect(within(local).getByText('From .env')).toBeInTheDocument();
-    expect(within(local).getByText('Key from .env (LOCAL_LLM_API_KEY)')).toBeInTheDocument();
-    const claude = await card('claude');
-    expect(where(claude, 'External')).toHaveAttribute('aria-pressed', 'true');
-    expect(within(claude).getByText('Added here by Ken')).toBeInTheDocument();
-    expect(within(claude).getByText('Key stored (encrypted)')).toBeInTheDocument();
+  it('stops offering a model at once', async () => {
+    const setLlmEndpointModels = vi.fn(async () => endpoint());
+    page([endpoint({ models: [model('qwen'), model('gemma', { displayName: 'Gemma 3' })] })], {
+      setLlmEndpointModels,
+    });
+    const local = await opened('local');
+    await userEvent.click(within(local).getByRole('button', { name: 'Stop offering Gemma 3' }));
+    expect(setLlmEndpointModels).toHaveBeenCalledWith('local', ['qwen']);
   });
 
-  it('chooses the offered models, from suggestions and new ids', async () => {
+  it('offers a discovered model, or one added by its id, at once', async () => {
     const setLlmEndpointModels = vi.fn(async () => endpoint());
     page([endpoint()], { setLlmEndpointModels });
-    const local = await card('local');
-    const models = within(local).getByRole('group', { name: 'Models offered' });
-    const qwen = within(models).getByRole('checkbox', { name: 'qwen' });
-    const llama = within(models).getByRole('checkbox', { name: 'Llama 3 (llama-3) suggested' });
-    expect(qwen).toBeChecked();
-    expect(llama).not.toBeChecked();
-    const save = within(local).getByRole('button', { name: 'Save models' });
-    expect(save).toBeDisabled();
-    await userEvent.click(llama);
+    const local = await opened('local');
+    const trigger = within(local).getByRole('button', { name: 'Offer a model' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(trigger);
+    const pop = screen.getByRole('dialog', { name: 'Offer a model on local' });
+    const options = within(within(pop).getByRole('listbox')).getAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual([
+      expect.stringMatching(/Llama 3.*llama-3.*Suggested/),
+    ]);
+    await userEvent.click(options[0]!);
+    expect(setLlmEndpointModels).toHaveBeenLastCalledWith('local', ['llama-3', 'qwen']);
+    expect(screen.queryByRole('dialog', { name: 'Offer a model on local' })).toBeNull();
+
+    await userEvent.click(trigger);
     await userEvent.type(
-      within(local).getByRole('textbox', { name: 'Add a model id' }),
+      within(screen.getByRole('dialog', { name: 'Offer a model on local' })).getByRole('textbox', {
+        name: 'Add a model id',
+      }),
       'mistral{Enter}',
     );
-    expect(within(models).getByRole('checkbox', { name: 'mistral' })).toBeChecked();
-    await userEvent.click(save);
-    expect(setLlmEndpointModels).toHaveBeenCalledWith('local', ['llama-3', 'mistral', 'qwen']);
+    expect(setLlmEndpointModels).toHaveBeenLastCalledWith('local', ['mistral', 'qwen']);
+  });
+
+  it('closes the Offer a model dropdown on Escape, focus back on its button', async () => {
+    page();
+    const local = await opened('local');
+    const trigger = within(local).getByRole('button', { name: 'Offer a model' });
+    await userEvent.click(trigger);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Offer a model on local' })).toBeNull();
+    expect(trigger).toHaveFocus();
   });
 
   it('shows why the API refused, in the endpoint', async () => {
@@ -160,9 +199,8 @@ describe('ModelsPage', () => {
         throw new ApiError('alias default uses local/qwen: point it elsewhere first', 409);
       }),
     });
-    const local = await card('local');
-    await userEvent.click(within(local).getByRole('checkbox', { name: 'qwen' }));
-    await userEvent.click(within(local).getByRole('button', { name: 'Save models' }));
+    const local = await opened('local');
+    await userEvent.click(within(local).getByRole('button', { name: 'Stop offering qwen' }));
     expect(await within(local).findByRole('alert')).toHaveTextContent(
       'alias default uses local/qwen',
     );
@@ -171,7 +209,7 @@ describe('ModelsPage', () => {
   it('disables, moves and keys an endpoint', async () => {
     const updateLlmEndpoint = vi.fn(async () => endpoint());
     page([endpoint()], { updateLlmEndpoint });
-    const local = await card('local');
+    const local = await opened('local');
     await userEvent.click(within(local).getByRole('button', { name: 'Disable' }));
     expect(updateLlmEndpoint).toHaveBeenLastCalledWith('local', { enabled: false });
     await userEvent.click(within(local).getByRole('button', { name: 'External' }));
@@ -191,7 +229,7 @@ describe('ModelsPage', () => {
   it('removes a stored key', async () => {
     const updateLlmEndpoint = vi.fn(async () => endpoint());
     page([endpoint({ keySet: true })], { updateLlmEndpoint });
-    const local = await card('local');
+    const local = await opened('local');
     await userEvent.click(within(local).getByRole('button', { name: 'Remove key' }));
     expect(updateLlmEndpoint).toHaveBeenCalledWith('local', { apiKey: null });
   });
@@ -226,26 +264,32 @@ describe('ModelsPage', () => {
   it('removes only endpoints added here, after a confirm', async () => {
     const deleteLlmEndpoint = vi.fn(async () => undefined);
     page([endpoint(), endpoint({ name: 'gpu2', source: 'ui' })], { deleteLlmEndpoint });
-    const local = await card('local');
+    const local = await opened('local');
     expect(within(local).queryByRole('button', { name: 'Remove endpoint' })).toBeNull();
-    const gpu2 = await card('gpu2');
+    expect(local).toHaveTextContent("Set in .env, so it can't be removed here.");
+    const gpu2 = await opened('gpu2');
     await userEvent.click(within(gpu2).getByRole('button', { name: 'Remove endpoint' }));
     expect(deleteLlmEndpoint).not.toHaveBeenCalled();
     await userEvent.click(within(gpu2).getByRole('button', { name: 'Confirm remove gpu2' }));
     expect(deleteLlmEndpoint).toHaveBeenCalledWith('gpu2');
   });
 
+  it('asks the workers to discover an endpoint now', async () => {
+    const discoverLlmEndpoint = vi.fn(async () => undefined);
+    page([endpoint()], { discoverLlmEndpoint });
+    const local = await opened('local');
+    await userEvent.click(within(local).getByRole('button', { name: 'Discover models' }));
+    expect(discoverLlmEndpoint).toHaveBeenCalledWith('local');
+    expect(await within(local).findByRole('status')).toHaveTextContent(
+      'Discovery requested: new models appear as suggestions within a minute.',
+    );
+  });
+
   it('is for admins only', () => {
     render(
       <ModelsPage
         api={fakeApi()}
-        me={{
-          role: 'user',
-          label: 'Ann',
-          email: null,
-          mustChangePassword: false,
-          userId: 'u-test',
-        }}
+        me={{ role: 'user', label: 'Ann', email: null, mustChangePassword: false, userId: 'u' }}
       />,
     );
     expect(screen.getByText('Admins only.')).toBeInTheDocument();
@@ -268,7 +312,7 @@ describe('ModelsPage: model choices and pipeline models', () => {
         id: 'test',
         label: 'New for testing only',
         description: '',
-        ref: 'local/llama-3',
+        ref: 'cloud/sonnet',
         source: 'ui',
         editedAt: '2026-10-13T10:00:00.000Z',
         updatedBy: 'Ken',
@@ -285,88 +329,146 @@ describe('ModelsPage: model choices and pipeline models', () => {
   const endpoints = [
     endpoint({
       models: [
-        {
-          modelId: 'llama-3',
-          displayName: null,
-          curated: true,
-          enabled: true,
-          maxOutputTokens: null,
-        },
-        {
-          modelId: 'olmocr',
-          displayName: null,
-          curated: true,
-          enabled: true,
-          maxOutputTokens: null,
-        },
-        { modelId: 'qwen', displayName: null, curated: true, enabled: true, maxOutputTokens: null },
-        {
-          modelId: 'suggested',
-          displayName: null,
-          curated: false,
-          enabled: true,
-          maxOutputTokens: null,
-        },
+        model('llama-3', { displayName: 'Llama 3' }),
+        model('olmocr', { displayName: 'olmOCR 2' }),
+        model('qwen', { displayName: 'Qwen 3' }),
+        model('suggested', { curated: false }),
       ],
+    }),
+    endpoint({
+      name: 'cloud',
+      kind: 'anthropic',
+      location: 'external',
+      models: [model('sonnet', { displayName: 'Claude Sonnet' })],
     }),
   ];
   const choicesPage = (overrides = {}) =>
     page(endpoints, { listModelChoices: vi.fn(async () => choicesView()), ...overrides });
-  const section = (name: string) => screen.findByRole('region', { name });
+  const choiceList = () => screen.findByRole('list', { name: 'Model choices' });
+  const choice = async (label: string) =>
+    within(await choiceList()).getByRole('listitem', { name: label });
 
-  it('lists the choices by label with their model, and marks the default', async () => {
+  it('lists the choices by label, with the model by name and the default marked', async () => {
     choicesPage();
-    const choices = await section('Model choices');
-    const main = within(choices).getByRole('row', { name: /Main Production Model/ });
-    expect(main).toHaveTextContent('local/qwen');
+    expect(await screen.findByRole('heading', { name: 'Model choices · 2' })).toBeInTheDocument();
+    const main = await choice('Main Production Model');
     expect(main).toHaveTextContent('Default');
     expect(main).toHaveTextContent('What production uses');
-    const test = within(choices).getByRole('row', { name: /New for testing only/ });
-    expect(within(test).getByRole('button', { name: 'Make default' })).toBeInTheDocument();
-    expect(within(main).queryByRole('button', { name: 'Make default' })).toBeNull();
+    expect(within(main).getByText('Qwen 3')).toHaveAttribute('title', 'local/qwen');
+    expect(main).toHaveTextContent('local');
+    const test = await choice('New for testing only');
+    expect(test).toHaveTextContent('cloud · external');
+    expect(test).not.toHaveTextContent('Default');
   });
 
-  it('adds a choice from the offered models only', async () => {
+  it('keeps Make default and Remove off the default choice', async () => {
+    choicesPage();
+    const main = await choice('Main Production Model');
+    await userEvent.click(
+      within(main).getByRole('button', { name: 'Actions for Main Production Model' }),
+    );
+    const menu = screen.getByRole('menu', { name: 'Actions for Main Production Model' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Edit']);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('makes a choice the default from its menu', async () => {
+    const setLlmSettings = vi.fn(async () => choicesView());
+    choicesPage({ setLlmSettings });
+    const test = await choice('New for testing only');
+    await userEvent.click(
+      within(test).getByRole('button', { name: 'Actions for New for testing only' }),
+    );
+    const menu = screen.getByRole('menu');
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent),
+    ).toEqual(['Make default', 'Edit', 'Remove']);
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Make default' }));
+    expect(setLlmSettings).toHaveBeenCalledWith({ defaultChoice: 'test' });
+  });
+
+  it('adds a choice picked from the offered models, grouped by endpoint', async () => {
     const createModelChoice = vi.fn(async () => choicesView().choices[1]!);
     choicesPage({ createModelChoice });
-    const choices = await section('Model choices');
-    const form = within(choices).getByRole('form', { name: 'Add a model choice' });
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Label' }), 'Fast drafts');
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Description' }), 'Cheap');
-    const model = within(form).getByRole('combobox', { name: 'Model' });
-    expect(within(model).queryByRole('option', { name: 'local/suggested' })).toBeNull();
-    await userEvent.selectOptions(model, 'local/llama-3');
+    await choiceList();
+    const add = screen.getByRole('button', { name: 'Add choice' });
+    await userEvent.click(add);
+    expect(add).toHaveAttribute('aria-expanded', 'true');
+    const pop = screen.getByRole('dialog', { name: 'Add a model choice' });
+    const search = within(pop).getByRole('searchbox', { name: 'Find a model' });
+    expect(search).toHaveFocus();
+    const groups = within(pop).getAllByRole('group');
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['cloud', 'local']);
+    // Offered models only: never a suggestion.
+    expect(within(pop).queryByRole('option', { name: /suggested/ })).toBeNull();
+    expect(within(groups[1]!).getByRole('option', { name: /Qwen 3/ })).toHaveTextContent(
+      'Used by Main Production Model',
+    );
+    await userEvent.type(search, 'llam');
+    expect(within(pop).getAllByRole('option')).toHaveLength(1);
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(screen.queryByRole('dialog', { name: 'Add a model choice' })).toBeNull();
+
+    const form = screen.getByRole('form', { name: 'New model choice' });
+    expect(form).toHaveTextContent('local · llama-3');
+    const label = within(form).getByRole('textbox', { name: 'Label' });
+    expect(label).toHaveValue('Llama 3');
+    expect(label).toHaveFocus();
+    await userEvent.clear(label);
+    await userEvent.type(label, 'Fast drafts');
+    await userEvent.type(
+      within(form).getByRole('textbox', { name: 'Description (optional)' }),
+      'Cheap',
+    );
     await userEvent.click(within(form).getByRole('button', { name: 'Add choice' }));
     expect(createModelChoice).toHaveBeenCalledWith({
       label: 'Fast drafts',
       description: 'Cheap',
       ref: 'local/llama-3',
     });
+    await waitFor(() =>
+      expect(screen.queryByRole('form', { name: 'New model choice' })).toBeNull(),
+    );
   });
 
-  it('makes a choice the default', async () => {
-    const setLlmSettings = vi.fn(async () => choicesView());
-    choicesPage({ setLlmSettings });
-    const choices = await section('Model choices');
-    const test = within(choices).getByRole('row', { name: /New for testing only/ });
-    await userEvent.click(within(test).getByRole('button', { name: 'Make default' }));
-    expect(setLlmSettings).toHaveBeenCalledWith({ defaultChoice: 'test' });
+  it('cancels a new choice', async () => {
+    choicesPage();
+    await choiceList();
+    await userEvent.click(screen.getByRole('button', { name: 'Add choice' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: 'Add a model choice' })).getByRole('option', {
+        name: /Llama 3/,
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('form', { name: 'New model choice' })).toBeNull();
   });
 
   it('renames and repoints a choice', async () => {
     const updateModelChoice = vi.fn(async () => choicesView().choices[0]!);
     choicesPage({ updateModelChoice });
-    const choices = await section('Model choices');
-    const main = within(choices).getByRole('row', { name: /Main Production Model/ });
-    await userEvent.click(within(main).getByRole('button', { name: 'Edit Main Production Model' }));
-    const label = within(choices).getByRole('textbox', { name: 'Label for main' });
+    const main = await choice('Main Production Model');
+    await userEvent.click(
+      within(main).getByRole('button', { name: 'Actions for Main Production Model' }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const list = await choiceList();
+    const label = within(list).getByRole('textbox', { name: 'Label for main' });
     await userEvent.clear(label);
     await userEvent.type(label, 'Production');
-    await userEvent.selectOptions(
-      within(choices).getByRole('combobox', { name: 'Model for main' }),
+    const pick = within(list).getByRole('combobox', { name: 'Model for main' });
+    expect(within(pick).getByRole('option', { name: 'Llama 3 · local' })).toHaveValue(
       'local/llama-3',
     );
-    await userEvent.click(within(choices).getByRole('button', { name: 'Save main' }));
+    await userEvent.selectOptions(pick, 'local/llama-3');
+    await userEvent.click(within(list).getByRole('button', { name: 'Save main' }));
     expect(updateModelChoice).toHaveBeenCalledWith('main', {
       label: 'Production',
       description: 'What production uses',
@@ -379,23 +481,25 @@ describe('ModelsPage: model choices and pipeline models', () => {
       throw new ApiError('New for testing only is used by letter v2 (step head)', 409);
     });
     choicesPage({ deleteModelChoice });
-    const choices = await section('Model choices');
-    const test = within(choices).getByRole('row', { name: /New for testing only/ });
+    const test = await choice('New for testing only');
     await userEvent.click(
-      within(test).getByRole('button', { name: 'Remove New for testing only' }),
+      within(test).getByRole('button', { name: 'Actions for New for testing only' }),
     );
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
     expect(deleteModelChoice).not.toHaveBeenCalled();
-    await userEvent.click(within(choices).getByRole('button', { name: 'Confirm remove test' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm remove test' }));
     expect(deleteModelChoice).toHaveBeenCalledWith('test');
-    expect(await within(choices).findByRole('alert')).toHaveTextContent('used by letter v2');
+    const section = screen.getByRole('region', { name: 'Model choices' });
+    expect(await within(section).findByRole('alert')).toHaveTextContent('used by letter v2');
   });
 
-  it('sets the OCR and drafting models, which are not choices', async () => {
+  it('sets the OCR, drafting and embedding models, which are not choices', async () => {
     const setLlmSettings = vi.fn(async () => choicesView());
     choicesPage({ setLlmSettings });
-    const pipeline = await section('Pipeline models');
+    const pipeline = await screen.findByRole('region', { name: 'Pipeline models' });
     const ocr = within(pipeline).getByRole('combobox', { name: 'OCR model' });
     expect(ocr).toHaveValue('local/olmocr');
+    expect(within(ocr).getByRole('option', { name: 'olmOCR 2 · local' })).toBeInTheDocument();
     await userEvent.selectOptions(ocr, 'local/qwen');
     expect(setLlmSettings).toHaveBeenLastCalledWith({ ocrModel: 'local/qwen' });
     await userEvent.selectOptions(
@@ -409,16 +513,5 @@ describe('ModelsPage: model choices and pipeline models', () => {
     expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: 'local/qwen' });
     await userEvent.selectOptions(embedding, '');
     expect(setLlmSettings).toHaveBeenLastCalledWith({ embeddingModel: null });
-  });
-
-  it('asks the workers to discover an endpoint now', async () => {
-    const discoverLlmEndpoint = vi.fn(async () => undefined);
-    choicesPage({ discoverLlmEndpoint });
-    const local = await card('local');
-    await userEvent.click(within(local).getByRole('button', { name: 'Discover models' }));
-    expect(discoverLlmEndpoint).toHaveBeenCalledWith('local');
-    expect(await within(local).findByRole('status')).toHaveTextContent(
-      'Discovery requested: new models appear as suggestions within a minute.',
-    );
   });
 });
