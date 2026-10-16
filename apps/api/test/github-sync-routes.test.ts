@@ -270,7 +270,10 @@ describe('automatic push at publish', () => {
     d.github.revoked.add(USER_TOKEN);
     const res2 = await publishV2(d);
     expect(res2.statusCode).toBe(200);
-    expect(res2.json().github.kind).toMatch(/failed|skipped/);
+    expect(res2.json().github).toMatchObject({
+      kind: 'failed',
+      reason: expect.stringContaining('link the account again in Profile'),
+    });
     expect((await d.templates.get('invoice', 2))!.status).toBe('published');
   });
 

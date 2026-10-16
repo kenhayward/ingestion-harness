@@ -1,4 +1,3 @@
-import { pushAfterPublish } from '../github-sync/auto.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   FastifyBaseLogger,
@@ -128,6 +127,7 @@ import {
   ontologySelectionChangedAt,
   type Creator,
 } from '@ih/shared';
+import { pushAfterPublish } from '../github-sync/auto.js';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
