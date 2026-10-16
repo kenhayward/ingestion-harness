@@ -196,8 +196,6 @@ function SignedInApp({
     setQuerySection(section);
     setQuery('');
   }
-  /** Upload document was pressed: Home opens the file picker once, then clears this. */
-  const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
     // Keyed: Next document must start fresh (no reason, note or page carried over).
@@ -286,8 +284,6 @@ function SignedInApp({
         error={error}
         refresh={refresh}
         pollMs={pollMs}
-        pickPending={pickPending}
-        onPicked={() => setPickPending(false)}
         launched={launched}
         focusUpload={uploadFocus}
       />
@@ -302,10 +298,6 @@ function SignedInApp({
       onQuery={setQuery}
       install={install}
       notify={notify}
-      onUpload={() => {
-        navigate('#/');
-        setPickPending(true);
-      }}
       onProfile={() => setProfile({ tab: 'details' })}
       onSignOut={onSignOut}
     >

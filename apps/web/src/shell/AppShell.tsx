@@ -237,7 +237,6 @@ export function AppShell({
   onQuery,
   install,
   notify,
-  onUpload,
   onProfile,
   onSignOut,
   children,
@@ -251,7 +250,6 @@ export function AppShell({
   install: InstallPrompt;
   /** Toasts for your jobs: the bell's state and toggle. */
   notify: NotifySetting;
-  onUpload: () => void;
   /** The account menu's Profile: opens the Profile dialog. */
   onProfile: () => void;
   onSignOut: () => void;
@@ -328,10 +326,6 @@ export function AppShell({
           )}
           <NotifyBell notify={notify} />
           <ThemeSwitch />
-          <button type="button" className="primary" onClick={onUpload}>
-            <Icon name="upload" />
-            Upload document
-          </button>
           <AccountMenu me={me} onInstall={onInstall} onProfile={onProfile} onSignOut={onSignOut} />
         </div>
       </header>
