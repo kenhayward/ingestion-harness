@@ -231,6 +231,14 @@ errors, and the Zscaler root CA will need adding to the images.
   under Administration > Published outputs (keys entered there are encrypted under
   `LLM_SECRETS_KEY`). For an external target, give the credentials write access for the worker and
   at least read access for the API.
+- **A stand-in external S3** for trying an external publishing target: `deploy/scripts/external-s3.sh up`
+  (or `.ps1`) runs a throwaway SeaweedFS (`ih-external-s3`, the same pinned image as compose, its
+  own keys `IH_EXTERNAL_S3_ACCESS_KEY`/`_SECRET_KEY`, default `ext-test-access`/`ext-test-secret`)
+  on `127.0.0.1:8433` with the bucket `ext-published`; `env` prints the `IH_TEST_EXTERNAL_S3_*`
+  variables its integration tests read, `down` stops it (no volume, the data goes with it). From
+  the stack's containers the endpoint is `http://host.docker.internal:8433` (path style on). Note
+  that SeaweedFS creates a missing bucket on the first write instead of refusing it (Test
+  connection checks an external target's bucket first).
 - Back up both volumes: `postgres-data` (`pg_dump`) and `seaweedfs-data` (or replicate buckets
   with `weed filer.sync` / an S3 sync to the final target).
 - The worker reaches a host-local LLM server at `host.docker.internal` (mapped via

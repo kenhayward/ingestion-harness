@@ -42,6 +42,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Worker tests (all / one) | `npm run worker:test` / `cd worker && uv run pytest tests/test_extract.py -k retries` |
 | Worker lint + types | `npm run worker:lint` (ruff check, ruff format --check, mypy --strict) |
 | Local infra (Postgres + SeaweedFS + Word converter) | `deploy/scripts/dev-infra.ps1 up` (or `.sh`) |
+| A second SeaweedFS as an external publishing target (throwaway, `localhost:8433`, bucket `ext-published`) | `deploy/scripts/external-s3.ps1 up` (sets `IH_TEST_EXTERNAL_S3_*`; or `.sh up` then `export $(deploy/scripts/external-s3.sh env)`), `… down` |
 | Run services on host | `npm run dev:api`, `npm run dev:web`, `cd worker && uv run ingest-worker` |
 | Full stack in Docker | `deploy/scripts/deploy.sh` (needs `deploy/.env`, copy from `.env.example`) |
 | Triple store: reload / backfill a type / re-mint ([ADR 0011](docs/adr/0011-rdf-publishing-and-ontologies.md)) | `docker exec ingestion-worker-1 python -m ingest_worker.rdf_rebuild [--backfill TYPE \| --remint]` (Fuseki backups: `deploy/README.md`) |
@@ -73,6 +74,9 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
      once (Postgres 17 with pgvector, needed from migration 0035), then `docker run --rm -d --name ih-test-pg -e
      POSTGRES_PASSWORD=test -p 55433:5432 ih-postgres:pgvector`, then
      `IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres npx vitest run --config apps/api/vitest.integration.config.ts workbench-pg`.
+     External publishing targets run against a real S3 server outside the stack: `deploy/scripts/external-s3.ps1 up` (or `.sh`; the compose SeaweedFS image with its own keys and `-s3.iam.readOnly=false`; from dev-stack containers `http://host.docker.internal:8433`), then
+     `npx vitest run --config apps/api/vitest.integration.config.ts publish-targets-external` (Test connection, wrong secret, missing bucket, storage class, prefix, a rotated secret, and a data-lake key granted on a prefix read only under it) and
+     `cd worker && uv run pytest -m integration tests/test_publish_targets_integration.py`; both skip without `IH_TEST_EXTERNAL_S3_ENDPOINT`. SeaweedFS creates a missing bucket on the first put (where AWS answers `NoSuchBucket`), so `probeTarget` checks an external target's bucket (HEAD, 404 = `no such bucket`) before writing (internal ones are created on save). `external-s3 down` when done.
 5. **Contract tests stay green**: both `apps/api/test/spec-registry.test.ts` and
    `worker/tests/test_specs.py` load every spec in `specs/`. A new spec is not done until both pass.
 6. New pure logic (segmentation, CSV flattening, retry policy, alias resolution) should be
