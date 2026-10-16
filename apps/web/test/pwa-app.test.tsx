@@ -110,10 +110,11 @@ describe('Install CT Studio', () => {
       })),
     });
     render(<App api={api} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
+    await signedIn();
     const event = offer(target);
+    await findInstallButton(); // the shell has the offer: the menu lists it too
     await userEvent.click(
-      within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
+      within(screen.getByRole('banner')).getByRole('button', { name: 'Ken (admin): account menu' }),
     );
     await userEvent.click(screen.getByRole('menuitem', { name: 'Install CT Studio' }));
     expect(event.prompt).toHaveBeenCalled();
