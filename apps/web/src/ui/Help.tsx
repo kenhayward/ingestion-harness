@@ -1,7 +1,13 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { HELP_TOPICS, type HelpTopicId } from '../help/topics.js';
 import { Dialog } from './Dialog.js';
 import { Icon } from './Icon.js';
+
+/**
+ * Opens the account menu's Help dialog at a topic (App provides it); without it, a ? dialog
+ * offers no Open in Help.
+ */
+export const HelpCenterContext = createContext<((topic: HelpTopicId) => void) | null>(null);
 
 /**
  * A "?" beside a heading that opens the topic's explanation in a modal (Close, Escape or a click
@@ -10,6 +16,7 @@ import { Icon } from './Icon.js';
  */
 export function HelpButton({ topic }: { topic: HelpTopicId }) {
   const [open, setOpen] = useState(false);
+  const openHelp = useContext(HelpCenterContext);
   const { title, body } = HELP_TOPICS[topic];
   return (
     <>
@@ -29,6 +36,19 @@ export function HelpButton({ topic }: { topic: HelpTopicId }) {
           closeLabel="Close"
           className="help-dialog"
           onClose={() => setOpen(false)}
+          actions={
+            openHelp && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  openHelp(topic);
+                }}
+              >
+                Open in Help
+              </button>
+            )
+          }
         >
           <div className="help-body">{body}</div>
         </Dialog>

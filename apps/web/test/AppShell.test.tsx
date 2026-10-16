@@ -328,7 +328,35 @@ describe('the admin name menu', () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  it('gives users a menu with Profile and Sign out only; Profile opens the dialog', async () => {
+  it('opens Help from the account menu, for everyone', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'designer' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    await userEvent.click(
+      within(banner).getByRole('button', { name: 'Ann (Designer): account menu' }),
+    );
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Help' }));
+    const dialog = screen.getByRole('dialog', { name: 'Help' });
+    expect(within(dialog).getByText('/ Introduction')).toBeInTheDocument();
+  });
+
+  it('opens Help on a topic from #/help/<topic>, over Home', async () => {
+    window.location.hash = '#/help/sections';
+    render(<App api={fakeApi()} pollMs={0} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Help' });
+    expect(within(dialog).getByText('/ How sections work')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/');
+  });
+
+  it('gives users a menu with Profile, Help and Sign out; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'designer' as const,
@@ -347,7 +375,7 @@ describe('the admin name menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((i) => i.textContent),
-    ).toEqual(['Profile', 'Sign out']);
+    ).toEqual(['Profile', 'Help', 'Sign out']);
     await userEvent.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
