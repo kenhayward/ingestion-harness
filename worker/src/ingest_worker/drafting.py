@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -29,6 +30,7 @@ from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queu
 from .pipeline import (
     DocumentError,
     PipelineDeps,
+    advisory_event,
     check_cancelled,
     enforce_data_policy,
 )
@@ -43,6 +45,39 @@ log = logging.getLogger(__name__)
 #: Output budget of one drafting call when its model sets none (Administration > Models: Max output
 #: tokens; TS DEFAULT_MAX_OUTPUT_TOKENS).
 DRAFT_MAX_TOKENS = 16_000
+
+#: Model calls per proposal round: the first reply, then one more with its errors fed back.
+DRAFT_ATTEMPTS = 2
+
+#: A running drafting stage's progress (issue #151; TS DRAFT_PROGRESS_EVENT, DraftProgressSchema;
+#: shared fixture draft-progress.json): one event per phase and per model call. Advisory.
+DRAFT_PROGRESS = "drafting progress"
+
+DraftPhase = Literal["reading", "model", "anchors", "suggestions"]
+
+
+def progress_reporter(
+    job: ClaimedJob, queue: JobQueue, stage: str, samples: int
+) -> Callable[..., None]:
+    """Report a phase of the run: reading the samples, each model call (its attempt), testing
+    anchors, queuing ontology suggestions. `round` 2 is the sections stage's anchor round."""
+
+    def report(phase: DraftPhase, *, attempt: int | None = None, round: int = 1) -> None:
+        advisory_event(
+            job,
+            queue,
+            DRAFT_PROGRESS,
+            {
+                "stage": stage,
+                "phase": phase,
+                "samples": samples,
+                "attempt": attempt,
+                "of": DRAFT_ATTEMPTS if attempt is not None else None,
+                "round": round,
+            },
+        )
+
+    return report
 
 
 def output_limit(deps: PipelineDeps, model_ref: str) -> int:
@@ -341,6 +376,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     limit = output_limit(deps, model_ref)
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
+    report = progress_reporter(job, queue, stage.id, len(sent))
+    report("reading")
     samples = [
         DraftSample(s.sample_id, s.filename, s.role, prepared_pages(deps, s.sha256)) for s in sent
     ]
@@ -385,7 +422,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             errors = stage.check(body, draft)
         return errors
 
-    def propose(prompt: str, label: str) -> tuple[ExtractionResult, dict[str, Any]]:
+    def propose(prompt: str, label: str, round: int = 1) -> tuple[ExtractionResult, dict[str, Any]]:
         try:
             result = run_extraction(
                 extraction_id=label,
@@ -393,10 +430,11 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 model_id=model_id,
                 prompt=prompt,
                 schema=stage.schema,
-                max_attempts=2,
+                max_attempts=DRAFT_ATTEMPTS,
                 max_tokens=limit,
                 system=DRAFT_SYSTEM,
                 check=check if (stage.convert or stage.check) else None,
+                on_attempt=lambda n: report("model", attempt=n, round=round),
             )
         except OutputTruncatedError as exc:
             _audit(deps, job, label, exc.attempts)
@@ -417,6 +455,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     if stage.id == "survey":
         body = clamp_seen_in(body, len(samples))
         if params.library:  # the ontology library's suggestions (advisory): a job of their own
+            report("suggestions")
             try:
                 suggest_id = queue_suggestions(
                     job,
@@ -432,6 +471,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 log.warning("job %s: ontology suggestions failed: %s", job.id, exc)
                 queue.event(job.id, "warn", "ontology suggestions failed", {"error": str(exc)})
     if stage.id == "sections":
+        report("anchors")
         grid, misses = anchor_check(samples, draft, body)
         if misses:
             check_cancelled(job, queue)
@@ -441,7 +481,9 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 f"need work:\n<anchor_misses>\n{feedback}\n</anchor_misses>\n"
                 "Propose the full set of changes again.",
                 "draft-sections-anchors",
+                round=2,
             )
+            report("anchors", round=2)
             grid, final_misses = anchor_check(samples, draft, body)
             if grid is None:
                 raise DocumentError(final_misses[0])
@@ -452,6 +494,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         and any(c["op"] in ("putSection", "setCopies") for c in body["changes"])
     ):
         # One pass, no feedback round: a runaway anchor must not reach the Sections tab.
+        report("anchors")
         segment_with_timeout(
             [(s.sample_id, s.pages) for s in samples], _segment_document(draft, body)
         )
