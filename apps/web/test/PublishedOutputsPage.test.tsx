@@ -155,6 +155,52 @@ describe('PublishedOutputsPage', () => {
     );
   });
 
+  it('clears the typed keys and the old test result after saving', async () => {
+    page([external()], {
+      updatePublishTarget: vi.fn(async () => external()),
+      testPublishTarget: vi.fn(async () => ({ ok: true, step: null, message: 'fine' })),
+    });
+    const r = await open('Finance lake');
+    await userEvent.click(within(r).getByRole('button', { name: 'Test connection' }));
+    expect(await within(r).findByRole('status')).toBeInTheDocument();
+    await userEvent.click(within(r).getByRole('button', { name: 'Set secret' }));
+    await userEvent.type(within(r).getByLabelText('New access key id'), 'AKIA2');
+    await userEvent.type(within(r).getByLabelText('New secret access key'), 'shh');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(within(r).queryByLabelText('New secret access key')).toBeNull());
+    expect(within(r).queryByRole('status')).toBeNull();
+    expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
+    await userEvent.click(within(r).getByRole('button', { name: 'Set secret' }));
+    expect(within(r).getByLabelText('New secret access key')).toHaveValue('');
+  });
+
+  it('says what holds a target, naming only the non-zero parts', async () => {
+    page([
+      target({
+        usage: {
+          publishedVersions: 2,
+          documentTypes: ['invoice', 'po'],
+          deliveredOutputs: 14,
+          consumers: 1,
+        },
+      }),
+      external({ usage: { ...NO_USE, deliveredOutputs: 3 } }),
+    ]);
+    expect(await row('Default')).toHaveTextContent(
+      'used by 2 document types · 14 delivered outputs · 1 S3 key consumer',
+    );
+    const fin = await row('Finance lake');
+    expect(fin).toHaveTextContent('used by 3 delivered outputs');
+    expect(fin).not.toHaveTextContent('document types');
+  });
+
+  it('shows why Remove is disabled', async () => {
+    page([external({ usage: { ...NO_USE, consumers: 1 } })]);
+    const r = await open('Finance lake');
+    expect(within(r).getByRole('button', { name: 'Remove' })).toBeDisabled();
+    expect(r).toHaveTextContent('In use: a recipe version, output or key names it');
+  });
+
   it('shows the failing step of a connection test', async () => {
     const api = page([external()], {
       testPublishTarget: vi.fn(async () => ({

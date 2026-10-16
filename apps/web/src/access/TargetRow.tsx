@@ -10,7 +10,19 @@ import {
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 
-const plural = (n: number) => `${n} document type${n === 1 ? '' : 's'}`;
+const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+/** What uses a target: only the non-zero parts, else the (zero) document types. */
+function usedBy(u: PublishTargetView['usage']): string {
+  const parts = [
+    u.documentTypes.length > 0 && count(u.documentTypes.length, 'document type'),
+    u.deliveredOutputs > 0 && count(u.deliveredOutputs, 'delivered output'),
+    u.consumers > 0 && count(u.consumers, 'S3 key consumer'),
+  ].filter(Boolean);
+  return `used by ${parts.length > 0 ? parts.join(' · ') : count(0, 'document type')}`;
+}
+
+const REMOVE_BLOCKED = 'In use: a recipe version, output or key names it';
 
 function whereFrom(t: PublishTargetView): string {
   if (t.source === 'env') return t.updatedBy ? `edited by ${t.updatedBy}` : 'from .env';
@@ -55,7 +67,7 @@ export function TargetRow({
   const bodyId = useId();
   const external = t.kind === 'external';
   const locked = targetInUse(t.usage);
-  const usedByText = `used by ${plural(t.usage.documentTypes.length)}`;
+  const usedByText = usedBy(t.usage);
 
   /** Only what differs from the stored target (keys always as a pair). */
   const changes = (): TargetPatchBody => {
@@ -93,8 +105,10 @@ export function TargetRow({
     try {
       await action();
       if (reload) await onChanged();
+      return true;
     } catch (err) {
       setError((err as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -133,7 +147,13 @@ export function TargetRow({
           className="endpoint-body dialog-form"
           onSubmit={(ev) => {
             ev.preventDefault();
-            if (dirty && !keysIncomplete) void act(() => api.updatePublishTarget(t.id, patch));
+            if (dirty && !keysIncomplete) {
+              void act(() => api.updatePublishTarget(t.id, patch)).then((ok) => {
+                if (!ok) return;
+                setKeys(null);
+                setResult(null);
+              });
+            }
           }}
         >
           <label>
@@ -268,13 +288,14 @@ export function TargetRow({
                 type="button"
                 className="danger"
                 disabled={locked}
-                title={locked ? 'In use: a recipe version, output or key names it' : undefined}
+                title={locked ? REMOVE_BLOCKED : undefined}
                 onClick={() => setConfirmRemove(true)}
               >
                 <Icon name="trash" />
                 Remove
               </button>
             )}
+            {t.id !== 'default' && locked && <small className="muted">{REMOVE_BLOCKED}</small>}
           </div>
           {confirmRemove && (
             <p className="confirm-text">
