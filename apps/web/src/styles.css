@@ -553,6 +553,33 @@ html {
   padding: 0 5px;
   font-size: var(--ih-text-xs);
 }
+/* Too narrow for the collapsed nav beside the page (it sits there from 720px): a row of icons above
+   the page instead of a 68px column with an empty area beside it (#111). */
+@media (max-width: 719.98px) {
+  /* Rows take their own height: spare height goes below the page, not into the nav's row. */
+  .app-body {
+    align-content: flex-start;
+  }
+  .side-nav.compact {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ih-border);
+  }
+  .side-nav.compact a {
+    width: var(--ih-touch);
+  }
+  .side-nav.compact .nav-toggle {
+    margin-bottom: 0;
+  }
+  .side-nav.compact a.nav-foot {
+    margin-top: 0;
+    margin-left: auto;
+  }
+}
 .page {
   flex: 999 1 640px;
   min-width: 0;
