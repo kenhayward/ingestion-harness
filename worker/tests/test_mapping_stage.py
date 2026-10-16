@@ -388,6 +388,19 @@ def test_observed_values_of_samples_not_sent_are_dropped(fixture_specs_dir: Path
     assert "2025-03-31" not in request.prompt  # seen only in held.pdf, which is not a dev sample
 
 
+def test_a_mapping_request_too_long_for_the_loaded_context_needs_review(
+    fixture_specs_dir: Path,
+) -> None:
+    from ingest_worker.drafting import context_reason
+    from ingest_worker.llm.base import ContextExceededError
+
+    drafting, _, _, deps = make(fixture_specs_dir)
+    drafting.responses = [ContextExceededError("openai 400: Context size has been exceeded.")]
+    queue = run(deps, mapping_job())
+    assert not queue.failed and len(drafting.calls) == 1
+    assert queue.reviewed == [("job-m", context_reason(16_000))]
+
+
 def test_a_local_only_ontology_refuses_an_external_drafter_before_any_call(
     fixture_specs_dir: Path,
 ) -> None:

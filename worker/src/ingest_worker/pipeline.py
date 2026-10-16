@@ -16,7 +16,12 @@ from jsonschema import Draft202012Validator
 from .checks import run_check
 from .convert import ConversionRejected, DocumentConverter, is_docx
 from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
-from .llm.base import LLMProvider, RefusalError
+from .llm.base import (
+    ContextExceededError,
+    LLMProvider,
+    RefusalError,
+    context_exceeded_reason,
+)
 from .llm.registry import ModelRegistry, ModelResolutionError
 from .ocr import (
     OcrPage,
@@ -481,6 +486,17 @@ def ocr_pages(
             page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
+        except ContextExceededError as exc:  # a retry would repeat it
+            raise DocumentError(
+                context_exceeded_reason(
+                    f"OCR page {index + 1}",
+                    model_ref,
+                    "raise the model's context length on its server (e.g. LM Studio) or lower "
+                    "the OCR output budget (ocr.maxTokens in config/llm-providers.yaml, now "
+                    f"{settings.max_tokens})",
+                    exc,
+                )
+            ) from exc
         # Saved as each page finishes, so a later failure doesn't lose completed pages.
         raw = page.raw[-1].encode("utf-8")
         deps.store.put(deps.buckets.runs, ocr_run_key(job.id, index + 1), raw, "text/markdown")
@@ -685,6 +701,16 @@ def run_step_extraction(
             raise DocumentError(f"{exc}{where}") from exc
         except RefusalError as exc:
             raise DocumentError(f"extraction {ex.id!r}{where}: {exc}") from exc
+        except ContextExceededError as exc:  # a retry would repeat it
+            raise DocumentError(
+                context_exceeded_reason(
+                    f"extraction {ex.id!r}{where}",
+                    f"{provider.name}/{model_id}",
+                    "raise the model's context length on its server (e.g. LM Studio), lower the "
+                    f"step's maxTokens (now {ex.max_tokens}) or split it with chunkPages",
+                    exc,
+                )
+            ) from exc
         _audit(deps, job.id, audit_id, result.attempts)
         if key_column and occurrence is not None:
             for row in result.data["rows"]:
