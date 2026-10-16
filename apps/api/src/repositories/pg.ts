@@ -15,7 +15,13 @@ import type {
   OutputFormat,
   SuggestParams,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, modelRef, sourceContentType, type Creator } from '@ih/shared';
+import {
+  DEFAULT_TARGET_ID,
+  DELETABLE_STATUSES,
+  modelRef,
+  sourceContentType,
+  type Creator,
+} from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -192,6 +198,7 @@ type Withdrawn = {
   sha256: string;
   templateId: string;
   graphIri: string | null;
+  target: string;
   versions: number[];
 };
 
@@ -286,12 +293,18 @@ async function withdrawJob(client: pg.PoolClient, jobId: string): Promise<string
       sha256: r.sha256,
       templateId: r.template_id,
       graphIri: r.current_iri,
+      target: DEFAULT_TARGET_ID,
       versions: r.versions,
     });
   }
   await client.query('DELETE FROM published_graph_versions WHERE job_id = $1', [jobId]);
   if (!objects.rows.length && !graphs.length) return null;
-  return queueBackground(client, 'withdraw', { objects: objects.rows, graphs }, null);
+  return queueBackground(
+    client,
+    'withdraw',
+    { objects: objects.rows.map((o) => ({ ...o, target: DEFAULT_TARGET_ID })), graphs },
+    null,
+  );
 }
 
 export class PgRepo implements IngestionRepo {
@@ -724,6 +737,8 @@ export class PgRepo implements IngestionRepo {
         bucket: o.bucket,
         key: o.object_key,
         rowCount: o.row_count,
+        // Task 4 reads the recorded target; until then published outputs are the default's.
+        targetId: o.stage === 'published' ? 'default' : null,
       })),
     };
   }
@@ -897,11 +912,14 @@ export class PgRepo implements IngestionRepo {
         client,
         'withdraw',
         {
-          objects: [...objects.rows].sort((a, b) => a.key.localeCompare(b.key)),
+          objects: [...objects.rows]
+            .sort((a, b) => a.key.localeCompare(b.key))
+            .map((o) => ({ ...o, target: DEFAULT_TARGET_ID })),
           graphs: graphs.rows.map((g) => ({
             sha256: g.sha256,
             templateId: g.template_id,
             graphIri: g.graph_iri,
+            target: DEFAULT_TARGET_ID,
             versions: g.versions ?? [],
           })),
         },

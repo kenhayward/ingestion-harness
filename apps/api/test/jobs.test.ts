@@ -57,6 +57,7 @@ describe('jobs API', () => {
         bucket: 'outputs',
         key: 'demo/v2/lines/x.csv',
         rowCount: 1,
+        targetId: null,
       },
     ]);
     await store.put('outputs', 'demo/v2/lines/x.csv', Buffer.from('a,b\n1,2\n'), 'text/csv');
@@ -77,6 +78,7 @@ describe('jobs API', () => {
         bucket: 'outputs',
         key: 'demo/v2/graph/x.ttl',
         rowCount: 4,
+        targetId: null,
       },
     ]);
     await store.put(
@@ -102,6 +104,7 @@ describe('job output downloads by stage', () => {
       bucket: 'outputs',
       key: 'demo/v2/lines/x.csv',
       rowCount: 1,
+      targetId: null,
     },
     {
       outputId: 'lines',
@@ -110,6 +113,7 @@ describe('job output downloads by stage', () => {
       bucket: 'published',
       key: 'pub/demo/v2/lines/x.csv',
       rowCount: 1,
+      targetId: 'default',
     },
   ];
 

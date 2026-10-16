@@ -10330,11 +10330,12 @@
                                     ]
                                   },
                                   "minItems": 1
+                                },
+                                "publishTo": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                                 }
                               },
-                              "required": [
-                                "formats"
-                              ],
                               "additionalProperties": false
                             }
                           },
@@ -12250,6 +12251,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -12258,7 +12265,8 @@
                           "format",
                           "bucket",
                           "key",
-                          "rowCount"
+                          "rowCount",
+                          "targetId"
                         ],
                         "additionalProperties": true
                       }
@@ -15502,6 +15510,12 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "targetId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -15510,7 +15524,8 @@
                               "format",
                               "bucket",
                               "key",
-                              "rowCount"
+                              "rowCount",
+                              "targetId"
                             ],
                             "additionalProperties": true
                           }
@@ -16446,11 +16461,12 @@
                                 ]
                               },
                               "minItems": 1
+                            },
+                            "publishTo": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                             }
                           },
-                          "required": [
-                            "formats"
-                          ],
                           "additionalProperties": false
                         }
                       },
@@ -26259,6 +26275,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -26267,7 +26289,8 @@
                           "format",
                           "bucket",
                           "key",
-                          "rowCount"
+                          "rowCount",
+                          "targetId"
                         ],
                         "additionalProperties": true
                       }

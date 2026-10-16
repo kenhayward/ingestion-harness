@@ -15,6 +15,9 @@ from .queue import ClaimedJob, JobQueue
 from .specs import LoadedTemplate
 from .storage import graph_version_key
 
+#: Held in step with `TARGET_ID` in packages/shared/src/publish-targets.ts.
+TARGET_ID = r"^[a-z0-9][a-z0-9_-]{0,39}$"
+
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -23,6 +26,8 @@ class _Strict(BaseModel):
 class TargetObject(_Strict):
     bucket: str = Field(min_length=1)
     key: str = Field(min_length=1)
+    #: The publishing target the object was delivered to (not used for routing yet).
+    target: str = Field(pattern=TARGET_ID)
 
 
 class WithdrawnGraph(_Strict):
@@ -30,6 +35,7 @@ class WithdrawnGraph(_Strict):
     template_id: str = Field(alias="templateId", min_length=1)
     #: Set: drop the graph itself (else only the listed versions' copies go).
     graph_iri: str | None = Field(alias="graphIri", min_length=1)
+    target: str = Field(pattern=TARGET_ID)
     versions: list[PositiveInt]
 
 

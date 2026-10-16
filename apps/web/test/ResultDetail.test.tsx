@@ -128,6 +128,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/lines.csv',
           rowCount: 501,
+          targetId: 'default',
         },
         {
           outputId: 'all',
@@ -136,6 +137,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/all.json',
           rowCount: null,
+          targetId: 'default',
         },
         {
           outputId: 'gone',
@@ -144,6 +146,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/gone.csv',
           rowCount: 1,
+          targetId: 'default',
         },
       ],
     });
@@ -242,6 +245,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/lines.csv',
           rowCount: 1,
+          targetId: 'default',
         },
       ],
     });

@@ -24,6 +24,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         bucket: 'ingest-published',
         key: 'pvp/x/document/d.json',
         rowCount: null,
+        targetId: 'default',
       },
       {
         outputId: 'results',
@@ -32,6 +33,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         bucket: 'ingest-published',
         key: 'pvp/x/results/d.csv',
         rowCount: 2,
+        targetId: 'default',
       },
     ],
     document: {

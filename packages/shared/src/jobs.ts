@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TargetIdSchema } from './publish-targets.js';
 
 /** Mirrors the `job_status` enum in db/migrations and worker/src/ingest_worker/queue.py. */
 /**
@@ -155,13 +156,18 @@ export const GraphPublishedSchema = z.object({
  */
 export const WithdrawParamsSchema = z
   .object({
-    objects: z.array(z.object({ bucket: z.string().min(1), key: z.string().min(1) }).strict()),
+    objects: z.array(
+      z
+        .object({ bucket: z.string().min(1), key: z.string().min(1), target: TargetIdSchema })
+        .strict(),
+    ),
     graphs: z.array(
       z
         .object({
           sha256: z.string().min(1),
           templateId: z.string().min(1),
           graphIri: z.string().min(1).nullable(),
+          target: TargetIdSchema,
           versions: z.array(z.number().int().positive()),
         })
         .strict(),
@@ -284,6 +290,8 @@ export const JobOutputSchema = z.object({
   bucket: z.string(),
   key: z.string(),
   rowCount: z.number().int().nullable(),
+  /** The publishing target a published output went to (null for drafts). */
+  targetId: z.string().nullable(),
 });
 export type JobOutput = z.infer<typeof JobOutputSchema>;
 

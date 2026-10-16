@@ -105,8 +105,10 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
       priority: 0,
       max_attempts: 100,
       params: {
-        objects: [{ bucket: 'pub', key: `${type}/${first.id}.csv` }],
-        graphs: [{ sha256: sha, templateId: type, graphIri: null, versions: [1] }],
+        objects: [{ bucket: 'pub', key: `${type}/${first.id}.csv`, target: 'default' }],
+        graphs: [
+          { sha256: sha, templateId: type, graphIri: null, target: 'default', versions: [1] },
+        ],
       },
     });
     expect(
@@ -116,8 +118,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     const newest = await repo.deleteJob(second.id);
     const dropped = newest.result === 'deleted' ? newest.removed.withdrawJobId : null;
     expect((await params(dropped))!.params).toEqual({
-      objects: [{ bucket: 'pub', key: `${type}/${second.id}.csv` }],
-      graphs: [{ sha256: sha, templateId: type, graphIri: iri, versions: [2] }],
+      objects: [{ bucket: 'pub', key: `${type}/${second.id}.csv`, target: 'default' }],
+      graphs: [{ sha256: sha, templateId: type, graphIri: iri, target: 'default', versions: [2] }],
     });
     for (const table of [
       'published_graphs',
@@ -145,8 +147,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
 
     const withdrawId = await repo.withdrawType(type, 'admin');
     expect((await params(withdrawId))!.params).toEqual({
-      objects: [{ bucket: 'pub', key: `${type}/${job.id}.csv` }],
-      graphs: [{ sha256: sha, templateId: type, graphIri: iri, versions: [1] }],
+      objects: [{ bucket: 'pub', key: `${type}/${job.id}.csv`, target: 'default' }],
+      graphs: [{ sha256: sha, templateId: type, graphIri: iri, target: 'default', versions: [1] }],
     });
     expect((await repo.getJob(job.id))!.outputs.map((o) => o.stage)).toEqual(['draft']);
     expect(await repo.getPublishedAt(job.id)).toBeNull();

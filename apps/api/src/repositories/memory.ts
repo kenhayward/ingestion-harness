@@ -13,7 +13,13 @@ import type {
   StepRun,
   SuggestParams,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, isMine, sourceContentType, type Creator } from '@ih/shared';
+import {
+  DEFAULT_TARGET_ID,
+  DELETABLE_STATUSES,
+  isMine,
+  sourceContentType,
+  type Creator,
+} from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -542,13 +548,15 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async withdrawType(typeId: string, by: string | null): Promise<string | null> {
-    const objects: { bucket: string; key: string }[] = [];
+    const objects: { bucket: string; key: string; target: string }[] = [];
     for (const job of this.jobs.values()) {
       if (job.specId !== typeId) continue;
       const outputs = this.outputs.get(job.id) ?? [];
       const delivered = outputs.filter((o) => o.stage === 'published');
       if (!delivered.length) continue;
-      objects.push(...delivered.map((o) => ({ bucket: o.bucket, key: o.key })));
+      objects.push(
+        ...delivered.map((o) => ({ bucket: o.bucket, key: o.key, target: DEFAULT_TARGET_ID })),
+      );
       this.withdrawnOutputs.set(job.id, [
         ...(this.withdrawnOutputs.get(job.id) ?? []),
         ...delivered,
@@ -566,7 +574,13 @@ export class MemoryRepo implements IngestionRepo {
           .filter((v) => v.sha256 === g.sha256 && v.templateId === g.templateId)
           .map((v) => v.version)
           .sort((a, b) => a - b);
-        return { sha256: g.sha256, templateId: g.templateId, graphIri: g.graphIri, versions };
+        return {
+          sha256: g.sha256,
+          templateId: g.templateId,
+          graphIri: g.graphIri,
+          target: DEFAULT_TARGET_ID,
+          versions,
+        };
       });
     if (!objects.length && !graphs.length) return null;
     return this.queueBackground('withdraw', { objects, graphs }, by);
@@ -597,11 +611,12 @@ export class MemoryRepo implements IngestionRepo {
       .map((o) => ({ bucket: o.bucket, key: o.key }));
     const objects = (this.outputs.get(id) ?? [])
       .filter((o) => o.stage === 'published')
-      .map((o) => ({ bucket: o.bucket, key: o.key }));
+      .map((o) => ({ bucket: o.bucket, key: o.key, target: DEFAULT_TARGET_ID }));
     const graphs: {
       sha256: string;
       templateId: string;
       graphIri: string | null;
+      target: string;
       versions: number[];
     }[] = [];
     for (const v of this.graphVersions.filter((g) => g.jobId === id)) {
@@ -615,6 +630,7 @@ export class MemoryRepo implements IngestionRepo {
           sha256: v.sha256,
           templateId: v.templateId,
           graphIri: drop ? current!.graphIri : null,
+          target: DEFAULT_TARGET_ID,
           versions: [],
         };
         graphs.push(entry);

@@ -25,6 +25,7 @@ const out = (
   bucket: stage === 'published' ? 'published' : 'outputs',
   key: `${stage === 'published' ? 'pub/' : ''}tdemo/v1/${outputId}/doc.${outputId === 'document' ? 'json' : 'csv'}`,
   rowCount,
+  targetId: stage === 'published' ? 'default' : null,
 });
 
 /** Mark a job published at `at` with the given outputs. */
@@ -353,6 +354,7 @@ describe('GET /api/results/:jobId/archive', () => {
         bucket: 'published',
         key: 'pub/tdemo/v1/graph/doc.ttl',
         rowCount: 1,
+        targetId: 'default',
       },
     ]);
     await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });

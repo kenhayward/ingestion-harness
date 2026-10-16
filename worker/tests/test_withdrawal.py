@@ -98,8 +98,18 @@ def store_of(deps: PipelineDeps) -> FakeGraphStore:
 
 
 WITHDRAW = {
-    "objects": [{"bucket": "published", "key": "pvp/letter/v1/fields/doc.csv"}],
-    "graphs": [{"sha256": SHA, "templateId": "letter", "graphIri": GRAPH, "versions": [1, 2]}],
+    "objects": [
+        {"bucket": "published", "key": "pvp/letter/v1/fields/doc.csv", "target": "default"}
+    ],
+    "graphs": [
+        {
+            "sha256": SHA,
+            "templateId": "letter",
+            "graphIri": GRAPH,
+            "target": "default",
+            "versions": [1, 2],
+        }
+    ],
 }
 
 

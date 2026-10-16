@@ -1,15 +1,22 @@
 {
   "valid": [
     {
-      "objects": [{ "bucket": "ingest-published", "key": "letter/v2/fields/doc-1.csv" }],
+      "objects": [{ "bucket": "ingest-published", "key": "letter/v2/fields/doc-1.csv", "target": "default" }],
       "graphs": [
         {
           "sha256": "ab12",
           "templateId": "letter",
           "graphIri": "https://data.acme.example/graph/source/ab12/letter",
+          "target": "default",
           "versions": [1, 2]
         },
-        { "sha256": "ab12", "templateId": "memo", "graphIri": null, "versions": [3] }
+        {
+          "sha256": "ab12",
+          "templateId": "memo",
+          "graphIri": null,
+          "target": "finance-lake",
+          "versions": [3]
+        }
       ]
     },
     { "objects": [], "graphs": [] }
@@ -18,9 +25,15 @@
     { "objects": [] },
     { "objects": [], "graphs": [], "extra": true },
     { "objects": [{ "bucket": "b" }], "graphs": [] },
+    { "objects": [{ "bucket": "b", "key": "k" }], "graphs": [] },
+    { "objects": [{ "bucket": "b", "key": "k", "target": "Bad Id" }], "graphs": [] },
     {
       "objects": [],
-      "graphs": [{ "sha256": "ab", "templateId": "t", "graphIri": null, "versions": [0] }]
+      "graphs": [{ "sha256": "ab", "templateId": "t", "graphIri": null, "versions": [1] }]
+    },
+    {
+      "objects": [],
+      "graphs": [{ "sha256": "ab", "templateId": "t", "graphIri": null, "target": "default", "versions": [0] }]
     }
   ],
   "republish": { "valid": [{ "templateId": "letter" }], "invalid": [{}, { "templateId": "" }] }
