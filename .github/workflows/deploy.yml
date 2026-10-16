@@ -60,7 +60,19 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
+      # Every merge's CI now runs to the end (ci.yml), so runs can finish out of order: an automatic
+      # deploy of a commit main has moved past would put older code on staging.
+      - name: Skip a superseded commit
+        id: current
+        if: github.event_name == 'workflow_run'
+        run: |
+          git fetch -q origin main
+          if [[ "$(git rev-parse origin/main)" != "${{ github.event.workflow_run.head_sha }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "### Skipped: main has moved past $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Deploy
+        if: steps.current.outputs.skip != 'true'
         run: |
           args=()
           if [[ "${{ inputs.no_build }}" == "true" ]]; then args+=(--no-build); fi

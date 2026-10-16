@@ -129,10 +129,13 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   `tag` job tags every merge to `main` whose checks pass `YYYY.MM.DD.N` (UTC date, `N` from 1 each
   day; `deploy/scripts/version.mjs tag`, retrying on a taken number; `main` runs never share a
   concurrency group). The deploy scripts run `version.mjs resolve` (Node 24): the commit's tag,
-  else `<nearest tag>+<hash>` or `dev+<hash>`, `+dirty`/`.dirty` for uncommitted changes; an
-  untagged commit on `origin/main` waits up to 15 minutes for CI's tag (`-Untagged`/`--untagged`
-  skips). `APP_VERSION`, `APP_VERSION_PREVIOUS`, `APP_COMMIT` are build args of the `api`,
-  `worker` and `app` images; `IMAGE_TAG` is the version when tagged and clean, else the hash.
+  else `<nearest tag>+<hash>` (look-alike tags skipped) or `dev+<hash>`, `+dirty`/`.dirty` for
+  uncommitted changes; an untagged commit on `origin/main`'s first-parent line that no calendar tag
+  contains yet waits up to 15 minutes for CI's tag, unless the fetch failed (`shouldWait`;
+  `-Untagged`/`--untagged` skips). `APP_VERSION`, `APP_VERSION_PREVIOUS`, `APP_COMMIT` are build
+  args of the `api`, `worker` and `app` images; `IMAGE_TAG` is the version when tagged and clean,
+  else the hash, and a `--no-build` rollback without one uses `version.mjs image-tag`. `deploy.yml`
+  skips an automatic deploy of a commit `main` has moved past (CI runs can finish out of order).
   `VersionInfo`, `versionLink`, `REPO_URL` in `packages/shared/src/build-version.ts`;
   `GET /api/version` (public); `NavVersion` at the bottom of the nav links to GitHub's comparison
   with the previous tag; the worker logs `ingest-worker <version>` at start. No GitHub Releases yet.

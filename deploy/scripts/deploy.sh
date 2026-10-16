@@ -37,6 +37,10 @@ if [[ $BUILD -eq 1 ]]; then
   VERSION="$APP_VERSION"
   export IMAGE_TAG="${IMAGE_TAG:-$RESOLVED_IMAGE_TAG}"
 fi
+# --no-build reuses the images a clean build of HEAD made: tagged with its calendar tag, else the hash.
+if [[ -z "${IMAGE_TAG:-}" ]] && command -v node >/dev/null; then
+  IMAGE_TAG="$(cd "$REPO_ROOT" && node deploy/scripts/version.mjs image-tag)"
+fi
 export IMAGE_TAG="${IMAGE_TAG:-$(git -C "$REPO_ROOT" rev-parse --short HEAD)}"
 VERSION="${VERSION:-$IMAGE_TAG}"
 

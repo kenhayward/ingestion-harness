@@ -12,8 +12,14 @@ export function resolveVersion(input: {
 export function shouldWait(input: {
   headTag: string | null;
   onMain: boolean;
+  taggedLater: boolean;
+  fetched: boolean;
   untagged: boolean;
 }): boolean;
+export function nearestCalendarTag(rev: string, cwd?: string): string | null;
+export function onFirstParent(rev: string, branch: string, cwd?: string): boolean;
+export function containedByCalendarTag(rev: string, cwd?: string): boolean;
+export function noBuildImageTag(cwd?: string): string;
 export function waitForTag(opts: {
   check: () => Promise<string | null>;
   sleep: (ms: number) => Promise<void>;

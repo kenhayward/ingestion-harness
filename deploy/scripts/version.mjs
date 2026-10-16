@@ -6,6 +6,8 @@
 //   node deploy/scripts/version.mjs tag                 CI: tag HEAD with the next calendar tag
 //   node deploy/scripts/version.mjs resolve [--untagged] deploy: print APP_VERSION, APP_VERSION_PREVIOUS,
 //                                                      APP_COMMIT and IMAGE_TAG lines
+//   node deploy/scripts/version.mjs image-tag           rollback (--no-build): the image tag a clean
+//                                                      build of HEAD was given
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -58,9 +60,13 @@ export function resolveVersion({ headTag, nearestTag, previousTag, commit, dirty
   };
 }
 
-/** Wait for CI's tag only for an untagged commit on main, unless the deploy says not to. */
-export function shouldWait({ headTag, onMain, untagged }) {
-  return !headTag && onMain && !untagged;
+/**
+ * Wait for CI's tag only for an untagged commit on main's first-parent line (the commits CI tags)
+ * that no tag contains yet (else CI passed something newer and will never tag it), and only when
+ * the fetch worked (offline, no tag can arrive), unless the deploy says not to.
+ */
+export function shouldWait({ headTag, onMain, taggedLater, fetched, untagged }) {
+  return !headTag && onMain && !taggedLater && fetched && !untagged;
 }
 
 /** Checks every `intervalMs` until `check` finds a tag; null after `timeoutMs`. */
@@ -74,76 +80,117 @@ export async function waitForTag({ check, sleep, now, intervalMs = 30_000, timeo
   }
 }
 
-// ---- git -------------------------------------------------------------------------------------
+// ---- git (every lookup takes the repository's directory, for the tests) ----------------------
 
-function git(...args) {
-  return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+function git(cwd, ...args) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
 }
 
-function tryGit(...args) {
+function tryGit(cwd, ...args) {
   try {
-    return git(...args);
+    return git(cwd, ...args);
   } catch {
     return null;
   }
 }
 
-function calendarTagsAt(rev) {
-  return (tryGit('tag', '--points-at', rev) ?? '')
-    .split('\n')
-    .filter(isCalendarTag)
-    .sort(compareCalendarTags);
+const lines = (text) => (text ?? '').split('\n').filter(Boolean);
+
+function headTag(cwd) {
+  return (
+    lines(tryGit(cwd, 'tag', '--points-at', 'HEAD'))
+      .filter(isCalendarTag)
+      .sort(compareCalendarTags)
+      .at(-1) ?? null
+  );
 }
 
-function headTag() {
-  return calendarTagsAt('HEAD').at(-1) ?? null;
+/** The nearest calendar tag in `rev`'s history, skipping look-alikes such as `2026.10.17.x`. */
+export function nearestCalendarTag(rev, cwd = process.cwd()) {
+  const excluded = [];
+  for (let i = 0; i < 20; i++) {
+    const exclude = excluded.flatMap((t) => ['--exclude', t]);
+    const found = tryGit(
+      cwd,
+      'describe',
+      '--tags',
+      '--abbrev=0',
+      '--match',
+      DESCRIBE_MATCH,
+      ...exclude,
+      rev,
+    );
+    if (!found || isCalendarTag(found)) return found;
+    excluded.push(found);
+  }
+  return null;
 }
 
-function nearestTag(rev) {
-  const tag = tryGit('describe', '--tags', '--abbrev=0', '--match', DESCRIBE_MATCH, rev);
-  return tag && isCalendarTag(tag) ? tag : null;
+/** Whether `rev` is on `branch`'s first-parent line: the merges CI tags, not a PR's own commits. */
+export function onFirstParent(rev, branch, cwd = process.cwd()) {
+  const sha = tryGit(cwd, 'rev-parse', '--verify', `${rev}^{commit}`);
+  return sha !== null && lines(tryGit(cwd, 'rev-list', '--first-parent', branch)).includes(sha);
+}
+
+/** Whether a calendar tag already contains `rev` (on it or on a later commit). */
+export function containedByCalendarTag(rev, cwd = process.cwd()) {
+  return lines(tryGit(cwd, 'tag', '--contains', rev, '--list', DESCRIBE_MATCH)).some(isCalendarTag);
+}
+
+/** A rollback's image tag: what a clean build of HEAD was tagged (its calendar tag, else the hash). */
+export function noBuildImageTag(cwd = process.cwd()) {
+  return headTag(cwd) ?? git(cwd, 'rev-parse', '--short', 'HEAD');
 }
 
 function warn(message) {
   process.stderr.write(`${message}\n`);
 }
 
-function tag() {
-  git('fetch', '--tags', 'origin');
-  const existing = headTag();
+function tag(cwd) {
+  git(cwd, 'fetch', '--tags', 'origin');
+  const existing = headTag(cwd);
   if (existing) {
     console.log(existing);
     return;
   }
   for (let attempt = 1; attempt <= 5; attempt++) {
-    const next = nextCalendarTag(new Date(), git('tag', '--list').split('\n'));
-    git('tag', next, 'HEAD');
+    const next = nextCalendarTag(new Date(), lines(git(cwd, 'tag', '--list')));
+    git(cwd, 'tag', next, 'HEAD');
     try {
-      git('push', 'origin', `refs/tags/${next}`);
+      git(cwd, 'push', 'origin', `refs/tags/${next}`);
       console.log(next);
       return;
     } catch (err) {
       warn(`push of ${next} refused (attempt ${attempt}): ${err.message.split('\n')[0]}`);
-      tryGit('tag', '-d', next);
-      git('fetch', '--tags', 'origin');
+      tryGit(cwd, 'tag', '-d', next);
+      git(cwd, 'fetch', '--tags', 'origin');
     }
   }
   throw new Error('could not push a calendar tag after 5 attempts');
 }
 
-async function resolve(untagged) {
-  if (tryGit('fetch', '--tags', 'origin', 'main') === null) {
-    warn('warning: git fetch failed; the version comes from the tags already here');
-  }
-  const commit = git('rev-parse', '--short', 'HEAD');
-  let head = headTag();
-  const onMain = tryGit('merge-base', '--is-ancestor', 'HEAD', 'origin/main') !== null;
-  if (shouldWait({ headTag: head, onMain, untagged })) {
+async function resolve(untagged, cwd) {
+  const fetched = tryGit(cwd, 'fetch', '--tags', 'origin', 'main') !== null;
+  if (!fetched) warn('warning: git fetch failed; the version comes from the tags already here');
+  const commit = git(cwd, 'rev-parse', '--short', 'HEAD');
+  let head = headTag(cwd);
+  const wait = shouldWait({
+    headTag: head,
+    onMain: onFirstParent('HEAD', 'origin/main', cwd),
+    taggedLater: containedByCalendarTag('HEAD', cwd),
+    fetched,
+    untagged,
+  });
+  if (wait) {
     warn(`waiting for CI to tag ${commit} (checking every 30 s for up to 15 minutes)…`);
     head = await waitForTag({
       check: async () => {
-        tryGit('fetch', '--tags', 'origin');
-        return headTag();
+        tryGit(cwd, 'fetch', '--tags', 'origin');
+        return headTag(cwd);
       },
       sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
       now: Date.now,
@@ -155,10 +202,10 @@ async function resolve(untagged) {
   }
   const v = resolveVersion({
     headTag: head,
-    nearestTag: head ?? nearestTag('HEAD'),
-    previousTag: head ? nearestTag('HEAD^') : nearestTag('HEAD'),
+    nearestTag: head ?? nearestCalendarTag('HEAD', cwd),
+    previousTag: head ? nearestCalendarTag('HEAD^', cwd) : nearestCalendarTag('HEAD', cwd),
     commit,
-    dirty: (tryGit('status', '--porcelain', '--untracked-files=no') ?? '') !== '',
+    dirty: (tryGit(cwd, 'status', '--porcelain', '--untracked-files=no') ?? '') !== '',
   });
   console.log(`APP_VERSION=${v.version}`);
   console.log(`APP_VERSION_PREVIOUS=${v.previous}`);
@@ -168,10 +215,12 @@ async function resolve(untagged) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [cmd, ...rest] = process.argv.slice(2);
-  if (cmd === 'tag') tag();
-  else if (cmd === 'resolve') await resolve(rest.includes('--untagged'));
+  const cwd = process.cwd();
+  if (cmd === 'tag') tag(cwd);
+  else if (cmd === 'resolve') await resolve(rest.includes('--untagged'), cwd);
+  else if (cmd === 'image-tag') console.log(noBuildImageTag(cwd));
   else {
-    warn('usage: version.mjs tag | resolve [--untagged]');
+    warn('usage: version.mjs tag | resolve [--untagged] | image-tag');
     process.exit(2);
   }
 }

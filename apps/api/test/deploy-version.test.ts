@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  containedByCalendarTag,
   isCalendarTag,
+  nearestCalendarTag,
+  noBuildImageTag,
+  onFirstParent,
   nextCalendarTag,
   resolveVersion,
   shouldWait,
@@ -96,12 +104,19 @@ describe('resolveVersion', () => {
 });
 
 describe('shouldWait', () => {
+  const waits = { headTag: null, onMain: true, taggedLater: false, fetched: true, untagged: false };
   it.each([
-    [{ headTag: null, onMain: true, untagged: false }, true],
-    [{ headTag: null, onMain: true, untagged: true }, false],
-    [{ headTag: null, onMain: false, untagged: false }, false],
-    [{ headTag: '2026.10.17.3', onMain: true, untagged: false }, false],
-  ])('%j → %s', (input, expected) => {
+    ['an untagged commit on main', waits, true],
+    ['when told not to', { ...waits, untagged: true }, false],
+    ['a commit off main (a branch, a local commit)', { ...waits, onMain: false }, false],
+    ['a tagged commit', { ...waits, headTag: '2026.10.17.3' }, false],
+    [
+      'a commit a later tag already contains (it will never be tagged)',
+      { ...waits, taggedLater: true },
+      false,
+    ],
+    ['offline: the fetch failed, so no tag can arrive', { ...waits, fetched: false }, false],
+  ])('%s', (_name, input, expected) => {
     expect(shouldWait(input)).toBe(expected);
   });
 });
@@ -133,5 +148,53 @@ describe('waitForTag', () => {
     expect(await waitForTag({ check: async () => null, ...c })).toBeNull();
     expect(c.now()).toBeGreaterThanOrEqual(900_000);
     expect(c.sleeps.length).toBeLessThanOrEqual(31);
+  });
+});
+
+describe('git lookups', () => {
+  let dir: string;
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+      cwd: dir,
+      encoding: 'utf8',
+    }).trim();
+  const commit = (m: string) => git('commit', '-q', '--allow-empty', '-m', m);
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ih-ver-'));
+    git('init', '-q', '-b', 'main');
+    commit('one');
+    git('tag', '2026.10.16.1');
+    commit('two');
+    git('tag', '2026.10.17.x'); // looks like a calendar tag, is not one
+    commit('three');
+    git('switch', '-q', '-c', 'feature');
+    commit('feature work');
+    git('switch', '-q', 'main');
+    git('merge', '-q', '--no-ff', '-m', 'merge feature', 'feature');
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('finds the nearest real calendar tag past a look-alike', () => {
+    expect(nearestCalendarTag('HEAD', dir)).toBe('2026.10.16.1');
+  });
+
+  it('knows a merged PR commit is not on main itself', () => {
+    expect(onFirstParent('main', 'main', dir)).toBe(true);
+    expect(onFirstParent('main^1', 'main', dir)).toBe(true);
+    expect(onFirstParent('feature', 'main', dir)).toBe(false);
+  });
+
+  it('knows when a later tag already contains a commit', () => {
+    expect(containedByCalendarTag('main^1', dir)).toBe(false);
+    git('tag', '2026.10.17.2', 'main');
+    expect(containedByCalendarTag('main^1', dir)).toBe(true);
+    expect(containedByCalendarTag('feature', dir)).toBe(true);
+  });
+
+  it('rolls back to the image a tagged build was given', () => {
+    expect(noBuildImageTag(dir)).toBe('2026.10.17.2');
+    git('tag', '-d', '2026.10.17.2');
+    expect(noBuildImageTag(dir)).toBe(git('rev-parse', '--short', 'HEAD'));
   });
 });

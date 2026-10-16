@@ -40,16 +40,22 @@ Before building, the deploy scripts fetch tags and run `node deploy/scripts/vers
 | has none; an earlier commit does | `2026.10.17.2+abc1234` | short hash |
 | no tag in its history | `dev+abc1234` | short hash |
 
-A commit on `origin/main` that CI has not tagged yet (CI takes 6–9 minutes) makes the script wait,
-checking every 30 seconds for up to 15 minutes, then stop with an error; `--untagged` builds it
-straight away as `<previous tag>+<hash>`. A branch or local commit never waits. If `git fetch`
-fails the script warns and uses the tags it already has.
+A merge on `main` (its first-parent line, the commits CI tags) that CI has not tagged yet (CI
+takes 6–9 minutes) makes the script wait, checking every 30 seconds for up to 15 minutes, then
+stop with an error; `--untagged` builds it straight away as `<previous tag>+<hash>`. Nothing else
+waits: a branch or local commit, a PR's own commits, an older commit a later tag already contains
+(CI passed something newer, so it will never be tagged), or any commit when `git fetch` fails (the
+script warns and uses the tags it already has). A merge whose CI failed is never tagged: deploy it
+with `--untagged`.
 
 The version is baked into the `api`, `worker` and `app` images (build args `APP_VERSION`,
 `APP_VERSION_PREVIOUS`, `APP_COMMIT`), shown at the bottom of the app's nav (linking to the
 changes since the previous tag on GitHub), served by `GET /api/version` and logged by the worker
 at start. The scripts print it at the start and end of a deploy. With `--no-build` nothing is
-worked out: the images already carry their version.
+worked out: the images already carry their version, and without `IMAGE_TAG` the script reuses the
+images a clean build of HEAD made (its calendar tag, else the hash; `version.mjs image-tag`).
+Automatic staging deploys (`deploy.yml` after CI) skip a commit `main` has already moved past, so
+CI runs finishing out of order never put older code on staging.
 
 In CI/CD, `.github/workflows/deploy.yml` runs this on the deploy host's self-hosted runner.
 

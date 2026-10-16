@@ -40,6 +40,11 @@ if (-not $NoBuild) {
   $Version = $values['APP_VERSION']
   if (-not $ImageTag) { $ImageTag = $values['IMAGE_TAG'] }
 }
+# -NoBuild reuses the images a clean build of HEAD made: tagged with its calendar tag, else the hash.
+if (-not $ImageTag -and (Get-Command node -ErrorAction SilentlyContinue)) {
+  Push-Location $RepoRoot
+  try { $ImageTag = (& node deploy/scripts/version.mjs image-tag | Out-String).Trim() } finally { Pop-Location }
+}
 if (-not $ImageTag) { $ImageTag = (git -C $RepoRoot rev-parse --short HEAD).Trim() }
 if (-not $Version) { $Version = $ImageTag }
 $env:IMAGE_TAG = $ImageTag
