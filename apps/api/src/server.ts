@@ -9,6 +9,7 @@ import { PgOntologyRepo } from './ontologies/repo.js';
 import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
+import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -96,6 +97,9 @@ const app = await buildApp({
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   linkedData,
+  maintenance: new PgMaintenanceRepo(
+    new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
+  ),
   ontologyFetch: {
     hosts: config.ONTOLOGY_FETCH_ALLOW.split(',')
       .map((h) => h.trim())
