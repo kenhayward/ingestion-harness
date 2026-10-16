@@ -125,3 +125,39 @@ def test_step_cache_round_trip_with_key_column() -> None:
     changed = edited("T0 Complies", "T6 Complies", 2)
     _, provider, _ = _run([ROWS] * 3, pages=changed, store=store, cache=cache)
     assert len(provider.calls) == 3
+
+
+def test_the_prompt_leaves_out_the_key_column() -> None:
+    """Final review 3: the model is not asked for the column the worker fills."""
+    _, provider, _ = _run([ROWS] * 3)
+    prompt = provider.calls[0][1].prompt
+    assert "- timepoint" in prompt and "- batch" not in prompt
+
+
+def test_setting_a_key_column_misses_the_step_cache() -> None:
+    """Final review 2: rows cached while the model filled the column are not reused once the
+    worker fills it."""
+    store = MemoryObjectStore()
+    cache = StepCache(store, "runs")
+    template = Template.model_validate(RECIPE)
+    step = next(s for s in template.extract_steps() if s.id == "appearance")
+    ex = compile_step(template, step)
+    sections, found = _segmented()
+    provider = FakeProvider(
+        "local", responses=[{"rows": [{"batch": "guess", "timepoint": "T0", "result": "x"}]}] * 3
+    )
+    run_step_extraction(
+        JOB,
+        _deps(store, provider),
+        None,
+        ex,
+        provider,
+        "qwen",
+        sections,
+        (),
+        cache=cache,
+        repeat=RepeatPlan("appearance", found["appearance"], None),
+    )
+    result, provider, _ = _run([ROWS] * 3, store=store, cache=cache)
+    assert len(provider.calls) == 3 and not result.cached
+    assert [r["batch"] for r in result.data["rows"]] == BATCHES

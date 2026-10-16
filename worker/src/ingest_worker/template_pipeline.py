@@ -712,6 +712,9 @@ def _review_reasons(
         reasons.append(f"{len(issues) - keys} normalisation issue(s)")
     if keys:
         reasons.append(f"{keys} section key issue(s)")
+        reasons += [
+            f"section key issue: {i['message']}" for i in issues if i.get("step") == SEGMENT_STEP
+        ]
     for check_id, result in checks.items():
         unmatched = sum(1 for r in result["rows"] if r["status"] == "unmatched")
         if unmatched:

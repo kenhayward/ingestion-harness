@@ -173,3 +173,11 @@ def test_rerun_keeps_segment_issues_once(tmp_path: Path) -> None:
     doc = json.loads(deps.store.get("outputs", DOC_KEY))
     assert messages(doc).count(f"microbial: no occurrence for batch {BATCHES[2]}") == 1
     assert [r["batch"] for r in doc["tables"]["appearance_results"]] == BATCHES
+
+
+def test_review_reasons_name_the_key_issues(tmp_path: Path) -> None:
+    """Final review 4: the reviewer sees which key issue sent the job to review."""
+    pages = edited("Microbial Purity", "Microbal Purity", 3)
+    _, store, _ = run_covalidation(tmp_path, pages=pages, replies=responses(microbial=2))
+    reasons = document(store)["review_reasons"]
+    assert f"section key issue: microbial: no occurrence for batch {BATCHES[2]}" in reasons

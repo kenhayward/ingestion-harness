@@ -613,6 +613,14 @@ def run_step_extraction(
                 for suffix, s, chunk in _chunks(ex, own)
             ]
 
+    key_column = repeat.key_column if repeat is not None else None
+    prompt_context = ex.prompt_context
+    table = (prompt_context or {}).get("table")
+    if key_column and prompt_context is not None and isinstance(table, dict):
+        # The worker fills the key column: the model is not asked for it.
+        columns = [c for c in table.get("columns", []) if c.get("id") != key_column]
+        prompt_context = {**prompt_context, "table": {**table, "columns": columns}}
+
     def occurrence_context(o: Occurrence | None) -> dict[str, Any] | None:
         if o is None or repeat is None:
             return None
@@ -627,7 +635,7 @@ def run_step_extraction(
                 call_sections,
                 ex.sections,
                 chunk,
-                ex.prompt_context,
+                prompt_context,
                 occurrence=occurrence_context(occurrence),
             ),
             chunk,
@@ -654,7 +662,6 @@ def run_step_extraction(
             return ExtractionResult(hit.data, hit.model_ref, [], cached=True)
         # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
 
-    key_column = repeat.key_column if repeat is not None else None
     schema = _without_column(ex.schema_, key_column) if key_column else ex.schema_
     merged: ExtractionResult | None = None
     for audit_id, prompt, chunk, occurrence in rendered:

@@ -183,3 +183,15 @@ def test_an_optional_repeating_section_without_occurrences_is_empty() -> None:
     ]
     result = segment_occurrences(["no tables here"], sections)
     assert result.occurrences["t"] == [] and result.sections["t"] == ""
+
+
+def test_a_heading_without_a_key_does_not_pass_on_the_previous_key() -> None:
+    """Final review 1: an OCR-garbled heading must not give its tables the batch before it."""
+    sections = [
+        Section(id="batch", anchor=r"^Batch", repeat=True, key=r"^Batch\s+(\d+)$"),
+        Section(id="t", anchor=r"^Table", repeat=True, key_from="batch"),
+    ]
+    text = "Batch 1\nTable 1\nBatch I1\nTable 2\nBatch 3\nTable 3"
+    spans, _ = section_spans(text, sections)
+    assert [s.key for s in spans if s.id == "t"] == ["1", None, "3"]
+    assert [i.message for i in key_issues(sections, spans)] == ["t occurrence 2: no key"]

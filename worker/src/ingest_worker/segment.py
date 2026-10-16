@@ -80,6 +80,8 @@ def section_spans(text: str, sections: list[Section]) -> tuple[list[SectionSpan]
         source: KeySource | None = "own" if own else "inherited" if inherited else None
         if key is not None:
             latest[section.id] = key
+        else:  # a heading whose key cannot be read must not pass on the one before it
+            latest.pop(section.id, None)
         spans.append(SectionSpan(section.id, start, end, index, key, own, source))
     return spans, unmatched
 
