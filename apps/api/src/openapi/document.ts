@@ -108,6 +108,12 @@ export const TAGS = {
     customer per deployment; without their own base, IRIs live under
     \`https://id.stocks-hayward.com/<customer>/\`.
   `,
+  GitHub: md`
+    Syncing transformation recipes with a GitHub repository: this deployment's instance name
+    and default folder, a document type's repository link, and pushing a published version
+    as a YAML file with the signed-in user's own linked GitHub account. Admins set the
+    settings and links; anyone with a linked account can push.
+  `,
   Health: md`
     Liveness and readiness checks for load balancers and orchestrators. They need no session.
   `,
@@ -136,7 +142,15 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   },
   {
     name: 'Administration',
-    tags: ['Auth & sessions', 'Profile', 'Users', 'Data-lake S3 keys', 'Linked data', 'Health'],
+    tags: [
+      'Auth & sessions',
+      'Profile',
+      'Users',
+      'Data-lake S3 keys',
+      'Linked data',
+      'GitHub',
+      'Health',
+    ],
   },
 ];
 

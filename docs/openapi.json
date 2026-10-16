@@ -4042,6 +4042,1318 @@
         }
       }
     },
+    "/api/github/settings": {
+      "get": {
+        "operationId": "getGitHubSyncSettings",
+        "summary": "Get the GitHub sync settings",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "This deployment's instance name (the folder it writes under in a repository), its\ninstance id, the default repository folder, and whether the name is locked (once\nanything has been pushed).",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instanceName": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "defaultRoot": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "locked": {
+                      "type": "boolean",
+                      "description": "True once anything has been pushed: the name can no longer change."
+                    }
+                  },
+                  "required": [
+                    "instanceName",
+                    "instanceId",
+                    "defaultRoot",
+                    "locked"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateGitHubSyncSettings",
+        "summary": "Set the GitHub sync settings",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Renames this deployment's instance and sets the default repository folder. The name\nis fixed once this deployment has pushed to GitHub; the folder may always change.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instanceName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                  },
+                  "defaultRoot": {
+                    "type": "string",
+                    "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                  }
+                },
+                "required": [
+                  "instanceName",
+                  "defaultRoot"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instanceName": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "defaultRoot": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "locked": {
+                      "type": "boolean",
+                      "description": "True once anything has been pushed: the name can no longer change."
+                    }
+                  },
+                  "required": [
+                    "instanceName",
+                    "instanceId",
+                    "defaultRoot",
+                    "locked"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a value is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a value is refused."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the instance name is fixed once this deployment has pushed to GitHub`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the instance name is fixed once this deployment has pushed to GitHub`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/github": {
+      "get": {
+        "operationId": "getRecipeGitHubStatus",
+        "summary": "Get a document type's GitHub link and sync status",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "The type's repository link (null without one) and, for every version, newest first,\nwhether GitHub has it: `on`, `label` (its label or note changed since the push),\n`pr` (waiting in an open pull request) or `absent` (never pushed, a closed pull\nrequest, and every draft: drafts stay in CT Studio). `differs` is reported by Pull\nonly. When you have a linked GitHub account, open pull requests are checked and a\nmerge shows as `on`; if GitHub cannot be reached the stored state is kept.\n`canPush` and `reason` say whether you can push now and, if not, why.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link and versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "link": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "repo": {
+                              "type": "string",
+                              "description": "`owner/name`."
+                            },
+                            "branch": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 250,
+                              "description": "The branch recipes are stored on."
+                            },
+                            "root": {
+                              "type": "string",
+                              "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                            },
+                            "alwaysPr": {
+                              "type": "boolean",
+                              "description": "Push through a pull request every time."
+                            },
+                            "pushOnPublish": {
+                              "type": "boolean",
+                              "description": "Push each version when it is published."
+                            },
+                            "setBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "setAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "repo",
+                            "branch",
+                            "root",
+                            "alwaysPr",
+                            "pushOnPublish",
+                            "setBy",
+                            "setAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The repository link; null without one."
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "on",
+                              "label",
+                              "absent",
+                              "pr",
+                              "differs"
+                            ]
+                          },
+                          "commit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "commitUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "prNumber": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "prUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pushedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pushedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "state",
+                          "commit",
+                          "commitUrl",
+                          "prNumber",
+                          "prUrl",
+                          "pushedBy",
+                          "pushedAt"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Every version, newest first."
+                    },
+                    "canPush": {
+                      "type": "boolean",
+                      "description": "Whether you can push versions of this type now."
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Why you cannot push; null when you can."
+                    }
+                  },
+                  "required": [
+                    "link",
+                    "versions",
+                    "canPush",
+                    "reason"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The link and versions."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setRecipeGitHubLink",
+        "summary": "Link a document type to a GitHub repository",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Links the type to a repository, branch and folder, and sets whether every push goes\nthrough a pull request and whether publishing pushes at once. The repository must be\none your own linked GitHub account can read.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "description": "`owner/name`."
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 250,
+                    "description": "The branch recipes are stored on."
+                  },
+                  "root": {
+                    "type": "string",
+                    "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                  },
+                  "alwaysPr": {
+                    "type": "boolean",
+                    "description": "Push through a pull request every time."
+                  },
+                  "pushOnPublish": {
+                    "type": "boolean",
+                    "description": "Push each version when it is published."
+                  }
+                },
+                "required": [
+                  "repo",
+                  "branch",
+                  "root",
+                  "alwaysPr",
+                  "pushOnPublish"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The link, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "description": "`owner/name`."
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 250,
+                      "description": "The branch recipes are stored on."
+                    },
+                    "root": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "alwaysPr": {
+                      "type": "boolean",
+                      "description": "Push through a pull request every time."
+                    },
+                    "pushOnPublish": {
+                      "type": "boolean",
+                      "description": "Push each version when it is published."
+                    },
+                    "setBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "setAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "branch",
+                    "root",
+                    "alwaysPr",
+                    "pushOnPublish",
+                    "setBy",
+                    "setAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The link, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a value is refused, or `owner/name is not a repository your GitHub account can read`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a value is refused, or `owner/name is not a repository your GitHub account can read`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile first`, or GitHub is not set up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile first`, or GitHub is not set up."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeRecipeGitHubLink",
+        "summary": "Remove a document type's GitHub link",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Removes the link. Files already in the repository stay there; push records are\nkept, so linking again picks up where it left off.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Removed (or there was none)."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/versions/{version}/github/push": {
+      "post": {
+        "operationId": "pushRecipeVersionToGitHub",
+        "summary": "Push a published version to GitHub",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Writes the published version as a YAML file in the type's repository with **your**\nlinked GitHub account, as a commit or, when the branch is protected or the link says\nso, a pull request. The answer is a `pushed`, `pr`, `skipped` (nothing to push,\nwith the reason, for example no linked account or a draft) or `failed` (GitHub\nrefused, with the reason) outcome. Pushing again changes only the label and note.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "pushed"
+                          ]
+                        },
+                        "commit": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "commit",
+                        "commitUrl"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "pr"
+                          ]
+                        },
+                        "prNumber": {
+                          "type": "integer"
+                        },
+                        "prUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "prNumber",
+                        "prUrl"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "skipped"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ],
+                  "description": "What happened."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`changed on GitHub: pull first`, or another conflict to resolve.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`changed on GitHub: pull first`, or another conflict to resolve."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "liveness",
@@ -52174,6 +53486,10 @@
       "description": "The deployment's customer and the base IRI its RDF is minted under (ADR 0011). One\ncustomer per deployment; without their own base, IRIs live under\n`https://id.stocks-hayward.com/<customer>/`."
     },
     {
+      "name": "GitHub",
+      "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
+    },
+    {
       "name": "Health",
       "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
     }
@@ -52219,6 +53535,7 @@
         "Users",
         "Data-lake S3 keys",
         "Linked data",
+        "GitHub",
         "Health"
       ]
     }
