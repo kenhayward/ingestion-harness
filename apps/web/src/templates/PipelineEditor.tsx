@@ -5,13 +5,27 @@ import { ModelPicker } from '../ui/ModelPicker.js';
 import { sectionTone, TONE_COLOR } from '../ui/stageStyle.js';
 import { StepFigures } from '../workbench/StepsView.js';
 import type { StepMetric } from '../workbench/steps.js';
-import { stepListSummary } from './editor-derive.js';
+import { repeatNote, stepListSummary, type SectionLike } from './editor-derive.js';
 import { Area, intList, opt, optInt, Text } from './fields.js';
-import { CheckStep, ContextEditor } from './StepForms.js';
+import { CheckStep, ContextEditor, RepeatKeyColumn } from './StepForms.js';
 import { moveItem, removeAt, setIn, type Definition } from './model.js';
 
 const ids = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+const sectionDefsOf = (definition: Definition): SectionLike[] => {
+  const sections = (definition.document as Definition | undefined)?.sections;
+  return Array.isArray(sections)
+    ? sections.filter((s): s is SectionLike => !!s && typeof (s as SectionLike).id === 'string')
+    : [];
+};
+const tableColumnsOf = (definition: Definition): Record<string, string[]> => {
+  const tables = (definition.outputs as Definition | undefined)?.tables;
+  return Object.fromEntries(
+    (Array.isArray(tables) ? tables : [])
+      .filter((t): t is Definition => !!t && typeof (t as Definition).id === 'string')
+      .map((t) => [t.id as string, idsOf(t.columns)]),
+  );
+};
 const idsOf = (v: unknown): string[] =>
   Array.isArray(v) ? ids(v.map((x) => (x as { id?: unknown })?.id)) : [];
 
@@ -104,6 +118,8 @@ export function PipelineEditor({
           step={current}
           readOnly={readOnly}
           sections={idsOf((definition.document as Definition | undefined)?.sections)}
+          sectionDefs={sectionDefsOf(definition)}
+          tableColumns={tableColumnsOf(definition)}
           fields={idsOf((definition.outputs as Definition | undefined)?.fields)}
           tables={idsOf((definition.outputs as Definition | undefined)?.tables)}
           coverage={outputCoverage(definition)}
@@ -136,6 +152,8 @@ function StepDetail({
   step,
   readOnly,
   sections,
+  sectionDefs,
+  tableColumns,
   fields,
   tables,
   coverage,
@@ -153,6 +171,8 @@ function StepDetail({
   step: Definition;
   readOnly: boolean;
   sections: string[];
+  sectionDefs: readonly SectionLike[];
+  tableColumns: Record<string, string[]>;
   fields: string[];
   tables: string[];
   coverage: OutputCoverage;
@@ -212,6 +232,8 @@ function StepDetail({
           <ExtractDetail
             step={step}
             sections={sections}
+            sectionDefs={sectionDefs}
+            tableColumns={tableColumns}
             fields={fields}
             tables={tables}
             coverage={coverage}
@@ -235,6 +257,8 @@ function StepDetail({
 function ExtractDetail({
   step,
   sections,
+  sectionDefs,
+  tableColumns,
   fields,
   tables,
   coverage,
@@ -245,6 +269,8 @@ function ExtractDetail({
 }: {
   step: Definition;
   sections: string[];
+  sectionDefs: readonly SectionLike[];
+  tableColumns: Record<string, string[]>;
   fields: string[];
   tables: string[];
   coverage: OutputCoverage;
@@ -253,6 +279,7 @@ function ExtractDetail({
   set: (key: string, value: unknown) => void;
   replace: (step: Definition) => void;
 }) {
+  const repeat = repeatNote(step, sectionDefs);
   const isTable = typeof step.table === 'string';
   const filled = isTable ? [step.table as string] : ids(step.fields);
   const reads = ids(step.sections);
@@ -319,10 +346,11 @@ function ExtractDetail({
           <ul className="section-check-list">
             {sections.map((id, i) => (
               <li key={id}>
-                <label className="section-check">
+                <label className="section-check" title={repeat.disabled[id]}>
                   <input
                     type="checkbox"
                     checked={reads.includes(id)}
+                    disabled={repeat.disabled[id] !== undefined && !reads.includes(id)}
                     onChange={(e) =>
                       set(
                         'sections',
@@ -336,12 +364,21 @@ function ExtractDetail({
                     style={{ background: TONE_COLOR[sectionTone(i)] }}
                   />
                   <code>{id}</code>
+                  {sectionDefs.find((s) => s.id === id)?.repeat && (
+                    <small className="muted"> repeats</small>
+                  )}
                 </label>
               </li>
             ))}
           </ul>
         )}
       </fieldset>
+      <RepeatKeyColumn
+        step={step}
+        sectionDefs={sectionDefs}
+        columns={tableColumns[step.table as string] ?? []}
+        set={set}
+      />
       <fieldset className="fill-chips">
         <legend>Fills outputs</legend>
         {filled.map((id) => (

@@ -380,7 +380,7 @@ export function TemplateEditor({
 
   const sections: { id: string }[] = def.document?.sections ?? [];
   const fields: { id: string }[] = def.outputs?.fields ?? [];
-  const tables: { id: string }[] = def.outputs?.tables ?? [];
+  const tables: { id: string; columns?: { id: string }[] }[] = def.outputs?.tables ?? [];
   const pipeline: Definition[] = def.pipeline ?? [];
   const paths = checkPathOptions(def);
   const counts = tabCounts(def);
@@ -908,6 +908,13 @@ export function TemplateEditor({
                       fields={fields.map((f) => f.id)}
                       tables={tables.map((t) => t.id)}
                       sections={sections.map((s) => s.id)}
+                      sectionDefs={sections}
+                      tableColumns={Object.fromEntries(
+                        tables.map((t) => [
+                          t.id,
+                          (t.columns ?? []).map((c: { id: string }) => c.id),
+                        ]),
+                      )}
                       models={models}
                       typeModelLabel={
                         typeModel

@@ -250,6 +250,24 @@ describe('progressSteps with live progress', () => {
       ['Text & OCR: done Done', 'Sections: done Done', 'Extraction: current Step 2 of 4 · try 2'],
     ],
     [
+      'a repeating step',
+      { ...step, occurrence: { n: 2, of: 3, key: '4586784' } },
+      [
+        'Text & OCR: done Done',
+        'Sections: done Done',
+        'Extraction: current Step 2 of 4 · occurrence 2 of 3 (4586784)',
+      ],
+    ],
+    [
+      'a chunked repeating step',
+      { ...step, chunk: { n: 1, of: 2 }, occurrence: { n: 2, of: 3, key: '4586784' } },
+      [
+        'Text & OCR: done Done',
+        'Sections: done Done',
+        'Extraction: current Step 2 of 4 · occurrence 2 of 3 (4586784) · part 1 of 2',
+      ],
+    ],
+    [
       'a chunked step',
       { ...step, chunk: { n: 3, of: 5 } },
       [

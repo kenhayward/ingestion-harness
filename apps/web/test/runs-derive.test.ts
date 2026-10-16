@@ -283,3 +283,14 @@ describe('samples and the run button', () => {
     [{ ahead: 90, running: 1, etaSeconds: 7200 }, 'Queue: 90 jobs ahead · about 2 h'],
   ])('queue %j', (q, text) => expect(queueText(q)).toBe(text));
 });
+
+describe('run progress of a repeating step', () => {
+  it.each([
+    [{ n: 2, of: 3, key: '4586784' }, 'Step 3 of 4 · appearance · occurrence 2 of 3 (4586784)'],
+    [{ n: 1, of: 3, key: null }, 'Step 3 of 4 · appearance · occurrence 1 of 3'],
+  ])('progressText %#', (occurrence, text) =>
+    expect(
+      progressText({ step: 'appearance', index: 3, of: 4, attempt: 1, chunk: null, occurrence }),
+    ).toBe(text),
+  );
+});

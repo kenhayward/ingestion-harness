@@ -69,8 +69,8 @@ const METRICS = {
   ],
 };
 
-function stepsPanel(metrics = METRICS) {
-  let current: Record<string, unknown> = BEFORE;
+function stepsPanel(metrics = METRICS, definition: Record<string, unknown> = BEFORE) {
+  let current: Record<string, unknown> = definition;
   const api = fakeApi({
     listProposals: vi.fn(async () => [PROPOSAL]),
     getTemplate: vi.fn(async () => templateView(current)),
@@ -116,6 +116,32 @@ describe('Steps tab', () => {
     expect(
       screen.getByText('1 output not filled by any step — the proposal does not fix it'),
     ).toBeInTheDocument();
+  });
+
+  it('names the repeating section a step runs over and its key column', async () => {
+    const repeating = {
+      ...BEFORE,
+      document: {
+        sections: [
+          { id: 'header', anchor: '^INVOICE' },
+          { id: 'totals', anchor: 'Total', repeat: true, key: 'Batch (.+)' },
+          { id: 'payment', anchor: 'Pay' },
+        ],
+      },
+      outputs: {
+        fields: [{ id: 'supplier_name' }],
+        tables: [{ id: 'sums', columns: [{ id: 'batch' }] }],
+      },
+      pipeline: [
+        BEFORE.pipeline[0],
+        { type: 'extract', id: 'totals', table: 'sums', sections: ['totals'], keyColumn: 'batch' },
+      ],
+    };
+    stepsPanel(METRICS, repeating);
+    const totals = await screen.findByRole('listitem', { name: 'Step 2: totals' });
+    expect(within(totals).getByText('Once per totals · batch from its key')).toBeInTheDocument();
+    const header = screen.getByRole('listitem', { name: 'Step 1: header' });
+    expect(within(header).queryByText(/^Once per/)).toBeNull();
   });
 
   it('draws the pipeline with sections, figures and a retry warning', async () => {

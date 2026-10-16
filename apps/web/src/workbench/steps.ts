@@ -59,6 +59,19 @@ export function stepCards(definition: Def): StepCard[] {
     );
 }
 
+/** A step reading a repeating section: "Once per appearance · batch from its key". */
+export function repeatLine(definition: Def, stepId: string): string | null {
+  const step = list(definition.pipeline).find((s) => s.id === stepId);
+  if (!step) return null;
+  const reads = ids(step.sections);
+  const section = list(obj(definition.document).sections).find(
+    (s) => s.repeat === true && typeof s.id === 'string' && reads.includes(s.id),
+  );
+  if (!section) return null;
+  const column = typeof step.keyColumn === 'string' ? ` · ${step.keyColumn} from its key` : '';
+  return `Once per ${section.id as string}${column}`;
+}
+
 export function sectionIds(definition: Def): string[] {
   return ids(list(obj(definition.document).sections).map((s) => s.id));
 }

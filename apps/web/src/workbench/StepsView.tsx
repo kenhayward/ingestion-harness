@@ -5,6 +5,7 @@ import { TONE_COLOR } from '../ui/stageStyle.js';
 import {
   coverageHeadline,
   outputsLine,
+  repeatLine,
   retryWarning,
   sectionIds,
   stepCards,
@@ -55,9 +56,12 @@ function Step({
   metric,
   justAdded,
   models,
+  repeat,
 }: {
   models: readonly ModelChoice[];
   card: StepCard;
+  /** "Once per appearance · batch from its key" for a step reading a repeating section. */
+  repeat: string | null;
   sections: string[];
   metric: StepMetric | undefined;
   justAdded: boolean;
@@ -100,6 +104,7 @@ function Step({
                   · {card.chunkPages} {card.chunkPages === 1 ? 'page' : 'pages'} per call
                 </span>
               )}
+              {repeat && <p className="muted step-repeat">{repeat}</p>}
             </dd>
           </dl>
           <StepFigures metric={metric} />
@@ -213,6 +218,7 @@ export function StepsView({
                 metric={byStep.get(c.id)}
                 justAdded={justAdded.has(c.id)}
                 models={models}
+                repeat={repeatLine(definition, c.id)}
               />
             ))}
           </ol>

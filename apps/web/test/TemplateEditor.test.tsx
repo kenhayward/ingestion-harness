@@ -1548,3 +1548,63 @@ describe('delivered formats (ADR 0011)', () => {
     expect(screen.getByRole('button', { name: 'Map to ontologies' })).toBeTruthy();
   });
 });
+
+const REPEAT_SECTIONS = [
+  { id: 'front', anchor: '\\A' },
+  { id: 'batch', anchor: '^\\d+\\. STUDY', repeat: true, key: 'BATCH (.+)' },
+  { id: 'appearance', anchor: '^Table', repeat: true, key: 'Batch (.+)', keyFrom: 'batch' },
+  { id: 'plain_repeat', anchor: '^Annex', repeat: true },
+];
+
+describe('repeating sections in the step form', () => {
+  const repeatRecipe = () => ({
+    id: 'covalidation',
+    version: 1,
+    name: 'Covalidation',
+    document: { ocr: 'auto', sections: REPEAT_SECTIONS },
+    outputs: {
+      fields: [{ id: 'study', type: 'text' }],
+      tables: [
+        {
+          id: 'appearance_results',
+          columns: [
+            { id: 'batch', type: 'text' },
+            { id: 'result', type: 'text' },
+          ],
+        },
+      ],
+    },
+    pipeline: [
+      { type: 'extract', id: 'header', fields: ['study'], sections: ['front'] },
+      { type: 'extract', id: 'appearance', table: 'appearance_results', sections: ['appearance'] },
+    ],
+  });
+
+  it('sets the key column of a table step reading a repeating section', async () => {
+    const { api } = setup(view(repeatRecipe()), {}, { onChanged: vi.fn() });
+    await userEvent.click(await screen.findByRole('button', { name: /^2 appearance/ }));
+    const step = screen.getByRole('region', { name: 'Step 2' });
+    expect(within(step).getByText('Runs once per occurrence of appearance')).toBeInTheDocument();
+    const column = within(step).getByRole('combobox', { name: 'Key column' });
+    expect(
+      within(column)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['None', 'batch', 'result']);
+    await userEvent.selectOptions(column, 'batch');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft v1' }));
+    const saved = vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as {
+      pipeline: Record<string, unknown>[];
+    };
+    expect(saved.pipeline[1]).toMatchObject({ keyColumn: 'batch' });
+  });
+
+  it('keeps a field step off repeating sections', async () => {
+    setup(view(repeatRecipe()), {}, { onChanged: vi.fn() });
+    await userEvent.click(await screen.findByRole('button', { name: /^1 header/ }));
+    const step = screen.getByRole('region', { name: 'Step 1' });
+    expect(within(step).getByRole('checkbox', { name: 'batch repeats' })).toBeDisabled();
+    expect(within(step).getByRole('checkbox', { name: 'front' })).toBeEnabled();
+    expect(within(step).queryByRole('combobox', { name: 'Key column' })).not.toBeInTheDocument();
+  });
+});

@@ -131,11 +131,16 @@ export function olderText(hidden: readonly RunBatch[]): string {
   return `Older batches: ${hidden.length} more on ${list}`;
 }
 
+/** "occurrence 2 of 3 (4586784)": the occurrence of a repeating section a call reads. */
+export const occurrenceText = (o: { n: number; of: number; key: string | null }) =>
+  `occurrence ${o.n} of ${o.of}${o.key ? ` (${o.key})` : ''}`;
+
 /** "Step 2 of 3 · line_items · chunk 2 of 2 · attempt 2". */
 export function progressText(p: StepProgress): string {
   return [
     `Step ${p.index} of ${p.of}`,
     p.step,
+    ...(p.occurrence ? [occurrenceText(p.occurrence)] : []),
     ...(p.chunk ? [`chunk ${p.chunk.n} of ${p.chunk.of}`] : []),
     ...(p.attempt > 1 ? [`attempt ${p.attempt}`] : []),
   ].join(' · ');
