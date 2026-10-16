@@ -8,6 +8,7 @@ errors back to the model through run_extraction(check=...)."""
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -196,13 +197,59 @@ def _chunkable(c: dict[str, Any]) -> bool:
     return bool(c.get("table")) and len(c.get("sections") or []) == 1
 
 
+def _paths(value: Any) -> list[str]:
+    """Check paths as models write them: one path, a JSON list of paths, or several separated
+    by commas, each maybe with stray quotes or brackets around it."""
+    if not isinstance(value, str):
+        return []
+    text = value.strip()
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [path for v in parsed if isinstance(v, str) for path in _paths(v)]
+    parts = (part.strip().strip("[]").strip().strip("\"'").strip() for part in text.split(","))
+    return [part for part in parts if part]
+
+
+def _split_checks(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """A check compares one path with its reference: clean the paths, and split a check whose
+    values list several paths into one check per path (`<id>_1`, `<id>_2`, ...)."""
+    out: list[dict[str, Any]] = []
+    notes: list[str] = []
+    for c in items:
+        if c["op"] != "putStep" or c.get("type") != "check":
+            out.append(c)
+            continue
+        cleaned = {
+            k: (paths[0] if len(paths) == 1 else c.get(k))
+            for k in ("reference", "aliases")
+            for paths in [_paths(c.get(k))]
+        }
+        values = _paths(c.get("values"))
+        if len(values) <= 1:
+            out.append({**c, **cleaned, "values": values[0] if values else c.get("values")})
+            continue
+        ids = [f"{c['id']}_{n}" for n in range(1, len(values) + 1)]
+        out += [{**c, **cleaned, "id": i, "values": v} for i, v in zip(ids, values, strict=True)]
+        notes.append(
+            f"Split check {c['id']!r} into {len(values)} checks ({', '.join(ids)}): a check "
+            "compares one path with its reference."
+        )
+    return out, notes
+
+
 def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """A chunkPages the step cannot use is dropped with a note rather than failing the stage:
-    it is a hint about long tables, and models keep setting it on every step."""
+    it is a hint about long tables, and models keep setting it on every step. Check paths are
+    cleaned and a check listing several paths is split (_split_checks)."""
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
     unchunked: list[str] = []
-    for i, c in enumerate(data["changes"]):
+    items, split = _split_checks(data["changes"])
+    for i, c in enumerate(items):
         if c["op"] == "putStep" and c.get("chunkPages") and not _chunkable(c):
             unchunked.append(repr(c["id"]))
             c = {**c, "chunkPages": None}
@@ -261,6 +308,8 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "section can be chunked."
         )
         notes = f"{notes}\n{dropped}" if notes else dropped
+    if split:
+        notes = "\n".join([notes, *split] if notes else split)
     return {"notes": notes, "changes": changes}, errors
 
 
@@ -380,8 +429,9 @@ Task: propose the extraction pipeline that fills every output in the current dra
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
     a field id or table.column (that column's values from every row). Never a bare table id:
     to show a table, add one context item per column the step needs.
-- putStep with type check: values and reference are paths (field or table.column, never a
-  bare table id) whose values must match; aliases optional.
+- putStep with type check: values and reference are one path each (field or table.column,
+  never a bare table id, never a list) whose values must match; aliases optional. To check
+  several tables against one reference, send one check per table.
 - Every extraction prompt states the source file name and starts each page with "[page N]":
   a step can fill the originating file name from it, and a page number from the markers.
 - A table step reading a repeating section (repeat true) runs once per block; its keyColumn
