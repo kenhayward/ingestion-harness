@@ -23,6 +23,11 @@ COPY --from=build /app/apps/api/package.json apps/api/
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY db/migrations db/migrations
 COPY specs specs
+# The build's calendar version (ADR 0014). Last, so a new version reuses every layer above.
+ARG APP_VERSION=dev
+ARG APP_VERSION_PREVIOUS=
+ARG APP_COMMIT=unknown
+ENV APP_VERSION=$APP_VERSION     APP_VERSION_PREVIOUS=$APP_VERSION_PREVIOUS     APP_COMMIT=$APP_COMMIT
 USER node
 EXPOSE 3000
 CMD ["node", "apps/api/dist/server.js"]
