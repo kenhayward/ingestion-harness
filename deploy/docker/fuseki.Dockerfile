@@ -1,6 +1,6 @@
 # Apache Jena Fuseki (ADR 0011 step 6), built from the release jar on Maven Central, checked
 # against its sha512. Build context: repo root.
-FROM eclipse-temurin:21.0.12.1_1-jre
+FROM eclipse-temurin:24.0.2_12-jre
 ARG FUSEKI_VERSION=6.2.0
 ARG FUSEKI_SHA512=59c5d0fd4e3f2c51819816dd178ee7d619552aae12400286338cc55c6955653e6c503d58b6cb12f3124407c903a81a2ecf4a9b0d5ba8028e7fcdc7c5c98710d4
 RUN mkdir -p /opt/fuseki /fuseki \
