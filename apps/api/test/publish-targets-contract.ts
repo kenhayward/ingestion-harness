@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { NewTarget, PublishTargetRepo } from '../src/publish-targets/repo.js';
 import type { DefaultSeed } from '../src/publish-targets/seed.js';
 
-/** What the repo cannot see itself: published recipes, recorded outputs, consumer grants. */
+/**
+ * What the repo cannot see itself: published recipes, recorded outputs, consumer grants and
+ * withdraw jobs (one object and one graph entry naming the target).
+ */
 export interface TargetFacts {
   publish(id: string, version: number, publishTo: string | null): Promise<void>;
   delivered(targetId: string): Promise<void>;
   grant(targetId: string): Promise<void>;
+  withdrawal(targetId: string, status: 'queued' | 'running' | 'succeeded'): Promise<void>;
 }
 
 const lake = (id: string, over: Partial<NewTarget> = {}): NewTarget => ({
@@ -161,6 +165,7 @@ export function publishTargetsContract(
         documentTypes: [],
         deliveredOutputs: 0,
         consumers: 0,
+        pendingJobs: 0,
       });
       await facts.publish('invoice', 1, 'finance');
       await facts.publish('invoice', 2, 'finance');
@@ -175,9 +180,25 @@ export function publishTargetsContract(
         documentTypes: ['invoice', 'receipt'],
         deliveredOutputs: 2,
         consumers: 1,
+        pendingJobs: 0,
       });
       const listed = (await repo.list()).find((t) => t.id === 'finance');
       expect(listed?.usage).toEqual(usage);
+      expect(await repo.remove('finance')).toBe('in_use');
+    });
+
+    it('counts withdrawals still to run that name the target', async () => {
+      const { repo, facts } = await make();
+      await repo.create(lake('finance'), null);
+      await repo.create(lake('other'), null);
+      await facts.withdrawal('finance', 'succeeded');
+      expect((await repo.usage('finance')).pendingJobs).toBe(0);
+      expect(await repo.remove('other')).toBe('deleted');
+      await facts.withdrawal('finance', 'queued');
+      await facts.withdrawal('finance', 'running');
+      const usage = await repo.usage('finance');
+      expect(usage.pendingJobs).toBe(2);
+      expect((await repo.list()).find((t) => t.id === 'finance')?.usage).toEqual(usage);
       expect(await repo.remove('finance')).toBe('in_use');
     });
 

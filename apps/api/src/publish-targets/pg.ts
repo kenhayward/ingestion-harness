@@ -271,7 +271,13 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     const at = (target: string): TargetUsage => {
       let u = out.get(target);
       if (!u) {
-        u = { publishedVersions: 0, documentTypes: [], deliveredOutputs: 0, consumers: 0 };
+        u = {
+          publishedVersions: 0,
+          documentTypes: [],
+          deliveredOutputs: 0,
+          consumers: 0,
+          pendingJobs: 0,
+        };
         out.set(target, u);
       }
       return u;
@@ -306,6 +312,24 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       [id],
     );
     for (const r of consumers.rows) at(r.target).consumers = Number(r.n);
+    // A withdrawal still to run deletes through the targets its params name (a republish
+    // delivers through its published version's target, counted above).
+    const pending = await db.query<{ target: string; n: string }>(
+      `SELECT t.target, count(DISTINCT j.id) AS n
+         FROM jobs j,
+              LATERAL (
+                SELECT e->>'target' AS target
+                  FROM jsonb_array_elements(coalesce(j.params->'objects', '[]'::jsonb)) e
+                UNION
+                SELECT e->>'target'
+                  FROM jsonb_array_elements(coalesce(j.params->'graphs', '[]'::jsonb)) e
+              ) t
+        WHERE j.task = 'withdraw' AND j.status IN ('queued', 'running')
+          AND t.target IS NOT NULL AND ($1::text IS NULL OR t.target = $1)
+        GROUP BY 1`,
+      [id],
+    );
+    for (const r of pending.rows) at(r.target).pendingJobs = Number(r.n);
     return out;
   }
 }

@@ -82,6 +82,7 @@ describe('publishing target routes: list and choices', () => {
       documentTypes: [],
       deliveredOutputs: 0,
       consumers: 0,
+      pendingJobs: 0,
     });
     expect(res.body).not.toContain(SECRET);
     expect(res.body).not.toContain('secretKeyEnc');
@@ -170,6 +171,26 @@ describe('POST /api/publish-targets', () => {
     const taken = await c.call('POST', '/publish-targets', externalBody({ id: 'lake' }));
     expect(taken.statusCode).toBe(409);
     expect(taken.json().error).toBe('a publishing target lake already exists');
+  });
+
+  it("refuses CT Studio's own buckets for an internal target", async () => {
+    const c = await setup();
+    for (const bucket of ['inbox', 'outputs', 'runs']) {
+      const res = await c.call('POST', '/publish-targets', {
+        label: 'Oops',
+        kind: 'internal',
+        bucket,
+      });
+      expect([bucket, res.statusCode, res.json().error]).toEqual([
+        bucket,
+        400,
+        `${bucket} is CT Studio's own ${bucket} bucket: pick another`,
+      ]);
+    }
+    expect((c.targetStore as MemoryObjectStore).ensured).toEqual([]);
+    // Another server's bucket of that name is not ours.
+    const external = await c.call('POST', '/publish-targets', externalBody({ bucket: 'runs' }));
+    expect(external.statusCode).toBe(201);
   });
 
   it('answers 400 with the issues of an invalid body', async () => {
@@ -282,6 +303,66 @@ describe('PATCH /api/publish-targets/:id', () => {
     );
   });
 
+  it("refuses moving an internal target onto CT Studio's own bucket", async () => {
+    const c = await setup();
+    const res = await c.call('PATCH', '/publish-targets/default', { bucket: 'inbox' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("inbox is CT Studio's own inbox bucket: pick another");
+    expect((await c.targets.get('default'))!.bucket).toBe('published');
+  });
+
+  it('clears optional settings with null, and the KMS key once encryption leaves KMS', async () => {
+    const c = await setup();
+    await c.targets.create(
+      financeRecord({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' }),
+      'Ken',
+    );
+    await publishLetter(c, 1, 'finance-lake');
+    const offKms = await c.call('PATCH', '/publish-targets/finance-lake', { sse: 'AES256' });
+    expect(offKms.statusCode).toBe(200);
+    expect(offKms.json()).toMatchObject({ sse: 'AES256', kmsKeyId: null });
+    expect((await c.targets.get('finance-lake'))!.kmsKeyId).toBeNull();
+
+    const cleared = await c.call('PATCH', '/publish-targets/finance-lake', { storageClass: null });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json()).toMatchObject({ storageClass: null, sse: 'AES256' });
+
+    const kmsAgain = await c.call('PATCH', '/publish-targets/finance-lake', {
+      sse: 'aws:kms',
+      kmsKeyId: 'key-2',
+    });
+    expect(kmsAgain.json()).toMatchObject({ sse: 'aws:kms', kmsKeyId: 'key-2' });
+    const noKey = await c.call('PATCH', '/publish-targets/finance-lake', { kmsKeyId: null });
+    expect(noKey.json()).toMatchObject({ sse: 'aws:kms', kmsKeyId: null });
+
+    // A KMS key without KMS is still refused when the patch asks for it.
+    const bad = await c.call('PATCH', '/publish-targets/finance-lake', {
+      sse: 'none',
+      kmsKeyId: 'key-3',
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(JSON.stringify(bad.json().error)).toContain('a KMS key needs sse');
+  });
+
+  it('clears the endpoint of a target not in use, never of one in use', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord(), 'Ken');
+    const res = await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: null });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ endpoint: null });
+    await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: FINANCE_ENDPOINT });
+    await publishLetter(c, 1, 'finance-lake');
+    const locked = await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: null });
+    expect(locked.statusCode).toBe(409);
+  });
+
+  it('keeps a prefix seeded verbatim from .env on other edits', async () => {
+    const c = await setup();
+    await c.targets.update('default', { prefix: 'ingest' }, null);
+    const res = await c.call('PATCH', '/publish-targets/default', { label: 'Main' });
+    expect(res.json()).toMatchObject({ label: 'Main', prefix: 'ingest' });
+  });
+
   it('creates the new bucket of an internal target', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', {
@@ -370,6 +451,29 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(res.json().error).toBe('Finance lake is used by 1 delivered output');
   });
 
+  it('counts a withdrawal still to run that names it', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord(), null);
+    const withdraw = (status: 'queued' | 'running' | 'succeeded') => ({
+      id: `w-${status}`,
+      task: 'withdraw' as const,
+      priority: 0,
+      maxAttempts: 100,
+      params: {
+        objects: [{ bucket: 'finance-lake', key: 'ingest/a.json', target: 'finance-lake' }],
+        graphs: [],
+      },
+      status,
+      createdBy: null,
+    });
+    c.repo.backgroundJobs.push(withdraw('succeeded'));
+    expect((await c.targets.usage('finance-lake')).pendingJobs).toBe(0);
+    c.repo.backgroundJobs.push(withdraw('queued'), withdraw('running'));
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Finance lake is used by 2 pending withdrawals');
+  });
+
   it('removes an unused target', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
@@ -381,6 +485,15 @@ describe('DELETE /api/publish-targets/:id', () => {
 class FailingStore extends MemoryObjectStore {
   override async put(): Promise<void> {
     throw Object.assign(new Error(`denied for ${SECRET}`), { name: 'AccessDenied' });
+  }
+}
+
+/** Remembers the keys written. */
+class RecordingStore extends MemoryObjectStore {
+  readonly keys: string[] = [];
+  override async put(bucket: string, key: string, body: Buffer, type: string): Promise<void> {
+    this.keys.push(key);
+    return super.put(bucket, key, body, type);
   }
 }
 
@@ -465,6 +578,52 @@ describe('POST /api/publish-targets/test', () => {
       payload: { label: 'Archive', kind: 'internal', bucket: 'new-archive', prefix: '' },
     });
     expect(res.json()).toMatchObject({ ok: true });
+  });
+
+  it('tests a stored target with the same null clears and KMS rule as a save', async () => {
+    const c = await setup();
+    await c.targets.create(
+      financeRecord({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' }),
+      null,
+    );
+    const res = await c.call('POST', '/publish-targets/test', {
+      id: 'finance-lake',
+      sse: 'AES256',
+      storageClass: null,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it("refuses to test CT Studio's own bucket as an internal target", async () => {
+    const c = await setup();
+    const res = await c.call('POST', '/publish-targets/test', {
+      label: 'Oops',
+      kind: 'internal',
+      bucket: 'runs',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("runs is CT Studio's own runs bucket: pick another");
+    const overlay = await c.call('POST', '/publish-targets/test', {
+      id: 'default',
+      bucket: 'outputs',
+    });
+    expect(overlay.statusCode).toBe(400);
+  });
+
+  it('tests a prefix seeded verbatim from .env where it delivers', async () => {
+    const store = new RecordingStore();
+    const c = await testApp({ llmSecrets: keys, targetStore: store });
+    await c.targets.update('default', { prefix: 'ingest' }, null);
+    await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets/test',
+      payload: { id: 'default' },
+    });
+    expect(store.keys.length).toBeGreaterThan(0);
+    for (const key of store.keys) {
+      expect([key, key.startsWith('ingest') && !key.startsWith('ingest/')]).toEqual([key, true]);
+    }
   });
 
   it('tests the internal default', async () => {

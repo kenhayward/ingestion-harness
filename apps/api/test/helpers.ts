@@ -111,6 +111,13 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
         .filter((o) => o.stage === 'published' && o.targetId === id).length +
       usedRepo.graphVersions.filter((v) => v.targetId === id).length,
     consumerCount: async (id) => s3KeyRepo.grantCount(id),
+    pendingJobCount: async (id) =>
+      usedRepo.backgroundJobs.filter(
+        (j) =>
+          j.task === 'withdraw' &&
+          (j.status === 'queued' || j.status === 'running') &&
+          withdrawTargets(j.params).includes(id),
+      ).length,
   });
   await targets.seedDefault({
     kind: 'internal',
@@ -327,4 +334,10 @@ export function registeredRoutes(tree: string): { method: string; path: string }
     const path = stack.join('');
     return m[3]!.split(', ').map((method) => ({ method, path }));
   });
+}
+
+/** The target ids a withdraw job's params name (objects and graphs). */
+function withdrawTargets(params: unknown): string[] {
+  const p = params as { objects?: { target?: string }[]; graphs?: { target?: string }[] };
+  return [...(p.objects ?? []), ...(p.graphs ?? [])].flatMap((e) => (e.target ? [e.target] : []));
 }

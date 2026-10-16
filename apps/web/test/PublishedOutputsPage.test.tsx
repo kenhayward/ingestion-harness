@@ -14,7 +14,13 @@ const admin = {
   userId: 'u-test',
 };
 
-const NO_USE = { publishedVersions: 0, documentTypes: [], deliveredOutputs: 0, consumers: 0 };
+const NO_USE = {
+  publishedVersions: 0,
+  documentTypes: [],
+  deliveredOutputs: 0,
+  consumers: 0,
+  pendingJobs: 0,
+};
 
 function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
   return {
@@ -182,6 +188,7 @@ describe('PublishedOutputsPage', () => {
           documentTypes: ['invoice', 'po'],
           deliveredOutputs: 14,
           consumers: 1,
+          pendingJobs: 0,
         },
       }),
       external({ usage: { ...NO_USE, deliveredOutputs: 3 } }),
@@ -194,11 +201,63 @@ describe('PublishedOutputsPage', () => {
     expect(fin).not.toHaveTextContent('document types');
   });
 
+  it('counts withdrawals still to run', async () => {
+    page([external({ usage: { ...NO_USE, pendingJobs: 2 } })]);
+    expect(await row('Finance lake')).toHaveTextContent('used by 2 pending withdrawals');
+  });
+
+  it('says who edited a target added here, once edited', async () => {
+    page([
+      external(),
+      external({
+        id: 'archive',
+        label: 'Archive',
+        updatedBy: 'Alex',
+        editedAt: '2026-10-17T09:00:00.000Z',
+      }),
+    ]);
+    expect(await row('Finance lake')).toHaveTextContent('added here by Sam');
+    const archive = await row('Archive');
+    expect(archive).toHaveTextContent('edited by Alex');
+    expect(archive).not.toHaveTextContent('added here');
+  });
+
+  it('clears the storage class, the KMS key and the endpoint with null', async () => {
+    const stored = external({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' });
+    const api = page([stored], { updatePublishTarget: vi.fn(async () => stored) });
+    const r = await open('Finance lake');
+    await userEvent.selectOptions(within(r).getByLabelText('Storage class'), 'Bucket default');
+    await userEvent.clear(within(r).getByLabelText('KMS key id'));
+    await userEvent.clear(within(r).getByLabelText('Endpoint'));
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.updatePublishTarget).toHaveBeenCalledWith('finance-lake', {
+        endpoint: null,
+        kmsKeyId: null,
+        storageClass: null,
+      }),
+    );
+  });
+
+  it('drops the KMS key when encryption leaves KMS', async () => {
+    const stored = external({ sse: 'aws:kms', kmsKeyId: 'key-1' });
+    const api = page([stored], { updatePublishTarget: vi.fn(async () => stored) });
+    const r = await open('Finance lake');
+    await userEvent.selectOptions(within(r).getByLabelText('Server-side encryption'), 'AES256');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.updatePublishTarget).toHaveBeenCalledWith('finance-lake', {
+        sse: 'AES256',
+        kmsKeyId: null,
+      }),
+    );
+  });
+
   it('shows why Remove is disabled', async () => {
     page([external({ usage: { ...NO_USE, consumers: 1 } })]);
     const r = await open('Finance lake');
     expect(within(r).getByRole('button', { name: 'Remove' })).toBeDisabled();
-    expect(r).toHaveTextContent('In use: a recipe version, output or key names it');
+    expect(r).toHaveTextContent('In use: a recipe version, output, key or withdrawal names it');
   });
 
   it('shows the failing step of a connection test', async () => {

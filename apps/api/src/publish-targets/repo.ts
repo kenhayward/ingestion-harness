@@ -63,6 +63,7 @@ export const EMPTY_USAGE: TargetUsage = {
   documentTypes: [],
   deliveredOutputs: 0,
   consumers: 0,
+  pendingJobs: 0,
 };
 
 export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
@@ -164,6 +165,8 @@ export interface TargetFactSource {
   publishedDefinitions(): Promise<PublishedDefinition[]>;
   deliveredCount(targetId: string): Promise<number>;
   consumerCount(targetId: string): Promise<number>;
+  /** Queued or running withdraw jobs whose params name the target. */
+  pendingJobCount(targetId: string): Promise<number>;
 }
 
 export class MemoryPublishTargetRepo implements PublishTargetRepo {
@@ -175,6 +178,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       publishedDefinitions: async () => [],
       deliveredCount: async () => 0,
       consumerCount: async () => 0,
+      pendingJobCount: async () => 0,
     },
   ) {
     this.targets.set(DEFAULT_TARGET_ID, initialDefault(new Date()));
@@ -229,6 +233,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       documentTypes: [...new Set(published.map((p) => p.id))].sort(),
       deliveredOutputs: await this.facts.deliveredCount(id),
       consumers: await this.facts.consumerCount(id),
+      pendingJobs: await this.facts.pendingJobCount(id),
     };
   }
 

@@ -45,10 +45,38 @@ export function usageText(u: TargetUsage): string {
   return [
     ...(u.deliveredOutputs > 0 ? [plural(u.deliveredOutputs, 'delivered output')] : []),
     ...(u.consumers > 0 ? [plural(u.consumers, 'S3 key consumer')] : []),
+    ...(u.pendingJobs > 0 ? [plural(u.pendingJobs, 'pending withdrawal')] : []),
   ].join(' and ');
 }
 
 const issuesOf = (e: z.ZodError) => e.issues;
+
+const OWN_BUCKET = '`{bucket} is CT Studio\'s own {inbox|outputs|runs} bucket: pick another`';
+
+/** Which of the deployment's own buckets an internal target would name, else null. */
+function ownBucketProblem(
+  target: { kind: string; bucket: string },
+  buckets: { inbox: string; outputs: string; runs: string },
+): string | null {
+  if (target.kind !== 'internal') return null;
+  const which = (['inbox', 'outputs', 'runs'] as const).find((k) => buckets[k] === target.bucket);
+  return which ? `${target.bucket} is CT Studio's own ${which} bucket: pick another` : null;
+}
+
+/**
+ * The stored settings overlaid with a patch, in create-body shape: `null` clears a field, and
+ * the KMS key goes whenever the resulting encryption is not KMS (unless the patch names one,
+ * which the create rules then refuse).
+ */
+function overlay(stored: TargetRecord, patch: Record<string, unknown>): Record<string, unknown> {
+  const shape: Record<string, unknown> = { ...createShape(stored) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) delete shape[k];
+    else if (v !== undefined) shape[k] = v;
+  }
+  if (shape.sse !== 'aws:kms' && patch.kmsKeyId === undefined) delete shape.kmsKeyId;
+  return shape;
+}
 
 /**
  * Stands in for a credential that is stored (or read from `.env`) while merged settings are
@@ -98,7 +126,8 @@ function recordOf(
     label: b.label,
     kind: b.kind,
     bucket: b.bucket,
-    prefix: normalisePrefix(b.prefix),
+    // A stored prefix kept as it is (`default` is seeded verbatim from `.env`); a new one normalised.
+    prefix: stored && b.prefix === stored.prefix ? stored.prefix : normalisePrefix(b.prefix),
     endpoint: external ? (b.endpoint ?? null) : null,
     region: external ? (b.region ?? null) : null,
     accessKeyId: external ? (sentKeyId ?? stored?.accessKeyId ?? null) : null,
@@ -211,7 +240,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         body: TargetCreateBodySchema,
         response: {
           201: res('The target.', PublishTargetViewSchema),
-          400: error('Zod issues, or `default is reserved`.'),
+          400: error(`Zod issues, \`default is reserved\`, or ${OWN_BUCKET}.`),
           403: ADMINS_ONLY,
           409: error(`\`a publishing target {id} already exists\`, or \`${NO_SECRETS}\`.`),
           502: error('`could not create bucket {bucket}: {message}`; nothing is stored.'),
@@ -237,6 +266,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(409).send({ error: NO_SECRETS });
       }
       const record = { ...recordOf(id, b, null, b.accessKeyId), secretKeyEnc };
+      const own = ownBucketProblem(record, app.deps.buckets);
+      if (own) return reply.code(400).send({ error: own });
       const problem = await bucketProblem(record);
       if (problem) return reply.code(502).send({ error: problem });
       const input: NewTarget = {
@@ -274,9 +305,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           'updatePublishTarget',
           'Change a publishing target',
           md`
-            **Admins only.** Fields left out are kept. While the target is in use (a published
-            recipe version names it, an output or graph copy was delivered to it, or an S3 key
-            consumer is granted it) its bucket, prefix, endpoint and region cannot change (409):
+            **Admins only.** Fields left out are kept; \`null\` clears the endpoint, KMS key or
+            storage class, and the KMS key is cleared whenever the encryption is not
+            \`aws:kms\`. An internal target cannot move onto CT Studio's own inbox, outputs or
+            runs bucket (400). While the target is in use (a published recipe version names it,
+            an output or graph copy was delivered to it, an S3 key consumer is granted it, or a
+            withdrawal still to run names it) its bucket, prefix, endpoint and region cannot
+            change (409):
             add a new target and publish a version naming it instead. The label, credentials,
             path style, encryption and storage class may always change, so a key is rotated
             without a new version. Keys read from \`.env\` are replaced only as a pair.
@@ -286,7 +321,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         body: TargetPatchBodySchema,
         response: {
           200: res('The target.', PublishTargetViewSchema),
-          400: error(`Zod issues, or \`${PAIR}\`.`),
+          400: error(`Zod issues, \`${PAIR}\`, or ${OWN_BUCKET}.`),
           403: ADMINS_ONLY,
           404: NOT_FOUND,
           409: error(
@@ -303,9 +338,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const stored = await repo.get(req.params.id);
       if (!stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
 
-      const merged = TargetCreateBodySchema.safeParse({ ...createShape(stored), ...patch });
+      const merged = TargetCreateBodySchema.safeParse(overlay(stored, patch));
       if (!merged.success) return reply.code(400).send({ error: issuesOf(merged.error) });
       const next = recordOf(stored.id, merged.data, stored, patch.accessKeyId);
+      if (patch.bucket !== undefined) {
+        const own = ownBucketProblem(next, app.deps.buckets);
+        if (own) return reply.code(400).send({ error: own });
+      }
 
       const changed = LOCKED.filter((k) => patch[k] !== undefined && next[k] !== stored[k]);
       if (changed.length > 0) {
@@ -341,7 +380,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (secretKeyEnc !== undefined) update.secretKeyEnc = secretKeyEnc;
       if (patch.forcePathStyle !== undefined) update.forcePathStyle = next.forcePathStyle;
       if (patch.sse !== undefined) update.sse = next.sse;
-      if (patch.kmsKeyId !== undefined) update.kmsKeyId = next.kmsKeyId;
+      if (patch.kmsKeyId !== undefined || next.kmsKeyId !== stored.kmsKeyId) {
+        update.kmsKeyId = next.kmsKeyId;
+      }
       if (patch.storageClass !== undefined) update.storageClass = next.storageClass;
       const updated = await repo.update(stored.id, update, by(req));
       if (!updated) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
@@ -363,7 +404,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           'Remove a publishing target',
           md`
             **Admins only.** Only a target nothing uses: no published recipe version names it,
-            nothing was delivered to it and no S3 key consumer is granted it. The \`default\`
+            nothing was delivered to it, no S3 key consumer is granted it and no withdrawal still
+            to run names it. The \`default\`
             target is never removed.
           `,
         ),
@@ -407,16 +449,18 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             **Admins only.** For an external target, checks the bucket exists (a missing one
             fails at \`connect\`: some servers would create it on the first write), then writes
             a small file under the target's prefix, reads it back and deletes it. With an \`id\`,
-            the stored target's settings overlaid with the body (its stored secret when the body
-            has none); without one, a full set of new settings (before saving). Always 200 for a
-            test that ran: \`ok: false\` names the step that failed in plain words. A secret sent
-            here is never stored, logged or echoed.
+            the stored target's settings overlaid with the body as a save would overlay them
+            (\`null\` clears, its stored secret when the body has none); without one, a full set
+            of new settings (before saving). An internal target on CT Studio's own inbox, outputs
+            or runs bucket is refused (400). Always 200 for a test that ran: \`ok: false\` names
+            the step that failed in plain words. A secret sent here is never stored, logged or
+            echoed.
           `,
         ),
         body: TargetTestBodySchema,
         response: {
           200: res('The outcome.', TargetTestResultSchema),
-          400: error('Zod issues of the body or of the merged settings.'),
+          400: error(`Zod issues of the body or of the merged settings, or ${OWN_BUCKET}.`),
           403: ADMINS_ONLY,
           404: NOT_FOUND,
         },
@@ -425,17 +469,17 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = TargetTestBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
-      const { id, ...overlay } = body.data;
+      const { id, ...given } = body.data;
       const stored = id === undefined ? null : await repo.get(id);
       if (id !== undefined && !stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
-      const merged = TargetCreateBodySchema.safeParse(
-        stored ? { ...createShape(stored), ...overlay } : overlay,
-      );
+      const merged = TargetCreateBodySchema.safeParse(stored ? overlay(stored, given) : given);
       if (!merged.success) return reply.code(400).send({ error: issuesOf(merged.error) });
-      const settings = recordOf(stored?.id ?? 'test', merged.data, stored, overlay.accessKeyId);
+      const settings = recordOf(stored?.id ?? 'test', merged.data, stored, given.accessKeyId);
+      const own = ownBucketProblem(settings, app.deps.buckets);
+      if (own) return reply.code(400).send({ error: own });
       let store;
       try {
-        store = stores.storeOf(settings, overlay.secretAccessKey);
+        store = stores.storeOf(settings, given.secretAccessKey);
       } catch (err) {
         if (!(err instanceof TargetUnavailableError)) throw err;
         return { ok: false, step: 'connect', message: err.message };

@@ -53,6 +53,7 @@ async function setup() {
     publishedDefinitions: async () => [],
     deliveredCount: async () => 0,
     consumerCount: async (id) => repo.grantCount(id),
+    pendingJobCount: async () => 0,
   });
   await targets.create(newTarget({}), null);
   await targets.create(

@@ -41,12 +41,17 @@ export const TargetUsageSchema = z.object({
   documentTypes: z.array(z.string()),
   deliveredOutputs: z.number().int().nonnegative(),
   consumers: z.number().int().nonnegative(),
+  /** Queued or running `withdraw`/`republish` jobs whose params name the target. */
+  pendingJobs: z.number().int().nonnegative(),
 });
 export type TargetUsage = z.infer<typeof TargetUsageSchema>;
 
-/** In use: a published version, a recorded output or graph version, or a consumer grant names it. */
+/**
+ * In use: a published version, a recorded output or graph version, a consumer grant, or an
+ * unfinished withdrawal or republish names it.
+ */
 export function targetInUse(u: TargetUsage): boolean {
-  return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0;
+  return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0 || u.pendingJobs > 0;
 }
 
 export const PublishTargetViewSchema = z.object({
@@ -133,7 +138,16 @@ export const TargetCreateBodySchema = TargetFieldsSchema.superRefine((b, ctx) =>
 });
 export type TargetCreateBody = z.infer<typeof TargetCreateBodySchema>;
 
+/** What `null` clears in a patch (or a test of a stored target). */
+const CLEARABLE = {
+  endpoint: z.string().url().nullable(),
+  kmsKeyId: z.string().min(1).nullable(),
+  storageClass: z.enum(STORAGE_CLASSES).nullable(),
+};
+
+/** Fields left out are kept; `null` clears the endpoint, KMS key or storage class. */
 export const TargetPatchBodySchema = TargetFieldsSchema.omit({ id: true, kind: true })
+  .extend(CLEARABLE)
   .partial()
   .strict()
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
@@ -143,7 +157,8 @@ export type TargetPatchBody = z.infer<typeof TargetPatchBodySchema>;
  * Test connection: an existing id tests its stored settings overlaid with the body; no id means
  * the body must be a full create body.
  */
-export const TargetTestBodySchema = TargetFieldsSchema.partial()
+export const TargetTestBodySchema = TargetFieldsSchema.extend(CLEARABLE)
+  .partial()
   .strict()
   .superRefine((b, ctx) => {
     if (b.id !== undefined) return;

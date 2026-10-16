@@ -59,6 +59,18 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
             [jobId, targetId],
           );
         },
+        withdrawal: async (targetId: string, status: string) => {
+          const params = {
+            objects: [{ bucket: 'b', key: 'k', target: targetId }],
+            graphs: [
+              { sha256: 's', templateId: 't', graphIri: null, target: targetId, versions: [1] },
+            ],
+          };
+          await p.query(
+            `INSERT INTO jobs (task, status, params) VALUES ('withdraw', $1::job_status, $2)`,
+            [status, JSON.stringify(params)],
+          );
+        },
         grant: async (targetId: string) => {
           const c = await p.query<{ id: string }>(
             `INSERT INTO s3_consumers (id, label, user_name)

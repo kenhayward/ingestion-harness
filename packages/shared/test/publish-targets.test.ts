@@ -84,9 +84,35 @@ describe('target bodies', () => {
     expect(JSON.stringify(r.error?.issues)).toContain('nothing to change');
     expect(TargetPatchBodySchema.safeParse({ label: 'New' }).success).toBe(true);
   });
+  it('refuses a kind in a patch', () => {
+    expect(TargetPatchBodySchema.safeParse({ kind: 'external' }).success).toBe(false);
+    expect(TargetPatchBodySchema.safeParse({ label: 'x', kind: 'internal' }).success).toBe(false);
+  });
+  // A default here would overwrite the stored prefix (or trip the lock) on every label edit.
+  it('adds no defaults to a one-field patch', () => {
+    expect(TargetPatchBodySchema.parse({ label: 'x' })).toStrictEqual({ label: 'x' });
+    expect(TargetPatchBodySchema.parse({ sse: 'AES256' })).toStrictEqual({ sse: 'AES256' });
+  });
+  it('clears the endpoint, KMS key and storage class with null, nothing else', () => {
+    const cleared = { endpoint: null, kmsKeyId: null, storageClass: null };
+    expect(TargetPatchBodySchema.parse(cleared)).toStrictEqual(cleared);
+    for (const field of ['label', 'bucket', 'prefix', 'region', 'sse', 'accessKeyId']) {
+      expect([field, TargetPatchBodySchema.safeParse({ [field]: null }).success]).toEqual([
+        field,
+        false,
+      ]);
+    }
+  });
   it('knows when a target is in use', () => {
-    const none = { publishedVersions: 0, documentTypes: [], deliveredOutputs: 0, consumers: 0 };
+    const none = {
+      publishedVersions: 0,
+      documentTypes: [],
+      deliveredOutputs: 0,
+      consumers: 0,
+      pendingJobs: 0,
+    };
     expect(targetInUse(none)).toBe(false);
+    expect(targetInUse({ ...none, pendingJobs: 1 })).toBe(true);
     expect(targetInUse({ ...none, consumers: 1 })).toBe(true);
     expect(targetInUse({ ...none, deliveredOutputs: 1 })).toBe(true);
     expect(targetInUse({ ...none, publishedVersions: 1 })).toBe(true);

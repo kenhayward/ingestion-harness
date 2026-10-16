@@ -18,14 +18,16 @@ function usedBy(u: PublishTargetView['usage']): string {
     u.documentTypes.length > 0 && count(u.documentTypes.length, 'document type'),
     u.deliveredOutputs > 0 && count(u.deliveredOutputs, 'delivered output'),
     u.consumers > 0 && count(u.consumers, 'S3 key consumer'),
+    u.pendingJobs > 0 && count(u.pendingJobs, 'pending withdrawal'),
   ].filter(Boolean);
   return `used by ${parts.length > 0 ? parts.join(' · ') : count(0, 'document type')}`;
 }
 
-const REMOVE_BLOCKED = 'In use: a recipe version, output or key names it';
+const REMOVE_BLOCKED = 'In use: a recipe version, output, key or withdrawal names it';
 
 function whereFrom(t: PublishTargetView): string {
-  if (t.source === 'env') return t.updatedBy ? `edited by ${t.updatedBy}` : 'from .env';
+  if (t.editedAt !== null) return `edited by ${t.updatedBy ?? 'an admin'}`;
+  if (t.source === 'env') return 'from .env';
   return `added here by ${t.updatedBy ?? 'an admin'}`;
 }
 
@@ -69,7 +71,11 @@ export function TargetRow({
   const locked = targetInUse(t.usage);
   const usedByText = usedBy(t.usage);
 
-  /** Only what differs from the stored target (keys always as a pair). */
+  /**
+   * Only what differs from the stored target (keys always as a pair); an emptied endpoint, KMS
+   * key or storage class is `null`, which clears it, and so is the KMS key once encryption
+   * leaves KMS.
+   */
   const changes = (): TargetPatchBody => {
     const c: TargetPatchBody = {};
     if (label.trim() !== t.label) c.label = label.trim();
@@ -79,14 +85,15 @@ export function TargetRow({
     }
     if (external) {
       if (!locked) {
-        if (endpoint.trim() && endpoint.trim() !== (t.endpoint ?? '')) c.endpoint = endpoint.trim();
+        if (endpoint.trim() !== (t.endpoint ?? '')) c.endpoint = endpoint.trim() || null;
         if (region.trim() && region.trim() !== (t.region ?? '')) c.region = region.trim();
       }
       if (pathStyle !== t.forcePathStyle) c.forcePathStyle = pathStyle;
       if (sse !== t.sse) c.sse = sse as TargetPatchBody['sse'];
-      if (kms.trim() && kms.trim() !== (t.kmsKeyId ?? '')) c.kmsKeyId = kms.trim();
-      if (storageClass && storageClass !== (t.storageClass ?? '')) {
-        c.storageClass = storageClass as TargetPatchBody['storageClass'];
+      const kmsKey = sse === 'aws:kms' ? kms.trim() : '';
+      if (kmsKey !== (t.kmsKeyId ?? '')) c.kmsKeyId = kmsKey || null;
+      if (storageClass !== (t.storageClass ?? '')) {
+        c.storageClass = (storageClass || null) as TargetPatchBody['storageClass'];
       }
       if (keys) {
         c.accessKeyId = keys.id.trim();
