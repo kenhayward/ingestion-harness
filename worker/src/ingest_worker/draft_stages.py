@@ -332,11 +332,15 @@ Task: propose the extraction pipeline that fills every output in the current dra
   - pageImages: page numbers to show as images when the text loses information, else null.
   - chunkPages: null unless the step fills a long table (table set) from exactly one section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
-    a field id or table.column.
-- putStep with type check: values and reference are paths (field or table.column) whose values
-  must match; aliases optional.
+    a field id or table.column (that column's values from every row). Never a bare table id:
+    to show a table, add one context item per column the step needs.
+- putStep with type check: values and reference are paths (field or table.column, never a
+  bare table id) whose values must match; aliases optional.
 - Every extraction prompt states the source file name and starts each page with "[page N]":
   a step can fill the originating file name from it, and a page number from the markers.
+- When a section covers a repeated block (the same tables per batch, item or site), a table
+  step reading it returns rows from every block and fills each row's identifying columns
+  (batch, item) from that block's heading or table caption: say so in its instructions.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in the order given; context may only use outputs filled by earlier steps.
@@ -439,7 +443,13 @@ Task: propose section anchors that split every sample the same way.
 - setCopies: when a PDF holds several copies (for example blank, then executed), anchor is the
   regex that starts each copy and copiesSelect is first or last; anchor null removes copy
   selection.
-- Every anchor is tested on every dev sample before the user sees it; misses are reported back.
+- A section starts at its anchor's first match and runs to the next section's start. When the
+  document repeats a block (the same tables per batch, item or site), do not give each part of
+  the block its own section: later blocks would all land in the last one. Propose one section
+  starting at the first block that covers every block; the steps read it and take each
+  block's identifiers from its heading or caption.
+- Every anchor is tested on every dev sample before the user sees it; misses and repeated
+  blocks are reported back.
 - Use null for keys that do not apply. reason: one sentence.
 Return JSON only.""",
     SECTIONS_SCHEMA,
@@ -595,7 +605,7 @@ failures (expected vs actual values on the dev samples).
   Fill the payload objects you do not use, and keys that do not apply, with empty values:
   "" for text, [] for lists, 0 for numbers (required: true unless a section may be absent).
 - The template must stay valid: every field and table filled by exactly one step; steps only
-  use existing sections; context only from earlier steps.
+  use existing sections; context only from earlier steps, as field or table.column.
 - Prefer clearer instructions, better anchors or more precise field descriptions over adding
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);
